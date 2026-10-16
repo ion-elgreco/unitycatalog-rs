@@ -36,7 +36,7 @@ def _methods() -> set[str]:
 
 def test_every_uc_client_method_is_exposed() -> None:
     rust = set(re.findall(r"pub async fn (\w+)", UC_CLIENT.read_text()))
-    assert len(rust) == 74
+    assert len(rust) == 75
     assert rust <= _methods()
     assert {f"{name}_async" for name in rust} <= _methods()
 

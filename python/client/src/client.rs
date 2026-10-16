@@ -2404,6 +2404,21 @@ impl Client {
         })
     }
 
+    /// Get the signed-in user: the user of the client's token.
+    fn me(&self, py: Python<'_>) -> PyResult<ScimUser> {
+        py.detach(|| rt().block_on(self.inner.me()))
+            .map(ScimUser::from)
+            .map_err(to_py_err)
+    }
+
+    /// Like `me`, but returns an `asyncio.Future`.
+    fn me_async<'py>(&self, py: Python<'py>) -> PyResult<PyFuture<'py, ScimUser>> {
+        let client = self.inner.clone();
+        PyFuture::new(py, async move {
+            client.me().await.map(ScimUser::from).map_err(to_py_err)
+        })
+    }
+
     /// List the users.
     ///
     /// Args:

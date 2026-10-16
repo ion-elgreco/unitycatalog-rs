@@ -355,6 +355,16 @@ def test_scim_users(uc: Calls) -> None:
     assert uc.update_user(created.id, active=True).active is True
 
 
+def test_me(admin: Calls, uc: Calls) -> None:
+    # The server's `admin` is a caller, but without authorization no user.
+    with pytest.raises(UcError) as error:
+        admin.me()
+    assert error.value.code == "NOT_FOUND"
+    # Without a token the server knows no caller.
+    with pytest.raises(UcError):
+        uc.me()
+
+
 def test_scim_groups(uc: Calls) -> None:
     name = unique("group")
     created = uc.create_group(name)

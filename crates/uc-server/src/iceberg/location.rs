@@ -21,7 +21,7 @@ pub async fn validate_local_location(state: &AppState, location: &NormalizedUrl)
             "Local location must not contain unneeded escapes: {location}"
         )));
     }
-    let path = PathBuf::from(location.path());
+    let path = location.local_path();
     if under_external_location(state, location, &path).await?
         || under_local_root(&state.external_local_roots, &path)
     {
@@ -93,7 +93,7 @@ pub fn parse_local_roots(entries: &[String]) -> Result<Vec<PathBuf>> {
                     "only local paths are allowed: {entry}"
                 )));
             }
-            Ok(PathBuf::from(url.path()))
+            Ok(url.local_path())
         })
         .collect()
 }

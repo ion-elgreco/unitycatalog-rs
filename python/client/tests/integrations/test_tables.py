@@ -142,6 +142,10 @@ def test_deltalake_creates_a_managed_table_that_polars_appends_to(
     assert orders.sort("order_id").equals(pl.concat([january, february]))
 
 
+@pytest.mark.xfail(
+    reason="deltalake 1.6.6's first uc:// call in a process often never returns",
+    strict=False,
+)
 def test_deltalake_writes_and_reads_a_table_on_s3_by_name(s3: str, s3_server) -> None:
     client = Client(s3_server.url)
     catalog = unique("catalog")

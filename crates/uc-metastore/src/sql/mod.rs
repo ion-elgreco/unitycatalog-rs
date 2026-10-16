@@ -322,7 +322,7 @@ pub(crate) fn create_storage_dir(url: &uc_common::NormalizedUrl) -> Result<()> {
     if url.scheme() != uc_common::UriScheme::File {
         return Ok(());
     }
-    let path = std::path::PathBuf::from(url.path());
+    let path = url.local_path();
     if std::fs::symlink_metadata(&path).is_ok() {
         return Err(Error::already_exists(format!(
             "Directory already exists: {}",

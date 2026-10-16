@@ -127,8 +127,8 @@ fn exists_rejecting_link(path: &Path, location: &str) -> Result<bool> {
 /// which is at or under `root`; the root and each existing component below
 /// it must not be a symbolic link.
 fn local_path(root: &NormalizedUrl, location: &NormalizedUrl) -> Result<PathBuf> {
-    let root_path = PathBuf::from(root.path());
-    let path = PathBuf::from(location.path());
+    let root_path = root.local_path();
+    let path = location.local_path();
     let below = path.strip_prefix(&root_path).map_err(|_| {
         Error::invalid_argument(format!(
             "Local path {} is not under {}",
@@ -298,7 +298,7 @@ pub fn prepare_table_location(
     }
     // The table directory first: a linked one fails before anything is
     // created through it.
-    let root = PathBuf::from(table_location.path());
+    let root = table_location.local_path();
     for directory in [root.clone(), root.join("metadata"), root.join("data")] {
         if !exists_rejecting_link(&directory, table_location.as_str())? {
             std::fs::create_dir_all(&directory).map_err(|e| {

@@ -1233,6 +1233,14 @@ class Client:
         r"""
         Like `get_user`, but returns an `asyncio.Future`.
         """
+    def me(self) -> scim.ScimUser:
+        r"""
+        Get the signed-in user: the user of the client's token.
+        """
+    def me_async(self) -> asyncio.Future[scim.ScimUser]:
+        r"""
+        Like `me`, but returns an `asyncio.Future`.
+        """
     def list_users(
         self,
         *,

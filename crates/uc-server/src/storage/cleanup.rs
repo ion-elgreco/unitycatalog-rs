@@ -141,7 +141,7 @@ impl DefaultCleanupStorage {
 impl CleanupStorage for DefaultCleanupStorage {
     async fn delete_prefix(&self, location: &NormalizedUrl) -> Result<(), CleanupError> {
         if location.scheme() == UriScheme::File {
-            return delete_local(PathBuf::from(location.path())).await;
+            return delete_local(location.local_path()).await;
         }
         let (store, prefix) = self
             .storage

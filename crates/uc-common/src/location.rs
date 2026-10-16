@@ -175,6 +175,12 @@ impl NormalizedUrl {
             .unwrap_or_default()
     }
 
+    /// The local path of a `file://` URL. On Windows the path of
+    /// `file:///C:/x` is `C:/x`, without the `/` in front of the drive.
+    pub fn local_path(&self) -> std::path::PathBuf {
+        std::path::PathBuf::from(local_path_of(self.path(), cfg!(windows)))
+    }
+
     /// The `scheme://authority` part: the bucket or container.
     pub fn storage_base(&self) -> NormalizedUrl {
         let uri = Uri::parse(&self.0).expect("normalized URL parses");
@@ -306,6 +312,21 @@ fn remove_extra_slashes(path: &str) -> &str {
         end -= 1;
     }
     &path[start..=end]
+}
+
+/// The local path of the URL path `path`: on Windows (`windows`), `/C:/x`
+/// is `C:/x`.
+fn local_path_of(path: String, windows: bool) -> String {
+    let drive = path.as_bytes();
+    if windows
+        && drive.len() >= 3
+        && drive[0] == b'/'
+        && drive[1].is_ascii_alphabetic()
+        && drive[2] == b':'
+    {
+        return path[1..].to_string();
+    }
+    path
 }
 
 fn absolute_local_path(input: &str) -> Result<String> {
@@ -518,6 +539,16 @@ mod tests {
 
     fn n(s: &str) -> String {
         NormalizedUrl::parse(s).unwrap().into_string()
+    }
+
+    #[rstest]
+    #[case("/C:/Users/a", true, "C:/Users/a")]
+    #[case("/c:", true, "c:")]
+    #[case("/C:/Users/a", false, "/C:/Users/a")]
+    #[case("/tmp/a", true, "/tmp/a")]
+    #[case("/tmp:/a", true, "/tmp:/a")]
+    fn local_paths(#[case] path: &str, #[case] windows: bool, #[case] expected: &str) {
+        assert_eq!(local_path_of(path.to_string(), windows), expected);
     }
 
     #[rstest]
