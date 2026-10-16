@@ -1,0 +1,64 @@
+[package]
+name = "uc-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "uc"
+path = "src/main.rs"
+
+[dependencies]
+# `ui`: the web UI's files, for `uc web`.
+uc-common = { workspace = true, features = ["ui"] }
+uc-api.workspace = true
+uc-client.workspace = true
+
+clap.workspace = true
+tokio = { workspace = true, features = ["process", "io-util", "io-std"] }
+serde.workspace = true
+# Upstream field order in output.
+serde_json = { workspace = true, features = ["preserve_order"] }
+anyhow.workspace = true
+tracing-subscriber.workspace = true
+reqwest.workspace = true
+url.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+hex.workspace = true
+delta_kernel.workspace = true
+delta_kernel_default_engine.workspace = true
+# Arrow's table printer for `table read`; the kernel's arrow version.
+arrow = { version = "58", default-features = false, features = ["prettyprint"] }
+# The tables of `--output table`; arrow draws with it too.
+comfy-table = { version = "7", default-features = false }
+# `table write`'s random rows; uc-server has the same version.
+rand = "0.8"
+
+# `uc web`: the web UI and a proxy to the server's API.
+axum.workspace = true
+
+# Interactive TUI mode (default when `uc` is invoked with no subcommand).
+# `Paragraph::line_count`: the status line takes the rows of its text.
+ratatui = { workspace = true, features = ["unstable-rendered-line-info"] }
+crossterm.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+
+# `uc dev` stops uc-server with SIGTERM.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+uc-server = { path = "../uc-server" }
+uc-metastore.workspace = true
+axum.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "io-util", "test-util"] }
+tempfile = "3"
+# A fake identity provider for `auth login`.
+jsonwebtoken.workspace = true
+rsa = "0.9"
+base64 = "0.22"

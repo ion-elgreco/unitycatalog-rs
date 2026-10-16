@@ -1,0 +1,332 @@
+suite: server deployment
+templates:
+  - templates/server/deployment.yaml
+release:
+  name: uc-server
+  namespace: unitycatalog
+tests:
+  - it: runs one server of the chart's appVersion, with the API and the probes on their ports
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: metadata.name
+          value: uc-server-server
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/ion-elgreco/unitycatalog-rs:0.0.0-dev
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["--port", "8080", "--obs-port", "8081"]
+      - equal:
+          path: spec.template.spec.containers[0].ports
+          value:
+            - name: api
+              containerPort: 8080
+              protocol: TCP
+            - name: obs
+              containerPort: 8081
+              protocol: TCP
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet
+          value:
+            path: /readyz
+            port: obs
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet
+          value:
+            path: /livez
+            port: obs
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: default
+
+  - it: runs as the image's non-root user, on a read-only root filesystem, without privileges
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+  - it: gives Turso a writable /tmp, as the root filesystem is read-only
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}
+
+  - it: mounts uc.toml and the signing key read-only
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: config
+            mountPath: /etc/uc/config
+            readOnly: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: keys
+            mountPath: /etc/uc/keys
+            readOnly: true
+      - equal:
+          path: spec.template.spec.volumes[0].projected.sources
+          value:
+            - configMap:
+                name: uc-server-server-config
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: keys
+            secret:
+              secretName: uc-server-server-jwt-key
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_SIGNING_KEY_FILE
+            value: /etc/uc/keys/private_key.pem
+
+  - it: takes the image tag and pull settings from the values
+    set:
+      server.deployment.image.repository: registry.example.com/uc
+      server.deployment.image.tag: dev
+      server.deployment.image.pullPolicy: Always
+      server.deployment.imagePullSecrets:
+        - name: registry
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry.example.com/uc:dev
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: registry
+
+  - it: sets RUST_LOG and the extra environment variables
+    set:
+      server.logLevel: debug
+      server.deployment.env:
+        UC_SERVER_RATE_LIMIT_PER_SEC: "100"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: RUST_LOG
+            value: debug
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_SERVER_RATE_LIMIT_PER_SEC
+            value: "100"
+
+  - it: sets the web UI's sign-in from auth.oidc
+    set:
+      auth.enabled: true
+      auth.publicUrl: https://uc.example.com
+      auth.oidc.issuer: https://accounts.google.com
+      auth.oidc.clientSecretName: oauth
+      auth.oidc.endSession: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_MODE
+            value: oidc
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_OIDC_END_SESSION
+            value: "true"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_PUBLIC_URL
+            value: https://uc.example.com
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_OIDC_ISSUER
+            value: https://accounts.google.com
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_OIDC_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: oauth
+                key: clientId
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_OIDC_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: oauth
+                key: clientSecret
+                optional: true
+
+  - it: has no web sign-in without an issuer, or with authorization off
+    set:
+      auth.oidc.issuer: https://accounts.google.com
+      auth.oidc.clientSecretName: oauth
+      auth.publicUrl: https://uc.example.com
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          any: true
+          content:
+            name: UC_AUTH_MODE
+
+  - it: sets the sign-in through an auth proxy from auth.forward
+    set:
+      auth.enabled: true
+      auth.forward.trustedProxies: 10.42.0.0/16
+      auth.forward.logoutUrl: /oauth2/sign_out
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_MODE
+            value: forward
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_FORWARD_TRUSTED_PROXIES
+            value: 10.42.0.0/16
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_FORWARD_EMAIL_HEADER
+            value: Remote-Email
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_FORWARD_LOGOUT_URL
+            value: /oauth2/sign_out
+
+  - it: takes one sign-in, not both
+    set:
+      auth.enabled: true
+      auth.publicUrl: https://uc.example.com
+      auth.oidc.issuer: https://accounts.google.com
+      auth.oidc.clientSecretName: oauth
+      auth.forward.trustedProxies: 10.42.0.0/16
+    asserts:
+      - failedTemplate:
+          errorPattern: auth.oidc and auth.forward cannot both be set
+
+  - it: needs the public URL and the client Secret for the web sign-in
+    set:
+      auth.enabled: true
+      auth.oidc.issuer: https://accounts.google.com
+    asserts:
+      - failedTemplate:
+          errorPattern: auth.publicUrl is required
+
+  - it: takes the storage credentials from their Secrets
+    set:
+      storage.credentials.s3:
+        - bucketPath: s3://bucket
+          region: us-east-1
+          credentialsSecretName: s3-secret
+      storage.credentials.adls:
+        - storageAccountName: account
+          credentialsSecretName: adls-secret
+      storage.credentials.gcs:
+        - bucketPath: gs://bucket
+          credentialsSecretName: gcs-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_S3_0_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: s3-secret
+                key: accessKey
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_ADLS_0_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: adls-secret
+                key: clientSecret
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: gcs-0
+            mountPath: /etc/uc/gcs/0
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: gcs-0
+            secret:
+              secretName: gcs-secret
+
+  - it: drops the probes that are turned off and keeps the given ones
+    set:
+      server.deployment.enableStartupProbe: false
+      server.deployment.enableLivenessProbe: false
+      server.deployment.readinessProbe:
+        tcpSocket:
+          port: api
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].startupProbe
+      - notExists:
+          path: spec.template.spec.containers[0].livenessProbe
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe
+          value:
+            tcpSocket:
+              port: api
+
+  - it: uses the chart's ServiceAccount when it makes one
+    set:
+      serviceAccount.create: true
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: uc-server
+
+  - it: changes the pod annotations when uc.toml changes
+    set:
+      server.config.toml: "[tables]\nmanaged = false\n"
+    asserts:
+      - notEqual:
+          path: spec.template.metadata.annotations["checksum/serverConfig"]
+          # The checksum of an empty uc.toml.
+          value: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+  - it: renders nothing when the server is turned off
+    set:
+      server.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

@@ -1,0 +1,33 @@
+[package]
+name = "uc-common"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+# `ui`: the web UI's files, as uc-server and `uc web` serve them. It brings
+# axum and tower-http, which the web UI itself (wasm) does not use.
+ui = ["dep:axum", "dep:tower-http"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+utoipa.workspace = true
+http.workspace = true
+figment2.workspace = true
+humantime.workspace = true
+regex.workspace = true
+axum = { workspace = true, optional = true }
+tower-http = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Jail: tests with their own variables and working directory.
+figment2 = { workspace = true, features = ["test"] }
+rstest.workspace = true
+tempfile = "3"
+serde_urlencoded = "0.7"

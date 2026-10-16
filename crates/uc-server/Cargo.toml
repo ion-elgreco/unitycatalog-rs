@@ -1,0 +1,93 @@
+[package]
+name = "uc-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "uc-server"
+path = "src/main.rs"
+
+[features]
+default = []
+# Adds OTLP gRPC trace export via tracing-opentelemetry. Heavy build dep
+# (tonic + prost); off by default.
+otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry"]
+
+[dependencies]
+# `ui`: the web UI's files.
+uc-common = { workspace = true, features = ["ui"] }
+uc-api.workspace = true
+uc-delta.workspace = true
+uc-metastore.workspace = true
+
+# Credential vending: AWS STS, and Azure SAS signing.
+aws-config = { version = "1", default-features = false, features = ["rustls", "rt-tokio", "behavior-version-latest"] }
+aws-sdk-sts = { version = "1", default-features = false, features = ["rustls", "rt-tokio", "behavior-version-latest"] }
+hmac = "0.12"
+# The trusted proxies of the forward sign-in (`UC_AUTH_MODE=forward`).
+ipnet = "2"
+base64 = "0.22"
+chrono = { workspace = true }
+
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
+
+axum.workspace = true
+# `/` hands browsers to the web UI's files.
+tower.workspace = true
+tower-http.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+
+utoipa.workspace = true
+utoipa-axum.workspace = true
+utoipa-swagger-ui.workspace = true
+
+jsonwebtoken.workspace = true
+# The server's token signing keys, and ES512 identity-provider tokens.
+rsa = "0.9"
+rand = "0.8"
+p521 = { version = "0.13", features = ["ecdsa"] }
+reqwest.workspace = true
+percent-encoding.workspace = true
+sha2.workspace = true
+hex.workspace = true
+
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+# Process and system CPU for /metrics.
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+tower_governor.workspace = true
+
+cedar-policy.workspace = true
+
+tokio.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+futures.workspace = true
+object_store.workspace = true
+iceberg.workspace = true
+flate2.workspace = true
+uuid.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+serde_urlencoded = "0.7"
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+http-body-util = "0.1"
+serde_json = { workspace = true }
+jsonwebtoken.workspace = true
+tempfile = "3"
+rstest.workspace = true
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }

@@ -1,0 +1,32 @@
+[project]
+name = "unitycatalog-rs-server"
+version = "0.0.0.dev0"
+description = "uc-server, the server of unitycatalog-rs (Rust reimplementation of Unity Catalog OSS)."
+license = "Apache-2.0"
+authors = [{ name = "Ion Koutsouris" }]
+
+[project.readme]
+content-type = "text/markdown"
+text = """
+# unitycatalog-rs-server
+
+`uc-server`, the server of
+[unitycatalog-rs](https://github.com/ion-elgreco/unitycatalog-rs), a Rust
+reimplementation of Unity Catalog OSS, with upstream's REST API.
+
+Install it with the Python client and the `uc` command line:
+`pip install 'unitycatalog-rs[server]'`. Then:
+
+- `uc dev` runs it on localhost, with the web UI (`[ui]`)
+- `uc serve` runs it with its options, as `uc-server` does
+"""
+
+[build-system]
+requires = ["maturin>=1,<2"]
+build-backend = "maturin"
+
+# The `uc-server` binary of crates/uc-server, in the wheel's scripts.
+[tool.maturin]
+manifest-path = "../../crates/uc-server/Cargo.toml"
+bindings = "bin"
+strip = true

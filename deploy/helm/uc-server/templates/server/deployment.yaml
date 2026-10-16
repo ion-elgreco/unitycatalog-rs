@@ -1,0 +1,300 @@
+{{- if .Values.server.enabled -}}
+{{- $d := .Values.server.deployment -}}
+{{- if and (gt (int $d.replicaCount) 1) (eq .Values.server.db.type "file") }}
+{{- fail "server.deployment.replicaCount > 1 needs a shared database: set server.db.type to postgresql" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "unitycatalog.server.fullname" . | quote }}
+  labels: {{- include "unitycatalog.server.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $d.replicaCount }}
+  {{- with $d.updateStrategy }}
+  strategy: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "unitycatalog.server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # A new uc.toml, users included, rolls the pods.
+        checksum/serverConfig: {{ include "unitycatalog.server.ucToml" . | sha256sum | quote }}
+        {{- with $d.extraPodAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "unitycatalog.server.labels" . | nindent 8 }}
+        {{- with $d.extraPodLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $d.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "unitycatalog.serviceAccountName" . | quote }}
+      {{- with $d.podSecurityContext }}
+      securityContext: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $d.extraInitContainers }}
+      initContainers: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: server
+          {{- with $d.securityContext }}
+          securityContext: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ $d.image.repository }}:{{ $d.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ $d.image.pullPolicy | quote }}
+          args: ["--port", "{{ $d.port }}", "--obs-port", "{{ $d.obsPort }}"]
+          ports:
+            - name: api
+              containerPort: {{ $d.port }}
+              protocol: TCP
+            - name: obs
+              containerPort: {{ $d.obsPort }}
+              protocol: TCP
+          env:
+            - name: RUST_LOG
+              value: {{ .Values.server.logLevel | quote }}
+            # The settings: these variables, then the uc.toml of
+            # server.config.toml.
+            - name: UC_CONFIG
+              value: /etc/uc/config/uc.toml
+            # The signing key of the Secret, read-only: replicas share it.
+            - name: UC_AUTH_SIGNING_KEY_FILE
+              value: /etc/uc/keys/private_key.pem
+            {{- if not .Values.ui.enabled }}
+            - name: UC_UI_ENABLED
+              value: "false"
+            {{- end }}
+            - name: UC_AUTH_ENABLED
+              value: {{ .Values.auth.enabled | quote }}
+            {{- if .Values.auth.enabled }}
+            - name: UC_AUTH_COOKIE_TIMEOUT
+              value: {{ .Values.auth.cookieTimeout | quote }}
+            - name: UC_AUTH_ACCESS_TOKEN_TIMEOUT
+              value: {{ .Values.auth.accessTokenTimeout | quote }}
+            - name: UC_AUTH_ALLOWED_ISSUERS
+              value: {{ .Values.auth.allowedIssuers | quote }}
+            {{- with .Values.auth.audiences }}
+            - name: UC_AUTH_AUDIENCES
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.storage.tableStorageRoot }}
+            - name: UC_STORAGE_TABLES_ROOT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.storage.modelStorageRoot }}
+            - name: UC_STORAGE_MODELS_ROOT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if and .Values.auth.oidc.issuer .Values.auth.forward.trustedProxies }}
+            {{- fail "auth.oidc and auth.forward cannot both be set: choose one sign-in" }}
+            {{- end }}
+            {{- with .Values.auth.forward }}
+            {{- if and $.Values.auth.enabled .trustedProxies }}
+            # Sign-in through the auth proxy in front: its headers name the
+            # user, from its addresses only.
+            - name: UC_AUTH_MODE
+              value: forward
+            - name: UC_AUTH_FORWARD_TRUSTED_PROXIES
+              value: {{ .trustedProxies | quote }}
+            - name: UC_AUTH_FORWARD_EMAIL_HEADER
+              value: {{ .emailHeader | quote }}
+            - name: UC_AUTH_FORWARD_USER_HEADER
+              value: {{ .userHeader | quote }}
+            {{- with .logoutUrl }}
+            - name: UC_AUTH_FORWARD_LOGOUT_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.auth.oidc }}
+            {{- if and $.Values.auth.enabled .issuer }}
+            # The web UI's sign-in: the server signs users in with this
+            # OpenID Connect provider.
+            - name: UC_AUTH_MODE
+              value: oidc
+            - name: UC_AUTH_PUBLIC_URL
+              value: {{ required "auth.publicUrl is required with auth.oidc.issuer" $.Values.auth.publicUrl | quote }}
+            - name: UC_AUTH_OIDC_ISSUER
+              value: {{ .issuer | quote }}
+            - name: UC_AUTH_OIDC_SCOPES
+              value: {{ .scopes | quote }}
+            - name: UC_AUTH_OIDC_END_SESSION
+              value: {{ .endSession | quote }}
+            - name: UC_AUTH_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "auth.oidc.clientSecretName is required with auth.oidc.issuer" .clientSecretName | quote }}
+                  key: clientId
+            - name: UC_AUTH_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .clientSecretName | quote }}
+                  key: clientSecret
+                  optional: true
+            {{- end }}
+            {{- end }}
+            {{- if eq .Values.server.db.type "postgresql" }}
+            - name: UC_DB_URL
+              value: {{ include "unitycatalog.server.db.postgresqlUrl" . | quote }}
+            {{- with .Values.server.db.postgresqlConfig }}
+            - name: UC_DB_USER
+              value: {{ .username | quote }}
+            {{- if .passwordSecretName }}
+            - name: UC_DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .passwordSecretName | quote }}, key: {{ .passwordSecretKey | quote }}}}
+            {{- end }}
+            {{- end }}
+            {{- else if ne .Values.server.db.type "file" }}
+            {{- fail "server.db.type must be file or postgresql" }}
+            {{- end }}
+            # Cloud credentials, an entry per bucket or account, named by its
+            # index: UC_S3_0_BUCKET is bucket of [s3.0].
+            {{- range $index, $config := .Values.storage.credentials.s3 }}
+            - name: UC_S3_{{ $index }}_BUCKET
+              value: {{ $config.bucketPath | quote }}
+            {{- with $config.region }}
+            - name: UC_S3_{{ $index }}_REGION
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $config.awsRoleArn }}
+            - name: UC_S3_{{ $index }}_ROLE_ARN
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $config.credentialsSecretName }}
+            - name: UC_S3_{{ $index }}_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: {{ . | quote }}, key: accessKey}}
+            - name: UC_S3_{{ $index }}_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: {{ . | quote }}, key: secretKey}}
+            {{- end }}
+            {{- end }}
+            {{- range $index, $config := .Values.storage.credentials.adls }}
+            - name: UC_ADLS_{{ $index }}_ACCOUNT
+              value: {{ $config.storageAccountName | quote }}
+            - name: UC_ADLS_{{ $index }}_TENANT_ID
+              valueFrom: {secretKeyRef: {name: {{ $config.credentialsSecretName | quote }}, key: tenantId}}
+            - name: UC_ADLS_{{ $index }}_CLIENT_ID
+              valueFrom: {secretKeyRef: {name: {{ $config.credentialsSecretName | quote }}, key: clientId}}
+            - name: UC_ADLS_{{ $index }}_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: {{ $config.credentialsSecretName | quote }}, key: clientSecret}}
+            {{- end }}
+            {{- range $index, $config := .Values.storage.credentials.gcs }}
+            - name: UC_GCS_{{ $index }}_BUCKET
+              value: {{ $config.bucketPath | quote }}
+            - name: UC_GCS_{{ $index }}_JSON_KEY_FILE
+              value: /etc/uc/gcs/{{ $index }}/jsonKey
+            {{- end }}
+            {{- range $k, $v := $d.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          {{- if $d.enableStartupProbe }}
+          startupProbe:
+            {{- if $d.startupProbe }}
+            {{- toYaml $d.startupProbe | nindent 12 }}
+            {{- else }}
+            httpGet: {path: /livez, port: obs}
+            periodSeconds: 5
+            failureThreshold: 60
+            {{- end }}
+          {{- end }}
+          {{- if $d.enableLivenessProbe }}
+          livenessProbe:
+            {{- if $d.livenessProbe }}
+            {{- toYaml $d.livenessProbe | nindent 12 }}
+            {{- else }}
+            httpGet: {path: /livez, port: obs}
+            periodSeconds: 10
+            {{- end }}
+          {{- end }}
+          {{- if $d.enableReadinessProbe }}
+          readinessProbe:
+            {{- if $d.readinessProbe }}
+            {{- toYaml $d.readinessProbe | nindent 12 }}
+            {{- else }}
+            httpGet: {path: /readyz, port: obs}
+            periodSeconds: 5
+            {{- end }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/uc/config
+              readOnly: true
+            - name: keys
+              mountPath: /etc/uc/keys
+              readOnly: true
+            {{- if eq .Values.server.db.type "file" }}
+            - name: db
+              mountPath: /data
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+            {{- range $index, $config := .Values.storage.credentials.gcs }}
+            - name: gcs-{{ $index }}
+              mountPath: /etc/uc/gcs/{{ $index }}
+              readOnly: true
+            {{- end }}
+            {{- with $d.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with $d.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- with $d.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+        # uc.toml, and the root certificate of the database.
+        - name: config
+          projected:
+            sources:
+              - configMap:
+                  name: {{ printf "%s-config" (include "unitycatalog.server.fullname" .) | quote }}
+              {{- with .Values.server.db.postgresqlConfig.ssl }}
+              {{- if and (eq $.Values.server.db.type "postgresql") .enabled .rootCertConfigMapName }}
+              - configMap:
+                  name: {{ .rootCertConfigMapName | quote }}
+                  items:
+                    - key: {{ .rootCertConfigMapKey | quote }}
+                      path: dbrootca.crt
+              {{- end }}
+              {{- end }}
+        # The signing key, read-only: replicas share it.
+        - name: keys
+          secret:
+            secretName: {{ include "unitycatalog.server.jwtKeypairSecretName" . | quote }}
+        {{- if eq .Values.server.db.type "file" }}
+        - name: db
+          {{- if .Values.server.db.fileConfig.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "unitycatalog.server.db.filePvcName" . | quote }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+        # Turso's temporary files (temporary tables, sorts): the root
+        # filesystem is read-only.
+        - name: tmp
+          emptyDir: {}
+        {{- range $index, $config := .Values.storage.credentials.gcs }}
+        - name: gcs-{{ $index }}
+          secret:
+            secretName: {{ $config.credentialsSecretName | quote }}
+        {{- end }}
+        {{- with $d.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $d.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $d.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $d.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

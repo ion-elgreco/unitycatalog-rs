@@ -1,0 +1,2 @@
+# The unit tests (`just test-helm`) stay out of the packaged chart.
+tests/

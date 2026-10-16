@@ -1,0 +1,31 @@
+[package]
+name = "uc-metastore"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+uc-common.workspace = true
+uc-api.workspace = true
+uc-storage.workspace = true
+uc-delta.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+refinery.workspace = true
+refinery-core.workspace = true
+time.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+hex.workspace = true
+futures.workspace = true
+chrono.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tempfile = "3"

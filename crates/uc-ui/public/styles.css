@@ -1,0 +1,1330 @@
+/* ===========================================================================
+   uc-ui — CSS for the look of upstream's UI, which uses Ant Design 5.19. The
+   values are antd's default theme, read from upstream's UI in a browser.
+   ========================================================================= */
+
+:root {
+  --uc-primary: #1677ff;
+  --uc-primary-hover: #4096ff;
+  --uc-primary-active: #0958d9;
+  --uc-focus: #91caff;
+  --uc-danger: #ff4d4f;
+  --uc-danger-hover: #ff7875;
+  --uc-danger-border-hover: #ffa39e;
+  --uc-danger-active: #d9363e;
+  --uc-success: #52c41a;
+
+  --uc-text: rgba(0, 0, 0, 0.88);
+  --uc-text-secondary: rgba(0, 0, 0, 0.45);
+  --uc-text-quaternary: rgba(0, 0, 0, 0.25);
+
+  --uc-border: #d9d9d9;
+  --uc-border-light: #f0f0f0;
+  /* Upstream's own lines: the sidebar and the details column. */
+  --uc-line: lightgrey;
+  --uc-bg: #ffffff;
+  --uc-bg-alt: #fafafa;
+  --uc-fill-hover: rgba(0, 0, 0, 0.04);
+  --uc-fill-text-hover: rgba(0, 0, 0, 0.06);
+  --uc-fill-text-active: rgba(0, 0, 0, 0.15);
+  --uc-selected: #e6f4ff;
+
+  --uc-header-bg: #001529;
+
+  --uc-radius: 6px;
+  --uc-radius-lg: 8px;
+  --uc-radius-sm: 4px;
+  --uc-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05);
+  --uc-ease: cubic-bezier(0.645, 0.045, 0.355, 1);
+
+  /* antd 5's font stacks: the system's fonts, no web fonts to load. */
+  --uc-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+    "Noto Color Emoji";
+  --uc-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--uc-font);
+  font-size: 14px;
+  line-height: 1.5714285714285714;
+  color: var(--uc-text);
+  background: var(--uc-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: var(--uc-primary);
+  text-decoration: none;
+}
+a:hover { color: var(--uc-primary-hover); }
+
+button { font-family: inherit; }
+
+/* antd's `.anticon`. */
+.uc-icon {
+  display: inline-flex;
+  align-items: center;
+  color: inherit;
+  font-style: normal;
+  line-height: 0;
+  text-align: center;
+  vertical-align: -0.125em;
+}
+.uc-icon svg { display: inline-block; }
+
+/* ---------- Layout shell ---------- */
+/* As tall as the window: the sidebar and the page scroll on their own,
+   below a fixed header, as upstream's `calc(100vh - 64px)` content. */
+.uc-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* antd's `Layout.Header`. */
+.uc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  height: 64px;
+  padding: 0 50px;
+  line-height: 64px;
+  background: var(--uc-header-bg);
+}
+
+.uc-header__left {
+  display: flex;
+  align-items: center;
+  flex: 1 0 auto;
+}
+
+.uc-header__logo {
+  display: flex;
+  align-items: center;
+  margin-right: 24px;
+}
+
+/* antd's dark horizontal `Menu`. */
+.uc-header__menu {
+  display: flex;
+  flex: 1;
+  height: 64px;
+}
+
+.uc-header__menu-item {
+  display: block;
+  padding: 0 16px;
+  height: 64px;
+  line-height: 64px;
+  color: rgba(255, 255, 255, 0.65);
+  transition: border-color 0.3s, background 0.3s, color 0.3s;
+}
+.uc-header__menu-item:hover { color: #ffffff; }
+.uc-header__menu-item.is-selected,
+.uc-header__menu-item.is-selected:hover {
+  background: var(--uc-primary);
+  color: #ffffff;
+}
+
+.uc-header__right {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+/* "API docs", in the menu's colors; the icon says that it opens a new tab. */
+.uc-header__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.65);
+  transition: color 0.3s;
+}
+.uc-header__link:hover { color: #ffffff; }
+
+/* antd's `Avatar` with an icon. */
+.uc-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #000000;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.uc-content {
+  flex: 1;
+  display: flex;
+  min-height: 0; /* allows children to scroll */
+  background: var(--uc-bg);
+}
+
+.uc-sidebar {
+  width: 30%;
+  min-width: 260px;
+  max-width: 400px;
+  border-right: 1px solid var(--uc-line);
+}
+
+.uc-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+/* ---------- Schema browser: antd's `Tree` with `showLine` ---------- */
+.uc-browser {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.uc-browser__title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 8px 12px;
+  background: #ffffff;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.uc-tree {
+  margin: 0 12px;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.uc-tree-row {
+  display: flex;
+  align-items: flex-start;
+  padding-bottom: 4px;
+}
+
+.uc-tree-switcher {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--uc-radius);
+  background: transparent;
+  color: var(--uc-text);
+  font-size: 10px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+.uc-tree-switcher:hover { background: var(--uc-fill-text-hover); }
+.uc-tree-switcher .uc-icon svg { transition: transform 0.3s; }
+.uc-tree-switcher.is-closed .uc-icon svg { transform: rotate(-90deg); }
+.uc-tree-switcher--leaf,
+.uc-tree-switcher--leaf:hover {
+  background: transparent;
+  cursor: default;
+}
+
+/* A leaf's line: down from its parent, and to its label. */
+.uc-tree-leaf-line {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  height: 100%;
+}
+.uc-tree-leaf-line::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: -4px;
+  left: 11px;
+  border-left: 1px solid var(--uc-border);
+}
+.uc-tree-leaf-line::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 12px;
+  width: 9.6px;
+  height: 12px;
+  border-bottom: 1px solid var(--uc-border);
+}
+.uc-tree-item:last-child > .uc-tree-row .uc-tree-leaf-line::before {
+  bottom: auto;
+  height: 12px;
+}
+
+/* A label is a name: a long one breaks at any letter, so that it starts on
+   the line of its icon. */
+.uc-tree-label {
+  display: block;
+  min-height: 24px;
+  padding: 0 4px;
+  border-radius: var(--uc-radius);
+  color: var(--uc-text);
+  line-height: 24px;
+  word-break: break-all;
+  transition: background-color 0.2s;
+}
+.uc-tree-label:hover {
+  background: var(--uc-fill-hover);
+  color: var(--uc-text);
+}
+.uc-tree-label.is-selected { background: var(--uc-selected); }
+.uc-tree-label:focus-visible {
+  outline: 2px solid var(--uc-focus);
+  outline-offset: -2px;
+}
+
+.uc-tree-placeholder {
+  padding: 0 4px;
+  color: var(--uc-text-secondary);
+  line-height: 24px;
+  overflow-wrap: anywhere;
+}
+
+/* A node's children; the line of a node that has siblings below runs down
+   beside them. */
+.uc-tree-children {
+  position: relative;
+  margin-left: 24px;
+}
+.uc-tree-item:not(:last-child) > .uc-tree-children::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -13px;
+  border-left: 1px solid var(--uc-border);
+}
+
+.uc-hidden { display: none; }
+
+/* ---------- Typography: antd's `Typography` ---------- */
+/* A name can have 255 characters and no place to break, and a comment can
+   hold a long word such as a URL: as in antd's typography, the text breaks
+   them where it must. */
+.uc-title-2,
+.uc-title-3,
+.uc-title-4,
+.uc-title-5 {
+  margin: 0;
+  color: var(--uc-text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.uc-title-2 { font-size: 30px; line-height: 38px; }
+.uc-title-3 { font-size: 24px; line-height: 32px; }
+/* A detail page's title, and a name with its icon in a list: a long name
+   breaks at any letter, so that it starts on the line of its icon. */
+.uc-title-3,
+.uc-name { word-break: break-all; }
+.uc-title-4 { font-size: 20px; line-height: 28px; }
+.uc-title-5 { font-size: 16px; line-height: 24px; }
+
+.uc-text-secondary { color: var(--uc-text-secondary); }
+.uc-text-danger { color: var(--uc-danger); }
+.uc-text-success { color: var(--uc-success); }
+.uc-text-strong { font-weight: 600; }
+.uc-text-code {
+  margin: 0 0.2em;
+  padding: 0.2em 0.4em 0.1em;
+  font-family: var(--uc-mono);
+  font-size: 85%;
+  background: rgba(150, 150, 150, 0.1);
+  border: 1px solid rgba(100, 100, 100, 0.2);
+  border-radius: 3px;
+}
+.uc-pre-wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.uc-center { text-align: center; }
+.uc-mb-md { margin-bottom: 16px; }
+
+/* ---------- Flex helpers ---------- */
+.uc-flex { display: flex; }
+.uc-flex-col { display: flex; flex-direction: column; }
+.uc-gap-sm { gap: 8px; }
+.uc-gap-md { gap: 16px; }
+.uc-gap-xl { gap: 60px; }
+.uc-justify-between { justify-content: space-between; }
+.uc-items-center { align-items: center; }
+.uc-items-start { align-items: flex-start; }
+.uc-grow { flex-grow: 1; }
+
+/* ---------- Buttons: antd's `Button` ---------- */
+.uc-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 32px;
+  padding: 4px 15px;
+  border: 1px solid var(--uc-border);
+  border-radius: var(--uc-radius);
+  background: #ffffff;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.02);
+  color: var(--uc-text);
+  font-size: 14px;
+  line-height: 22px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s var(--uc-ease);
+}
+.uc-btn:hover { color: var(--uc-primary-hover); border-color: var(--uc-primary-hover); }
+.uc-btn:active { color: var(--uc-primary-active); border-color: var(--uc-primary-active); }
+.uc-btn:focus-visible { outline: 4px solid var(--uc-focus); outline-offset: 1px; }
+
+.uc-btn--primary {
+  background: var(--uc-primary);
+  border-color: transparent;
+  box-shadow: 0 2px 0 rgba(5, 145, 255, 0.1);
+  color: #ffffff;
+}
+.uc-btn--primary:hover { background: var(--uc-primary-hover); border-color: transparent; color: #ffffff; }
+.uc-btn--primary:active { background: var(--uc-primary-active); border-color: transparent; color: #ffffff; }
+
+/* antd's `okType="danger"`: a white button in red. */
+.uc-btn--danger { border-color: var(--uc-danger); color: var(--uc-danger); }
+.uc-btn--danger:hover { border-color: var(--uc-danger-border-hover); color: var(--uc-danger-hover); }
+.uc-btn--danger:active { border-color: var(--uc-danger-active); color: var(--uc-danger-active); }
+
+.uc-btn--text {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--uc-text);
+}
+.uc-btn--text:hover { background: var(--uc-fill-text-hover); border-color: transparent; color: var(--uc-text); }
+.uc-btn--text:active { background: var(--uc-fill-text-active); border-color: transparent; color: var(--uc-text); }
+
+/* antd's `type="text"` with `danger`: Delete in a row of the tokens list. */
+.uc-btn--text-danger { color: var(--uc-danger); }
+.uc-btn--text-danger:hover { background: #fff2f0; color: var(--uc-danger-hover); }
+.uc-btn--text-danger:active { background: #ffccc7; color: var(--uc-danger-active); }
+
+.uc-btn--icon {
+  width: 32px;
+  padding: 4px 0;
+  font-size: 16px;
+}
+
+.uc-btn:disabled,
+.uc-btn:disabled:hover {
+  border-color: var(--uc-border);
+  background: rgba(0, 0, 0, 0.04);
+  box-shadow: none;
+  color: var(--uc-text-quaternary);
+  cursor: not-allowed;
+}
+
+/* A call runs: antd's `loading`. */
+.uc-btn--loading {
+  opacity: 0.65;
+  cursor: default;
+  pointer-events: none;
+}
+.uc-spin-icon { display: inline-flex; }
+.uc-spin-icon .uc-icon svg { animation: uc-spin 1s linear infinite; }
+
+/* The three dots of the action menu turn while it is open; its button
+   keeps the hover color, which the menu's backdrop would take away. */
+.uc-more { display: inline-flex; transition: transform 0.5s; }
+.uc-dropdown.is-open .uc-more { transform: rotate(90deg); }
+.uc-dropdown.is-open > .uc-btn--text { background: var(--uc-fill-text-hover); }
+
+.uc-icon-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ---------- Breadcrumbs: antd's `Breadcrumb` ---------- */
+.uc-breadcrumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--uc-text-secondary);
+  font-size: 14px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+.uc-breadcrumbs__link {
+  display: inline-block;
+  min-height: 22px;
+  margin: 0 -4px;
+  padding: 0 4px;
+  border-radius: var(--uc-radius-sm);
+  color: var(--uc-text-secondary);
+  transition: color 0.2s;
+}
+.uc-breadcrumbs__link:hover {
+  background: var(--uc-fill-text-hover);
+  color: var(--uc-text);
+}
+.uc-breadcrumbs__sep { margin: 0 8px; }
+.uc-breadcrumbs__current { color: var(--uc-text); }
+
+/* ---------- Lists: the search row, as antd's `Row` with a gutter of 8 ---------- */
+.uc-list__bar {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 8px;
+  margin: 0 -4px;
+}
+/* The search box: 12 of 24 columns, 10 from 768 px, 8 from 992 px, 6 from
+   1200 px. */
+.uc-list__search {
+  flex: 0 0 50%;
+  max-width: 50%;
+  padding: 0 4px;
+}
+@media (min-width: 768px) {
+  .uc-list__search { flex-basis: 41.66666667%; max-width: 41.66666667%; }
+}
+@media (min-width: 992px) {
+  .uc-list__search { flex-basis: 33.33333333%; max-width: 33.33333333%; }
+}
+@media (min-width: 1200px) {
+  .uc-list__search { flex-basis: 25%; max-width: 25%; }
+}
+.uc-list__filters {
+  flex: 1 1 auto;
+  padding: 0 4px;
+}
+
+/* antd's `Input` with a prefix. */
+.uc-input-affix {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
+  padding: 4px 11px;
+  border: 1px solid var(--uc-border);
+  border-radius: var(--uc-radius);
+  background: #ffffff;
+  font-size: 14px;
+  line-height: 22px;
+  transition: all 0.2s;
+}
+.uc-input-affix:hover { border-color: var(--uc-primary-hover); }
+.uc-input-affix:focus-within {
+  border-color: var(--uc-primary);
+  box-shadow: 0 0 0 2px rgba(5, 145, 255, 0.1);
+}
+.uc-input-affix__prefix {
+  display: flex;
+  flex: none;
+  margin-right: 4px;
+  color: var(--uc-text);
+}
+.uc-input-affix input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--uc-text);
+  font: inherit;
+}
+.uc-input-affix input::placeholder { color: var(--uc-text-quaternary); }
+
+/* ---------- Tables: antd's `Table` ---------- */
+.uc-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: #ffffff;
+  color: var(--uc-text);
+  font-size: 14px;
+  line-height: 22px;
+}
+/* `anywhere`, not antd's `break-word`: a long name breaks in its column,
+   and does not make the table wider than the page. */
+.uc-table th,
+.uc-table td {
+  position: relative;
+  padding: 16px;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+.uc-table thead th {
+  background: var(--uc-bg-alt);
+  border-bottom: 1px solid var(--uc-border-light);
+  font-weight: 600;
+  transition: background 0.2s;
+}
+.uc-table thead th:first-child { border-top-left-radius: var(--uc-radius-lg); }
+.uc-table thead th:last-child { border-top-right-radius: var(--uc-radius-lg); }
+/* The line between the column titles. */
+.uc-table thead th:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 1px;
+  height: 1.6em;
+  background: var(--uc-border-light);
+  transform: translateY(-50%);
+}
+.uc-table tbody td {
+  border-bottom: 1px solid var(--uc-border-light);
+  transition: background 0.2s;
+}
+.uc-table tbody tr:hover > td { background: var(--uc-bg-alt); }
+.uc-table--clickable tbody tr { cursor: pointer; }
+.uc-table .uc-center { text-align: center; }
+.uc-table tbody tr.uc-table__placeholder,
+.uc-table tbody tr.uc-table__placeholder:hover > td {
+  background: #ffffff;
+  cursor: default;
+}
+
+/* A bordered table without titles: the version details. */
+.uc-table--bordered {
+  border: 1px solid var(--uc-border-light);
+  border-radius: var(--uc-radius-lg);
+  overflow: hidden;
+}
+.uc-table--bordered th,
+.uc-table--bordered td {
+  border-right: 1px solid var(--uc-border-light);
+  border-bottom: 1px solid var(--uc-border-light);
+}
+.uc-table--bordered tbody th {
+  background: var(--uc-bg-alt);
+  font-weight: 600;
+}
+.uc-table--bordered tr > :last-child { border-right: none; }
+.uc-table--bordered tbody tr:last-child > * { border-bottom: none; }
+.uc-table--bordered tbody tr:hover > td { background: #ffffff; }
+
+/* antd's `Empty`. */
+.uc-empty {
+  margin: 32px 0;
+  color: var(--uc-text-quaternary);
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+}
+.uc-empty__image {
+  display: block;
+  height: 40px;
+  margin: 0 auto 8px;
+}
+
+/* ---------- Pagination: antd's `Pagination` ---------- */
+.uc-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  row-gap: 8px;
+  margin: 16px 0;
+  padding: 0;
+  list-style: none;
+  color: var(--uc-text);
+  font-size: 14px;
+  line-height: 22px;
+}
+.uc-pagination > li { margin-right: 8px; }
+.uc-pagination > li:last-child { margin-right: 0; }
+.uc-pagination__total {
+  height: 32px;
+  line-height: 30px;
+}
+.uc-pagination button {
+  position: relative;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--uc-radius);
+  background: transparent;
+  color: var(--uc-text);
+  font: inherit;
+  line-height: 30px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.uc-pagination__item button:hover,
+.uc-pagination__step button:hover:not(:disabled) { background: var(--uc-fill-text-hover); }
+.uc-pagination__item.is-active button {
+  border-color: var(--uc-primary);
+  background: #ffffff;
+  color: var(--uc-primary);
+  font-weight: 600;
+}
+.uc-pagination__item.is-active button:hover {
+  border-color: var(--uc-primary-hover);
+  background: #ffffff;
+  color: var(--uc-primary-hover);
+}
+.uc-pagination__step button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 12px;
+}
+.uc-pagination__step button:disabled {
+  color: var(--uc-text-quaternary);
+  cursor: not-allowed;
+}
+.uc-pagination__jump button { padding: 0; }
+.uc-pagination__dots {
+  color: var(--uc-text-quaternary);
+  letter-spacing: 2px;
+  transition: opacity 0.2s;
+}
+.uc-pagination__arrow {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--uc-primary);
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.uc-pagination__jump button:hover .uc-pagination__dots { opacity: 0; }
+.uc-pagination__jump button:hover .uc-pagination__arrow { opacity: 1; }
+.uc-pagination__size { margin-left: 8px; }
+
+/* antd's `Select`, closed. */
+.uc-select {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--uc-border);
+  border-radius: var(--uc-radius);
+  background: #ffffff;
+  color: var(--uc-text);
+  font: inherit;
+  line-height: 22px;
+  cursor: pointer;
+  transition: all 0.2s var(--uc-ease);
+}
+.uc-select:hover { border-color: var(--uc-primary-hover); }
+.uc-select__value { padding-right: 18px; }
+.uc-select__arrow {
+  display: inline-flex;
+  color: var(--uc-text-quaternary);
+  font-size: 12px;
+}
+.uc-select__option.is-selected {
+  background: var(--uc-selected);
+  font-weight: 600;
+}
+
+/* ---------- Forms: antd's vertical `Form`, `Input` and `TextArea` ---------- */
+.uc-input,
+.uc-textarea {
+  width: 100%;
+  padding: 4px 11px;
+  border: 1px solid var(--uc-border);
+  border-radius: var(--uc-radius);
+  background: #ffffff;
+  color: var(--uc-text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  transition: all 0.2s;
+}
+.uc-input { height: 32px; }
+.uc-textarea {
+  min-height: 54px;
+  resize: vertical;
+  vertical-align: bottom;
+}
+.uc-input:hover,
+.uc-textarea:hover { border-color: var(--uc-primary-hover); }
+.uc-input:focus,
+.uc-textarea:focus {
+  outline: none;
+  border-color: var(--uc-primary);
+  box-shadow: 0 0 0 2px rgba(5, 145, 255, 0.1);
+}
+
+.uc-form-item { margin-bottom: 24px; }
+.uc-form-item label {
+  display: block;
+  padding-bottom: 8px;
+  font-weight: 600;
+  line-height: 22px;
+}
+.uc-form-item label .req {
+  margin-right: 4px;
+  color: var(--uc-danger);
+  font-family: SimSun, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1;
+}
+/* What goes with a field, below it, such as when a new token expires. */
+.uc-form-hint { margin-top: 8px; }
+
+/* antd's `Checkbox`: the box that sets `force` in a delete dialog. */
+.uc-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 16px;
+  line-height: 22px;
+  cursor: pointer;
+}
+.uc-checkbox input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+  accent-color: var(--uc-primary);
+  cursor: pointer;
+}
+
+/* What a delete with `force` takes along: antd's warning `Alert`. */
+.uc-force-note {
+  margin: 8px 0 0 24px;
+  padding: 8px 12px;
+  border: 1px solid #ffe58f;
+  border-radius: var(--uc-radius-lg);
+  background: #fffbe6;
+}
+.uc-modal__body p.uc-force-note { margin: 8px 0 0 24px; }
+
+/* ---------- Alerts: antd's `Alert` ---------- */
+.uc-alert {
+  display: flex;
+  align-items: flex-start;
+  padding: 8px 12px;
+  border: 1px solid;
+  border-radius: var(--uc-radius-lg);
+  line-height: 22px;
+}
+.uc-alert--success { border-color: #b7eb8f; background: #f6ffed; }
+.uc-alert--warning { border-color: #ffe58f; background: #fffbe6; }
+/* With an icon and a description: the new access token. */
+.uc-alert--large { padding: 20px 24px; }
+.uc-alert__icon {
+  display: inline-flex;
+  margin-right: 12px;
+  font-size: 24px;
+  line-height: 1;
+}
+.uc-alert--success .uc-alert__icon { color: var(--uc-success); }
+.uc-alert__content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.uc-alert__message { font-size: 16px; line-height: 24px; }
+.uc-alert__close {
+  display: inline-flex;
+  margin-left: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--uc-text-secondary);
+  font-size: 12px;
+  line-height: 22px;
+  cursor: pointer;
+  transition: color 0.3s;
+}
+.uc-alert__close:hover { color: var(--uc-text); }
+
+/* The new access token, and the button that copies it. */
+.uc-token-field {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.uc-token-field .uc-input { font-family: var(--uc-mono); }
+
+/* ---------- Radio buttons: antd's `Radio.Button` group ---------- */
+.uc-radio-group {
+  display: inline-flex;
+  font-size: 14px;
+}
+.uc-radio-group button {
+  position: relative;
+  height: 32px;
+  margin: 0;
+  padding: 0 15px;
+  border: 1px solid var(--uc-border);
+  border-left-width: 0;
+  background: #ffffff;
+  color: var(--uc-text);
+  font-size: 14px;
+  line-height: 30px;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+.uc-radio-group button:first-child {
+  border-left-width: 1px;
+  border-radius: var(--uc-radius) 0 0 var(--uc-radius);
+}
+.uc-radio-group button:last-child { border-radius: 0 var(--uc-radius) var(--uc-radius) 0; }
+.uc-radio-group button:not(:first-child)::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 1px;
+  height: 100%;
+  padding: 1px 0;
+  box-sizing: content-box;
+  background: var(--uc-border);
+  transition: background-color 0.3s;
+}
+.uc-radio-group button:hover { color: var(--uc-primary); }
+.uc-radio-group button.is-checked {
+  z-index: 1;
+  border-color: var(--uc-primary);
+  color: var(--uc-primary);
+}
+.uc-radio-group button.is-checked::before { background: var(--uc-primary); }
+.uc-radio-group button.is-checked:hover {
+  border-color: var(--uc-primary-hover);
+  color: var(--uc-primary-hover);
+}
+.uc-radio-group button:focus-visible { outline: 3px solid var(--uc-focus); outline-offset: 0; }
+
+/* ---------- Dropdown menus: antd's `Dropdown` ---------- */
+.uc-dropdown {
+  position: relative;
+  display: inline-block;
+  line-height: normal;
+}
+.uc-dropdown__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1050;
+  padding: 4px;
+  border-radius: var(--uc-radius-lg);
+  background: #ffffff;
+  box-shadow: var(--uc-shadow);
+  line-height: 22px;
+}
+.uc-dropdown__menu--right {
+  left: auto;
+  right: 0;
+}
+/* Takes the clicks outside the open menu, which close it. */
+.uc-dropdown__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1049;
+}
+.uc-dropdown__item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  padding: 5px 12px;
+  border: none;
+  border-radius: var(--uc-radius-sm);
+  background: none;
+  color: var(--uc-text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.uc-dropdown__item:hover,
+.uc-dropdown__item:focus-visible {
+  outline: none;
+  background: var(--uc-fill-hover);
+}
+/* A link in a menu, such as "Access tokens", stays the color of the text. */
+a.uc-dropdown__item:hover { color: var(--uc-text); }
+.uc-dropdown__icon {
+  display: inline-flex;
+  min-width: 14px;
+  margin-right: 8px;
+  font-size: 12px;
+}
+.uc-dropdown__item--danger { color: var(--uc-danger); }
+.uc-dropdown__item--danger:hover,
+.uc-dropdown__item--danger:focus-visible {
+  background: var(--uc-danger);
+  color: #ffffff;
+}
+.uc-dropdown__divider {
+  height: 1px;
+  margin: 4px 0;
+  background: rgba(5, 5, 5, 0.06);
+}
+.uc-dropdown__user {
+  flex-direction: column;
+  align-items: flex-start;
+  cursor: default;
+}
+.uc-dropdown__user:hover { background: none; }
+
+/* ---------- Modals: antd's `Modal` ---------- */
+/* Scrolls when a modal is taller than the window, as antd's modal wrap. */
+.uc-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 100px 0 24px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.45);
+}
+.uc-modal {
+  position: relative;
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  margin: 0;
+  padding: 20px 24px;
+  border-radius: var(--uc-radius-lg);
+  background: #ffffff;
+  box-shadow: var(--uc-shadow);
+  font-size: 14px;
+  line-height: 22px;
+  outline: none;
+}
+.uc-modal__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--uc-radius-sm);
+  background: transparent;
+  color: var(--uc-text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  transition: color 0.2s, background-color 0.2s;
+}
+.uc-modal__close:hover {
+  background: var(--uc-fill-text-hover);
+  color: var(--uc-text);
+}
+.uc-modal__header { margin-bottom: 8px; }
+.uc-modal__body { overflow-wrap: anywhere; }
+.uc-modal__body p { margin: 0 0 14px; }
+.uc-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* ---------- Toasts: antd's `notification` ---------- */
+.uc-toasts {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 2050;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 16px;
+  width: 384px;
+  max-width: calc(100vw - 48px);
+}
+.uc-toasts--stacked { display: block; }
+.uc-toasts--stacked .uc-toast {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+.uc-toast {
+  position: relative;
+  width: 100%;
+  padding: 20px 24px;
+  border-radius: var(--uc-radius-lg);
+  background: #ffffff;
+  box-shadow: var(--uc-shadow);
+  color: var(--uc-text);
+  font-size: 14px;
+  line-height: 22px;
+  transition: transform 0.3s, opacity 0.3s;
+  animation: uc-toast-in 0.24s var(--uc-ease);
+}
+.uc-toast__icon {
+  position: absolute;
+  top: 20px;
+  left: 24px;
+  display: flex;
+  font-size: 24px;
+  line-height: 24px;
+}
+.uc-toast__icon--success { color: var(--uc-success); }
+.uc-toast__icon--error { color: var(--uc-danger); }
+.uc-toast__message {
+  margin: 0 0 8px 36px;
+  padding-right: 24px;
+  font-size: 16px;
+  line-height: 24px;
+  overflow-wrap: anywhere;
+}
+.uc-toast__description {
+  margin-left: 36px;
+  overflow-wrap: anywhere;
+}
+.uc-toast__close {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--uc-radius-sm);
+  background: transparent;
+  color: var(--uc-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+}
+.uc-toast__close:hover {
+  background: var(--uc-fill-text-hover);
+  color: var(--uc-text);
+}
+@keyframes uc-toast-in {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ---------- Tooltips: antd's `Tooltip`, above ---------- */
+.uc-tooltip {
+  position: relative;
+  display: inline-flex;
+}
+.uc-tooltip__bubble {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 1070;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: var(--uc-radius);
+  background: rgba(0, 0, 0, 0.85);
+  box-shadow: var(--uc-shadow);
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: start;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.1s, visibility 0.1s;
+}
+.uc-tooltip__bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-top-color: rgba(0, 0, 0, 0.85);
+}
+.uc-tooltip:hover .uc-tooltip__bubble {
+  visibility: visible;
+  opacity: 1;
+  transition-delay: 0.1s;
+}
+
+/* ---------- Login ---------- */
+/* Upstream's logo, card and gradient. Upstream's card is 276px high for
+   three sign-in buttons; this one is as high as what it holds: one
+   button, or a text. */
+.uc-login {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  min-height: 100vh;
+  padding: 16px;
+  background: linear-gradient(#131d35, #252342, #1e2e3a);
+}
+.uc-login__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  width: 360px;
+  max-width: 100%;
+  padding: 32px;
+  border-radius: 16px;
+  background: #f6f7f9;
+}
+.uc-login__provider {
+  width: 100%;
+  height: 40px;
+}
+.uc-login__text {
+  margin: 0;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Loading and failures ---------- */
+/* antd's `Spin`: four dots that turn. */
+.uc-spin-dot {
+  position: relative;
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  transform: rotate(45deg);
+  animation: uc-rotate 1.2s infinite linear;
+}
+.uc-spin-dot i {
+  position: absolute;
+  display: block;
+  width: 9px;
+  height: 9px;
+  border-radius: 100%;
+  background: var(--uc-primary);
+  opacity: 0.3;
+  transform: scale(0.75);
+  transform-origin: 50% 50%;
+  animation: uc-spin-move 1s infinite linear alternate;
+}
+.uc-spin-dot i:nth-child(1) { top: 0; left: 0; }
+.uc-spin-dot i:nth-child(2) { top: 0; right: 0; animation-delay: 0.4s; }
+.uc-spin-dot i:nth-child(3) { right: 0; bottom: 0; animation-delay: 0.8s; }
+.uc-spin-dot i:nth-child(4) { bottom: 0; left: 0; animation-delay: 1.2s; }
+@keyframes uc-spin-move { to { opacity: 1; } }
+@keyframes uc-rotate { to { transform: rotate(405deg); } }
+@keyframes uc-spin { to { transform: rotate(360deg); } }
+
+.uc-loading-block {
+  padding: 40px;
+  text-align: center;
+}
+
+.uc-load-error {
+  padding: 12px 16px;
+  border: 1px solid #ffccc7;
+  border-radius: var(--uc-radius-lg);
+  background: #fff2f0;
+  color: var(--uc-text);
+}
+
+/* Upstream's `CodeBox`. */
+.uc-codebox {
+  display: block;
+  margin: 4px;
+  padding: 4px;
+  border: 1px solid lightgray;
+  border-radius: 3px;
+  background: rgba(150, 150, 150, 0.1);
+  font-family: var(--uc-mono);
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---------- Detail pages: antd's columns of 16 and 8 ---------- */
+.uc-details-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  flex-grow: 1;
+  border-top: 1px solid var(--uc-line);
+}
+.uc-details-grid > :first-child { padding: 16px 16px 0 0; }
+.uc-details-grid > aside {
+  padding: 16px 0 0 16px;
+  border-left: 1px solid var(--uc-line);
+  overflow-wrap: anywhere;
+}
+/* Below antd's `lg`: one column, the details first. */
+@media (max-width: 991.98px) {
+  .uc-details-grid {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+  }
+  .uc-details-grid > :first-child { order: 2; padding-right: 0; }
+  .uc-details-grid > aside {
+    order: 1;
+    padding-left: 0;
+    border-left: none;
+  }
+}
+/* While the object loads, and when it failed: the spinner or the message
+   on one row over both columns, as tall as its content. */
+.uc-details-grid > .uc-loading-block,
+.uc-details-grid > .uc-load-error {
+  grid-column: 1 / -1;
+  align-self: start;
+}
+.uc-details-grid > .uc-loading-block { padding: 40px; }
+.uc-details-grid > .uc-load-error {
+  margin-top: 16px;
+  padding: 12px 16px;
+}
+
+/* Upstream's model version status: the CSS colors green, gray and red. */
+.uc-status-icon { display: inline-flex; font-size: 18px; }
+.uc-status-icon--ready { color: green; }
+.uc-status-icon--pending { color: gray; }
+.uc-status-icon--failed { color: red; }
+
+/* ---------- antd's motions: modals zoom in, menus slide down ---------- */
+.uc-modal-backdrop { animation: uc-fade-in 0.3s; }
+.uc-modal { animation: uc-zoom-in 0.3s cubic-bezier(0.08, 0.82, 0.17, 1); }
+.uc-dropdown__menu {
+  transform-origin: 0 0;
+  animation: uc-slide-down-in 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.uc-dropdown__menu--right { transform-origin: 100% 0; }
+@keyframes uc-fade-in { from { opacity: 0; } }
+@keyframes uc-zoom-in { from { opacity: 0; transform: scale(0.2); } }
+@keyframes uc-slide-down-in { from { opacity: 0; transform: scaleY(0.8); } }

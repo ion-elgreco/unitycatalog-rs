@@ -1,0 +1,39 @@
+[project]
+name = "unitycatalog-rs"
+version = "0.0.0.dev0"
+description = "Python client for unitycatalog-rs (Rust reimplementation of Unity Catalog OSS)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{ name = "Ion Koutsouris" }]
+
+# The binaries and the web UI, as wheels of their own. The versions match
+# this one (`set-release-version` rewrites them).
+[project.optional-dependencies]
+# `uc`: upstream's `bin/uc` commands, and `uc serve`, `uc dev` and `uc web`.
+cli = ["unitycatalog-rs-cli==0.0.0.dev0"]
+# uc-server, which `uc serve` and `uc dev` run.
+server = ["unitycatalog-rs-cli==0.0.0.dev0", "unitycatalog-rs-server==0.0.0.dev0"]
+# The web UI, which uc-server serves and `uc web` serves for any server.
+ui = ["unitycatalog-rs-cli==0.0.0.dev0", "unitycatalog-rs-ui==0.0.0.dev0"]
+all = ["unitycatalog-rs[server,ui]"]
+
+[tool.uv.sources]
+unitycatalog-rs-cli = { workspace = true }
+unitycatalog-rs-server = { workspace = true }
+unitycatalog-rs-ui = { workspace = true }
+
+[tool.ruff.lint]
+# The stubs come from `just generate-stubs`: ruff formats them, but does
+# not lint them.
+exclude = ["unitycatalog/_core/**"]
+
+[build-system]
+requires = ["maturin>=1,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+module-name = "unitycatalog._core"
+# The Python package `unitycatalog/` is next to this file. pyo3-stub-gen
+# writes the stubs of `unitycatalog._core` under it.
+python-source = "."

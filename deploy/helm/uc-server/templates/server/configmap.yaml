@@ -1,0 +1,18 @@
+{{- if .Values.server.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-config" (include "unitycatalog.server.fullname" .) | quote }}
+  labels: {{- include "unitycatalog.server.labels" . | nindent 4 }}
+data:
+  # Settings that the values do not have, and the users of auth.users; the
+  # chart's variables win.
+  uc.toml: |
+    {{- include "unitycatalog.server.ucToml" . | nindent 4 }}
+  {{- with .Values.server.db.postgresqlConfig.ssl }}
+  {{- if and (eq $.Values.server.db.type "postgresql") .enabled .rootCert (not .rootCertConfigMapName) }}
+  dbrootca.crt: |
+    {{- .rootCert | nindent 4 }}
+  {{- end }}
+  {{- end }}
+{{- end }}

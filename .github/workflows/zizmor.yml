@@ -1,0 +1,37 @@
+name: zizmor
+
+# zizmor audits the GitHub Actions workflows for unpinned actions, impostor
+# commits, dangerous triggers and broad permissions.
+
+on:
+  merge_group:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read  # checkout workflow files; no SARIF upload, so no security-events: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        with:
+          # No SARIF upload: code scanning is off for this repository. The
+          # job passes or fails on the audit, with the findings in the log.
+          advanced-security: false

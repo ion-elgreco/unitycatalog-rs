@@ -1,0 +1,63 @@
+# The services of `just demo-auth`, on localhost:
+#
+# - FerrisKey, an OpenID Connect provider: its API, its login page and its
+#   admin console (admin, password admin) on port ${FERRISKEY_PORT}, default
+#   8090. Its database is in memory: each start is a new FerrisKey, which
+#   setup.py sets up.
+# - RustFS, an S3-compatible store: its S3 and STS API on port
+#   ${RUSTFS_PORT}, default 9000, and its console on ${RUSTFS_CONSOLE_PORT},
+#   default 9001, at /rustfs/console/ (uc-demo, password uc-demo-secret).
+#   Its data stays in the volume rustfs-data.
+
+name: uc-demo-auth
+
+services:
+  db:
+    image: postgres:18.2
+    environment:
+      POSTGRES_DB: ferriskey
+      POSTGRES_USER: ferriskey
+      POSTGRES_PASSWORD: ferriskey
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ferriskey -d ferriskey"]
+      interval: 1s
+      retries: 30
+
+  # The API under /api, and the web app (login page and console) at /. The
+  # browser and uc-server both reach it at the public URL, which is in the
+  # issuer of its tokens.
+  ferriskey:
+    image: ghcr.io/ferriskey/ferriskey-standalone:0.9.0
+    environment:
+      DATABASE_HOST: db
+      DATABASE_NAME: ferriskey
+      DATABASE_USER: ferriskey
+      DATABASE_PASSWORD: ferriskey
+      SERVER_ROOT_PATH: /api
+      SERVER_PUBLIC_URL: http://localhost:${FERRISKEY_PORT:-8090}
+      WEBAPP_URL: http://localhost:${FERRISKEY_PORT:-8090}
+      ALLOWED_ORIGINS: http://localhost:${FERRISKEY_PORT:-8090}
+    ports:
+      - "127.0.0.1:${FERRISKEY_PORT:-8090}:80"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # The root user is uc-server's identity too (setup.py): it calls
+  # AssumeRole for the credentials of each request.
+  rustfs:
+    image: rustfs/rustfs:1.0.1
+    environment:
+      RUSTFS_ACCESS_KEY: uc-demo
+      RUSTFS_SECRET_KEY: uc-demo-secret
+      RUSTFS_CONSOLE_ENABLE: "true"
+    volumes:
+      - rustfs-data:/data
+    ports:
+      - "127.0.0.1:${RUSTFS_PORT:-9000}:9000"
+      - "127.0.0.1:${RUSTFS_CONSOLE_PORT:-9001}:9001"
+
+volumes:
+  rustfs-data:

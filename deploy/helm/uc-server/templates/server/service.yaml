@@ -1,0 +1,19 @@
+{{- if .Values.server.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "unitycatalog.server.fullname" . | quote }}
+  labels: {{- include "unitycatalog.server.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.server.service.type }}
+  ports:
+    - name: api
+      port: {{ .Values.server.service.port }}
+      targetPort: api
+      protocol: TCP
+    - name: obs
+      port: {{ .Values.server.deployment.obsPort }}
+      targetPort: obs
+      protocol: TCP
+  selector: {{- include "unitycatalog.server.selectorLabels" . | nindent 4 }}
+{{- end }}

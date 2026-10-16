@@ -1,0 +1,198 @@
+suite: database
+templates:
+  - templates/server/deployment.yaml
+  - templates/server/db-pvc.yaml
+  - templates/server/configmap.yaml
+release:
+  name: uc-server
+  namespace: unitycatalog
+tests:
+  - it: keeps the Turso file on a PersistentVolumeClaim by default
+    asserts:
+      - template: templates/server/db-pvc.yaml
+        isKind:
+          of: PersistentVolumeClaim
+      - template: templates/server/db-pvc.yaml
+        equal:
+          path: metadata.name
+          value: uc-server-server-db
+      - template: templates/server/db-pvc.yaml
+        equal:
+          path: metadata.annotations["helm.sh/resource-policy"]
+          value: keep
+      - template: templates/server/db-pvc.yaml
+        equal:
+          path: spec.accessModes
+          value: ["ReadWriteOnce"]
+      - template: templates/server/db-pvc.yaml
+        equal:
+          path: spec.resources.requests.storage
+          value: 1Gi
+      - template: templates/server/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: db
+            mountPath: /data
+      - template: templates/server/deployment.yaml
+        contains:
+          path: spec.template.spec.volumes
+          content:
+            name: db
+            persistentVolumeClaim:
+              claimName: uc-server-server-db
+      - template: templates/server/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_DB_URL
+          any: true
+
+  - it: sets the size and the storage class of the claim
+    set:
+      server.db.fileConfig.persistence.size: 10Gi
+      server.db.fileConfig.persistence.storageClassName: fast
+    asserts:
+      - template: templates/server/db-pvc.yaml
+        equal:
+          path: spec.resources.requests.storage
+          value: 10Gi
+      - template: templates/server/db-pvc.yaml
+        equal:
+          path: spec.storageClassName
+          value: fast
+
+  - it: mounts an existing claim without making one
+    set:
+      server.db.fileConfig.persistence.createPVC: false
+      server.db.fileConfig.persistence.pvcName: my-claim
+    asserts:
+      - template: templates/server/db-pvc.yaml
+        hasDocuments:
+          count: 0
+      - template: templates/server/deployment.yaml
+        contains:
+          path: spec.template.spec.volumes
+          content:
+            name: db
+            persistentVolumeClaim:
+              claimName: my-claim
+
+  - it: keeps the catalog in an emptyDir without persistence
+    set:
+      server.db.fileConfig.persistence.enabled: false
+    asserts:
+      - template: templates/server/db-pvc.yaml
+        hasDocuments:
+          count: 0
+      - template: templates/server/deployment.yaml
+        contains:
+          path: spec.template.spec.volumes
+          content:
+            name: db
+            emptyDir: {}
+
+  - it: refuses more than one replica on the file database
+    template: templates/server/deployment.yaml
+    set:
+      server.deployment.replicaCount: 2
+    asserts:
+      - failedTemplate:
+          errorPattern: "server.deployment.replicaCount > 1 needs a shared database"
+
+  - it: refuses an unknown database type
+    template: templates/server/deployment.yaml
+    set:
+      server.db.type: mysql
+    asserts:
+      - failedTemplate:
+          errorPattern: "server.db.type must be file or postgresql"
+
+  - it: needs the PostgreSQL host
+    template: templates/server/deployment.yaml
+    set:
+      server.db.type: postgresql
+    asserts:
+      - failedTemplate:
+          errorPattern: "server.db.postgresqlConfig.host is required"
+
+  - it: connects every replica to PostgreSQL, without a claim
+    set:
+      server.db.type: postgresql
+      server.db.postgresqlConfig.host: db.example.com
+      server.db.postgresqlConfig.passwordSecretName: pg
+      server.deployment.replicaCount: 3
+    asserts:
+      - template: templates/server/db-pvc.yaml
+        hasDocuments:
+          count: 0
+      - template: templates/server/deployment.yaml
+        equal:
+          path: spec.replicas
+          value: 3
+      - template: templates/server/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_DB_URL
+            value: postgresql://db.example.com:5432/ucdb
+      - template: templates/server/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_DB_USER
+            value: postgres
+      - template: templates/server/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: pg
+                key: password
+      - template: templates/server/deployment.yaml
+        notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: db
+          any: true
+
+  - it: puts TLS settings and extra parameters in the URL, sorted
+    set:
+      server.db.type: postgresql
+      server.db.postgresqlConfig.host: db.example.com
+      server.db.postgresqlConfig.ssl.enabled: true
+      server.db.postgresqlConfig.ssl.rootCertConfigMapName: pg-ca
+      server.db.postgresqlConfig.extraParams:
+        application_name: uc
+    asserts:
+      - template: templates/server/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_DB_URL
+            value: postgresql://db.example.com:5432/ucdb?application_name=uc&sslmode=verify-full&sslrootcert=%2Fetc%2Fuc%2Fconfig%2Fdbrootca.crt
+      - template: templates/server/deployment.yaml
+        contains:
+          path: spec.template.spec.volumes[0].projected.sources
+          content:
+            configMap:
+              name: pg-ca
+              items:
+                - key: ca.crt
+                  path: dbrootca.crt
+
+  - it: writes an inline root certificate next to uc.toml
+    set:
+      server.db.type: postgresql
+      server.db.postgresqlConfig.host: db.example.com
+      server.db.postgresqlConfig.ssl.enabled: true
+      server.db.postgresqlConfig.ssl.rootCert: PEM
+    asserts:
+      - template: templates/server/configmap.yaml
+        documentIndex: 0
+        equal:
+          path: data["dbrootca.crt"]
+          value: |
+            PEM

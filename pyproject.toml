@@ -1,0 +1,40 @@
+# The uv workspace of the Python packages, and their dev tools. Not a
+# package itself.
+#
+#   python/client/  unitycatalog-rs         the client (crate uc-py); extras cli, server, ui, all
+#   python/cli/     unitycatalog-rs-cli     the `uc` binary of crates/uc-cli
+#   python/server/  unitycatalog-rs-server  the `uc-server` binary of crates/uc-server
+#   python/ui/      unitycatalog-rs-ui      the web UI of crates/uc-ui, in share/unitycatalog-rs/ui
+#
+# `just venv` installs the dev tools into .venv without building the
+# packages; `just develop` builds the four packages into it, and
+# `just develop-client` only the client.
+[project]
+name = "unitycatalog-rs-workspace"
+version = "0.0.0"
+requires-python = ">=3.10"
+
+[tool.uv]
+default-groups = ["dev", "integrations"]
+
+[tool.uv.workspace]
+members = ["python/client", "python/cli", "python/server", "python/ui"]
+
+[dependency-groups]
+# The tests start a uc-server, built with cargo from this repository.
+# `just generate-stubs` formats the stubs with ruff.
+dev = ["maturin>=1,<2", "mypy>=1.18", "pytest>=8", "ruff>=0.15"]
+# The engines of the integration tests (python/client/tests/integrations).
+# polars and deltalake have no free-threaded wheels: on free-threaded
+# Python, leave this group out with UV_NO_GROUP=integrations.
+integrations = [
+    "deltalake>=1.6",
+    # moto: a local S3 and STS, in its server mode (flask, flask-cors). Its
+    # `server` extra would add the dependencies of all other AWS services.
+    "flask>=3",
+    "flask-cors>=6",
+    "moto[s3]>=5",
+    "obstore>=0.11",
+    "polars>=2",
+    "pyiceberg[pyarrow]>=0.12",
+]

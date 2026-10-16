@@ -1,0 +1,5 @@
+/* The logo's center hexagon is white, for the dark header. On the light
+   header it is navy, as in upstream's logo. */
+[data-md-color-scheme="default"] .md-logo img {
+  content: url("../assets/logo-light.svg");
+}
