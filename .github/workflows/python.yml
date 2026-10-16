@@ -142,8 +142,6 @@ jobs:
       # polars and deltalake have no free-threaded wheels: those runs leave out
       # the engines of the integration tests, which then skip.
       UV_NO_GROUP: ${{ endsWith(matrix.python-version, 't') && 'integrations' || '' }}
-      # sccache runs on Linux and macOS only.
-      RUSTC_WRAPPER: ${{ matrix.runner != 'windows-latest' && 'sccache' || '' }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
