@@ -93,6 +93,14 @@ runs:
         cache-on-failure: "true"
         rustflags: "-D warnings"
 
+    # rustc calls from outside the checkout, such as those of the sccache
+    # server, do not see rust-toolchain.toml and use the default toolchain.
+    # Without this, that is the removed stable, and parallel maturin builds
+    # each install it at the same time and break each other.
+    - name: Use the toolchain of rust-toolchain.toml as the default
+      shell: bash
+      run: rustup default "$(rustup show active-toolchain | cut -d' ' -f1)"
+
     # The wasm-bindgen CLI of `just wasm` / `just wasm-dev`. Keep the version
     # in sync with the wasm-bindgen crate in Cargo.lock: the CLI refuses a
     # module of another version.
