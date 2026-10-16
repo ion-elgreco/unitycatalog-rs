@@ -1,5 +1,7 @@
-# The latest stable Rust, as in CI and the release. The web UI builds for
-# wasm32-unknown-unknown (`just wasm`); rustup adds that target.
+# The Rust version of local builds, CI and the release. It is fixed, so that
+# the Rust caches of CI stay valid from one runner image to the next; bump it
+# with each Rust release. The web UI builds for wasm32-unknown-unknown
+# (`just wasm`); rustup adds that target.
 [toolchain]
-channel = "stable"
+channel = "1.97.1"
 targets = ["wasm32-unknown-unknown"]

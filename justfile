@@ -4,6 +4,13 @@ set shell := ["bash", "-uc"]
 # (`just venv`), with ruff.
 python := justfile_directory() / ".venv/bin/python"
 
+# The cargo profile of the builds and tests: dev, or PROFILE. CI sets
+# PROFILE=ci, [profile.ci] of Cargo.toml.
+profile := env("PROFILE", "dev")
+
+# The uc-server of that profile, which the Python tests start.
+uc_server := justfile_directory() / "target" / (if profile == "dev" { "debug" } else { profile }) / (if os() == "windows" { "uc-server.exe" } else { "uc-server" })
+
 # The image that `just docker` builds.
 image := "unitycatalog-rs:dev"
 
@@ -23,8 +30,8 @@ wasm: (_ui "release")
     brotli -q 11 -k crates/uc-ui/dist/assets/uc_ui_bg.wasm
     gzip -9 -k -n crates/uc-ui/dist/assets/uc_ui_bg.wasm
 
-# Build the web UI in the dev profile: faster, with panic messages and symbols; serve it with `UC_UI_DIR=crates/uc-ui/dist`
-wasm-dev: (_ui "dev")
+# Build the web UI in the dev profile (or PROFILE): faster, with panic messages and symbols; serve it with `UC_UI_DIR=crates/uc-ui/dist`
+wasm-dev: (_ui profile)
 
 # The files of crates/uc-ui/public, with the wasm and its JS loader in assets/
 _ui profile:
@@ -32,15 +39,15 @@ _ui profile:
     rm -rf crates/uc-ui/dist && cp -R crates/uc-ui/public crates/uc-ui/dist
     wasm-bindgen target/wasm32-unknown-unknown/{{ if profile == "dev" { "debug" } else { profile } }}/uc_ui.wasm --out-dir crates/uc-ui/dist/assets --target web --no-typescript
 
-# Build the four Python packages and install them into .venv: maturin builds the client, uc and uc-server (dev profile), and cargo shows its progress; the web UI comes from just wasm
+# Build the four Python packages and install them into .venv: maturin builds the client, uc and uc-server (dev profile, or PROFILE), and cargo shows its progress; the web UI comes from just wasm
 develop: develop-client wasm
-    cd python/cli && uv run --no-sync maturin develop
-    cd python/server && uv run --no-sync maturin develop
+    cd python/cli && uv run --no-sync maturin develop --profile {{ profile }}
+    cd python/server && uv run --no-sync maturin develop --profile {{ profile }}
     uv pip install -q --reinstall --python .venv ./python/ui
 
 # Build only the Python client and install it into .venv, for its tests
 develop-client: venv
-    cd python/client && uv run --no-sync maturin develop
+    cd python/client && uv run --no-sync maturin develop --profile {{ profile }}
 
 # Build everything (just develop), then run `uc dev` from .venv on the port, with its data in .uc-demo; the first run puts in the dummy data of examples/seed_demo.py (delete .uc-demo for new data); Ctrl+C stops it
 demo port="8080": develop
@@ -112,17 +119,18 @@ demo-auth port="8080" idp_port="8090" s3_port="9000": develop
 
 # Run the Python client's tests and the integration tests (polars, deltalake, obstore and pyiceberg; S3 from moto) against a uc-server of this repository; on free-threaded Python, an import that turns the GIL back on fails them
 test:
-    cargo build -p uc-server
-    cd python/client && PYTHONWARNINGS='error:The global interpreter lock (GIL) has been enabled:RuntimeWarning' uv run --no-sync pytest tests
+    cargo build -p uc-server --profile {{ profile }}
+    cd python/client && UC_TEST_SERVER_BIN='{{ uc_server }}' PYTHONWARNINGS='error:The global interpreter lock (GIL) has been enabled:RuntimeWarning' uv run --no-sync pytest tests
 
 # Build the wheels of the four Python packages, and run `uc dev`, `uc web` and the client from them, as `pip install 'unitycatalog-rs[all]'` installs them
 test-packages: wasm-dev
     #!/usr/bin/env bash
-    # Debug binaries, which build faster. Everything goes to target/packages-test.
+    # Binaries of the dev profile (or PROFILE), which build faster. Everything
+    # goes to target/packages-test.
     set -euo pipefail
     out=target/packages-test
     rm -rf "$out"
-    MATURIN_PEP517_ARGS="--profile dev" uv build --wheel --all-packages -o "$out/wheels"
+    MATURIN_PEP517_ARGS="--profile {{ profile }}" uv build --wheel --all-packages -o "$out/wheels"
     # Each command runs in a new environment with `unitycatalog-rs[all]` from
     # the wheels. No cache: it keeps the files of an earlier wheel of the
     # same name and version, and installs those.
@@ -178,7 +186,7 @@ test-docker: (docker "dev")
 
 # Run the Rust tests of the workspace; with UC_TEST_POSTGRES_URL, on PostgreSQL
 test-rust:
-    cargo test --workspace --no-fail-fast
+    cargo test --profile {{ profile }} --workspace --no-fail-fast
 
 # Lint the Helm chart and run its unit tests (requires `helm plugin install https://github.com/helm-unittest/helm-unittest`)
 test-helm:
@@ -213,7 +221,7 @@ generate-stubs:
     home="$("{{ python }}" -c 'import sys; print(sys.base_prefix)')"
     PYO3_PYTHON="{{ python }}" PYTHONHOME="$home" \
         LD_LIBRARY_PATH="$home/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        cargo run -q -p uc-py --no-default-features --features stub-gen --bin stub_gen
+        cargo run -q --profile {{ profile }} -p uc-py --no-default-features --features stub-gen --bin stub_gen
     "{{ python }}" -m ruff format --quiet python/client/unitycatalog/_core
 
 # Build the docs site (docs/, mkdocs.yml) into site/ with zensical; a warning, such as a broken link, fails the build

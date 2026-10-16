@@ -1,0 +1,45 @@
+name: cache-cleanup
+
+# The caches that a PR run saves (refs/pull/N/merge) serve only that PR, but
+# they count against the repository's 10 GB of caches for 7 days after it
+# closes; sccache alone leaves about a thousand small entries per PR. This
+# deletes them when the PR closes, so that GitHub does not evict the caches
+# of main for them.
+on:
+  pull_request:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  cleanup:
+    name: Delete the caches of the PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # A PR from a fork gets a read-only token, and its deletes would fail:
+    # its caches expire after the 7 days.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      actions: write # to delete caches
+    steps:
+      - name: Delete the caches of this PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          set -euo pipefail
+          # The API deletes caches one at a time: in rounds of 100.
+          for _ in $(seq 1 60); do
+            ids=$(gh cache list --repo "$REPO" --ref "$REF" --limit 100 --json id --jq '.[].id')
+            if [ -z "$ids" ]; then
+              echo "done"
+              exit 0
+            fi
+            while read -r id; do
+              # A cache can expire, or a rerun delete it, in the meantime.
+              gh cache delete "$id" --repo "$REPO" || true
+            done <<< "$ids"
+          done
+          echo "caches still remain after 60 rounds" >&2
+          exit 1

@@ -164,3 +164,17 @@ debug = 1
 opt-level = 3
 [profile.dev.package.num-bigint-dig]
 opt-level = 3
+
+# The builds of CI (`PROFILE=ci`). Without incremental compilation, which
+# sccache cannot cache. Dependencies are optimized and have no debug info,
+# so tests run fast and the cached target folder stays small.
+[profile.ci]
+inherits = "dev"
+debug = false
+incremental = false
+
+[profile.ci.package."*"]
+opt-level = 3
+debug = false
+debug-assertions = false
+strip = "debuginfo"

@@ -20,9 +20,18 @@ concurrency:
 
 permissions: {}
 
+# The key of rust-cache includes the CARGO_* and RUST* variables: python.yml
+# sets the same ones, so that the jobs of both share one cache.
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # sccache: compiled crates in the GitHub Actions cache. It does not cache
+  # incremental builds, so incremental compilation is off.
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+  CARGO_INCREMENTAL: "0"
+  # [profile.ci] of Cargo.toml, for cargo and the just recipes.
+  PROFILE: "ci"
 
 jobs:
   check:
@@ -46,7 +55,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --profile "$PROFILE" --workspace --all-targets -- -D warnings
 
       - name: Run Rust tests
         run: just test-rust
@@ -99,6 +108,8 @@ jobs:
         uses: ./.github/actions/setup-env
         with:
           cross_compile: "true"
+          # Its target folder holds the cross-compiled Linux binaries.
+          cache-shared-key: "docker"
 
       - name: Build the image and run it
         run: just test-docker
