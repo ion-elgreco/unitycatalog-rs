@@ -1,0 +1,367 @@
+name: release
+
+# On tag push (v*.*.*): uc-server and uc for Linux and macOS in upstream's
+# tarball layout, with the web UI; the multi-arch image and the Helm chart
+# on ghcr.io; and a GitHub release with the tarballs. The Python wheels:
+# release-python.yml.
+#
+# The Linux binaries are cross-compiled with cargo zigbuild (no emulation),
+# once per architecture, for the tarballs and for the image. The image of an
+# architecture is deploy/docker/Dockerfile over the tree of its Linux
+# tarball; a manifest joins the two images.
+#
+# workflow_dispatch builds the ref it runs on: pick the tag.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+# One run per tag at a time, never cancelled mid-publish. Two tags can
+# release in parallel.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The web UI is the same on every platform: built once, for each tarball.
+  ui:
+    name: web UI
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout sources; upload-artifact needs no extra perms
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment (no cache — release builds run from fresh state)
+        uses: ./.github/actions/setup-env
+        with:
+          cache: "false"
+
+      # `just wasm` compresses the wasm with the brotli tool.
+      - name: Install brotli
+        run: command -v brotli || (sudo apt-get update && sudo apt-get install -y brotli)
+
+      - name: Build the web UI
+        run: just wasm
+
+      - name: Upload the web UI
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ui-dist
+          path: crates/uc-ui/dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  binaries:
+    name: build ${{ matrix.target }}
+    needs: ui
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read  # checkout sources; upload-artifact needs no extra perms
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Cross-compiled with cargo zigbuild against glibc 2.28, as the
+          # wheels' manylinux_2_28: they run on Debian 10+, Ubuntu 18.10+,
+          # RHEL 8+ and the image's Debian 12.
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-14
+          - target: aarch64-apple-darwin
+            os: macos-14
+    env:
+      TARGET: ${{ matrix.target }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve release version from tag
+        id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: echo "version=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Set release version
+        uses: ./.github/actions/set-release-version
+        with:
+          version: ${{ steps.version.outputs.version }}
+
+      - name: Setup Environment (no cache — release builds run from fresh state)
+        uses: ./.github/actions/setup-env
+        with:
+          cache: "false"
+          cross_compile: ${{ contains(matrix.target, '-linux-') }}
+
+      - name: Add the target
+        run: rustup target add "${TARGET}"
+
+      - name: Build release binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${TARGET}" == *-linux-* ]]; then
+            cargo zigbuild --release --target "${TARGET}.2.28" -p uc-server -p uc-cli
+          else
+            cargo build --release --target "${TARGET}" -p uc-server -p uc-cli
+          fi
+
+      - name: Download the web UI
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ui-dist
+          path: ui-dist
+
+      # bin/uc-server and bin/uc, and the web UI in share/unitycatalog-rs/ui,
+      # where both find it (as in the wheels). The image job builds the
+      # image from this tree.
+      - name: Package
+        id: pack
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          PKG="unitycatalog-rs-${TAG}-${TARGET}"
+          mkdir -p "dist/${PKG}/bin"
+          cp "target/${TARGET}/release/uc-server" "dist/${PKG}/bin/"
+          cp "target/${TARGET}/release/uc" "dist/${PKG}/bin/"
+          mkdir -p "dist/${PKG}/share/unitycatalog-rs"
+          cp -R ui-dist "dist/${PKG}/share/unitycatalog-rs/ui"
+          cp README.md LICENSE "dist/${PKG}/"
+          tar -C dist -czf "dist/${PKG}.tar.gz" "${PKG}"
+          (cd dist && sha256sum "${PKG}.tar.gz" > "${PKG}.tar.gz.sha256") || \
+            (cd dist && shasum -a 256 "${PKG}.tar.gz" > "${PKG}.tar.gz.sha256")
+          echo "asset=dist/${PKG}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "sums=dist/${PKG}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bin-${{ matrix.target }}
+          path: |
+            ${{ steps.pack.outputs.asset }}
+            ${{ steps.pack.outputs.sums }}
+          if-no-files-found: error
+          retention-days: 1
+
+  # One image per architecture, from the tree of its Linux tarball: the
+  # image holds the released binaries. Nothing is compiled or emulated.
+  image:
+    name: image ${{ matrix.arch }}
+    needs: binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read       # checkout the Dockerfile
+      packages: write      # push images to ghcr.io
+      id-token: write      # OIDC for Sigstore signing via attest-build-provenance
+      attestations: write  # publish SLSA provenance to repo attestation log
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            target: x86_64-unknown-linux-gnu
+          - arch: arm64
+            target: aarch64-unknown-linux-gnu
+    env:
+      ARCH: ${{ matrix.arch }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the Linux tarball
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bin-${{ matrix.target }}
+          path: tarball
+
+      - name: Unpack it as the build context
+        run: |
+          set -euo pipefail
+          mkdir context
+          tar -xzf tarball/*.tar.gz -C context --strip-components=1
+          ls -la context context/bin
+
+      - name: Resolve the image ref and labels
+        id: ref
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          repo="ghcr.io/${REPOSITORY,,}"
+          version="${REF_NAME#v}"
+          {
+            echo "repo=${repo}"
+            echo "version=${version}"
+            echo "arch_tag=${repo}:${version}-${ARCH}"
+            # The commit's time: a rebuild of the tag gets the same label.
+            echo "created=$(git log -1 --format=%cI)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # No GHA cache for releases. The SBOM and the provenance of the build
+      # go into the pushed image index.
+      - name: Build & push (${{ matrix.arch }})
+        id: push
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: context
+          file: deploy/docker/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ steps.ref.outputs.arch_tag }}
+          build-args: |
+            UC_VERSION=${{ steps.ref.outputs.version }}
+            UC_REVISION=${{ github.sha }}
+            BUILD_DATE=${{ steps.ref.outputs.created }}
+          provenance: mode=max
+          sbom: true
+
+      # Artifact attestations need a public repository.
+      - name: Attest image provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ steps.ref.outputs.repo }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  manifest:
+    name: image manifest
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write  # push the multi-arch index to ghcr.io
+
+    steps:
+      - name: Resolve the image ref
+        id: ref
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          echo "repo=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "version=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create the multi-arch manifest (version and latest)
+        env:
+          REPO: ${{ steps.ref.outputs.repo }}
+          VERSION: ${{ steps.ref.outputs.version }}
+        run: |
+          docker buildx imagetools create \
+            --tag "${REPO}:${VERSION}" \
+            --tag "${REPO}:latest" \
+            "${REPO}:${VERSION}-amd64" \
+            "${REPO}:${VERSION}-arm64"
+
+  # The chart `version` and `appVersion` are overridden at package time to
+  # match the git tag; Chart.yaml keeps a placeholder.
+  chart:
+    name: helm chart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read   # checkout chart sources
+      packages: write  # push the OCI chart to ghcr.io
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Package and push to ghcr.io (OCI)
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          # Through env, so that the token is not in the text of the script.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_USER: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          version="${REF_NAME#v}"
+          helm lint deploy/helm/uc-server
+          helm package deploy/helm/uc-server --version "${version}" --app-version "${version}" --destination dist
+          echo "${GH_TOKEN}" | helm registry login ghcr.io --username "${GH_USER}" --password-stdin
+          helm push "dist/uc-server-${version}.tgz" "oci://ghcr.io/${OWNER,,}/charts"
+          helm registry logout ghcr.io || true
+
+  release:
+    name: github release
+    needs: [binaries, manifest, chart]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the GitHub Release and upload its assets
+
+    steps:
+      - name: Download the tarballs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          pattern: bin-*
+          merge-multiple: true
+
+      # Idempotent: create the release on first run for a tag, upload
+      # with --clobber on re-runs (workflow_dispatch).
+      - name: Create / update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(artifacts/*.tar.gz artifacts/*.sha256)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "no release assets found in artifacts/" >&2
+            exit 1
+          fi
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "release ${TAG} exists; uploading assets with --clobber"
+            gh release upload "${TAG}" "${assets[@]}" --clobber
+          else
+            pre_flag=()
+            if [[ "${TAG}" == *-* ]]; then
+              pre_flag=(--prerelease)
+            fi
+            echo "creating release ${TAG}"
+            gh release create "${TAG}" "${assets[@]}" "${pre_flag[@]}" --generate-notes
+          fi

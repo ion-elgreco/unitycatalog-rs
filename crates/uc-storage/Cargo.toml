@@ -1,0 +1,26 @@
+[package]
+name = "uc-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+turso.workspace = true
+tokio-postgres.workspace = true
+deadpool.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
+rustls-native-certs.workspace = true
+sqlparser.workspace = true
+bytes.workspace = true
+percent-encoding.workspace = true
+tracing.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -1,0 +1,99 @@
+name: "Setup Python and Rust Environment"
+description: "Set up just, uv, Python, the Rust toolchain and wasm-bindgen"
+
+inputs:
+  python-version:
+    description: "The Python version to set up; uv makes its venvs with it (UV_PYTHON)"
+    required: false
+    default: "3.13"
+
+  components:
+    description: "Rust components to add, such as 'rustfmt, clippy'"
+    required: false
+    default: ""
+
+  cache:
+    description: "Enable the uv cache and Swatinem rust-cache via setup-rust-toolchain. Release workflows should set this to 'false'"
+    required: false
+    default: "true"
+
+  rust-cache:
+    description: "Enable the Rust cache. Jobs that run no cargo set this to 'false' so they can't save an empty cache."
+    required: false
+    default: "true"
+
+  cross_compile:
+    description: "Install the cross-compile toolchain (cargo-zigbuild + zig as the cross linker). Jobs that build the Linux binaries of the release or the image set this to 'true'."
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+
+  # Third-party actions are pinned to commit SHAs, not tags: a force-pushed
+  # tag cannot change the code that CI runs. The comment after a SHA is its
+  # version; a bump changes both.
+
+  steps:
+    - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      with:
+        # Sets UV_PYTHON: `uv venv` uses this Python, not the runner's.
+        python-version: ${{ inputs.python-version }}
+        enable-cache: ${{ inputs.cache }}
+        # PRs restore main's cache but never save their own copies
+        save-cache: ${{ github.ref == 'refs/heads/main' }}
+        # The dev tools of the uv workspace (pyproject.toml), as uv.lock pins them.
+        cache-dependency-glob: uv.lock
+
+    - name: Install Python ${{ inputs.python-version }}
+      shell: bash
+      env:
+        PYTHON_VERSION: ${{ inputs.python-version }}
+      run: uv python install "${PYTHON_VERSION}"
+
+    # The toolchain of rust-toolchain.toml: the latest stable, also for the
+    # release.
+    - name: Setup Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
+      with:
+        components: ${{ inputs.components }}
+        # `just wasm` / `just wasm-dev` build the web UI with `cargo build
+        # --target wasm32-unknown-unknown`, which does not add the target.
+        target: wasm32-unknown-unknown
+        cache: ${{ inputs.cache == 'true' && inputs.rust-cache == 'true' }}
+        # PRs restore main's cache but never save their own copies
+        cache-save-if: ${{ github.ref == 'refs/heads/main' }}
+        # Save partial compilation
+        cache-on-failure: "true"
+        rustflags: "-D warnings"
+
+    # The wasm-bindgen CLI of `just wasm` / `just wasm-dev`. Keep the version
+    # in sync with the wasm-bindgen crate in Cargo.lock: the CLI refuses a
+    # module of another version.
+    - name: Install wasm-bindgen
+      uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
+      with:
+        tool: wasm-bindgen-cli@0.2.121
+
+    # The cross linker of `cargo zigbuild`: the Linux binaries for both
+    # architectures from one runner, against glibc 2.28 (older than the
+    # runner's), so that they run on the image's Debian 12.
+    - name: Install cargo-zigbuild
+      if: inputs.cross_compile == 'true'
+      uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
+      with:
+        tool: cargo-zigbuild
+
+    - name: Install zig
+      if: inputs.cross_compile == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Pinned: zig releases change the behavior of their bundled clang.
+        pipx install 'ziglang==0.16.0'
+        # ziglang ≥0.14 names its console script `python-zig`;
+        # cargo-zigbuild looks for `zig` on PATH.
+        ln -sf "$(command -v python-zig)" "$HOME/.local/bin/zig"

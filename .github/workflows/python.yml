@@ -1,0 +1,150 @@
+name: python
+
+# The Python client (python/client/): its linting, its stubs and its tests, which
+# run against a uc-server built from this repository.
+
+on:
+  merge_group:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded PR runs (pushes, force-pushes). Runs on main finish, since
+# a cancelled run skips the cache save that PR runs restore from; a newer main
+# push waits for the running one. Release workflows opt out of this — see
+# release*.yml.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Default to no permissions; each job opts in to whatever it actually needs.
+# Limits the blast radius if a step (or a transitively-pulled action) is ever
+# compromised — without this, jobs inherit the org/repo default which is
+# usually contents:write and can push tags, labels, releases, etc.
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linting:
+    name: Python linting (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.14"]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+        with:
+          python-version: ${{ matrix.python-version }}
+          # lint compiles no Rust; keep it off the Rust cache
+          rust-cache: "false"
+
+      - name: setup venv
+        run: just venv
+
+      - name: Run linting (ruff, mypy)
+        run: just pre-commit-check
+
+  stubs:
+    name: Python stubs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+
+      - name: setup venv
+        run: just venv
+
+      - name: Stubs are up to date
+        run: |
+          just generate-stubs
+          if [ -n "$(git status --porcelain python/client/unitycatalog/_core)" ]; then
+            git status --short python/client/unitycatalog/_core
+            git diff python/client/unitycatalog/_core
+            echo "The stubs differ from the Rust code: run 'just generate-stubs'." >&2
+            exit 1
+          fi
+
+  # The four packages as users get them: their wheels, installed into a new
+  # venv, from which `uc dev`, `uc web` and the client run.
+  packaging:
+    name: Python packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+
+      - name: Build, install and run the packages
+        run: just test-packages
+
+  testing:
+    name: Python tests (${{ matrix.label }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: linux-glibc-x86_64, runner: ubuntu-latest, python-version: "3.10" }
+          - { label: linux-glibc-x86_64, runner: ubuntu-latest, python-version: "3.13" }
+          - { label: linux-glibc-arm64, runner: ubuntu-24.04-arm, python-version: "3.13" }
+          - { label: macos-arm64, runner: macos-15, python-version: "3.13" }
+          - { label: windows-x86_64, runner: windows-latest, python-version: "3.13" }
+          - { label: linux-glibc-x86_64, runner: ubuntu-latest, python-version: "3.14" }
+          # Free-threaded (no GIL) builds
+          - { label: linux-glibc-x86_64, runner: ubuntu-latest, python-version: "3.14t" }
+          - { label: linux-glibc-arm64, runner: ubuntu-24.04-arm, python-version: "3.14t" }
+          - { label: macos-arm64, runner: macos-15, python-version: "3.14t" }
+          - { label: windows-x86_64, runner: windows-latest, python-version: "3.14t" }
+
+    env:
+      # polars and deltalake have no free-threaded wheels: those runs leave out
+      # the engines of the integration tests, which then skip.
+      UV_NO_GROUP: ${{ endsWith(matrix.python-version, 't') && 'integrations' || '' }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build and install unitycatalog
+        run: just develop-client
+
+      - name: Run tests
+        run: just test

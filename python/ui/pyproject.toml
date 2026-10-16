@@ -1,0 +1,36 @@
+[project]
+name = "unitycatalog-rs-ui"
+version = "0.0.0.dev0"
+description = "The web UI of unitycatalog-rs (Rust reimplementation of Unity Catalog OSS)."
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{ name = "Ion Koutsouris" }]
+
+[project.readme]
+content-type = "text/markdown"
+text = """
+# unitycatalog-rs-ui
+
+The web UI of
+[unitycatalog-rs](https://github.com/ion-elgreco/unitycatalog-rs), a Rust
+reimplementation of Unity Catalog OSS. It installs into
+`<prefix>/share/unitycatalog-rs/ui`, where `uc-server`, `uc dev` and
+`uc web` find it.
+
+Install it with the Python client and the `uc` command line:
+`pip install 'unitycatalog-rs[ui]'`. Then `uc web` serves it for any
+server, and uc-server (`[server]`) serves it at its root.
+"""
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+# The wheel holds only the UI that `just wasm` writes to crates/uc-ui/dist,
+# as data under share/. hatchling needs a file selection: this one selects
+# no package files.
+[tool.hatch.build.targets.wheel]
+include = ["/no-package-files"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"../../crates/uc-ui/dist" = "share/unitycatalog-rs/ui"

@@ -1,0 +1,82 @@
+suite: Ingress
+templates:
+  - templates/ingress.yaml
+release:
+  name: uc-server
+  namespace: unitycatalog
+tests:
+  - it: omits the Ingress by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: sends every path to the server's API port
+    set:
+      ingress.enabled: true
+      ingress.host: uc.example.com
+    asserts:
+      - isKind:
+          of: Ingress
+      - equal:
+          path: metadata.name
+          value: uc-server
+      - equal:
+          path: spec.rules[0].host
+          value: uc.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /
+      - equal:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Prefix
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service
+          value:
+            name: uc-server-server
+            port:
+              name: api
+      - notExists:
+          path: spec.ingressClassName
+      - notExists:
+          path: spec.tls
+
+  - it: answers every host when no host is given
+    set:
+      ingress.enabled: true
+    asserts:
+      - notExists:
+          path: spec.rules[0].host
+
+  - it: sets ingressClassName and the annotations when provided
+    set:
+      ingress.enabled: true
+      ingress.ingressClassName: nginx
+      ingress.annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: nginx
+      - equal:
+          path: metadata.annotations["cert-manager.io/cluster-issuer"]
+          value: letsencrypt-prod
+
+  - it: adds the TLS block for the host
+    set:
+      ingress.enabled: true
+      ingress.host: uc.example.com
+      ingress.tlsSecretName: uc-tls
+    asserts:
+      - equal:
+          path: spec.tls
+          value:
+            - hosts: [uc.example.com]
+              secretName: uc-tls
+
+  - it: fails install when TLS has no host
+    set:
+      ingress.enabled: true
+      ingress.tlsSecretName: uc-tls
+    asserts:
+      - failedTemplate:
+          errorPattern: "ingress.host is required with TLS"

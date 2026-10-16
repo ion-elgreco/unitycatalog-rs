@@ -1,0 +1,62 @@
+name: "Set release version"
+description: |
+  Rewrite placeholder versions across the repo to the release version.
+  Single source of truth for which files carry a version pin. The tree
+  is mutated in place on the ephemeral build checkout — release
+  workflows build artifacts from the rewritten state and never commit
+  it back. The Helm chart is excluded: `helm package --version` already
+  overrides Chart.yaml at package time.
+
+inputs:
+  version:
+    description: 'Release version without leading "v" (e.g. "0.1.1")'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    # yq writes TOML reliably only from v4.50
+    # (https://mikefarah.gitbook.io/yq/usage/toml); the runner's yq can be
+    # older. The binary goes to $RUNNER_TEMP, and to the next step as a step
+    # output: zizmor's github-env audit flags writes to $GITHUB_PATH.
+    - name: Install yq (pinned)
+      id: yq
+      shell: bash
+      env:
+        YQ_VERSION: v4.53.2
+      run: |
+        set -euo pipefail
+        case "${RUNNER_OS}/${RUNNER_ARCH}" in
+          Linux/X64)     asset=yq_linux_amd64 ;;
+          Linux/ARM64)   asset=yq_linux_arm64 ;;
+          macOS/X64)     asset=yq_darwin_amd64 ;;
+          macOS/ARM64)   asset=yq_darwin_arm64 ;;
+          Windows/X64)   asset=yq_windows_amd64.exe ;;
+          *) echo "unsupported runner ${RUNNER_OS}/${RUNNER_ARCH}" >&2; exit 1 ;;
+        esac
+        mkdir -p "$RUNNER_TEMP/yq-bin"
+        target="$RUNNER_TEMP/yq-bin/yq"
+        [ "$RUNNER_OS" = "Windows" ] && target="${target}.exe"
+        curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${asset}" -o "$target"
+        chmod +x "$target"
+        echo "bin=$target" >> "$GITHUB_OUTPUT"
+
+    - name: Rewrite version pins
+      shell: bash
+      env:
+        TAG: ${{ inputs.version }}
+        YQ: ${{ steps.yq.outputs.bin }}
+      run: |
+        set -euo pipefail
+        "$YQ" -i -p toml -o toml '.workspace.package.version = strenv(TAG)' Cargo.toml
+        # The versions of the Python packages, and the client's pins of the
+        # other three in its extras (`==<version>`)
+        for project in python/client python/cli python/server python/ui; do
+          "$YQ" -i -p toml -o toml '.project.version = strenv(TAG)' "${project}/pyproject.toml"
+        done
+        "$YQ" -i -p toml -o toml '.project["optional-dependencies"][][] |= sub("==.*$", "==" + strenv(TAG))' python/client/pyproject.toml
+        # The version of the chart, the image and the tarballs in the docs
+        for doc in docs/*.md docs/*/*.md; do
+          sed -i.bak "s/0\.0\.0-dev/${TAG}/g" "${doc}"
+          rm -f "${doc}.bak"
+        done

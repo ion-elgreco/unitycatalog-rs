@@ -1,0 +1,34 @@
+[project]
+name = "unitycatalog-rs-cli"
+version = "0.0.0.dev0"
+description = "uc, the command line of unitycatalog-rs (Rust reimplementation of Unity Catalog OSS)."
+license = "Apache-2.0"
+authors = [{ name = "Ion Koutsouris" }]
+
+[project.readme]
+content-type = "text/markdown"
+text = """
+# unitycatalog-rs-cli
+
+`uc`, the command line of
+[unitycatalog-rs](https://github.com/ion-elgreco/unitycatalog-rs), a Rust
+reimplementation of Unity Catalog OSS:
+
+- upstream's `bin/uc` commands, such as `uc catalog list`
+- `uc tui`, a terminal UI
+- `uc serve`, `uc dev` and `uc web`, which run uc-server and the web UI on
+  this machine
+
+Install it with the Python client: `pip install 'unitycatalog-rs[cli]'`,
+or `[server]`, `[ui]` or `[all]` for uc-server and the web UI too.
+"""
+
+[build-system]
+requires = ["maturin>=1,<2"]
+build-backend = "maturin"
+
+# The `uc` binary of crates/uc-cli, in the wheel's scripts.
+[tool.maturin]
+manifest-path = "../../crates/uc-cli/Cargo.toml"
+bindings = "bin"
+strip = true

@@ -1,0 +1,36 @@
+/target
+Cargo.lock.bak
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# The data folder of uc-server and `uc dev` (server.data_dir): the
+# database
+/.uc
+# The data folders of `just demo` and `just demo-auth`
+/.uc-demo
+/.uc-demo-auth
+
+# Local Turso databases from dev runs
+/data
+**/*.db
+**/*.db-wal
+
+.env
+.env.local
+
+# Built by `just wasm` / `just wasm-dev`
+/crates/uc-ui/dist
+
+# The docs site, built by `just docs-build` (zensical's .cache ignores itself)
+/site
+
+# Python client (python/client/): virtualenvs, caches, and the extension module
+# that `maturin develop` puts in the package
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+/python/client/unitycatalog/*.so
+/python/client/unitycatalog/*.pyd

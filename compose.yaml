@@ -1,0 +1,30 @@
+# Local run: the server with its embedded store and the web UI. API and UI
+# on http://localhost:8080.
+#
+# The released image, as upstream's compose. For an image of this checkout,
+# run `just docker`, then `UC_IMAGE=unitycatalog-rs:dev docker compose up`.
+
+name: unitycatalog-rs
+
+services:
+  server:
+    image: ${UC_IMAGE:-ghcr.io/ion-elgreco/unitycatalog-rs:latest}
+    ports:
+      - "8080:8080"
+    volumes:
+      # The catalog database, kept across containers.
+      - uc-data:/data
+    environment:
+      RUST_LOG: info
+      # Settings are UC_<GROUP>_<KEY> variables, or a mounted uc.toml that
+      # UC_CONFIG names. Require sign-in and enforce authorization:
+      # UC_AUTH_ENABLED: "true"
+      # Token exchange (POST /api/1.0/unity-control/auth/tokens):
+      # UC_AUTH_ALLOWED_ISSUERS: "https://issuer.example.com"
+      # UC_AUTH_AUDIENCES: "uc-server"
+      # A PostgreSQL server instead of the embedded store, for replicas:
+      # UC_DB_URL: "postgresql://uc@postgres:5432/uc"
+      # UC_DB_PASSWORD: "change-me"
+
+volumes:
+  uc-data:

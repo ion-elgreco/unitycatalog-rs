@@ -1,0 +1,5 @@
+# The latest stable Rust, as in CI and the release. The web UI builds for
+# wasm32-unknown-unknown (`just wasm`); rustup adds that target.
+[toolchain]
+channel = "stable"
+targets = ["wasm32-unknown-unknown"]

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: uc-server
+description: Rust reimplementation of Unity Catalog OSS
+type: application
+version: 0.0.0-dev
+appVersion: "0.0.0-dev"
+keywords:
+  - unity-catalog
+  - data-governance
+  - rust
+home: https://github.com/ion-elgreco/unitycatalog-rs
+sources:
+  - https://github.com/ion-elgreco/unitycatalog-rs

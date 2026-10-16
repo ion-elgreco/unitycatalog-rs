@@ -1,0 +1,166 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/uc-common",
+    "crates/uc-api",
+    "crates/uc-storage",
+    "crates/uc-delta",
+    "crates/uc-metastore",
+    "crates/uc-server",
+    "crates/uc-client",
+    "crates/uc-cli",
+    "crates/uc-ui",
+    "python/client",
+]
+# Skip the Python client (python/client/) from plain `cargo build` / `cargo test` so
+# they don't need a Python interpreter to resolve PYO3_PYTHON. Build it with
+# `maturin develop` (see python/client/README.md).
+# Skip uc-ui — it targets wasm32-unknown-unknown; build it with `just wasm`
+# (see crates/uc-ui/README.md).
+default-members = [
+    "crates/uc-common",
+    "crates/uc-api",
+    "crates/uc-storage",
+    "crates/uc-delta",
+    "crates/uc-metastore",
+    "crates/uc-server",
+    "crates/uc-client",
+    "crates/uc-cli",
+]
+
+[workspace.package]
+version = "0.0.0-dev"
+edition = "2024"
+rust-version = "1.94"
+license = "Apache-2.0"
+repository = "https://github.com/ion-elgreco/unitycatalog-rs"
+authors = ["Ion Koutsouris"]
+
+[workspace.dependencies]
+# Internal crates
+uc-common = { path = "crates/uc-common" }
+uc-api    = { path = "crates/uc-api" }
+uc-storage = { path = "crates/uc-storage" }
+uc-delta  = { path = "crates/uc-delta" }
+uc-metastore = { path = "crates/uc-metastore" }
+uc-client = { path = "crates/uc-client" }
+
+# Async runtime
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs", "net", "sync", "time"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# HTTP / server
+axum = { version = "0.7", features = ["macros", "tokio", "json", "query"] }
+tower = { version = "0.5", features = ["util"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "request-id", "util", "limit", "fs", "compression-br", "compression-gzip"] }
+
+# OpenAPI
+utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-axum = "0.1"
+utoipa-swagger-ui = { version = "8", features = ["axum"] }
+
+# HTTP client
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+url = "2"
+percent-encoding = "2"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Settings: uc.toml and UC_<GROUP>_<KEY> variables (uc-common's `settings`).
+# figment2 is the maintained fork of figment; back to figment once that is
+# maintained again.
+figment2 = { version = "0.11", default-features = false, features = ["env", "toml"] }
+
+# Storage — Turso (embedded: in memory or in a file) and PostgreSQL (a server).
+# Turso without its `mimalloc` feature, which sets the allocator of the whole
+# process.
+turso = { version = "0.8.3", default-features = false }
+tokio-postgres = "0.7.13"
+deadpool = { version = "0.12", default-features = false, features = ["managed", "rt_tokio_1"] }
+# TLS to PostgreSQL. The crypto provider is chosen explicitly (ring), as
+# other crates enable both of rustls' providers.
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["tls12", "ring"] }
+rustls-native-certs = "0.8"
+# Schema migrations: refinery runs them on `Storage` through the traits of
+# refinery-core; `time` reads the times refinery records. For PostgreSQL,
+# sqlparser reads them to give text columns `COLLATE "C"`.
+refinery = { version = "0.10", default-features = false }
+refinery-core = { version = "0.10", default-features = false }
+sqlparser = { version = "0.63", default-features = false, features = ["std"] }
+time = { version = "0.3", features = ["parsing"] }
+# Iceberg table metadata (the Iceberg REST catalog)
+iceberg = { version = "0.10.1", default-features = false }
+flate2 = "1"
+# Cloud object storage (managed-storage cleanup)
+object_store = { version = "0.12", default-features = false, features = ["aws", "gcp", "azure", "fs"] }
+# Delta tables in the CLI (`uc table create/read/write`); Arrow 58 as iceberg.
+delta_kernel = { version = "0.29", default-features = false, features = ["arrow-58", "internal-api"] }
+delta_kernel_default_engine = { version = "0.29", default-features = false, features = ["arrow-58", "rustls"] }
+
+# Errors / logging
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Misc
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde", "wasmbind"] }
+humantime = "2"
+regex = "1"
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+clap = { version = "4", features = ["derive", "wrap_help"] }
+http = "1"
+bytes = "1"
+
+# Auth / crypto
+jsonwebtoken = "9"
+sha2 = "0.10"
+hex = "0.4"
+
+# Test ergonomics
+rstest = { version = "0.23", default-features = false }
+
+# TUI (uc-cli interactive mode)
+ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
+crossterm = { version = "0.28", features = ["event-stream"] }
+tokio-stream = "0.1"
+
+# AuthZ
+cedar-policy = "4"
+
+# Observability + ops
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.17", default-features = false }
+tower_governor = "0.4"
+opentelemetry = { version = "0.31" }
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
+tracing-opentelemetry = "0.32"
+
+# Python client (python/client/, crate uc-py). Its default feature turns on pyo3's
+# `extension-module`.
+pyo3 = { version = "0.28", features = ["abi3-py310", "chrono"] }
+pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
+pyo3-build-config = "0.28"
+# `infer_signature`: the stubs show the default values of the arguments.
+pyo3-stub-gen = { version = "0.23", default-features = false, features = ["infer_signature"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
+[profile.dev]
+debug = 1
+
+# RSA key generation is very slow unoptimized; tests generate signing keys.
+[profile.dev.package.rsa]
+opt-level = 3
+[profile.dev.package.num-bigint-dig]
+opt-level = 3

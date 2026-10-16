@@ -1,0 +1,104 @@
+name: CI
+
+# The Rust workspace: formatting, clippy and the tests, on Turso and on
+# PostgreSQL; and the image, built as the release builds it and run. The
+# Python client: python.yml.
+
+on:
+  merge_group:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded PR runs (pushes, force-pushes). Runs on main finish, since
+# a cancelled run skips the cache save that PR runs restore from; a newer main
+# push waits for the running one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    name: Rust lints and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run Rust tests
+        run: just test-rust
+
+  # The same tests on PostgreSQL: each test gets a schema of its own.
+  postgres:
+    name: Rust tests on PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+
+      - name: Run Rust tests
+        env:
+          UC_TEST_POSTGRES_URL: postgresql://postgres@localhost:5432/postgres?sslmode=disable
+        run: just test-rust
+
+  # The image of deploy/docker/Dockerfile (amd64), with binaries of the dev
+  # profile from cargo zigbuild, run as the Helm chart runs it. The release
+  # workflow pushes both architectures on a tag.
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+        with:
+          cross_compile: "true"
+
+      - name: Build the image and run it
+        run: just test-docker

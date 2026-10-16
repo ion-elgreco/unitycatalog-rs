@@ -1,0 +1,7 @@
+[default.extend-words]
+# `ALO` is a piece of `CATALOG_NAME`, wrapped in a column of a CLI table test.
+alo = "alo"
+# `PnDTnHnMnS` is java.time.Duration's pattern (ISO 8601 durations).
+pn = "pn"
+# The TUI crate of the CLI.
+ratatui = "ratatui"

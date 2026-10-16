@@ -1,0 +1,170 @@
+suite: settings and UI
+templates:
+  - templates/server/configmap.yaml
+  - templates/server/deployment.yaml
+release:
+  name: uc-server
+  namespace: unitycatalog
+tests:
+  - it: writes an empty uc.toml, and turns authorization off by default
+    asserts:
+      - template: templates/server/configmap.yaml
+        hasDocuments:
+          count: 1
+      - template: templates/server/configmap.yaml
+        equal:
+          path: metadata.name
+          value: uc-server-server-config
+      - template: templates/server/configmap.yaml
+        equal:
+          path: data["uc.toml"]
+          value: ""
+      - template: templates/server/configmap.yaml
+        notExists:
+          path: data["dbrootca.crt"]
+      - template: templates/server/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_CONFIG
+            value: /etc/uc/config/uc.toml
+      - template: templates/server/deployment.yaml
+        contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_ENABLED
+            value: "false"
+      - template: templates/server/deployment.yaml
+        notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_ALLOWED_ISSUERS
+          any: true
+
+  - it: sets the authorization, storage and credential settings as variables
+    set:
+      auth.enabled: true
+      auth.audiences: uc
+      storage.tableStorageRoot: s3://bucket/tables
+      storage.modelStorageRoot: s3://bucket/models
+      storage.credentials.s3:
+        - bucketPath: s3://b
+          region: us-east-1
+          awsRoleArn: arn:aws:iam::123456789012:role/r
+      storage.credentials.adls:
+        - storageAccountName: account
+          credentialsSecretName: adls
+      storage.credentials.gcs:
+        - bucketPath: gs://g
+          credentialsSecretName: gcs
+    template: templates/server/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_AUTH_ENABLED, value: "true"}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_AUTH_COOKIE_TIMEOUT, value: 5d}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_AUTH_ACCESS_TOKEN_TIMEOUT, value: 24h}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_AUTH_ALLOWED_ISSUERS, value: https://accounts.google.com}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_AUTH_AUDIENCES, value: uc}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_STORAGE_TABLES_ROOT, value: s3://bucket/tables}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_STORAGE_MODELS_ROOT, value: s3://bucket/models}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_S3_0_BUCKET, value: s3://b}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_S3_0_REGION, value: us-east-1}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_S3_0_ROLE_ARN, value: arn:aws:iam::123456789012:role/r}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_ADLS_0_ACCOUNT, value: account}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_GCS_0_BUCKET, value: gs://g}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_GCS_0_JSON_KEY_FILE, value: /etc/uc/gcs/0/jsonKey}
+
+  - it: writes server.config.toml as uc.toml
+    set:
+      server.config.toml: |
+        [tables]
+        managed = false
+    template: templates/server/configmap.yaml
+    asserts:
+      - equal:
+          path: data["uc.toml"]
+          value: |
+            [tables]
+            managed = false
+
+  - it: writes the users of auth.users into uc.toml, after server.config.toml
+    set:
+      server.config.toml: |
+        [tables]
+        managed = false
+      auth.users:
+        - email: alice@example.com
+          name: Alice "A"
+          privileges: ["CREATE CATALOG"]
+        - email: etl@example.com
+          externalId: etl-client
+    template: templates/server/configmap.yaml
+    asserts:
+      - equal:
+          path: data["uc.toml"]
+          value: |
+            [tables]
+            managed = false
+
+
+            [[auth.users]]
+            email = "alice@example.com"
+            name = "Alice \"A\""
+            privileges = ["CREATE CATALOG"]
+
+            [[auth.users]]
+            email = "etl@example.com"
+            external_id = "etl-client"
+
+  - it: needs the email of each user
+    set:
+      auth.users:
+        - name: Bob
+    template: templates/server/deployment.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: auth.users[0].email is required
+
+  - it: rolls the pods when uc.toml changes, users included
+    template: templates/server/deployment.yaml
+    set:
+      auth.users:
+        - email: alice@example.com
+    asserts:
+      - notEqual:
+          path: spec.template.metadata.annotations["checksum/serverConfig"]
+          value: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+  - it: turns the UI off
+    set:
+      ui.enabled: false
+    template: templates/server/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_UI_ENABLED, value: "false"}

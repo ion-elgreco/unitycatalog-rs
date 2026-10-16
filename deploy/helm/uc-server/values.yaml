@@ -1,0 +1,213 @@
+# Values follow upstream's chart (helm/ in unitycatalog/unitycatalog) where
+# they mean the same. The database is an embedded Turso file (instead of
+# H2's) or a PostgreSQL server that several replicas share, as upstream.
+
+storage:
+  # -- Fallback root for models (upstream `storage-root.models`).
+  modelStorageRoot: ""
+  # -- Fallback root for MANAGED tables (upstream `storage-root.tables`).
+  tableStorageRoot: ""
+
+  credentials:
+    # -- Per-bucket S3 credentials, for paths without an external location.
+    # The secret has `accessKey` and `secretKey`.
+    # - bucketPath: s3://my-bucket
+    #   region: us-east-1
+    #   awsRoleArn: arn:aws:iam::123456789012:role/my-role
+    #   credentialsSecretName: my-bucket-secret
+    s3: []
+    # -- Per-account ADLS credentials. The secret has `tenantId`,
+    # `clientId` and `clientSecret`.
+    # - storageAccountName: myaccount
+    #   credentialsSecretName: my-storage-secret
+    adls: []
+    # -- Per-bucket GCS credentials. The secret has `jsonKey`.
+    # - bucketPath: gs://my-bucket
+    #   credentialsSecretName: my-bucket-secret
+    gcs: []
+
+auth:
+  # -- Sign-in and authorization (upstream `server.authorization`).
+  enabled: false
+  # -- Users that the server makes at each start when they are missing
+  # (`[[auth.users]]` in its uc.toml). It never changes or deletes a user
+  # that exists, and grants the missing `privileges` on the metastore again.
+  # - email: alice@example.com
+  #   name: Alice
+  #   privileges: ["CREATE CATALOG"]
+  # - email: etl@example.com
+  #   externalId: <the id of the ETL job's OAuth client>
+  users: []
+  # -- Allowed token issuers (exact, or `*` for one DNS label).
+  allowedIssuers: https://accounts.google.com
+  # -- Expected token audiences; `*` alone disables the check.
+  audiences: ""
+  # -- Sign-in to the web UI: the server signs users in with an OpenID
+  # Connect provider (`UC_AUTH_MODE=oidc`); a user signs in when `users` (or
+  # SCIM) has their email.
+  oidc:
+    # -- The provider's issuer, such as `https://accounts.google.com`; its
+    # discovery document has the endpoints. Empty: no sign-in to the UI.
+    issuer: ""
+    # -- A Secret with the OAuth client's `clientId` and `clientSecret`
+    # (upstream's `clientSecretName`; no `clientSecret` for a public client).
+    clientSecretName: ""
+    # -- The scopes the server asks for.
+    scopes: openid email profile
+    # -- "Log out" also ends the provider's session, so that the next
+    # sign-in asks for the password again; the provider must allow the
+    # post-logout redirect URI `<publicUrl>/`. Off, a provider that other
+    # apps share keeps their sign-in.
+    endSession: false
+  # -- The server's external URL, such as `https://uc.example.com`: the
+  # provider returns the browser to `<publicUrl>/auth/callback`, and with
+  # `oidc.endSession` to `<publicUrl>/` after "Log out".
+  publicUrl: ""
+  # -- Sign-in through an auth proxy in front of the server, such as
+  # oauth2-proxy or Authelia (`UC_AUTH_MODE=forward`): the proxy signs users
+  # in and names the user in its headers. Not with `oidc`.
+  forward:
+    # -- The proxies' addresses, as comma-separated CIDRs or addresses, such
+    # as `10.42.0.0/16`: only their headers count. Empty: no forward sign-in.
+    trustedProxies: ""
+    # -- The header with the user's email.
+    emailHeader: Remote-Email
+    # -- The header with the user, without the email header.
+    userHeader: Remote-User
+    # -- The proxy's sign-out, where the UI's "Log out" goes.
+    logoutUrl: ""
+  cookieTimeout: 5d
+  accessTokenTimeout: 24h
+
+server:
+  enabled: true
+
+  db:
+    # -- `file`: the embedded Turso database on a volume (one replica).
+    # `postgresql`: a PostgreSQL server that every replica shares.
+    type: file
+    fileConfig:
+      persistence:
+        # -- Without persistence the catalog is lost with the pod.
+        enabled: true
+        pvcName: ""
+        createPVC: true
+        accessModes: ["ReadWriteOnce"]
+        size: 1Gi
+        storageClassName: ""
+    postgresqlConfig:
+      # -- PostgreSQL host (required).
+      host: ""
+      port: 5432
+      dbName: ucdb
+      username: postgres
+      # -- Secret with the user's password; none without it.
+      passwordSecretName: ""
+      passwordSecretKey: password
+      ssl:
+        # -- Without it, TLS when the server offers it, unchecked
+        # (libpq's `prefer`).
+        enabled: false
+        # -- libpq's `sslmode`: `require`, `verify-ca` or `verify-full`.
+        mode: verify-full
+        # -- PEM of the root certificate; the system's roots without one.
+        rootCert: ""
+        # -- Or a ConfigMap with it.
+        rootCertConfigMapName: ""
+        rootCertConfigMapKey: ca.crt
+      # -- More URL parameters, such as `application_name`.
+      extraParams: {}
+
+  config:
+    # -- A uc.toml for settings that these values do not have, such as
+    # `[tables]`; the chart's variables win over it. Each setting is also a
+    # variable for `deployment.env`: `UC_TABLES_MANAGED` is `managed` in
+    # `[tables]`.
+    toml: ""
+
+  service:
+    type: ClusterIP
+    port: 8080
+
+  deployment:
+    replicaCount: 1
+    port: 8080
+    # -- Probes and metrics (`--obs-port`).
+    obsPort: 8081
+    image:
+      repository: ghcr.io/ion-elgreco/unitycatalog-rs
+      pullPolicy: IfNotPresent
+      # -- Defaults to the chart's appVersion.
+      tag: ""
+    imagePullSecrets: []
+    extraInitContainers: []
+    extraContainers: []
+    extraPodAnnotations: {}
+    extraPodLabels: {}
+    # -- The image's user (distroless `nonroot`); `fsGroup` lets it write
+    # on the database volume.
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 65532
+      runAsGroup: 65532
+      fsGroup: 65532
+      seccompProfile:
+        type: RuntimeDefault
+    # -- The server writes only on its volumes: the database and `/tmp`
+    # (an emptyDir); it logs to stdout.
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+    resources: {}
+    # -- More environment variables: `UC_<GROUP>_<KEY>` settings.
+    env: {}
+    extraVolumes: []
+    extraVolumeMounts: []
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    updateStrategy: {}
+    enableLivenessProbe: true
+    livenessProbe: {}
+    enableReadinessProbe: true
+    readinessProbe: {}
+    enableStartupProbe: true
+    startupProbe: {}
+
+  jwtKeypairSecret:
+    # -- An existing secret with `private_key.pem`, the RSA key that signs
+    # the server's tokens; by default the chart makes one at install.
+    name: ""
+    create: true
+
+  # -- RUST_LOG
+  logLevel: info
+
+ui:
+  # -- The server serves the web UI at `/` for browsers; its sign-in is
+  # `auth.oidc`.
+  enabled: true
+
+nameOverride: ""
+fullnameOverride: ""
+
+ingress:
+  enabled: false
+  host: ""
+  ingressClassName: ""
+  annotations: {}
+  tlsSecretName: ""
+
+httpRoute:
+  enabled: false
+  host: ""
+  parentRefs: []
+  annotations: {}
+
+serviceAccount:
+  create: false
+  automount: true
+  annotations: {}
+  name: ""
