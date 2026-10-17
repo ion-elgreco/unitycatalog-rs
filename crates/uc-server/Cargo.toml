@@ -31,7 +31,7 @@ hmac = "0.12"
 # The trusted proxies of the forward sign-in (`UC_AUTH_MODE=forward`).
 ipnet = "2"
 base64 = "0.22"
-chrono = { workspace = true }
+jiff = { workspace = true }
 
 opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }

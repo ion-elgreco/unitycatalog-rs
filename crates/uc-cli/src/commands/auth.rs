@@ -85,9 +85,9 @@ pub async fn run(
 
 /// When the token of the exchange's `response` expires, in local time.
 fn expiry(response: &Value) -> Option<String> {
-    let life = chrono::TimeDelta::try_seconds(response["expires_in"].as_i64()?)?;
-    let until = chrono::Local::now().checked_add_signed(life)?;
-    Some(until.format("%Y-%m-%d %H:%M").to_string())
+    let life = jiff::SignedDuration::from_secs(response["expires_in"].as_i64()?);
+    let until = jiff::Zoned::now().checked_add(life).ok()?;
+    Some(until.strftime("%Y-%m-%d %H:%M").to_string())
 }
 
 /// The server's answer to the token exchange.

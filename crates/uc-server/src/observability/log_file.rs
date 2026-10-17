@@ -60,7 +60,7 @@ impl Open {
     /// drop all but the newest archives.
     fn roll(&mut self) -> io::Result<()> {
         self.file.flush()?;
-        let stamp = chrono::Local::now().format("%m-%d-%Y-%H-%M-%S");
+        let stamp = jiff::Zoned::now().strftime("%m-%d-%Y-%H-%M-%S");
         let mut n = 1;
         let archive = loop {
             let candidate = self.dir.join(format!("server-{stamp}-{n}.log.gz"));
@@ -140,7 +140,7 @@ where
         write!(
             writer,
             "{} [{thread}] {:<5} {} - ",
-            chrono::Local::now().format("%H:%M:%S%.3f"),
+            jiff::Zoned::now().strftime("%H:%M:%S%.3f"),
             meta.level(),
             meta.target()
         )?;

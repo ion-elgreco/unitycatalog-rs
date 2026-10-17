@@ -10,8 +10,8 @@
 use std::collections::HashMap;
 
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
-use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use hmac::{Hmac, Mac};
+use jiff::{SignedDuration, Timestamp};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use sha2::Sha256;
 
@@ -87,8 +87,8 @@ pub struct DelegationKey {
     pub value: String,
 }
 
-fn rfc3339(t: DateTime<Utc>) -> String {
-    t.to_rfc3339_opts(SecondsFormat::Secs, true)
+fn rfc3339(t: Timestamp) -> String {
+    format!("{t:.0}")
 }
 
 /// What Python's `quote` encodes: all but unreserved characters and `/`.
@@ -257,8 +257,9 @@ impl AzureVendor {
             ))
         })?;
         // Whole seconds, as the SAS states them.
-        let start = DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap_or_else(Utc::now);
-        let expiry = start + Duration::hours(1);
+        let start = Timestamp::from_second(Timestamp::now().as_second())
+            .unwrap_or_else(|_| Timestamp::now());
+        let expiry = start + SignedDuration::from_hours(1);
         let (start_text, expiry_text) = (rfc3339(start), rfc3339(expiry));
         let token = self.access_token(config).await?;
         let key = self
@@ -277,7 +278,7 @@ impl AzureVendor {
             &start_text,
             &expiry_text,
         )?;
-        Ok((sas, expiry.timestamp_millis()))
+        Ok((sas, expiry.as_millisecond()))
     }
 
     /// The service principal's token for Azure Storage.

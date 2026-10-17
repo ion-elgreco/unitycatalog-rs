@@ -89,8 +89,8 @@ pub fn from_commit(
         .converted_delta_timestamp
         .as_deref()
         .map(|t| {
-            chrono::DateTime::parse_from_rfc3339(t)
-                .map(|d| d.timestamp_millis())
+            t.parse::<jiff::Timestamp>()
+                .map(|d| d.as_millisecond())
                 .map_err(|_| invalid(format!("Text '{t}' could not be parsed as an instant")))
         })
         .transpose()?;

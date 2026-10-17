@@ -391,9 +391,10 @@ async fn azure_signs_a_user_delegation_sas() {
     )
     .unwrap();
     assert_eq!(sas, expected);
-    let expiry = chrono::DateTime::parse_from_rfc3339(&params["se"])
+    let expiry = params["se"]
+        .parse::<jiff::Timestamp>()
         .unwrap()
-        .timestamp_millis();
+        .as_millisecond();
     assert_eq!(body["expiration_time"], expiry);
 
     let signed_in = logins.lock().unwrap()[0].clone();

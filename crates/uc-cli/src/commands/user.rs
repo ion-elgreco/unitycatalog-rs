@@ -56,8 +56,8 @@ pub enum UserOp {
 /// `User`.
 fn user_from_scim(user: &ScimUser) -> Value {
     let millis = |time: Option<&String>| {
-        time.and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-            .map(|t| t.timestamp_millis())
+        time.and_then(|t| t.parse::<jiff::Timestamp>().ok())
+            .map(|t| t.as_millisecond())
     };
     let meta = user.meta.as_ref();
     let email = user.emails.as_deref().and_then(<[ScimEmail]>::first);

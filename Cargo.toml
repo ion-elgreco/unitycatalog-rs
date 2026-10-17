@@ -58,7 +58,7 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 tower-http = { version = "0.6", features = ["trace", "cors", "request-id", "util", "limit", "fs", "compression-br", "compression-gzip"] }
 
 # OpenAPI
-utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
+utoipa = { version = "5", features = ["axum_extras", "uuid"] }
 utoipa-axum = "0.1"
 utoipa-swagger-ui = { version = "8", features = ["axum"] }
 
@@ -109,7 +109,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Misc
-chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde", "wasmbind"] }
+jiff = "0.2"
 humantime = "2"
 regex = "1"
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
@@ -144,7 +144,7 @@ tracing-opentelemetry = "0.32"
 
 # Python client (python/client/, crate uc-py). Its default feature turns on pyo3's
 # `extension-module`.
-pyo3 = { version = "0.28", features = ["abi3-py310", "chrono"] }
+pyo3 = { version = "0.28", features = ["abi3-py310"] }
 pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
 pyo3-build-config = "0.28"
 # `infer_signature`: the stubs show the default values of the arguments.

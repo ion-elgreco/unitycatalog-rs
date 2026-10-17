@@ -38,8 +38,8 @@ struct ScimUserRow {
 
 /// RFC 3339 in UTC with milliseconds, as SCIM `meta` dates.
 fn rfc3339(millis: i64) -> Option<String> {
-    let time = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(millis)?;
-    Some(time.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+    let time = jiff::Timestamp::from_millisecond(millis).ok()?;
+    Some(format!("{time:.3}"))
 }
 
 /// Upstream `Scim2Utils.asUserResource`.

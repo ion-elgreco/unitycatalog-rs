@@ -247,7 +247,7 @@ pub async fn list_users(
     authz::require_admin(&state, &principal.username).await?;
     let resources = params.page(state.metastore.scim().list_users().await?)?;
     // Upstream's totals count the page; its `meta` is the time of the list.
-    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let now = format!("{:.3}", jiff::Timestamp::now());
     Ok(Scim(
         StatusCode::OK,
         ListScimUsersResponse {

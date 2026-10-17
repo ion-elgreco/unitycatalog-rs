@@ -299,8 +299,8 @@ fn present(v: &Value) -> bool {
     }
 }
 
-fn instant(s: &str) -> Option<chrono::DateTime<chrono::FixedOffset>> {
-    chrono::DateTime::parse_from_rfc3339(s).ok()
+fn instant(s: &str) -> Option<jiff::Timestamp> {
+    s.parse().ok()
 }
 
 /// One value against the filter's: strings ignore case, dates compare as

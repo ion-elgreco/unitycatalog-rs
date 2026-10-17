@@ -1032,7 +1032,7 @@ async fn personal_access_tokens_need_a_signed_in_user() {
     assert!(err.contains("listTokens call failed with: 401 - "), "{err}");
     assert!(err.contains("No authorization found."), "{err}");
 
-    let expires_at = chrono::Utc::now().timestamp_millis() + 3_600_000;
+    let expires_at = jiff::Timestamp::now().as_millisecond() + 3_600_000;
     let created = s
         .admin_json(&[
             "token",

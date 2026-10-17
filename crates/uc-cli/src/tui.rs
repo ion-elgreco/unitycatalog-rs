@@ -38,13 +38,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use crossterm::{
     event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use futures::{Stream, StreamExt};
+use jiff::civil::Date;
+use jiff::tz::TimeZone;
+use jiff::{Timestamp, Zoned};
 use ratatui::{
     Frame, Terminal,
     backend::{Backend, CrosstermBackend},
@@ -1972,7 +1974,7 @@ fn split_create_input(raw: &str, n: usize) -> Vec<String> {
 /// The expiry of a new token, as the TUI asks for it: `n` days after
 /// `now`, the end of a date (`2026-12-31`) in the local time zone, or
 /// `never`. In epoch milliseconds; none for `never`.
-fn token_expiry(text: &str, now: DateTime<Local>) -> Result<Option<i64>, String> {
+fn token_expiry(text: &str, now: &Zoned) -> Result<Option<i64>, String> {
     const DAY_MS: i64 = 24 * 60 * 60 * 1000;
     let text = text.trim();
     if text.eq_ignore_ascii_case("never") {
@@ -1982,31 +1984,34 @@ fn token_expiry(text: &str, now: DateTime<Local>) -> Result<Option<i64>, String>
         if days == 0 {
             return Err("the expiry must be at least 1 day".into());
         }
-        return Ok(Some(now.timestamp_millis() + i64::from(days) * DAY_MS));
+        return Ok(Some(
+            now.timestamp().as_millisecond() + i64::from(days) * DAY_MS,
+        ));
     }
-    let date = NaiveDate::parse_from_str(text, "%Y-%m-%d").map_err(|_| {
+    let date = Date::strptime("%Y-%m-%d", text).map_err(|_| {
         format!("expiry must be days (`30`), a date (`2026-12-31`) or `never`, got '{text}'")
     })?;
     let end = date
-        .and_hms_milli_opt(23, 59, 59, 999)
-        .and_then(|end| Local.from_local_datetime(&end).earliest())
-        .ok_or_else(|| format!("{date} has no end in the local time zone"))?;
-    if end <= now {
+        .at(23, 59, 59, 999_000_000)
+        .to_zoned(now.time_zone().clone())
+        .map_err(|_| format!("{date} has no end in the local time zone"))?;
+    if end <= *now {
         return Err(format!("the date {date} has passed"));
     }
-    Ok(Some(end.timestamp_millis()))
+    Ok(Some(end.timestamp().as_millisecond()))
 }
 
 /// A token's expiry in its row, in local time.
 fn expiry_label(expires_at: Option<i64>) -> String {
     let at = expires_at
         .filter(|&ms| ms != 0)
-        .and_then(|ms| Local.timestamp_millis_opt(ms).single());
+        .and_then(|ms| Timestamp::from_millisecond(ms).ok())
+        .map(|at| at.to_zoned(TimeZone::system()));
     let Some(at) = at else {
         return "never expires".into();
     };
-    let shown = at.format("%Y-%m-%d %H:%M");
-    match at <= Local::now() {
+    let shown = at.strftime("%Y-%m-%d %H:%M");
+    match at.timestamp() <= Timestamp::now() {
         true => format!("expired {shown}"),
         false => format!("expires {shown}"),
     }
@@ -2174,7 +2179,7 @@ async fn create_row(
                 .rsplit_once(char::is_whitespace)
                 .ok_or("expected `<name> <expiry>`")?;
             let name = name.trim().to_string();
-            let expires_at = token_expiry(expiry, Local::now())?;
+            let expires_at = token_expiry(expiry, &Zoned::now())?;
             let info = client.create_pat(&CreatePat { name, expires_at }).await?;
             // This is the only time the value shows: `list_pats` does not
             // return it. A modal shows it, not the status line, which stays
@@ -2857,7 +2862,7 @@ mod tests {
         settle(&mut app).await;
         assert_eq!(app.pane().rows.len(), 1);
         let expires_at = app.pane().rows[0].detail["expires_at"].as_i64().unwrap();
-        let days = (expires_at - Local::now().timestamp_millis()) as f64 / 86_400_000.0;
+        let days = (expires_at - Timestamp::now().as_millisecond()) as f64 / 86_400_000.0;
         assert!((29.9..=30.0).contains(&days), "{days}");
 
         // `n` and Esc keep the row.
@@ -3631,14 +3636,15 @@ mod tests {
 
     #[test]
     fn token_expiry_reads_days_dates_and_never() {
-        let now = Local.with_ymd_and_hms(2026, 10, 16, 12, 0, 0).unwrap();
+        let local = |d: Date, h, m, s| d.at(h, m, s, 0).to_zoned(TimeZone::system()).unwrap();
+        let now = &local(jiff::civil::date(2026, 10, 16), 12, 0, 0);
         let day = 24 * 60 * 60 * 1000;
-        let in_30_days = now.timestamp_millis() + 30 * day;
+        let in_30_days = now.timestamp().as_millisecond() + 30 * day;
         assert_eq!(token_expiry("30", now), Ok(Some(in_30_days)));
         assert_eq!(token_expiry(" Never ", now), Ok(None));
         // A date: the token works until the end of that day.
-        let end = Local.with_ymd_and_hms(2026, 12, 31, 23, 59, 59).unwrap();
-        let end = end.timestamp_millis() + 999;
+        let end = local(jiff::civil::date(2026, 12, 31), 23, 59, 59);
+        let end = end.timestamp().as_millisecond() + 999;
         assert_eq!(token_expiry("2026-12-31", now), Ok(Some(end)));
         assert!(token_expiry("2026-10-16", now).unwrap().is_some());
         assert_eq!(
