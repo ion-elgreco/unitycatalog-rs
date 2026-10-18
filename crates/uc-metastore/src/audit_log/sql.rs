@@ -6,7 +6,7 @@ use uc_api::AuditEvent;
 use uc_common::{Pagination, Result};
 
 use crate::sql::rows::AUDIT_EVENT;
-use crate::sql::{SqlMetastore, char_len, create_err, insert, select, starts_with};
+use crate::sql::{SqlMetastore, char_len, create_err, insert_all, select, starts_with};
 use crate::{AuditLogOps, AuditQuery};
 use uc_storage::Value;
 
@@ -35,16 +35,19 @@ impl From<AuditEventRow> for AuditEvent {
 
 #[async_trait]
 impl AuditLogOps for SqlMetastore {
-    async fn record(&self, event: AuditEvent) -> Result<()> {
-        let row = AuditEventRow {
-            id_string: event.id.unwrap_or_else(|| Uuid::new_v4().to_string()),
-            principal: event.principal,
-            method: event.method,
-            path: event.path,
-            status: event.status,
-            timestamp: event.timestamp,
-        };
-        insert(self.db.as_ref(), &AUDIT_EVENT, &row)
+    async fn record(&self, events: Vec<AuditEvent>) -> Result<()> {
+        let rows: Vec<AuditEventRow> = events
+            .into_iter()
+            .map(|event| AuditEventRow {
+                id_string: event.id.unwrap_or_else(|| Uuid::new_v4().to_string()),
+                principal: event.principal,
+                method: event.method,
+                path: event.path,
+                status: event.status,
+                timestamp: event.timestamp,
+            })
+            .collect();
+        insert_all(self.db.as_ref(), &AUDIT_EVENT, &rows)
             .await
             .map_err(create_err)
     }
@@ -114,4 +117,37 @@ impl AuditLogOps for SqlMetastore {
 fn parse_audit_cursor(s: &str) -> Option<(i64, String)> {
     let (ts, id) = s.split_once(':')?;
     Some((ts.parse().ok()?, id.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Metastore;
+    use crate::config::MetastoreConfig;
+
+    /// 300 events: statements of 128, 128, 32, 8 and 4 rows.
+    #[tokio::test]
+    async fn records_many_events() {
+        let metastore = SqlMetastore::connect(MetastoreConfig::for_tests())
+            .await
+            .unwrap();
+        let events = (0..300)
+            .map(|i| AuditEvent {
+                id: None,
+                principal: format!("user{i}"),
+                method: "POST".into(),
+                path: "/catalogs".into(),
+                status: 200,
+                timestamp: i,
+            })
+            .collect();
+        metastore.audit_log().record(events).await.unwrap();
+        let rows = metastore
+            .db
+            .query("SELECT COUNT(*), MAX(timestamp) FROM audit_event", &[])
+            .await
+            .unwrap();
+        assert_eq!(rows[0].int(0).unwrap(), 300);
+        assert_eq!(rows[0].int(1).unwrap(), 299);
+    }
 }

@@ -414,12 +414,21 @@ impl TableDef {
 
     /// `INSERT INTO t (a, b, c) VALUES ($1, $2, $3)`, for [`Self::encode`].
     pub(crate) fn insert(&self) -> String {
-        let placeholders: Vec<String> = (1..=self.columns.len()).map(|i| format!("${i}")).collect();
+        self.insert_rows(1)
+    }
+
+    /// `INSERT INTO t (a, b) VALUES ($1, $2), ($3, $4)`: `rows` rows of
+    /// [`Self::encode`] values, one after the other.
+    pub(crate) fn insert_rows(&self, rows: usize) -> String {
+        let width = self.columns.len();
+        let tuples: Vec<String> = (0..rows)
+            .map(|row| format!("({})", super::placeholders(row * width + 1, width)))
+            .collect();
         format!(
-            "INSERT INTO {} ({}) VALUES ({})",
+            "INSERT INTO {} ({}) VALUES {}",
             self.name,
             self.column_list(),
-            placeholders.join(", ")
+            tuples.join(", ")
         )
     }
 

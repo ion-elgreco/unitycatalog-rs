@@ -190,6 +190,34 @@ where
     ex.execute(&t.insert(), &values).await.map(drop)
 }
 
+/// The most rows in one statement of [`insert_all`].
+const INSERT_ALL_ROWS: usize = 128;
+
+/// Insert `rows` into `t`, in statements of 128, 64, 32, … or 1 rows: a
+/// connection prepares at most eight such statements. Each statement
+/// commits on its own.
+pub(crate) async fn insert_all<R, E>(ex: &E, t: &TableDef, rows: &[R]) -> StorageResult<()>
+where
+    R: Serialize,
+    E: Exec + ?Sized,
+{
+    let mut rest = rows;
+    while !rest.is_empty() {
+        let n = 1 << rest.len().min(INSERT_ALL_ROWS).ilog2();
+        let (chunk, tail) = rest.split_at(n);
+        let mut values = Vec::with_capacity(n * t.columns.len());
+        for row in chunk {
+            values.extend(
+                t.encode(row)
+                    .map_err(|e| StorageError::Other(e.message().to_string()))?,
+            );
+        }
+        ex.execute(&t.insert_rows(n), &values).await?;
+        rest = tail;
+    }
+    Ok(())
+}
+
 /// Write every column of `row` to the row of `t` with its key; the number
 /// of rows written (0 when it is gone).
 pub(crate) async fn update<R, E>(ex: &E, t: &TableDef, row: &R) -> StorageResult<u64>

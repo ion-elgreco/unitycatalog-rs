@@ -3,7 +3,9 @@
 //! [`audit_layer`] records one event per mutating request without blocking
 //! the response: one long-lived drainer task, fed by a bounded mpsc channel,
 //! writes the events, so a stalled audit DB cannot pile up pending tasks.
-//! On overflow the event is dropped, with a warning in the log.
+//! It takes all waiting events at once, up to [`BATCH`], and writes them in
+//! one statement. On overflow the event is dropped, with a warning in the
+//! log.
 //!
 //! [`audit_layer`]: crate::observability::audit::layer
 
@@ -17,6 +19,9 @@ use uc_metastore::DynMetastore;
 /// Default channel capacity: enough for a short audit-DB stall, small
 /// enough to cap memory in a long one.
 pub const DEFAULT_CAPACITY: usize = 1024;
+
+/// The most events in one write.
+pub const BATCH: usize = 128;
 
 /// Minimum gap between warnings about dropped audit events: at most one
 /// line, with the drop count, per interval.
@@ -66,8 +71,10 @@ static LAST_DROP_LOG_MS: AtomicI64 = AtomicI64::new(0);
 pub fn spawn_drainer(metastore: DynMetastore, capacity: usize) -> AuditHandle {
     let (tx, mut rx) = mpsc::channel::<AuditEvent>(capacity);
     tokio::spawn(async move {
-        while let Some(ev) = rx.recv().await {
-            if let Err(e) = metastore.audit_log().record(ev).await {
+        let mut batch = Vec::with_capacity(BATCH);
+        while rx.recv_many(&mut batch, BATCH).await > 0 {
+            let events = std::mem::replace(&mut batch, Vec::with_capacity(BATCH));
+            if let Err(e) = metastore.audit_log().record(events).await {
                 tracing::warn!(target: "uc::audit", error = %e, "audit record failed");
             }
         }
