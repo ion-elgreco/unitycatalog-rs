@@ -79,7 +79,7 @@ async fn server_with_keys_as(admin: bool) -> (String, String) {
         .unwrap();
     let mut state = AppState::new(metastore).with_security(Arc::new(security));
     if admin {
-        state.admin_principals = Arc::new(["alice@example.com".to_string()].into());
+        state = state.with_admins(["alice@example.com"]);
     }
     let addr = serve(build_app(state)).await;
     (format!("http://{addr}{API_BASE}"), token)

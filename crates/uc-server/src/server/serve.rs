@@ -19,12 +19,13 @@ use tracing::{debug, error};
 /// A connection that the listener accepted, and its client.
 type Accepted = (std::net::TcpStream, SocketAddr);
 
-/// Serve `app` on `listener` with `workers` workers until `shutdown`
-/// completes; then finish the requests in progress. The current thread is
-/// worker 0; the others get threads of their own.
+/// Serve on `listener` with `workers` workers until `shutdown` completes;
+/// then finish the requests in progress. `app` makes the router of a worker:
+/// workers share no router, so their requests share no reference counts.
+/// The current thread is worker 0; the others get threads of their own.
 pub async fn serve(
     listener: TcpListener,
-    app: Router,
+    app: impl Fn() -> Router,
     workers: usize,
     shutdown: impl Future<Output = ()>,
 ) -> io::Result<()> {
@@ -32,12 +33,12 @@ pub async fn serve(
     let mut senders = Vec::with_capacity(workers);
     let (sender, receiver) = mpsc::unbounded_channel();
     senders.push(sender);
-    let first = tokio::spawn(serve_connections(receiver, app.clone()));
+    let first = tokio::spawn(serve_connections(receiver, app()));
     let mut threads = Vec::with_capacity(workers - 1);
     for index in 1..workers {
         let (sender, receiver) = mpsc::unbounded_channel();
         senders.push(sender);
-        let app = app.clone();
+        let app = app();
         let (finished, finished_rx) = oneshot::channel::<()>();
         let thread = std::thread::Builder::new()
             .name(format!("uc-worker-{index}"))

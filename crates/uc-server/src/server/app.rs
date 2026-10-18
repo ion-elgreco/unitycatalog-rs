@@ -145,10 +145,7 @@ pub fn build_app(state: AppState) -> Router {
     // (`uc_common::ui`); other paths load the UI, for `leptos_router`'s
     // client-side routes.
     let mut router = router.with_state(state);
-    let ui = http.ui_dir.as_deref().map(|dir| {
-        tracing::info!(dir = %dir.display(), "serving the web UI");
-        uc_common::ui::files(dir)
-    });
+    let ui = http.ui_dir.as_deref().map(uc_common::ui::files);
     router = router.route(
         "/",
         axum::routing::get({

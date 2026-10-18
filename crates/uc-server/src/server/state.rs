@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -13,8 +14,23 @@ use crate::{
     storage::vendor::{CredentialVendor, DynVendor, PlaceholderVendor},
 };
 
+/// The state of every route: [`AppStateInner`] behind one `Arc`, so that a
+/// clone, which axum makes several times per request, is one count. Each
+/// worker gets a copy with a count of its own ([`Self::for_worker`]): the
+/// workers do not share a counter.
 #[derive(Clone)]
-pub struct AppState {
+pub struct AppState(Arc<AppStateInner>);
+
+impl Deref for AppState {
+    type Target = AppStateInner;
+
+    fn deref(&self) -> &AppStateInner {
+        &self.0
+    }
+}
+
+#[derive(Clone)]
+pub struct AppStateInner {
     pub metastore: DynMetastore,
     /// The server's signing keys. `None`: no UC tokens are issued or
     /// accepted (tests that do not sign in).
@@ -64,7 +80,7 @@ impl AppState {
     pub fn new(metastore: DynMetastore) -> Self {
         let audit = audit_sink::spawn_drainer(metastore.clone(), audit_sink::DEFAULT_CAPACITY);
         let policy = Arc::new(PermissionEnforcer::new(metastore.clone()));
-        Self {
+        Self(Arc::new(AppStateInner {
             metastore,
             security: None,
             auth: Arc::new(AuthSettings::default()),
@@ -81,21 +97,31 @@ impl AppState {
             readiness: Default::default(),
             api_port: 8080,
             http: Default::default(),
-        }
+        }))
+    }
+
+    /// A copy for one worker: the same values, with a reference count of
+    /// its own.
+    pub fn for_worker(&self) -> Self {
+        Self(Arc::new(AppStateInner::clone(&self.0)))
+    }
+
+    fn inner(&mut self) -> &mut AppStateInner {
+        Arc::make_mut(&mut self.0)
     }
 
     pub fn with_api_port(mut self, port: u16) -> Self {
-        self.api_port = port;
+        self.inner().api_port = port;
         self
     }
 
     pub fn with_http(mut self, http: crate::server::app::HttpSettings) -> Self {
-        self.http = Arc::new(http);
+        self.inner().http = Arc::new(http);
         self
     }
 
     pub fn with_delta_api_only(mut self, on: bool) -> Self {
-        self.delta_api_only = on;
+        self.inner().delta_api_only = on;
         self
     }
 
@@ -106,12 +132,12 @@ impl AppState {
     }
 
     pub fn with_external_local_roots(mut self, roots: Vec<PathBuf>) -> Self {
-        self.external_local_roots = Arc::new(roots);
+        self.inner().external_local_roots = Arc::new(roots);
         self
     }
 
     pub fn with_iceberg_writes_enabled(mut self, on: bool) -> Self {
-        self.iceberg_writes_enabled = on;
+        self.inner().iceberg_writes_enabled = on;
         self
     }
 
@@ -145,22 +171,22 @@ impl AppState {
     }
 
     pub fn with_aws_master_role_arn(mut self, arn: impl Into<Arc<str>>) -> Self {
-        self.aws_master_role_arn = Some(arn.into());
+        self.inner().aws_master_role_arn = Some(arn.into());
         self
     }
 
     pub fn with_security(mut self, security: Arc<SecurityContext>) -> Self {
-        self.security = Some(security);
+        self.inner().security = Some(security);
         self
     }
 
     pub fn with_auth_settings(mut self, settings: AuthSettings) -> Self {
-        self.auth = Arc::new(settings);
+        self.inner().auth = Arc::new(settings);
         self
     }
 
     pub fn with_authz(mut self, on: bool) -> Self {
-        self.authorization_enabled = on;
+        self.inner().authorization_enabled = on;
         self
     }
 
@@ -169,12 +195,12 @@ impl AppState {
     pub fn with_cedar(mut self, paths: &[PathBuf]) -> Result<Self, uc_common::Error> {
         let engine =
             crate::authz::cedar::CedarEngine::with_policy_files(self.metastore.clone(), paths)?;
-        self.policy = Arc::new(engine);
+        self.inner().policy = Arc::new(engine);
         Ok(self)
     }
 
     pub fn with_vendor<V: CredentialVendor>(mut self, vendor: V) -> Self {
-        self.vendor = Arc::new(vendor);
+        self.inner().vendor = Arc::new(vendor);
         self
     }
 
@@ -183,7 +209,7 @@ impl AppState {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        self.admin_principals = Arc::new(admins.into_iter().map(Into::into).collect());
+        self.inner().admin_principals = Arc::new(admins.into_iter().map(Into::into).collect());
         self
     }
 }

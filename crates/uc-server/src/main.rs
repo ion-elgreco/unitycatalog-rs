@@ -297,7 +297,12 @@ async fn run(options: options::Options) -> Result<(), String> {
         }
     };
 
-    let app = build_app(state.with_api_port(bind.port()));
+    if let Some(dir) = &cfg.http.ui_dir {
+        info!(dir = %dir.display(), "serving the web UI");
+    }
+    // A router for each worker, each with its own copy of the state.
+    let state = state.with_api_port(bind.port());
+    let app = move || build_app(state.for_worker());
 
     let listener = TcpListener::bind(bind)
         .await
