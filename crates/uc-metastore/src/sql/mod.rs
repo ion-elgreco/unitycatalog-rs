@@ -388,30 +388,29 @@ impl SqlMetastore {
     ) -> Result<()> {
         url.validate_not_under_managed_prefix()?;
         let prefix = format!("{url}/");
-        let params = [prefix.as_str().into(), char_len(&prefix)];
-        let below = starts_with("storage_location", 1, 2);
-        for table in ["catalog", "schema"] {
-            let sql = format!("SELECT 1 FROM {table} WHERE {below} LIMIT 1");
-            let hits = self.db.query(&sql, &params).await.map_err(db_err(table))?;
-            if !hits.is_empty() {
-                return Err(Error::invalid_argument(format!(
-                    "Input path '{url}' overlaps with managed storage."
-                )));
-            }
-        }
-        // Staging tables can outlive a deleted catalog or schema, so check
-        // uncommitted ones on their own.
+        // Staging tables can outlive a deleted catalog or schema, so
+        // uncommitted ones count on their own.
         let sql = format!(
-            "SELECT 1 FROM staging_table WHERE stage_committed = $3 AND {} LIMIT 1",
-            starts_with("staging_location", 1, 2)
+            "SELECT \
+             CASE WHEN EXISTS (SELECT 1 FROM catalog WHERE {managed}) \
+               OR EXISTS (SELECT 1 FROM schema WHERE {managed}) THEN 1 ELSE 0 END, \
+             CASE WHEN EXISTS (SELECT 1 FROM staging_table \
+               WHERE stage_committed = $3 AND {staging}) THEN 1 ELSE 0 END",
+            managed = starts_with("storage_location", 1, 2),
+            staging = starts_with("staging_location", 1, 2),
         );
-        let [prefix, len] = params;
-        let hits = self
-            .db
-            .query(&sql, &[prefix, len, false.into()])
-            .await
-            .map_err(db_err("staging_table"))?;
-        if !hits.is_empty() {
+        let params = [prefix.as_str().into(), char_len(&prefix), false.into()];
+        let failed = db_err("storage overlap");
+        let rows = self.db.query(&sql, &params).await.map_err(&failed)?;
+        let row = rows
+            .first()
+            .ok_or_else(|| Error::internal("storage overlap: no row"))?;
+        if row.int(0).map_err(&failed)? == 1 {
+            return Err(Error::invalid_argument(format!(
+                "Input path '{url}' overlaps with managed storage."
+            )));
+        }
+        if row.int(1).map_err(&failed)? == 1 {
             return Err(Error::invalid_argument(format!(
                 "Input path '{url}' overlaps with staging table."
             )));
