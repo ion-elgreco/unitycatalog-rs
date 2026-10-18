@@ -403,32 +403,43 @@ pub(super) struct Manager {
     tls: Option<MakeRustlsConnect>,
 }
 
+/// Connect, and drive the connection in a task of the current runtime.
+async fn connect(
+    config: tokio_postgres::Config,
+    tls: Option<MakeRustlsConnect>,
+) -> StorageResult<Client> {
+    let client = match tls {
+        None => {
+            let (client, connection) = config.connect(NoTls).await.map_err(map_err)?;
+            tokio::spawn(async move {
+                if let Err(e) = connection.await {
+                    warn!("PostgreSQL connection closed: {e}");
+                }
+            });
+            client
+        }
+        Some(tls) => {
+            let (client, connection) = config.connect(tls).await.map_err(map_err)?;
+            tokio::spawn(async move {
+                if let Err(e) = connection.await {
+                    warn!("PostgreSQL connection closed: {e}");
+                }
+            });
+            client
+        }
+    };
+    Ok(client)
+}
+
 impl managed::Manager for Manager {
     type Type = PgConn;
     type Error = StorageError;
 
+    /// A connection whose connection task runs on the current runtime. The
+    /// connect future is boxed, as `Pool::get` would hold all of it on each
+    /// call.
     async fn create(&self) -> StorageResult<PgConn> {
-        let client = match &self.tls {
-            None => {
-                let (client, connection) = self.config.connect(NoTls).await.map_err(map_err)?;
-                tokio::spawn(async move {
-                    if let Err(e) = connection.await {
-                        warn!("PostgreSQL connection closed: {e}");
-                    }
-                });
-                client
-            }
-            Some(tls) => {
-                let (client, connection) =
-                    self.config.connect(tls.clone()).await.map_err(map_err)?;
-                tokio::spawn(async move {
-                    if let Err(e) = connection.await {
-                        warn!("PostgreSQL connection closed: {e}");
-                    }
-                });
-                client
-            }
-        };
+        let client = Box::pin(connect(self.config.clone(), self.tls.clone())).await?;
         Ok(PgConn {
             client,
             statements: Mutex::new(HashMap::new()),
