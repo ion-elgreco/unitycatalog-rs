@@ -61,6 +61,7 @@ use crate::{
     authn::middleware::{UC_TOKEN_COOKIE, cookie, token_cookie},
     authn::security::SecurityContext,
     http::form_encode,
+    http::outbound::SendOnIo,
     server::state::AppState,
 };
 
@@ -196,7 +197,7 @@ impl OidcSignIn {
                 let config: Value = self
                     .http
                     .get(&url)
-                    .send()
+                    .send_on_io()
                     .await
                     .and_then(|r| r.error_for_status())
                     .map_err(|e| format!("{url}: {e}"))?
@@ -264,7 +265,7 @@ impl OidcSignIn {
         if let Some(secret) = &self.client_secret {
             request = request.basic_auth(form_encode(&self.client_id), Some(form_encode(secret)));
         }
-        let response = request.send().await.map_err(|e| e.to_string())?;
+        let response = request.send_on_io().await.map_err(|e| e.to_string())?;
         let status = response.status();
         let body: Value = response.json().await.unwrap_or_default();
         if !status.is_success() {

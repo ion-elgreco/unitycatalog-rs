@@ -20,6 +20,7 @@ use tokio::sync::Mutex;
 
 use uc_api::{AwsCredentials, TemporaryCredentials};
 use uc_common::{Error, NormalizedUrl, Result};
+use uc_storage::runtime::spawn_io;
 
 use super::{CredentialContext, StoragePrivilege};
 
@@ -123,21 +124,19 @@ impl AwsVendor {
             Some(&region),
             self.store.is_none(),
         )?;
-        let assumed = client
+        let request = client
             .assume_role()
             .role_arn(&role_arn)
             .policy(session_policy)
             .role_session_name(format!("uc-{}", uuid::Uuid::new_v4()))
             .duration_seconds(3600)
-            .set_external_id(external_id)
-            .send()
-            .await
-            .map_err(|e| {
-                Error::internal(format!(
-                    "AWS AssumeRole of {role_arn} failed: {}",
-                    error_chain(&e)
-                ))
-            })?;
+            .set_external_id(external_id);
+        let assumed = spawn_io(request.send()).await.map_err(|e| {
+            Error::internal(format!(
+                "AWS AssumeRole of {role_arn} failed: {}",
+                error_chain(&e)
+            ))
+        })?;
         let credentials = assumed
             .credentials()
             .ok_or_else(|| Error::internal("AWS AssumeRole returned no credentials"))?;

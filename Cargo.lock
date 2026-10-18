@@ -8276,6 +8276,7 @@ dependencies = [
  "uc-common",
  "uc-delta",
  "uc-metastore",
+ "uc-storage",
  "utoipa",
  "utoipa-axum",
  "utoipa-swagger-ui",

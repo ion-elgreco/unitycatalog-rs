@@ -16,6 +16,7 @@ use object_store::{
     ObjectStore, StaticCredentialProvider,
     aws::AmazonS3Builder,
     azure::{AzureConfigKey, MicrosoftAzureBuilder},
+    client::SpawnedReqwestConnector,
     gcp::{GcpCredential, GoogleCloudStorageBuilder},
     local::LocalFileSystem,
     path::Path as ObjectPath,
@@ -24,6 +25,7 @@ use object_store::{
 use uc_api::TemporaryCredentials;
 use uc_common::{ErrorCode, NormalizedUrl, UriScheme};
 use uc_metastore::DynMetastore;
+use uc_storage::runtime::io_handle;
 
 use crate::storage::vendor::{
     CredentialContext, DynVendor, VendOp, aws::S3Store, credential_for_url,
@@ -91,7 +93,9 @@ fn build_store(
     let url = location.as_str();
     Ok(match location.scheme() {
         UriScheme::S3 => {
-            let mut builder = AmazonS3Builder::from_env().with_url(url);
+            let mut builder = AmazonS3Builder::from_env()
+                .with_url(url)
+                .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
             if let Some(store) = s3_store {
                 builder = builder
                     .with_endpoint(&store.endpoint)
@@ -112,7 +116,9 @@ fn build_store(
             Arc::new(builder.build()?)
         }
         UriScheme::Gs => {
-            let mut builder = GoogleCloudStorageBuilder::from_env().with_url(url);
+            let mut builder = GoogleCloudStorageBuilder::from_env()
+                .with_url(url)
+                .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
             let token = credentials
                 .and_then(|c| c.gcp_oauth_token.as_ref())
                 .and_then(|t| t.oauth_token.clone());
@@ -123,7 +129,9 @@ fn build_store(
             Arc::new(builder.build()?)
         }
         UriScheme::Abfs | UriScheme::Abfss => {
-            let mut builder = MicrosoftAzureBuilder::from_env().with_url(url);
+            let mut builder = MicrosoftAzureBuilder::from_env()
+                .with_url(url)
+                .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
             let sas = credentials
                 .and_then(|c| c.azure_user_delegation_sas.as_ref())
                 .and_then(|s| s.sas_token.clone());

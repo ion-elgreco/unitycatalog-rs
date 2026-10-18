@@ -116,6 +116,7 @@ async fn run(options: options::Options) -> Result<(), String> {
     // `uc.toml` (`uc_common::settings`).
     let cfg = ServerConfig::load(options.config.as_deref())?;
     init_tracing(cfg.log_dir.as_deref());
+    uc_storage::runtime::init_io(cfg.io_threads);
     // Upstream `-p`: the API port on all interfaces.
     let bind = match options.port {
         Some(port) => std::net::SocketAddr::new(cfg.bind.ip(), port),

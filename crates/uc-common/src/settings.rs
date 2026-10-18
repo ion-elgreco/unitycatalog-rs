@@ -106,6 +106,10 @@ pub struct Server {
     /// How long that check may take (default `2s`).
     #[serde(deserialize_with = "duration")]
     pub readiness_db_timeout: Duration,
+    /// Worker threads of the runtime for outbound IO: the connections to
+    /// object stores and HTTP services (default 1).
+    #[serde(deserialize_with = "scalar")]
+    pub io_threads: usize,
 }
 
 impl Default for Server {
@@ -120,6 +124,7 @@ impl Default for Server {
             cors_allow_origins: Vec::new(),
             readiness_interval: Duration::from_secs(5),
             readiness_db_timeout: Duration::from_secs(2),
+            io_threads: 1,
         }
     }
 }
