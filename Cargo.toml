@@ -51,7 +51,7 @@ async-trait = "0.1"
 futures = "0.3"
 
 # HTTP / server
-axum = { version = "0.7", features = ["macros", "tokio", "json", "query"] }
+axum = { version = "0.8", features = ["macros", "tokio", "json", "query"] }
 tower = { version = "0.5", features = ["util"] }
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
@@ -59,8 +59,8 @@ tower-http = { version = "0.6", features = ["trace", "cors", "request-id", "util
 
 # OpenAPI
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
-utoipa-axum = "0.1"
-utoipa-swagger-ui = { version = "8", features = ["axum"] }
+utoipa-axum = "0.2"
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 # HTTP client
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
@@ -136,7 +136,7 @@ cedar-policy = "4"
 # Observability + ops
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.17", default-features = false }
-tower_governor = "0.4"
+tower_governor = "0.8"
 opentelemetry = { version = "0.31" }
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }

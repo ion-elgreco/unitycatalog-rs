@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use axum::{
     Router,
     extract::Request,
@@ -108,9 +106,7 @@ pub fn build_app(state: AppState) -> Router {
             .burst_size((rate * 2).max(1))
             .finish()
             .expect("valid governor config");
-        GovernorLayer {
-            config: Arc::new(config),
-        }
+        GovernorLayer::new(config)
     });
 
     let timeout = http.request_timeout;

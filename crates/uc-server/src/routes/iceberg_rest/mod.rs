@@ -9,7 +9,6 @@
 use std::collections::BTreeSet;
 use std::future::Future;
 
-use async_trait::async_trait;
 use axum::{
     Json,
     body::{Body, Bytes},
@@ -119,7 +118,6 @@ pub type IcebergResult<T> = Result<T, IcebergError>;
 /// does not quote the parser (upstream `MalformedBodyRejectingConverter`).
 pub struct IcebergJson<T>(pub T);
 
-#[async_trait]
 impl<T: DeserializeOwned, S: Send + Sync> FromRequest<S> for IcebergJson<T> {
     type Rejection = IcebergError;
 

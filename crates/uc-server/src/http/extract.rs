@@ -7,7 +7,6 @@
 //! same. `Json` also serves as the response type, so route modules import
 //! it from here instead of from axum.
 
-use async_trait::async_trait;
 use axum::{
     body::Bytes,
     extract::{FromRequest, FromRequestParts, Request},
@@ -24,7 +23,6 @@ use crate::http::error::ApiError;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Json<T>(pub T);
 
-#[async_trait]
 impl<T, S> FromRequest<S> for Json<T>
 where
     T: DeserializeOwned,
@@ -80,7 +78,6 @@ impl<T: Serialize> IntoResponse for Json<T> {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Query<T>(pub T);
 
-#[async_trait]
 impl<T, S> FromRequestParts<S> for Query<T>
 where
     T: DeserializeOwned,
@@ -100,7 +97,6 @@ where
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Path<T>(pub T);
 
-#[async_trait]
 impl<T, S> FromRequestParts<S> for Path<T>
 where
     T: DeserializeOwned + Send,

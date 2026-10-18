@@ -310,19 +310,19 @@ pub async fn web(global: &Global, settings: &Settings, args: WebArgs) -> anyhow:
             .build()?,
     });
     let app = Router::new()
-        .route("/api/*rest", axum::routing::any(forward))
-        // Swagger UI and its OpenAPI document. `/docs/*rest` does not match
+        .route("/api/{*rest}", axum::routing::any(forward))
+        // Swagger UI and its OpenAPI document. `/docs/{*rest}` does not match
         // `/docs/`.
         .route("/docs", get(forward))
         .route("/docs/", get(forward))
-        .route("/docs/*rest", get(forward))
-        .route("/api-docs/*rest", get(forward))
+        .route("/docs/{*rest}", get(forward))
+        .route("/api-docs/{*rest}", get(forward))
         .with_state(proxy)
         .route("/auth/mode", get(mode))
         // The server's sign-in sets its cookie for the server's own address,
         // not for this one.
         .route(
-            "/auth/*rest",
+            "/auth/{*rest}",
             get(|| async { (StatusCode::NOT_FOUND, NO_SIGN_IN) }),
         )
         // The UI's files, as uc-server serves them; client-side routes load
