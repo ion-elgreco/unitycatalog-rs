@@ -14,14 +14,16 @@ use uc_server::{
     },
     build_app, build_observability_app,
     observability::telemetry::init_tracing,
-    server::options,
+    server::{options, serve},
     storage::vendor::CloudVendor,
 };
 
 /// The life of a token of `uc-server token` without `--ttl`.
 const TOKEN_TTL: Duration = Duration::from_secs(3600);
 
-#[tokio::main]
+// The main thread is worker 0 of `server::serve`; the other workers start
+// their own runtimes.
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
     let done = match options::parse(std::env::args().skip(1)) {
         options::Command::Run(options) => run(options).await,
@@ -117,6 +119,7 @@ async fn run(options: options::Options) -> Result<(), String> {
     let cfg = ServerConfig::load(options.config.as_deref())?;
     init_tracing(cfg.log_dir.as_deref());
     uc_storage::runtime::init_io(cfg.io_threads);
+    uc_storage::runtime::set_workers(cfg.workers);
     // Upstream `-p`: the API port on all interfaces.
     let bind = match options.port {
         Some(port) => std::net::SocketAddr::new(cfg.bind.ip(), port),
@@ -304,14 +307,8 @@ async fn run(options: options::Options) -> Result<(), String> {
         tokio::spawn(async move { axum::serve(listener, app).await })
     });
 
-    info!(%bind, "listening");
-    // The client address, for the per-IP rate limit.
-    let served = axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal())
-    .await;
+    info!(%bind, workers = cfg.workers, "listening");
+    let served = serve::serve(listener, app, cfg.workers, shutdown_signal()).await;
     cleanup_worker.abort();
     if let Some(observability) = observability {
         observability.abort();

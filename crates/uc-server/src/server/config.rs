@@ -38,6 +38,9 @@ pub struct ServerConfig {
     /// `server.readiness_interval` and `server.readiness_db_timeout`.
     pub readiness_interval: Duration,
     pub readiness_timeout: Duration,
+    /// `server.workers`: the threads that serve requests
+    /// (`crate::server::serve`); one per CPU without the setting.
+    pub workers: usize,
     /// `server.io_threads`: the worker threads of the IO runtime
     /// (`uc_storage::runtime`).
     pub io_threads: usize,
@@ -83,6 +86,12 @@ impl ServerConfig {
         if server.io_threads == 0 {
             return Err(invalid("server.io_threads", 0, "Expected 1 or more."));
         }
+        if server.workers == Some(0) {
+            return Err(invalid("server.workers", 0, "Expected 1 or more."));
+        }
+        let workers = server.workers.unwrap_or_else(|| {
+            std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
+        });
         let database = database_config(db, &data_dir)?;
         let http = crate::server::app::HttpSettings {
             ui_dir: match ui.enabled {
@@ -133,6 +142,7 @@ impl ServerConfig {
             external_local_roots,
             readiness_interval: server.readiness_interval,
             readiness_timeout: server.readiness_db_timeout,
+            workers,
             io_threads: server.io_threads,
             cleanup,
             credentials,

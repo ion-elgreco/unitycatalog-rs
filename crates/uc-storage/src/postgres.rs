@@ -1,5 +1,5 @@
-//! [`Storage`] on PostgreSQL: a pool of connections, each with its prepared
-//! statements.
+//! [`Storage`] on PostgreSQL: a pool of connections for each worker, each
+//! connection with its prepared statements.
 //!
 //! The URL is libpq's (`postgresql://user:password@host:port/db?…`) or
 //! pgJDBC's (`jdbc:postgresql://host:port/db?user=…`), as upstream's
@@ -25,6 +25,7 @@ use tokio_postgres::types::{IsNull, ToSql, Type, to_sql_checked};
 use tokio_postgres::{Client, NoTls, Statement};
 use tracing::warn;
 
+use super::runtime;
 use super::tls::{MakeRustlsConnect, SslMode, TlsSettings};
 use super::{Exec, Row, Storage, StorageError, StorageResult, Transaction, Value};
 
@@ -398,6 +399,7 @@ impl PgConn {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct Manager {
     config: tokio_postgres::Config,
     tls: Option<MakeRustlsConnect>,
@@ -435,9 +437,9 @@ impl managed::Manager for Manager {
     type Type = PgConn;
     type Error = StorageError;
 
-    /// A connection whose connection task runs on the current runtime. The
-    /// connect future is boxed, as `Pool::get` would hold all of it on each
-    /// call.
+    /// A connection whose connection task runs on the current runtime: the
+    /// worker of the pool. The connect future is boxed, as `Pool::get` would
+    /// hold all of it on each call.
     async fn create(&self) -> StorageResult<PgConn> {
         let client = Box::pin(connect(self.config.clone(), self.tls.clone())).await?;
         Ok(PgConn {
@@ -462,9 +464,10 @@ impl managed::Manager for Manager {
     }
 }
 
-/// PostgreSQL, through a pool of connections.
+/// PostgreSQL, through a pool of connections for each worker
+/// ([`runtime::worker`]): `pool_size` split over the workers.
 pub struct PostgresStorage {
-    pool: Pool<Manager>,
+    pools: Vec<Pool<Manager>>,
 }
 
 impl PostgresStorage {
@@ -475,13 +478,21 @@ impl PostgresStorage {
             config: parsed.config,
             tls,
         };
-        let pool = Pool::builder(manager)
-            .max_size(pg.pool_size.unwrap_or(DEFAULT_POOL_SIZE).max(1))
-            .wait_timeout(Some(WAIT_TIMEOUT))
-            .runtime(deadpool::Runtime::Tokio1)
-            .build()
-            .map_err(|e| StorageError::Other(e.to_string()))?;
-        let storage = Self { pool };
+        let size = pg.pool_size.unwrap_or(DEFAULT_POOL_SIZE).max(1);
+        let workers = runtime::workers();
+        let pools = (0..workers)
+            .map(|i| {
+                // At least one connection for each worker.
+                let share = size / workers + usize::from(i < size % workers);
+                Pool::builder(manager.clone())
+                    .max_size(share.max(1))
+                    .wait_timeout(Some(WAIT_TIMEOUT))
+                    .runtime(deadpool::Runtime::Tokio1)
+                    .build()
+                    .map_err(|e| StorageError::Other(e.to_string()))
+            })
+            .collect::<StorageResult<Vec<_>>>()?;
+        let storage = Self { pools };
         // Connect once now, so that a wrong URL fails at start.
         let conn = storage.conn().await?;
         if let Some(schema) = &parsed.schema {
@@ -492,7 +503,8 @@ impl PostgresStorage {
     }
 
     async fn conn(&self) -> StorageResult<Object<Manager>> {
-        self.pool.get().await.map_err(|e| match e {
+        let pool = &self.pools[runtime::worker() % self.pools.len()];
+        pool.get().await.map_err(|e| match e {
             managed::PoolError::Backend(e) => e,
             e => StorageError::Other(format!("PostgreSQL pool: {e}")),
         })

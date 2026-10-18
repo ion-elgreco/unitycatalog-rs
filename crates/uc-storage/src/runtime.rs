@@ -1,7 +1,9 @@
-//! The runtime for outbound IO: the connections to object stores and HTTP
-//! services. The runtime that serves the API runs the requests; their
-//! sockets and connection tasks run here.
+//! The server's threads. Workers serve the requests: each is a thread with
+//! a runtime of its own and its share of the PostgreSQL connections, so a
+//! request runs on one thread from start to end. The IO runtime runs the
+//! connections to object stores and HTTP services.
 
+use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::OnceLock;
@@ -15,6 +17,33 @@ use tokio::task::JoinHandle;
 pub const DEFAULT_IO_THREADS: usize = 1;
 
 static IO: OnceLock<Runtime> = OnceLock::new();
+
+static WORKERS: OnceLock<usize> = OnceLock::new();
+
+thread_local! {
+    static WORKER: Cell<usize> = const { Cell::new(0) };
+}
+
+/// Set the number of workers (at least 1). Only the first call counts, and
+/// it comes before the database opens.
+pub fn set_workers(workers: usize) {
+    let _ = WORKERS.set(workers.max(1));
+}
+
+/// The number of workers: 1 without [`set_workers`].
+pub fn workers() -> usize {
+    WORKERS.get().copied().unwrap_or(1)
+}
+
+/// Make the current thread the worker `index`.
+pub fn enter_worker(index: usize) {
+    WORKER.with(|worker| worker.set(index));
+}
+
+/// The worker of the current thread; 0 on other threads.
+pub fn worker() -> usize {
+    WORKER.with(Cell::get)
+}
 
 /// Start the IO runtime with `threads` worker threads (at least 1), unless
 /// it runs already.
