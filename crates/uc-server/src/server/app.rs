@@ -14,7 +14,7 @@ use tower_http::{
 use uc_common::{API_BASE, CONTROL_BASE};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
-use utoipa_swagger_ui::SwaggerUi;
+use utoipa_swagger_ui::{Config, SwaggerUi};
 
 use crate::{
     authn::middleware::auth_layer, observability::audit::layer::audit_layer,
@@ -66,6 +66,29 @@ impl Default for HttpSettings {
     }
 }
 
+/// The OpenAPI document, for Swagger UI.
+const OPENAPI_PATH: &str = "/api-docs/openapi.json";
+
+/// `GET` [`OPENAPI_PATH`]: the document as JSON, serialized once for all
+/// workers. In memory, `api` takes about 30 times its JSON size; each
+/// worker's router drops it here.
+fn openapi_route<S: Clone + Send + Sync + 'static>(
+    api: utoipa::openapi::OpenApi,
+) -> axum::routing::MethodRouter<S> {
+    static JSON: std::sync::OnceLock<bytes::Bytes> = std::sync::OnceLock::new();
+    let json = JSON
+        .get_or_init(|| {
+            serde_json::to_vec(&api)
+                .expect("the OpenAPI document is JSON")
+                .into()
+        })
+        .clone();
+    axum::routing::get(move || {
+        let json = json.clone();
+        async move { ([(header::CONTENT_TYPE, "application/json")], json) }
+    })
+}
+
 /// Build the API app: every resource router under the API and control
 /// paths ([`API_BASE`], [`CONTROL_BASE`]), plus the OpenAPI doc, Swagger UI
 /// and the web UI. Probes and `/metrics` are on the observability app.
@@ -112,7 +135,8 @@ pub fn build_app(state: AppState) -> Router {
     let timeout = http.request_timeout;
     let mut router = resource_router
         // Upstream's docs page.
-        .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", api))
+        .merge(SwaggerUi::new("/docs").config(Config::from(OPENAPI_PATH)))
+        .route(OPENAPI_PATH, openapi_route(api))
         // The web UI's sign-in, outside the API (`crate::authn::sign_in`). Before
         // the layers: a router merged after them would get a fallback
         // without them.
