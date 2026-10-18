@@ -357,6 +357,9 @@ impl SqlMetastore {
     pub(crate) async fn resolve_table(&self, full_name: &str) -> Result<(SchemaRef, TableRow)> {
         let (c, s, t) = split_three_part(full_name, "table")?;
         let schema = self.resolve_schema(c, s).await?;
+        // A query of its own: PostgreSQL plans a join with `tbl` for the
+        // table's size when it prepares the statement, and keeps a
+        // sequential scan of `tbl` while the table grows.
         let row = self
             .table_row(&schema.schema_id, t)
             .await?
