@@ -7,10 +7,14 @@
 //! same. `Json` also serves as the response type, so route modules import
 //! it from here instead of from axum.
 
+use std::any::TypeId;
+use std::cell::RefCell;
+use std::collections::HashMap;
+
 use axum::{
     body::Bytes,
     extract::{FromRequest, FromRequestParts, Request},
-    http::request::Parts,
+    http::{StatusCode, header, request::Parts},
     response::{IntoResponse, Response},
 };
 use serde::{Serialize, de::DeserializeOwned};
@@ -68,9 +72,30 @@ pub fn parse_json_body<T: DeserializeOwned>(bytes: &[u8], quote_parser: bool) ->
     })
 }
 
-impl<T: Serialize> IntoResponse for Json<T> {
+thread_local! {
+    /// The size of the last JSON response of each type on this thread.
+    static LAST_SIZE: RefCell<HashMap<TypeId, usize>> = RefCell::new(HashMap::new());
+}
+
+/// As `axum::Json`, but the buffer starts at the size of the last response
+/// of the same type, so a large response does not grow it from 128 bytes.
+impl<T: Serialize + 'static> IntoResponse for Json<T> {
     fn into_response(self) -> Response {
-        axum::Json(self.0).into_response()
+        let ty = TypeId::of::<T>();
+        let size = LAST_SIZE.with(|sizes| sizes.borrow().get(&ty).copied().unwrap_or(128));
+        let mut body = Vec::with_capacity(size);
+        match serde_json::to_writer(&mut body, &self.0) {
+            Ok(()) => {
+                LAST_SIZE.with(|sizes| sizes.borrow_mut().insert(ty, body.len()));
+                ([(header::CONTENT_TYPE, "application/json")], body).into_response()
+            }
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+                e.to_string(),
+            )
+                .into_response(),
+        }
     }
 }
 

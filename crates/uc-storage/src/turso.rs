@@ -84,7 +84,7 @@ async fn query(conn: &Connection, sql: &str, values: &[Value]) -> StorageResult<
             let values = (0..row.column_count())
                 .map(|i| row.get_value(i).map_err(map_err).and_then(value))
                 .collect::<StorageResult<Vec<_>>>()?;
-            out.push(Row(values));
+            out.push(Row::from(values));
         }
         Ok(out)
     }

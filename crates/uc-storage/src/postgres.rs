@@ -27,7 +27,7 @@ use tracing::warn;
 
 use super::runtime;
 use super::tls::{MakeRustlsConnect, SslMode, TlsSettings};
-use super::{Exec, Row, Storage, StorageError, StorageResult, Transaction, Value};
+use super::{Cell, Exec, Row, Storage, StorageError, StorageResult, Transaction, Value};
 
 /// Upstream's pool size (`hibernate.hikari.maximumPoolSize`).
 const DEFAULT_POOL_SIZE: usize = 20;
@@ -295,36 +295,51 @@ impl ToSql for Value {
     to_sql_checked!();
 }
 
-fn row(r: &tokio_postgres::Row) -> StorageResult<Row> {
+/// Column `i` of `r` as a [`Value`].
+pub(super) fn value(r: &tokio_postgres::Row, i: usize) -> StorageResult<Value> {
     let get = |e: tokio_postgres::Error| StorageError::Other(e.to_string());
-    let mut values = Vec::with_capacity(r.len());
+    let column = &r.columns()[i];
+    Ok(match *column.type_() {
+        Type::BOOL => r.try_get::<_, Option<bool>>(i).map_err(get)?.into(),
+        Type::INT2 => r
+            .try_get::<_, Option<i16>>(i)
+            .map_err(get)?
+            .map(i64::from)
+            .into(),
+        Type::INT4 => r
+            .try_get::<_, Option<i32>>(i)
+            .map_err(get)?
+            .map(i64::from)
+            .into(),
+        Type::INT8 => r.try_get::<_, Option<i64>>(i).map_err(get)?.into(),
+        Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME => {
+            r.try_get::<_, Option<String>>(i).map_err(get)?.into()
+        }
+        ref other => {
+            return Err(StorageError::Other(format!(
+                "column {} has the unsupported type {other}",
+                column.name()
+            )));
+        }
+    })
+}
+
+/// The columns of `r`, with its text borrowed.
+pub(super) fn cells(r: &tokio_postgres::Row) -> StorageResult<Vec<Cell<'_>>> {
+    let get = |e: tokio_postgres::Error| StorageError::Other(e.to_string());
+    let mut cells = Vec::with_capacity(r.len());
     for (i, column) in r.columns().iter().enumerate() {
-        let value = match *column.type_() {
-            Type::BOOL => r.try_get::<_, Option<bool>>(i).map_err(get)?.into(),
-            Type::INT2 => r
-                .try_get::<_, Option<i16>>(i)
-                .map_err(get)?
-                .map(i64::from)
-                .into(),
-            Type::INT4 => r
-                .try_get::<_, Option<i32>>(i)
-                .map_err(get)?
-                .map(i64::from)
-                .into(),
-            Type::INT8 => r.try_get::<_, Option<i64>>(i).map_err(get)?.into(),
+        cells.push(match *column.type_() {
             Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME => {
-                r.try_get::<_, Option<String>>(i).map_err(get)?.into()
+                match r.try_get::<_, Option<&str>>(i).map_err(get)? {
+                    Some(text) => Cell::Text(text),
+                    None => Cell::Value(Value::Null),
+                }
             }
-            ref other => {
-                return Err(StorageError::Other(format!(
-                    "column {} has the unsupported type {other}",
-                    column.name()
-                )));
-            }
-        };
-        values.push(value);
+            _ => Cell::Value(value(r, i)?),
+        });
     }
-    Ok(Row(values))
+    Ok(cells)
 }
 
 fn map_err(e: tokio_postgres::Error) -> StorageError {
@@ -381,7 +396,7 @@ impl PgConn {
             .query(&statement, &params)
             .await
             .map_err(map_err)?;
-        rows.iter().map(row).collect()
+        Ok(rows.into_iter().map(Row::postgres).collect())
     }
 
     async fn execute(&self, sql: &str, values: &[Value]) -> StorageResult<u64> {

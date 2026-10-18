@@ -152,7 +152,12 @@ where
 {
     let sql = format!("{} {tail}", t.select());
     let rows = ex.query(&sql, params).await.map_err(db_err(t.name))?;
-    rows.into_iter().map(|r| t.decode(r)).collect()
+    // Not `collect`: through `Result`, it does not know the length.
+    let mut out = Vec::with_capacity(rows.len());
+    for r in rows {
+        out.push(t.decode(r)?);
+    }
+    Ok(out)
 }
 
 /// The first row of [`select`].

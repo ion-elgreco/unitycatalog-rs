@@ -483,9 +483,11 @@ impl TableOps for SqlMetastore {
                 |r| r.name.clone(),
             )
             .await?;
-        let infos: Result<Vec<TableInfo>> =
-            rows.into_iter().map(|r| r.into_info(&schema)).collect();
-        Ok((infos?, next))
+        let mut infos = Vec::with_capacity(rows.len());
+        for r in rows {
+            infos.push(r.into_info(&schema)?);
+        }
+        Ok((infos, next))
     }
 
     async fn create_staging(

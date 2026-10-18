@@ -12,7 +12,7 @@ use serde_json::{Map, Value as JsonValue};
 
 use uc_common::{Error, Result};
 
-use uc_storage::{Row, Value};
+use uc_storage::{Cell, Row, Value};
 
 /// How a column holds its value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -404,23 +404,23 @@ fn bad_row(table: &str, column: &str, why: impl std::fmt::Display) -> Error {
 }
 
 /// The columns of a row as the fields of a map, for [`TableDef::decode`].
-struct RowFields<'a> {
+struct RowFields<'a, 'r> {
     columns: std::slice::Iter<'static, (&'static str, Kind)>,
-    values: std::slice::IterMut<'a, Value>,
+    cells: std::slice::IterMut<'a, Cell<'r>>,
     /// The column whose name was read last.
-    next: Option<(&'static str, Kind, &'a mut Value)>,
+    next: Option<(&'static str, Kind, &'a mut Cell<'r>)>,
 }
 
-impl<'a> MapAccess<'a> for RowFields<'a> {
+impl<'a, 'r: 'a> MapAccess<'a> for RowFields<'a, 'r> {
     type Error = serde_json::Error;
 
     fn next_key_seed<K: DeserializeSeed<'a>>(
         &mut self,
         seed: K,
     ) -> std::result::Result<Option<K::Value>, Self::Error> {
-        for (&(name, kind), value) in self.columns.by_ref().zip(self.values.by_ref()) {
-            if *value != Value::Null {
-                self.next = Some((name, kind, value));
+        for (&(name, kind), cell) in self.columns.by_ref().zip(self.cells.by_ref()) {
+            if *cell != Cell::Value(Value::Null) {
+                self.next = Some((name, kind, cell));
                 return seed.deserialize(name.into_deserializer()).map(Some);
             }
         }
@@ -431,23 +431,31 @@ impl<'a> MapAccess<'a> for RowFields<'a> {
         &mut self,
         seed: V,
     ) -> std::result::Result<V::Value, Self::Error> {
-        let Some((name, kind, value)) = self.next.take() else {
+        let Some((name, kind, cell)) = self.next.take() else {
             return Err(de::Error::custom("a value without its column"));
         };
         let column = |e: serde_json::Error| de::Error::custom(format_args!("{name}: {e}"));
         if kind == Json {
-            let value: &'a Value = value;
-            let Value::Text(text) = value else {
-                return Err(de::Error::custom(format_args!(
-                    "{name}: {value:?} is not JSON text"
-                )));
+            let cell: &'a Cell<'r> = cell;
+            let text: &'a str = match cell {
+                Cell::Text(text) => text,
+                Cell::Value(Value::Text(text)) => text,
+                Cell::Value(value) => {
+                    return Err(de::Error::custom(format_args!(
+                        "{name}: {value:?} is not JSON text"
+                    )));
+                }
             };
             let mut json = serde_json::Deserializer::from_str(text);
             let field = seed.deserialize(&mut json).map_err(column)?;
             json.end().map_err(column)?;
             return Ok(field);
         }
-        let field = match (kind, std::mem::replace(value, Value::Null)) {
+        let value = match std::mem::replace(cell, Cell::Value(Value::Null)) {
+            Cell::Value(value) => value,
+            Cell::Text(text) => Value::Text(text.to_owned()),
+        };
+        let field = match (kind, value) {
             (Text, Value::Text(s)) => JsonValue::String(s),
             (Int, Value::Int(n)) => JsonValue::from(n),
             (Bool, Value::Bool(b)) => JsonValue::Bool(b),
@@ -516,7 +524,9 @@ impl TableDef {
 
     /// A row of [`Self::select`] as a JSON object; null columns are left out.
     pub(crate) fn object(&self, row: Row) -> Result<Map<String, JsonValue>> {
-        let values = row.into_values();
+        let values = row
+            .into_values()
+            .map_err(|e| Error::internal(format!("{}: {e}", self.name)))?;
         if values.len() != self.columns.len() {
             return Err(Error::internal(format!(
                 "{}: {} columns, expected {}",
@@ -552,18 +562,21 @@ impl TableDef {
     /// A row of [`Self::select`] as `R`; null columns are left out. A JSON
     /// column is read into its field's type, without a [`JsonValue`] tree.
     pub(crate) fn decode<R: DeserializeOwned>(&self, row: Row) -> Result<R> {
-        let mut values = row.into_values();
-        if values.len() != self.columns.len() {
+        let mut row = row;
+        if row.len() != self.columns.len() {
             return Err(Error::internal(format!(
                 "{}: {} columns, expected {}",
                 self.name,
-                values.len(),
+                row.len(),
                 self.columns.len()
             )));
         }
+        let mut cells = row
+            .cells()
+            .map_err(|e| Error::internal(format!("{}: {e}", self.name)))?;
         let fields = RowFields {
             columns: self.columns.iter(),
-            values: values.iter_mut(),
+            cells: cells.iter_mut(),
             next: None,
         };
         R::deserialize(MapAccessDeserializer::new(fields))
