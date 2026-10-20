@@ -152,6 +152,10 @@ jobs:
         uses: ./.github/actions/setup-env
         with:
           python-version: ${{ matrix.python-version }}
+          # maturin gives pyo3 one signature for 3.14 and 3.14t, so cargo
+          # would reuse a free-threaded pyo3 from the shared cache in a 3.14
+          # build, whose module then fails to import.
+          cache-shared-key: ${{ endsWith(matrix.python-version, 't') && 'ci-freethreaded' || 'ci' }}
 
       - name: Build and install unitycatalog
         run: just develop-client
