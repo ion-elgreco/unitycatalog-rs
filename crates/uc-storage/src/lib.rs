@@ -13,6 +13,7 @@
 //! is dropped without [`Transaction::commit`] rolls back.
 
 mod postgres;
+pub mod runtime;
 mod tls;
 mod turso;
 
@@ -70,39 +71,82 @@ impl<T: Into<Value>> From<Option<T>> for Value {
     }
 }
 
-/// One row of a result: its values in column order.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Row(pub(crate) Vec<Value>);
+/// One row of a result: its values in column order. A PostgreSQL row keeps
+/// the driver's row, so that [`Row::cells`] can lend its text.
+#[derive(Debug)]
+pub struct Row(Cells);
+
+#[derive(Debug)]
+enum Cells {
+    Values(Vec<Value>),
+    Postgres(tokio_postgres::Row),
+}
+
+/// A column of [`Row::cells`]: a value, or text that the row lends.
+#[derive(Debug, PartialEq)]
+pub enum Cell<'a> {
+    Value(Value),
+    Text(&'a str),
+}
 
 impl From<Vec<Value>> for Row {
     fn from(values: Vec<Value>) -> Self {
-        Row(values)
+        Row(Cells::Values(values))
     }
 }
 
 impl Row {
+    pub(crate) fn postgres(row: tokio_postgres::Row) -> Self {
+        Row(Cells::Postgres(row))
+    }
+
     pub fn len(&self) -> usize {
-        self.0.len()
+        match &self.0 {
+            Cells::Values(values) => values.len(),
+            Cells::Postgres(row) => row.len(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.len() == 0
     }
 
-    pub fn into_values(self) -> Vec<Value> {
-        self.0
+    pub fn into_values(self) -> StorageResult<Vec<Value>> {
+        match self.0 {
+            Cells::Values(values) => Ok(values),
+            Cells::Postgres(row) => (0..row.len()).map(|i| postgres::value(&row, i)).collect(),
+        }
     }
 
-    fn get(&self, i: usize) -> StorageResult<&Value> {
-        self.0.get(i).ok_or_else(|| {
-            StorageError::Other(format!("no column {i} in a row of {}", self.0.len()))
-        })
+    /// The columns, for reading them once: the values are moved out, and
+    /// PostgreSQL text is borrowed, not copied.
+    pub fn cells(&mut self) -> StorageResult<Vec<Cell<'_>>> {
+        match &mut self.0 {
+            Cells::Values(values) => Ok(std::mem::take(values)
+                .into_iter()
+                .map(Cell::Value)
+                .collect()),
+            Cells::Postgres(row) => postgres::cells(row),
+        }
+    }
+
+    fn get(&self, i: usize) -> StorageResult<Value> {
+        if i >= self.len() {
+            return Err(StorageError::Other(format!(
+                "no column {i} in a row of {}",
+                self.len()
+            )));
+        }
+        match &self.0 {
+            Cells::Values(values) => Ok(values[i].clone()),
+            Cells::Postgres(row) => postgres::value(row, i),
+        }
     }
 
     pub fn opt_text(&self, i: usize) -> StorageResult<Option<String>> {
         match self.get(i)? {
             Value::Null => Ok(None),
-            Value::Text(s) => Ok(Some(s.clone())),
+            Value::Text(s) => Ok(Some(s)),
             v => Err(StorageError::Other(format!(
                 "column {i} is not text: {v:?}"
             ))),
@@ -117,7 +161,7 @@ impl Row {
     pub fn opt_int(&self, i: usize) -> StorageResult<Option<i64>> {
         match self.get(i)? {
             Value::Null => Ok(None),
-            Value::Int(n) => Ok(Some(*n)),
+            Value::Int(n) => Ok(Some(n)),
             v => Err(StorageError::Other(format!(
                 "column {i} is not an integer: {v:?}"
             ))),

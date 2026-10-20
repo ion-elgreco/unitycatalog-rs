@@ -1,15 +1,18 @@
 //! The catalog's tables, column by column, and rows as serde values: the
-//! domain modules read rows into their serde structs, and write them
-//! from those structs, through JSON objects. JSON documents (properties,
-//! columns, grants, ...) are stored as text. The same objects are the rows
-//! of a backup ([`crate::backup::Snapshot`]).
+//! domain modules read rows straight into their serde structs
+//! ([`TableDef::decode`]), and write them from those structs through JSON
+//! objects. JSON documents (properties, columns, grants, ...) are stored as
+//! text. The JSON objects are also the rows of a backup
+//! ([`crate::backup::Snapshot`]).
 
-use serde::{Serialize, de::DeserializeOwned};
+use serde::Serialize;
+use serde::de::value::MapAccessDeserializer;
+use serde::de::{self, DeserializeOwned, DeserializeSeed, IntoDeserializer, MapAccess};
 use serde_json::{Map, Value as JsonValue};
 
 use uc_common::{Error, Result};
 
-use uc_storage::{Row, Value};
+use uc_storage::{Cell, Row, Value};
 
 /// How a column holds its value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -400,6 +403,73 @@ fn bad_row(table: &str, column: &str, why: impl std::fmt::Display) -> Error {
     Error::internal(format!("{table}.{column}: {why}"))
 }
 
+/// The columns of a row as the fields of a map, for [`TableDef::decode`].
+struct RowFields<'a, 'r> {
+    columns: std::slice::Iter<'static, (&'static str, Kind)>,
+    cells: std::slice::IterMut<'a, Cell<'r>>,
+    /// The column whose name was read last.
+    next: Option<(&'static str, Kind, &'a mut Cell<'r>)>,
+}
+
+impl<'a, 'r: 'a> MapAccess<'a> for RowFields<'a, 'r> {
+    type Error = serde_json::Error;
+
+    fn next_key_seed<K: DeserializeSeed<'a>>(
+        &mut self,
+        seed: K,
+    ) -> std::result::Result<Option<K::Value>, Self::Error> {
+        for (&(name, kind), cell) in self.columns.by_ref().zip(self.cells.by_ref()) {
+            if *cell != Cell::Value(Value::Null) {
+                self.next = Some((name, kind, cell));
+                return seed.deserialize(name.into_deserializer()).map(Some);
+            }
+        }
+        Ok(None)
+    }
+
+    fn next_value_seed<V: DeserializeSeed<'a>>(
+        &mut self,
+        seed: V,
+    ) -> std::result::Result<V::Value, Self::Error> {
+        let Some((name, kind, cell)) = self.next.take() else {
+            return Err(de::Error::custom("a value without its column"));
+        };
+        let column = |e: serde_json::Error| de::Error::custom(format_args!("{name}: {e}"));
+        if kind == Json {
+            let cell: &'a Cell<'r> = cell;
+            let text: &'a str = match cell {
+                Cell::Text(text) => text,
+                Cell::Value(Value::Text(text)) => text,
+                Cell::Value(value) => {
+                    return Err(de::Error::custom(format_args!(
+                        "{name}: {value:?} is not JSON text"
+                    )));
+                }
+            };
+            let mut json = serde_json::Deserializer::from_str(text);
+            let field = seed.deserialize(&mut json).map_err(column)?;
+            json.end().map_err(column)?;
+            return Ok(field);
+        }
+        let value = match std::mem::replace(cell, Cell::Value(Value::Null)) {
+            Cell::Value(value) => value,
+            Cell::Text(text) => Value::Text(text.to_owned()),
+        };
+        let field = match (kind, value) {
+            (Text, Value::Text(s)) => JsonValue::String(s),
+            (Int, Value::Int(n)) => JsonValue::from(n),
+            (Bool, Value::Bool(b)) => JsonValue::Bool(b),
+            (Bool, Value::Int(n)) => JsonValue::Bool(n != 0),
+            (kind, value) => {
+                return Err(de::Error::custom(format_args!(
+                    "{name}: {value:?} is not {kind:?}"
+                )));
+            }
+        };
+        seed.deserialize(field).map_err(column)
+    }
+}
+
 impl TableDef {
     /// `a, b, c`
     pub(crate) fn column_list(&self) -> String {
@@ -414,12 +484,21 @@ impl TableDef {
 
     /// `INSERT INTO t (a, b, c) VALUES ($1, $2, $3)`, for [`Self::encode`].
     pub(crate) fn insert(&self) -> String {
-        let placeholders: Vec<String> = (1..=self.columns.len()).map(|i| format!("${i}")).collect();
+        self.insert_rows(1)
+    }
+
+    /// `INSERT INTO t (a, b) VALUES ($1, $2), ($3, $4)`: `rows` rows of
+    /// [`Self::encode`] values, one after the other.
+    pub(crate) fn insert_rows(&self, rows: usize) -> String {
+        let width = self.columns.len();
+        let tuples: Vec<String> = (0..rows)
+            .map(|row| format!("({})", super::placeholders(row * width + 1, width)))
+            .collect();
         format!(
-            "INSERT INTO {} ({}) VALUES ({})",
+            "INSERT INTO {} ({}) VALUES {}",
             self.name,
             self.column_list(),
-            placeholders.join(", ")
+            tuples.join(", ")
         )
     }
 
@@ -445,7 +524,9 @@ impl TableDef {
 
     /// A row of [`Self::select`] as a JSON object; null columns are left out.
     pub(crate) fn object(&self, row: Row) -> Result<Map<String, JsonValue>> {
-        let values = row.into_values();
+        let values = row
+            .into_values()
+            .map_err(|e| Error::internal(format!("{}: {e}", self.name)))?;
         if values.len() != self.columns.len() {
             return Err(Error::internal(format!(
                 "{}: {} columns, expected {}",
@@ -478,10 +559,27 @@ impl TableDef {
         Ok(object)
     }
 
-    /// A row of [`Self::select`] as `R`.
+    /// A row of [`Self::select`] as `R`; null columns are left out. A JSON
+    /// column is read into its field's type, without a [`JsonValue`] tree.
     pub(crate) fn decode<R: DeserializeOwned>(&self, row: Row) -> Result<R> {
-        let object = self.object(row)?;
-        serde_json::from_value(JsonValue::Object(object))
+        let mut row = row;
+        if row.len() != self.columns.len() {
+            return Err(Error::internal(format!(
+                "{}: {} columns, expected {}",
+                self.name,
+                row.len(),
+                self.columns.len()
+            )));
+        }
+        let mut cells = row
+            .cells()
+            .map_err(|e| Error::internal(format!("{}: {e}", self.name)))?;
+        let fields = RowFields {
+            columns: self.columns.iter(),
+            cells: cells.iter_mut(),
+            next: None,
+        };
+        R::deserialize(MapAccessDeserializer::new(fields))
             .map_err(|e| Error::internal(format!("{}: {e}", self.name)))
     }
 
@@ -569,5 +667,48 @@ mod tests {
                 .values_of(serde_json::json!({ "user_name": 5 }).as_object().unwrap())
                 .is_err()
         );
+    }
+
+    #[derive(Debug, PartialEq, serde::Deserialize)]
+    struct User {
+        id_string: String,
+        display_name: Option<String>,
+        emails: Option<Vec<serde_json::Value>>,
+        active: bool,
+        created_at: i64,
+        #[serde(default)]
+        updated_at: Option<i64>,
+    }
+
+    #[test]
+    fn rows_decode_into_their_types() {
+        let row = |active: Value, created_at: Value| {
+            Row::from(vec![
+                Value::Text("u-1".into()),
+                Value::Text("ann".into()),
+                Value::Null,
+                Value::Null,
+                Value::Text(r#"[{"value":"ann@x.org"}]"#.into()),
+                active,
+                Value::Null,
+                created_at,
+                Value::Null,
+            ])
+        };
+        let user: User = SCIM_USER.decode(row(Value::Int(1), Value::Int(7))).unwrap();
+        assert_eq!(
+            user,
+            User {
+                id_string: "u-1".into(),
+                display_name: None,
+                emails: Some(vec![serde_json::json!({ "value": "ann@x.org" })]),
+                active: true,
+                created_at: 7,
+                updated_at: None,
+            },
+            "null columns are left out; Turso's integers are booleans"
+        );
+        let wrong = SCIM_USER.decode::<User>(row(Value::Bool(false), Value::Text("7".into())));
+        assert!(wrong.unwrap_err().message().contains("created_at"));
     }
 }

@@ -19,7 +19,8 @@ pub struct AuditQuery<'a> {
 
 #[async_trait]
 pub trait AuditLogOps: Send + Sync {
-    async fn record(&self, event: AuditEvent) -> Result<()>;
+    /// Write `events`, in one statement for up to 128 of them.
+    async fn record(&self, events: Vec<AuditEvent>) -> Result<()>;
 
     async fn list(
         &self,

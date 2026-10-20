@@ -22,7 +22,7 @@ use tokio::sync::{Mutex, RwLock};
 use uc_api::ScimUser;
 use uc_common::{Error, ErrorCode, Result, now_epoch_millis, settings};
 
-use crate::{authn::security::ADMIN, server::state::AppState};
+use crate::{authn::security::ADMIN, http::outbound::SendOnIo, server::state::AppState};
 
 /// Upstream `WildcardAllowlist`: exact entries, and entries whose `*`
 /// matches one DNS label (`https://*.dev.example.com`).
@@ -367,7 +367,7 @@ impl IdentityProviders {
         let response = self
             .http
             .get(&path)
-            .send()
+            .send_on_io()
             .await
             .map_err(|e| unreachable(&e))?;
         let status = response.status();
@@ -407,7 +407,7 @@ impl IdentityProviders {
         let set: Value = self
             .http
             .get(jwks_uri)
-            .send()
+            .send_on_io()
             .await
             .and_then(|r| r.error_for_status())
             .map_err(|e| unreachable(&e))?

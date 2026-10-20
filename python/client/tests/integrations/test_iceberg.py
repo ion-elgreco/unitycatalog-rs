@@ -4,6 +4,7 @@ Unity Catalog), commits, credentials, metrics and views. At each commit the
 server writes the metadata, and pyiceberg the data files. On S3, the server
 sends pyiceberg the credentials and the endpoint of the store."""
 
+import sys
 import typing
 
 import pytest
@@ -17,6 +18,13 @@ rest = pytest.importorskip("pyiceberg.catalog.rest")
 errors = pytest.importorskip("pyiceberg.exceptions")
 
 SCHEMA = pa.schema([("id", pa.int64())])
+
+# pyiceberg (0.12) writes the data files of a local table at the path of its
+# URI: on Windows, `/C:/...` for `file:///C:/...`, which is not a path.
+writes_local_data = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="pyiceberg cannot write to file:///C:/... locations",
+)
 
 
 def rest_catalog(url: str, warehouse: str, **properties: str) -> typing.Any:
@@ -129,6 +137,7 @@ def test_tables_are_iceberg_tables_of_unity_catalog(
     assert [t.name for t in client.list_tables(catalog, schema_name)] == ["c"]
 
 
+@writes_local_data
 def test_pyiceberg_commits_appends_a_column_and_properties_that_polars_reads(
     server, schema: tuple[str, str]
 ) -> None:
@@ -172,6 +181,7 @@ def test_pyiceberg_commits_appends_a_column_and_properties_that_polars_reads(
     ]
 
 
+@writes_local_data
 def test_a_commit_on_an_old_snapshot_fails_and_pyiceberg_retries(
     server, schema: tuple[str, str], caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -189,6 +199,7 @@ def test_a_commit_on_an_old_snapshot_fails_and_pyiceberg_retries(
     assert sorted(read["id"].to_pylist()) == [1, 2]
 
 
+@writes_local_data
 def test_a_staged_create_makes_the_table_at_its_commit(
     server, schema: tuple[str, str]
 ) -> None:
@@ -207,6 +218,7 @@ def test_a_staged_create_makes_the_table_at_its_commit(
     assert read["id"].to_pylist() == [1, 2]
 
 
+@writes_local_data
 def test_metrics_reports_are_acknowledged(server, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     iceberg = rest_catalog(server.url, catalog)

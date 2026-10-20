@@ -1,5 +1,5 @@
-//! [`Storage`] on PostgreSQL: a pool of connections, each with its prepared
-//! statements.
+//! [`Storage`] on PostgreSQL: a pool of connections for each worker, each
+//! connection with its prepared statements.
 //!
 //! The URL is libpq's (`postgresql://user:password@host:port/db?…`) or
 //! pgJDBC's (`jdbc:postgresql://host:port/db?user=…`), as upstream's
@@ -25,8 +25,9 @@ use tokio_postgres::types::{IsNull, ToSql, Type, to_sql_checked};
 use tokio_postgres::{Client, NoTls, Statement};
 use tracing::warn;
 
+use super::runtime;
 use super::tls::{MakeRustlsConnect, SslMode, TlsSettings};
-use super::{Exec, Row, Storage, StorageError, StorageResult, Transaction, Value};
+use super::{Cell, Exec, Row, Storage, StorageError, StorageResult, Transaction, Value};
 
 /// Upstream's pool size (`hibernate.hikari.maximumPoolSize`).
 const DEFAULT_POOL_SIZE: usize = 20;
@@ -294,36 +295,51 @@ impl ToSql for Value {
     to_sql_checked!();
 }
 
-fn row(r: &tokio_postgres::Row) -> StorageResult<Row> {
+/// Column `i` of `r` as a [`Value`].
+pub(super) fn value(r: &tokio_postgres::Row, i: usize) -> StorageResult<Value> {
     let get = |e: tokio_postgres::Error| StorageError::Other(e.to_string());
-    let mut values = Vec::with_capacity(r.len());
+    let column = &r.columns()[i];
+    Ok(match *column.type_() {
+        Type::BOOL => r.try_get::<_, Option<bool>>(i).map_err(get)?.into(),
+        Type::INT2 => r
+            .try_get::<_, Option<i16>>(i)
+            .map_err(get)?
+            .map(i64::from)
+            .into(),
+        Type::INT4 => r
+            .try_get::<_, Option<i32>>(i)
+            .map_err(get)?
+            .map(i64::from)
+            .into(),
+        Type::INT8 => r.try_get::<_, Option<i64>>(i).map_err(get)?.into(),
+        Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME => {
+            r.try_get::<_, Option<String>>(i).map_err(get)?.into()
+        }
+        ref other => {
+            return Err(StorageError::Other(format!(
+                "column {} has the unsupported type {other}",
+                column.name()
+            )));
+        }
+    })
+}
+
+/// The columns of `r`, with its text borrowed.
+pub(super) fn cells(r: &tokio_postgres::Row) -> StorageResult<Vec<Cell<'_>>> {
+    let get = |e: tokio_postgres::Error| StorageError::Other(e.to_string());
+    let mut cells = Vec::with_capacity(r.len());
     for (i, column) in r.columns().iter().enumerate() {
-        let value = match *column.type_() {
-            Type::BOOL => r.try_get::<_, Option<bool>>(i).map_err(get)?.into(),
-            Type::INT2 => r
-                .try_get::<_, Option<i16>>(i)
-                .map_err(get)?
-                .map(i64::from)
-                .into(),
-            Type::INT4 => r
-                .try_get::<_, Option<i32>>(i)
-                .map_err(get)?
-                .map(i64::from)
-                .into(),
-            Type::INT8 => r.try_get::<_, Option<i64>>(i).map_err(get)?.into(),
+        cells.push(match *column.type_() {
             Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME => {
-                r.try_get::<_, Option<String>>(i).map_err(get)?.into()
+                match r.try_get::<_, Option<&str>>(i).map_err(get)? {
+                    Some(text) => Cell::Text(text),
+                    None => Cell::Value(Value::Null),
+                }
             }
-            ref other => {
-                return Err(StorageError::Other(format!(
-                    "column {} has the unsupported type {other}",
-                    column.name()
-                )));
-            }
-        };
-        values.push(value);
+            _ => Cell::Value(value(r, i)?),
+        });
     }
-    Ok(Row(values))
+    Ok(cells)
 }
 
 fn map_err(e: tokio_postgres::Error) -> StorageError {
@@ -380,7 +396,7 @@ impl PgConn {
             .query(&statement, &params)
             .await
             .map_err(map_err)?;
-        rows.iter().map(row).collect()
+        Ok(rows.into_iter().map(Row::postgres).collect())
     }
 
     async fn execute(&self, sql: &str, values: &[Value]) -> StorageResult<u64> {
@@ -398,37 +414,49 @@ impl PgConn {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct Manager {
     config: tokio_postgres::Config,
     tls: Option<MakeRustlsConnect>,
+}
+
+/// Connect, and drive the connection in a task of the current runtime.
+async fn connect(
+    config: tokio_postgres::Config,
+    tls: Option<MakeRustlsConnect>,
+) -> StorageResult<Client> {
+    let client = match tls {
+        None => {
+            let (client, connection) = config.connect(NoTls).await.map_err(map_err)?;
+            tokio::spawn(async move {
+                if let Err(e) = connection.await {
+                    warn!("PostgreSQL connection closed: {e}");
+                }
+            });
+            client
+        }
+        Some(tls) => {
+            let (client, connection) = config.connect(tls).await.map_err(map_err)?;
+            tokio::spawn(async move {
+                if let Err(e) = connection.await {
+                    warn!("PostgreSQL connection closed: {e}");
+                }
+            });
+            client
+        }
+    };
+    Ok(client)
 }
 
 impl managed::Manager for Manager {
     type Type = PgConn;
     type Error = StorageError;
 
+    /// A connection whose connection task runs on the current runtime: the
+    /// worker of the pool. The connect future is boxed, as `Pool::get` would
+    /// hold all of it on each call.
     async fn create(&self) -> StorageResult<PgConn> {
-        let client = match &self.tls {
-            None => {
-                let (client, connection) = self.config.connect(NoTls).await.map_err(map_err)?;
-                tokio::spawn(async move {
-                    if let Err(e) = connection.await {
-                        warn!("PostgreSQL connection closed: {e}");
-                    }
-                });
-                client
-            }
-            Some(tls) => {
-                let (client, connection) =
-                    self.config.connect(tls.clone()).await.map_err(map_err)?;
-                tokio::spawn(async move {
-                    if let Err(e) = connection.await {
-                        warn!("PostgreSQL connection closed: {e}");
-                    }
-                });
-                client
-            }
-        };
+        let client = Box::pin(connect(self.config.clone(), self.tls.clone())).await?;
         Ok(PgConn {
             client,
             statements: Mutex::new(HashMap::new()),
@@ -451,9 +479,10 @@ impl managed::Manager for Manager {
     }
 }
 
-/// PostgreSQL, through a pool of connections.
+/// PostgreSQL, through a pool of connections for each worker
+/// ([`runtime::worker`]): `pool_size` split over the workers.
 pub struct PostgresStorage {
-    pool: Pool<Manager>,
+    pools: Vec<Pool<Manager>>,
 }
 
 impl PostgresStorage {
@@ -464,13 +493,21 @@ impl PostgresStorage {
             config: parsed.config,
             tls,
         };
-        let pool = Pool::builder(manager)
-            .max_size(pg.pool_size.unwrap_or(DEFAULT_POOL_SIZE).max(1))
-            .wait_timeout(Some(WAIT_TIMEOUT))
-            .runtime(deadpool::Runtime::Tokio1)
-            .build()
-            .map_err(|e| StorageError::Other(e.to_string()))?;
-        let storage = Self { pool };
+        let size = pg.pool_size.unwrap_or(DEFAULT_POOL_SIZE).max(1);
+        let workers = runtime::workers();
+        let pools = (0..workers)
+            .map(|i| {
+                // At least one connection for each worker.
+                let share = size / workers + usize::from(i < size % workers);
+                Pool::builder(manager.clone())
+                    .max_size(share.max(1))
+                    .wait_timeout(Some(WAIT_TIMEOUT))
+                    .runtime(deadpool::Runtime::Tokio1)
+                    .build()
+                    .map_err(|e| StorageError::Other(e.to_string()))
+            })
+            .collect::<StorageResult<Vec<_>>>()?;
+        let storage = Self { pools };
         // Connect once now, so that a wrong URL fails at start.
         let conn = storage.conn().await?;
         if let Some(schema) = &parsed.schema {
@@ -481,7 +518,8 @@ impl PostgresStorage {
     }
 
     async fn conn(&self) -> StorageResult<Object<Manager>> {
-        self.pool.get().await.map_err(|e| match e {
+        let pool = &self.pools[runtime::worker() % self.pools.len()];
+        pool.get().await.map_err(|e| match e {
             managed::PoolError::Backend(e) => e,
             e => StorageError::Other(format!("PostgreSQL pool: {e}")),
         })

@@ -1,7 +1,6 @@
 //! The acting `Principal` of a request: the one the auth middleware sets,
 //! else "anonymous".
 
-use async_trait::async_trait;
 use axum::{extract::FromRequestParts, http::request::Parts};
 
 use uc_common::Error;
@@ -43,7 +42,6 @@ impl Principal {
     }
 }
 
-#[async_trait]
 impl<S: Send + Sync> FromRequestParts<S> for Principal {
     type Rejection = std::convert::Infallible;
 

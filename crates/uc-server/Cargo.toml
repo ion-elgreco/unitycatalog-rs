@@ -23,6 +23,7 @@ uc-common = { workspace = true, features = ["ui"] }
 uc-api.workspace = true
 uc-delta.workspace = true
 uc-metastore.workspace = true
+uc-storage.workspace = true
 
 # Credential vending: AWS STS, and Azure SAS signing.
 aws-config = { version = "1", default-features = false, features = ["rustls", "rt-tokio", "behavior-version-latest"] }

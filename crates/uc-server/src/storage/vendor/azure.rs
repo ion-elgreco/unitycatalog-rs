@@ -19,6 +19,7 @@ use uc_api::{AzureUserDelegationSAS, TemporaryCredentials};
 use uc_common::{Error, NormalizedUrl, Result};
 
 use super::{CredentialContext, StoragePrivilege};
+use crate::http::outbound::SendOnIo;
 
 /// The SAS version signed: its string-to-sign is the one of
 /// [`user_delegation_sas`].
@@ -292,7 +293,7 @@ impl AzureVendor {
                 ("client_secret", config.client_secret.as_str()),
                 ("scope", "https://storage.azure.com/.default"),
             ])
-            .send()
+            .send_on_io()
             .await
             .map_err(|e| Error::internal(format!("Azure sign-in failed: {e}")))?;
         let status = response.status();
@@ -332,7 +333,7 @@ impl AzureVendor {
             .header("x-ms-version", SAS_VERSION)
             .header("content-type", "application/xml")
             .body(body)
-            .send()
+            .send_on_io()
             .await
             .map_err(|e| Error::internal(format!("Azure user delegation key failed: {e}")))?;
         let status = response.status();

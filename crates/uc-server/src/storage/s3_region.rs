@@ -10,6 +10,8 @@ use tracing::warn;
 
 use uc_common::{Error, ErrorCode, NormalizedUrl, Result};
 
+use crate::http::outbound::SendOnIo;
+
 /// The header S3 names a bucket's region in, also on redirects and denials.
 const BUCKET_REGION_HEADER: &str = "x-amz-bucket-region";
 
@@ -67,7 +69,7 @@ impl S3Regions {
         let response = match self
             .client
             .head(format!("https://s3.amazonaws.com/{bucket}"))
-            .send()
+            .send_on_io()
             .await
         {
             Ok(response) => response,

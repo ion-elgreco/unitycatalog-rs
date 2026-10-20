@@ -357,6 +357,9 @@ impl SqlMetastore {
     pub(crate) async fn resolve_table(&self, full_name: &str) -> Result<(SchemaRef, TableRow)> {
         let (c, s, t) = split_three_part(full_name, "table")?;
         let schema = self.resolve_schema(c, s).await?;
+        // A query of its own: PostgreSQL plans a join with `tbl` for the
+        // table's size when it prepares the statement, and keeps a
+        // sequential scan of `tbl` while the table grows.
         let row = self
             .table_row(&schema.schema_id, t)
             .await?
@@ -480,9 +483,11 @@ impl TableOps for SqlMetastore {
                 |r| r.name.clone(),
             )
             .await?;
-        let infos: Result<Vec<TableInfo>> =
-            rows.into_iter().map(|r| r.into_info(&schema)).collect();
-        Ok((infos?, next))
+        let mut infos = Vec::with_capacity(rows.len());
+        for r in rows {
+            infos.push(r.into_info(&schema)?);
+        }
+        Ok((infos, next))
     }
 
     async fn create_staging(

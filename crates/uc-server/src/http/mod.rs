@@ -4,6 +4,7 @@
 pub mod error;
 pub mod extract;
 pub mod header_case;
+pub mod outbound;
 
 /// `application/x-www-form-urlencoded` for one value, as Java's
 /// `URLEncoder.encode`: letters, digits and `.-*_` stay, a space is `+`.

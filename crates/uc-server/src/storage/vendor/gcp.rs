@@ -17,6 +17,7 @@ use uc_api::{GcpOauthToken, TemporaryCredentials};
 use uc_common::{Error, NormalizedUrl, Result, now_epoch_millis};
 
 use super::CredentialContext;
+use crate::http::outbound::SendOnIo;
 
 const CLOUD_PLATFORM: &str = "https://www.googleapis.com/auth/cloud-platform";
 const GOOGLE_TOKEN_URI: &str = "https://oauth2.googleapis.com/token";
@@ -184,7 +185,7 @@ impl GcpVendor {
             .get(url)
             .query(&[("scopes", CLOUD_PLATFORM)])
             .header("Metadata-Flavor", "Google")
-            .send()
+            .send_on_io()
             .await
             .map_err(|e| Error::failed_precondition(format!("metadata server: {e}")))?;
         token_response(response).await
@@ -195,7 +196,7 @@ impl GcpVendor {
             .http
             .post(url)
             .form(form)
-            .send()
+            .send_on_io()
             .await
             .map_err(|e| Error::failed_precondition(format!("{url}: {e}")))?;
         token_response(response).await
@@ -248,7 +249,7 @@ impl GcpVendor {
             .http
             .post(&self.sts)
             .form(&form)
-            .send()
+            .send_on_io()
             .await
             .map_err(|e| Error::internal(format!("GCP token downscoping failed: {e}")))?;
         let mut token = token_response(response).await.map_err(|e| {

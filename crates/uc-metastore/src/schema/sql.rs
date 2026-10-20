@@ -16,7 +16,7 @@ use crate::sql::{
     split_schema_name, touch_audit, update,
 };
 use crate::{PropertyChanges, SchemaOps};
-use uc_storage::{Exec, Value};
+use uc_storage::{Exec, Row, Value};
 
 /// Attempts of a property patch against concurrent writers.
 const PATCH_ATTEMPTS: usize = 5;
@@ -112,6 +112,33 @@ pub(crate) async fn drop_schema_children<E: Exec + ?Sized>(
     Ok(())
 }
 
+/// The catalog `$1` and its schema `$2`, for [`SCHEMA_REF_COLUMNS`]; the
+/// schema's columns are null when it is missing.
+const CATALOG_AND_SCHEMA: &str =
+    "catalog c LEFT JOIN schema s ON s.catalog_id = c.id_string AND s.name = $2";
+
+/// The columns of a [`SchemaRef`], from [`CATALOG_AND_SCHEMA`].
+const SCHEMA_REF_COLUMNS: &str =
+    "c.name, c.storage_location, s.id_string, s.name, s.storage_location";
+
+/// The [`SchemaRef`] of a row that starts with [`SCHEMA_REF_COLUMNS`], or
+/// upstream's `SCHEMA_NOT_FOUND` when its schema is missing.
+fn schema_ref_of(row: &Row, catalog: &str, schema: &str) -> Result<SchemaRef> {
+    let failed = db_err("resolve schema");
+    let Some(schema_id) = row.opt_text(2).map_err(&failed)? else {
+        return Err(Error::schema_not_found(format!(
+            "Schema not found: {catalog}.{schema}"
+        )));
+    };
+    Ok(SchemaRef {
+        catalog_name: row.text(0).map_err(&failed)?,
+        catalog_storage_location: row.opt_text(1).map_err(&failed)?,
+        schema_id,
+        schema_name: row.text(3).map_err(&failed)?,
+        schema_storage_location: row.opt_text(4).map_err(&failed)?,
+    })
+}
+
 fn schema_exists(name: &str) -> Error {
     Error::new(
         ErrorCode::SchemaAlreadyExists,
@@ -135,23 +162,20 @@ impl SqlMetastore {
         .await
     }
 
-    /// Resolve `<catalog>.<schema>` to ids, or fail with upstream's
-    /// `CATALOG_NOT_FOUND` / `SCHEMA_NOT_FOUND`.
+    /// Resolve `<catalog>.<schema>` to ids in one query, or fail with
+    /// upstream's `CATALOG_NOT_FOUND` / `SCHEMA_NOT_FOUND`.
     pub(crate) async fn resolve_schema(&self, catalog: &str, schema: &str) -> Result<SchemaRef> {
-        let cat = self.require_catalog_row(catalog).await?;
-        let row = self
-            .schema_row(&cat.id_string, schema)
-            .await?
-            .ok_or_else(|| {
-                Error::schema_not_found(format!("Schema not found: {catalog}.{schema}"))
-            })?;
-        Ok(SchemaRef {
-            catalog_name: cat.name,
-            schema_id: row.id_string,
-            schema_name: row.name,
-            schema_storage_location: row.storage_location,
-            catalog_storage_location: cat.storage_location,
-        })
+        let sql =
+            format!("SELECT {SCHEMA_REF_COLUMNS} FROM {CATALOG_AND_SCHEMA} WHERE c.name = $1");
+        let rows = self
+            .db
+            .query(&sql, &[catalog.into(), schema.into()])
+            .await
+            .map_err(db_err("resolve schema"))?;
+        let row = rows
+            .first()
+            .ok_or_else(|| Error::catalog_not_found(format!("Catalog not found: {catalog}")))?;
+        schema_ref_of(row, catalog, schema)
     }
 
     /// Resolve a schema id (from a child row) to its current names.
