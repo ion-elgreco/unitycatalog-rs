@@ -2,6 +2,7 @@
 //! state, the router and the OpenAPI document.
 
 pub mod app;
+pub mod banner;
 pub mod config;
 pub mod openapi;
 pub mod options;

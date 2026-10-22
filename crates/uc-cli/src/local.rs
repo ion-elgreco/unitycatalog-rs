@@ -159,16 +159,16 @@ pub async fn dev(settings: &Settings, args: DevArgs) -> anyhow::Result<i32> {
     }
 
     // uc-server's banner shows the URLs and the data folder.
-    let url = format!("http://localhost:{}", args.port);
-    if ui.is_none() {
-        match settings.ui.enabled {
-            false => println!("No web UI: {} is false.", settings::name("ui.enabled")),
-            true => println!("No web UI. {NO_UI}"),
+    match &ui {
+        Some(_) => {}
+        None if !settings.ui.enabled => {
+            println!("No web UI: {} is false.", settings::name("ui.enabled"))
         }
+        None => println!("No web UI. {NO_UI}"),
     }
     println!("Press Ctrl+C to stop it.");
     if ui.is_some() && !args.no_browser {
-        browser::open(&url);
+        browser::open(&format!("http://localhost:{}", args.port));
     }
     tokio::select! {
         status = child.wait() => Ok(status?.code().unwrap_or(1)),

@@ -3,12 +3,7 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
-use ratatui::symbols::half_block;
-use uc_common::logo::{HEIGHT, PIXELS, WIDTH};
-
-fn color(letter: u8) -> Option<Color> {
-    uc_common::logo::rgb(letter).map(|(r, g, b)| Color::Rgb(r, g, b))
-}
+use uc_common::logo::{Cell, HEIGHT, WIDTH};
 
 /// Draws the logo in the middle of `area`, over what is there: a cell
 /// without pixels keeps its symbol and colors. Draws nothing when the logo
@@ -19,21 +14,15 @@ pub fn render(area: Rect, buf: &mut Buffer) {
     }
     let left = area.x + (area.width - WIDTH) / 2;
     let top = area.y + (area.height - HEIGHT) / 2;
-    for (y, pair) in (top..).zip(PIXELS.chunks(2)) {
-        let pixels = pair[0].bytes().zip(pair[1].bytes());
-        for (x, (upper, lower)) in (left..).zip(pixels) {
-            let cell = &mut buf[(x, y)];
-            match (color(upper), color(lower)) {
-                (Some(upper), Some(lower)) => {
-                    cell.set_char(half_block::UPPER).set_fg(upper).set_bg(lower);
-                }
-                (Some(upper), None) => {
-                    cell.set_char(half_block::UPPER).set_fg(upper);
-                }
-                (None, Some(lower)) => {
-                    cell.set_char(half_block::LOWER).set_fg(lower);
-                }
-                (None, None) => {}
+    let color = |(r, g, b)| Color::Rgb(r, g, b);
+    for (y, cells) in (top..).zip(uc_common::logo::rows()) {
+        for (x, cell) in (left..).zip(cells) {
+            let Some(Cell { symbol, fg, bg }) = cell else {
+                continue;
+            };
+            let target = buf[(x, y)].set_char(symbol).set_fg(color(fg));
+            if let Some(bg) = bg {
+                target.set_bg(color(bg));
             }
         }
     }

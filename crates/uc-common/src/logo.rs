@@ -7,13 +7,15 @@
 //! A cell holds two pixels, one above the other: the half block `▀` in the
 //! color of the top pixel, on the color of the bottom one.
 
+use std::fmt::Write as _;
+
 /// The columns of the logo.
 pub const WIDTH: u16 = 36;
 /// The lines of the logo: two pixels each.
 pub const HEIGHT: u16 = 12;
 
 /// The pixels, a letter each: `.` for none, else a color of [`rgb`].
-pub const PIXELS: [&str; 24] = [
+const PIXELS: [&str; 24] = [
     ".......................yyyy.........",
     "....................pp..yy..pp......",
     "..................ppppp....ppppp....",
@@ -40,8 +42,20 @@ pub const PIXELS: [&str; 24] = [
     ".....o......ooo....o................",
 ];
 
+/// A color: red, green and blue.
+pub type Rgb = (u8, u8, u8);
+
+/// A cell of the logo with pixels: `symbol` in `fg`, on `bg` or on the
+/// terminal's background.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cell {
+    pub symbol: char,
+    pub fg: Rgb,
+    pub bg: Option<Rgb>,
+}
+
 /// The SVG's color of a letter of [`PIXELS`]; none for `.`.
-pub fn rgb(letter: u8) -> Option<(u8, u8, u8)> {
+fn rgb(letter: u8) -> Option<Rgb> {
     Some(match letter {
         // The ring: the hexagon, the triangles and the squares.
         b'n' => (0x16, 0x33, 0x57),
@@ -56,26 +70,52 @@ pub fn rgb(letter: u8) -> Option<(u8, u8, u8)> {
     })
 }
 
+/// The lines of cells, [`WIDTH`] each; none for a cell without pixels.
+pub fn rows() -> impl Iterator<Item = impl Iterator<Item = Option<Cell>>> {
+    PIXELS.chunks(2).map(|pair| {
+        let pixels = pair[0].bytes().zip(pair[1].bytes());
+        pixels.map(|(upper, lower)| match (rgb(upper), rgb(lower)) {
+            (Some(fg), bg) => Some(Cell {
+                symbol: '▀',
+                fg,
+                bg,
+            }),
+            (None, Some(fg)) => Some(Cell {
+                symbol: '▄',
+                fg,
+                bg: None,
+            }),
+            (None, None) => None,
+        })
+    })
+}
+
 /// The logo in 24-bit ANSI colors, a line of text per line of cells, with
 /// the lines of `beside` on its right, in the middle of its height.
-pub fn ansi(beside: &[&str]) -> String {
-    let first = (usize::from(HEIGHT) - beside.len().min(usize::from(HEIGHT))) / 2;
+pub fn ansi(beside: &[impl AsRef<str>]) -> String {
+    let first = usize::from(HEIGHT).saturating_sub(beside.len()) / 2;
     let mut out = String::new();
-    for (row, pair) in PIXELS.chunks(2).enumerate() {
-        for (upper, lower) in pair[0].bytes().zip(pair[1].bytes()) {
-            match (rgb(upper), rgb(lower)) {
-                (Some((r, g, b)), Some((br, bg, bb))) => out.push_str(&format!(
-                    "\x1b[38;2;{r};{g};{b};48;2;{br};{bg};{bb}m▀\x1b[0m"
-                )),
-                (Some((r, g, b)), None) => out.push_str(&format!("\x1b[38;2;{r};{g};{b}m▀\x1b[0m")),
-                (None, Some((r, g, b))) => out.push_str(&format!("\x1b[38;2;{r};{g};{b}m▄\x1b[0m")),
-                (None, None) => out.push(' '),
+    for (row, cells) in rows().enumerate() {
+        for cell in cells {
+            let Some(Cell {
+                symbol,
+                fg: (r, g, b),
+                bg,
+            }) = cell
+            else {
+                out.push(' ');
+                continue;
+            };
+            let _ = write!(out, "\x1b[38;2;{r};{g};{b}");
+            if let Some((r, g, b)) = bg {
+                let _ = write!(out, ";48;2;{r};{g};{b}");
             }
+            let _ = write!(out, "m{symbol}\x1b[0m");
         }
         match row.checked_sub(first).and_then(|i| beside.get(i)) {
             Some(text) => {
                 out.push_str("      ");
-                out.push_str(text);
+                out.push_str(text.as_ref());
             }
             None => out.truncate(out.trim_end_matches(' ').len()),
         }
@@ -103,8 +143,8 @@ mod tests {
     #[test]
     fn ansi_has_a_line_per_cell_row() {
         let text = ansi(&["name", "url"]);
-        assert_eq!(text.lines().count(), usize::from(HEIGHT));
         let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), usize::from(HEIGHT));
         assert!(lines[5].ends_with("      name"), "{}", lines[5]);
         assert!(lines[6].ends_with("      url"), "{}", lines[6]);
         // Ferris's shell over the light in an eye.

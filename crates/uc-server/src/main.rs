@@ -14,7 +14,7 @@ use uc_server::{
     },
     build_app, build_observability_app,
     observability::telemetry::init_tracing,
-    server::{options, serve},
+    server::{banner, options, serve},
     storage::vendor::CloudVendor,
 };
 
@@ -125,27 +125,7 @@ async fn run(options: options::Options) -> Result<(), String> {
         Some(port) => std::net::SocketAddr::new(cfg.bind.ip(), port),
         None => cfg.bind,
     };
-    // The logo, only for a person at a terminal that shows colors.
-    if std::io::IsTerminal::is_terminal(&std::io::stdout())
-        && std::env::var_os("NO_COLOR").is_none()
-    {
-        let host = match bind.ip().is_unspecified() || bind.ip().is_loopback() {
-            true => "localhost".to_string(),
-            false => bind.ip().to_string(),
-        };
-        let url = format!("http://{host}:{}", bind.port());
-        let mut beside = vec![
-            format!("unitycatalog-rs {}", env!("CARGO_PKG_VERSION")),
-            String::new(),
-        ];
-        if cfg.http.ui_dir.is_some() {
-            beside.push(format!("UI:   {url}"));
-        }
-        beside.push(format!("API:  {url}{}", uc_common::API_BASE));
-        beside.push(format!("Data: {}", cfg.data_dir.display()));
-        let beside: Vec<&str> = beside.iter().map(String::as_str).collect();
-        println!("{}", uc_common::logo::ansi(&beside));
-    }
+    banner::print(&cfg, bind);
     // Upstream `--obs-port` (or `server.obs_port`): probes and metrics on
     // their own port; none without it.
     let obs_port = options.obs_port.or(cfg.obs_port);
