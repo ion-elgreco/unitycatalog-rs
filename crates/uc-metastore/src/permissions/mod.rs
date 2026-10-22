@@ -44,6 +44,8 @@ pub trait PermissionOps: Send + Sync {
         principal_filter: Option<&str>,
     ) -> Result<PermissionsList>;
 
+    /// Change the grants on a securable. A principal is a user's email or
+    /// a group's name.
     async fn update(
         &self,
         securable_type: SecurableType,
@@ -65,7 +67,8 @@ pub trait PermissionOps: Send + Sync {
     /// id `table_id` and its parents; `TABLE_NOT_FOUND` otherwise.
     async fn table_lineage(&self, table_id: &str) -> Result<Lineage>;
 
-    /// Every grant of `principal`, by resource id.
+    /// Every grant of `principal` and of the groups that it is in, by
+    /// resource id.
     async fn grants_of(&self, principal: &str) -> Result<HashMap<String, Vec<Privilege>>>;
 
     /// Remove every grant of `principal` (upstream

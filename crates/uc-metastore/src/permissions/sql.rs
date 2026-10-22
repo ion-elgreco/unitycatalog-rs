@@ -103,7 +103,7 @@ impl PermissionOps for SqlMetastore {
         let resource_id = self.securable_id(securable_type, full_name).await?;
         let mut changes = Vec::with_capacity(req.changes.len());
         for mut change in req.changes {
-            change.principal = self.require_user(&change.principal).await?;
+            change.principal = self.require_principal(&change.principal).await?;
             changes.push(change);
         }
         let principals: BTreeSet<String> = changes.iter().map(|c| c.principal.clone()).collect();
@@ -280,25 +280,26 @@ impl PermissionOps for SqlMetastore {
         let rows: Vec<PermissionRow> = select(
             self.db.as_ref(),
             &PERMISSION,
-            "WHERE principal = $1",
+            "WHERE principal = $1 OR principal IN (\
+                SELECT g.display_name FROM scim_group g \
+                JOIN scim_group_member m ON m.group_id = g.id_string \
+                JOIN scim_user u ON u.id_string = m.user_id \
+                WHERE u.user_name = $1)",
             &[principal.into()],
         )
         .await?;
-        Ok(rows
-            .into_iter()
-            .map(|r| (r.resource_id, r.privileges))
-            .collect())
+        let mut grants: HashMap<String, Vec<Privilege>> = HashMap::new();
+        for row in rows {
+            grants
+                .entry(row.resource_id)
+                .or_default()
+                .extend(row.privileges);
+        }
+        Ok(grants)
     }
 
     async fn clear_principal(&self, principal: &str) -> Result<()> {
-        self.db
-            .execute(
-                "DELETE FROM permission WHERE principal = $1",
-                &[principal.into()],
-            )
-            .await
-            .map_err(db_err("clear principal grants"))?;
-        Ok(())
+        clear_principal(self.db.as_ref(), principal).await
     }
 
     async fn metastore_owner(&self) -> Result<Option<String>> {
@@ -471,6 +472,39 @@ pub(crate) async fn apply_permission_change<E: Exec + ?Sized>(
     Ok(changed)
 }
 
+/// Remove every grant of `principal`, in `ex`.
+pub(crate) async fn clear_principal<E: Exec + ?Sized>(ex: &E, principal: &str) -> Result<()> {
+    ex.execute(
+        "DELETE FROM permission WHERE principal = $1",
+        &[principal.into()],
+    )
+    .await
+    .map_err(db_err("clear principal grants"))?;
+    Ok(())
+}
+
+/// Give the grants of `from` to `to`, in `tx`: a renamed group keeps its
+/// grants.
+pub(crate) async fn rename_principal<E: Exec + ?Sized>(tx: &E, from: &str, to: &str) -> Result<()> {
+    let rows: Vec<PermissionRow> = select(
+        tx,
+        &PERMISSION,
+        &format!("WHERE principal = $1{}", tx.for_update()),
+        &[from.into()],
+    )
+    .await?;
+    for row in rows {
+        let key = crate::permissions::permission_key(&row.resource_id, to);
+        tx.execute(
+            "UPDATE permission SET id_string = $1, principal = $2 WHERE id_string = $3",
+            &[key.into(), to.into(), row.id_string.into()],
+        )
+        .await
+        .map_err(db_err("rename principal grants"))?;
+    }
+    Ok(())
+}
+
 impl SqlMetastore {
     /// The id, owner and (with `parent`) the parent id of the row `id` of
     /// `table`.
@@ -550,11 +584,19 @@ impl SqlMetastore {
     /// Upstream `getUserByEmail`: grants go to users that exist, named by
     /// user name or email. They are kept under the user's principal (its
     /// email), the name a signed-in caller has.
-    async fn require_user(&self, principal: &str) -> Result<String> {
+    /// The name in grants of the user with email `principal`, or of the
+    /// group named `principal`.
+    async fn require_principal(&self, principal: &str) -> Result<String> {
         use crate::scim::ScimOps;
-        match self.find_user_by_email(principal).await? {
-            Some(user) => Ok(user.principal().to_string()),
-            None => Err(Error::not_found(format!("User not found: {principal}"))),
+        if let Some(user) = self.find_user_by_email(principal).await? {
+            return Ok(user.principal().to_string());
+        }
+        match self
+            .exists_where("scim_group", "display_name", principal)
+            .await?
+        {
+            true => Ok(principal.to_string()),
+            false => Err(Error::not_found(format!("User not found: {principal}"))),
         }
     }
 

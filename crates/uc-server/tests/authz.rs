@@ -32,6 +32,7 @@ fn signed(
 /// Users: the admin (metastore owner), alice and bob.
 struct World {
     app: Router,
+    metastore: uc_metastore::DynMetastore,
     admin: String,
     alice: String,
     bob: String,
@@ -50,6 +51,7 @@ impl World {
         let bob = common::active_user(&metastore, "bob@example.com").await;
         Self {
             app,
+            metastore,
             admin,
             alice,
             bob,
@@ -70,6 +72,16 @@ impl World {
             .unwrap()
     }
 
+    /// A SCIM request of the admin.
+    async fn scim(&self, method: Method, path: &str, body: Value) -> axum::response::Response {
+        let mut request = common::control_json(method, path, body);
+        request.headers_mut().insert(
+            "authorization",
+            format!("Bearer {}", self.admin).parse().unwrap(),
+        );
+        self.app.clone().oneshot(request).await.unwrap()
+    }
+
     /// A control-plane GET signed in with `token`.
     async fn control(&self, token: &str, path: &str) -> StatusCode {
         let mut request = common::control(Method::GET, path);
@@ -87,6 +99,11 @@ impl World {
         body: Option<Value>,
     ) -> StatusCode {
         self.call(token, method, path, body).await.status()
+    }
+
+    /// The status of a GET of catalog `c` signed in with `token`.
+    async fn get_catalog(&self, token: &str) -> StatusCode {
+        self.status(token, Method::GET, "/catalogs/c", None).await
     }
 
     async fn ok(&self, token: &str, method: Method, path: &str, body: Option<Value>) -> Value {
@@ -1347,4 +1364,88 @@ async fn deleted_users_lose_grants_and_sign_in() {
         .ok(&w.admin, Method::GET, "/permissions/catalog/c", None)
         .await;
     assert_eq!(grants["privilege_assignments"], json!([]));
+}
+
+/// A grant to a group counts for its members. A renamed group keeps its
+/// grants, and a deleted group's grants go. A user and a group cannot
+/// share a name.
+#[tokio::test]
+async fn groups_give_their_grants_to_members() {
+    const GROUP: &str = "urn:ietf:params:scim:schemas:core:2.0:Group";
+    const PATCH: &str = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
+    let w = World::new().await;
+    w.catalog_and_schema(&[]).await;
+    let alice = w.metastore.scim().find_user_by_email(ALICE).await.unwrap();
+    let alice = alice.unwrap().id.unwrap();
+    let group = json!({ "schemas": [GROUP], "displayName": "data",
+        "members": [{ "value": alice, "display": ALICE }] });
+    let created = w.scim(Method::POST, "/scim2/Groups", group).await;
+    let created = json_body(assert_status(created, StatusCode::CREATED, "group").await).await;
+    let group = format!("/scim2/Groups/{}", created["id"].as_str().unwrap());
+    let patch = |op: Value| json!({ "schemas": [PATCH], "Operations": [op] });
+
+    assert_eq!(w.get_catalog(&w.alice).await, StatusCode::FORBIDDEN);
+    w.grant("catalog", "c", "data", &["USE CATALOG"]).await;
+    assert_eq!(w.get_catalog(&w.alice).await, StatusCode::OK);
+    assert_eq!(w.get_catalog(&w.bob).await, StatusCode::FORBIDDEN);
+    // CREATE SCHEMA of her own and USE CATALOG of the group.
+    w.grant("catalog", "c", ALICE, &["CREATE SCHEMA"]).await;
+    let schema = json!({ "name": "s2", "catalog_name": "c" });
+    w.ok(&w.alice, Method::POST, "/schemas", Some(schema)).await;
+
+    let rename = patch(json!({ "op": "replace", "path": "displayName", "value": "analysts" }));
+    let renamed = w.scim(Method::PATCH, &group, rename).await;
+    assert_status(renamed, StatusCode::OK, "rename").await;
+    let grants = w
+        .ok(&w.admin, Method::GET, "/permissions/catalog/c", None)
+        .await;
+    assert_eq!(
+        grants["privilege_assignments"],
+        json!([
+            { "principal": ALICE, "privileges": ["CREATE SCHEMA"] },
+            { "principal": "analysts", "privileges": ["USE CATALOG"] },
+        ])
+    );
+    assert_eq!(w.get_catalog(&w.alice).await, StatusCode::OK);
+
+    let path = format!("members[value eq \"{alice}\"]");
+    let remove = patch(json!({ "op": "remove", "path": path }));
+    let removed = w.scim(Method::PATCH, &group, remove).await;
+    assert_status(removed, StatusCode::OK, "remove").await;
+    assert_eq!(w.get_catalog(&w.alice).await, StatusCode::FORBIDDEN);
+    let add = patch(json!({ "op": "add", "path": "members", "value": [{ "value": alice }] }));
+    let added = w.scim(Method::PATCH, &group, add).await;
+    assert_status(added, StatusCode::OK, "add").await;
+    assert_eq!(w.get_catalog(&w.alice).await, StatusCode::OK);
+
+    let deleted = w.scim(Method::DELETE, &group, Value::Null).await;
+    assert_status(deleted, StatusCode::NO_CONTENT, "delete").await;
+    assert_eq!(w.get_catalog(&w.alice).await, StatusCode::FORBIDDEN);
+    let grants = w
+        .ok(&w.admin, Method::GET, "/permissions/catalog/c", None)
+        .await;
+    assert_eq!(
+        grants["privilege_assignments"],
+        json!([{ "principal": ALICE, "privileges": ["CREATE SCHEMA"] }])
+    );
+
+    // Grants need a user or a group of that name.
+    let body = json!({ "changes": [
+        { "principal": "analysts", "add": ["USE CATALOG"], "remove": [] },
+    ] });
+    let path = "/permissions/catalog/c";
+    let missing = w.call(&w.admin, Method::PATCH, path, Some(body)).await;
+    common::assert_error(missing, StatusCode::NOT_FOUND, "NOT_FOUND").await;
+    let taken = json!({ "schemas": [GROUP], "displayName": ALICE });
+    let taken = w.scim(Method::POST, "/scim2/Groups", taken).await;
+    common::assert_error(taken, StatusCode::CONFLICT, "ALREADY_EXISTS").await;
+    let ops = json!({ "schemas": [GROUP], "displayName": "ops@example.com" });
+    let ops = w.scim(Method::POST, "/scim2/Groups", ops).await;
+    assert_status(ops, StatusCode::CREATED, "ops").await;
+    let user = uc_api::ScimUser {
+        user_name: "ops@example.com".to_string(),
+        ..Default::default()
+    };
+    let err = w.metastore.scim().create_user(user).await.unwrap_err();
+    assert_eq!(err.code(), uc_common::ErrorCode::AlreadyExists);
 }

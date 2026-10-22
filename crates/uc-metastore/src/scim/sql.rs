@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -6,12 +8,15 @@ use uc_api::{
     PermissionsChange, ScimEmail, ScimGroup, ScimGroupMember, ScimMeta, ScimPhoto, ScimUser,
 };
 use uc_common::{Error, Result, SecurableType, now_epoch_millis, require_non_empty};
+use uc_storage::Exec;
 
 use crate::ScimOps;
-use crate::permissions::sql::apply_permission_change;
+use crate::permissions::sql::{apply_permission_change, clear_principal, rename_principal};
 use crate::scim::{SeedReport, SeedUser};
-use crate::sql::rows::{SCIM_GROUP, SCIM_USER};
-use crate::sql::{SqlMetastore, by_id, create_err, db_err, insert, select, select_one, update};
+use crate::sql::rows::{SCIM_GROUP, SCIM_GROUP_MEMBER, SCIM_USER};
+use crate::sql::{
+    SqlMetastore, by_id, create_err, db_err, insert, insert_all, select, select_one, update,
+};
 
 use uc_api::scim::schema_uri;
 
@@ -143,6 +148,75 @@ fn group_to_row(group: ScimGroup, id_override: Option<String>) -> ScimGroupRow {
     }
 }
 
+/// A user in a group.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GroupMemberRow {
+    group_id: String,
+    user_id: String,
+}
+
+/// Make `scim_group_member` hold the members of `group`, in `tx`.
+async fn write_members<E: Exec + ?Sized>(tx: &E, group: &ScimGroupRow) -> Result<()> {
+    let failed = db_err("write group members");
+    tx.execute(
+        "DELETE FROM scim_group_member WHERE group_id = $1",
+        &[group.id_string.as_str().into()],
+    )
+    .await
+    .map_err(&failed)?;
+    let user_ids: BTreeSet<&str> = group
+        .members
+        .iter()
+        .flatten()
+        .map(|m| m.value.as_str())
+        .collect();
+    let rows: Vec<GroupMemberRow> = user_ids
+        .into_iter()
+        .map(|user_id| GroupMemberRow {
+            group_id: group.id_string.clone(),
+            user_id: user_id.to_string(),
+        })
+        .collect();
+    insert_all(tx, &SCIM_GROUP_MEMBER, &rows)
+        .await
+        .map_err(&failed)
+}
+
+/// Grants name users by email and groups by name, so no user has a
+/// group's name and no group a user's email.
+fn name_taken(name: &str) -> Error {
+    Error::already_exists(format!("Principal already exists: {name}"))
+}
+
+async fn require_no_group<E: Exec + ?Sized>(ex: &E, name: &str) -> Result<()> {
+    let group: Option<ScimGroupRow> =
+        select_one(ex, &SCIM_GROUP, "WHERE display_name = $1", &[name.into()]).await?;
+    match group {
+        Some(_) => Err(name_taken(name)),
+        None => Ok(()),
+    }
+}
+
+async fn require_no_user<E: Exec + ?Sized>(ex: &E, name: &str) -> Result<()> {
+    let user: Option<ScimUserRow> =
+        select_one(ex, &SCIM_USER, "WHERE user_name = $1", &[name.into()]).await?;
+    match user {
+        Some(_) => Err(name_taken(name)),
+        None => Ok(()),
+    }
+}
+
+/// The group `id`, locked for the rest of `tx`.
+async fn lock_group<E: Exec + ?Sized>(tx: &E, id: &str) -> Result<Option<ScimGroupRow>> {
+    select_one(
+        tx,
+        &SCIM_GROUP,
+        &format!("WHERE id_string = $1{}", tx.for_update()),
+        &[id.into()],
+    )
+    .await
+}
+
 #[async_trait]
 impl ScimOps for SqlMetastore {
     async fn create_user(&self, user: ScimUser) -> Result<ScimUser> {
@@ -161,6 +235,7 @@ impl ScimOps for SqlMetastore {
                 "User already exists with external id: {external_id}"
             )));
         }
+        require_no_group(self.db.as_ref(), &email).await?;
         let row = user_to_row(
             user,
             Uuid::new_v4().to_string(),
@@ -238,6 +313,9 @@ impl ScimOps for SqlMetastore {
                 )));
             }
         }
+        if user.principal() != existing.user_name {
+            require_no_group(self.db.as_ref(), user.principal()).await?;
+        }
         let row = user_to_row(
             user,
             id.to_string(),
@@ -282,6 +360,7 @@ impl ScimOps for SqlMetastore {
                     user.active
                 }
                 None => {
+                    require_no_group(tx.as_ref(), email).await?;
                     if let Some(external_id) = seed.external_id.as_deref() {
                         let holder: Option<ScimUserRow> = select_one(
                             tx.as_ref(),
@@ -345,9 +424,14 @@ impl ScimOps for SqlMetastore {
     async fn create_group(&self, group: ScimGroup) -> Result<ScimGroup> {
         require_non_empty("displayName", &group.display_name)?;
         let row = group_to_row(group, None);
-        insert(self.db.as_ref(), &SCIM_GROUP, &row)
+        let failed = db_err("create group");
+        let tx = self.db.begin().await.map_err(&failed)?;
+        require_no_user(tx.as_ref(), &row.display_name).await?;
+        insert(tx.as_ref(), &SCIM_GROUP, &row)
             .await
             .map_err(create_err)?;
+        write_members(tx.as_ref(), &row).await?;
+        tx.commit().await.map_err(&failed)?;
         Ok(row.into())
     }
 
@@ -370,19 +454,40 @@ impl ScimOps for SqlMetastore {
 
     async fn update_group(&self, id: &str, group: ScimGroup) -> Result<ScimGroup> {
         let row = group_to_row(group, Some(id.to_string()));
-        let written = update(self.db.as_ref(), &SCIM_GROUP, &row)
+        let failed = db_err("update group");
+        let tx = self.db.begin().await.map_err(&failed)?;
+        let existing = lock_group(tx.as_ref(), id)
+            .await?
+            .ok_or_else(|| Error::not_found(format!("scim group '{id}' not found")))?;
+        let renamed = existing.display_name != row.display_name;
+        if renamed {
+            require_no_user(tx.as_ref(), &row.display_name).await?;
+        }
+        update(tx.as_ref(), &SCIM_GROUP, &row)
             .await
             .map_err(create_err)?;
-        if written == 0 {
-            return Err(Error::not_found(format!("scim group '{id}' not found")));
+        write_members(tx.as_ref(), &row).await?;
+        if renamed {
+            rename_principal(tx.as_ref(), &existing.display_name, &row.display_name).await?;
         }
+        tx.commit().await.map_err(&failed)?;
         Ok(row.into())
     }
 
     async fn delete_group(&self, id: &str) -> Result<()> {
-        self.delete_by_id("scim_group", id, || {
-            Error::not_found(format!("Group not found: {id}"))
-        })
-        .await
+        let failed = db_err("delete group");
+        let tx = self.db.begin().await.map_err(&failed)?;
+        let existing = lock_group(tx.as_ref(), id)
+            .await?
+            .ok_or_else(|| Error::not_found(format!("Group not found: {id}")))?;
+        for sql in [
+            "DELETE FROM scim_group_member WHERE group_id = $1",
+            "DELETE FROM scim_group WHERE id_string = $1",
+        ] {
+            tx.execute(sql, &[id.into()]).await.map_err(&failed)?;
+        }
+        clear_principal(tx.as_ref(), &existing.display_name).await?;
+        tx.commit().await.map_err(&failed)?;
+        Ok(())
     }
 }
