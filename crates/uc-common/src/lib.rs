@@ -3,6 +3,7 @@
 pub mod error;
 pub mod install;
 pub mod location;
+pub mod logo;
 pub mod name;
 pub mod page;
 pub mod securable;

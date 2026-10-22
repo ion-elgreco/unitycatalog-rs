@@ -14,7 +14,7 @@ use uc_server::{
     },
     build_app, build_observability_app,
     observability::telemetry::init_tracing,
-    server::{options, serve},
+    server::{banner, options, serve},
     storage::vendor::CloudVendor,
 };
 
@@ -125,6 +125,7 @@ async fn run(options: options::Options) -> Result<(), String> {
         Some(port) => std::net::SocketAddr::new(cfg.bind.ip(), port),
         None => cfg.bind,
     };
+    banner::print(&cfg, bind);
     // Upstream `--obs-port` (or `server.obs_port`): probes and metrics on
     // their own port; none without it.
     let obs_port = options.obs_port.or(cfg.obs_port);

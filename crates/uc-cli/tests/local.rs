@@ -314,11 +314,9 @@ async fn dev_runs_uc_server_with_its_folder_and_the_ui() {
         .spawn()
         .unwrap();
     let mut lines = BufReader::new(dev.stdout.take().unwrap()).lines();
+    // uc-server prints the URLs; with the UI, uc dev only says how to stop.
     let banner = banner(&mut lines).await;
-    assert!(
-        banner.contains(&format!("http://localhost:{port}")),
-        "{banner}"
-    );
+    assert!(!banner.contains("No web UI"), "{banner}");
 
     // uc-server gets the folder, the UI and uc's settings file.
     let data = std::fs::canonicalize(dir.path().join("data")).unwrap();
@@ -353,7 +351,7 @@ async fn dev_runs_uc_server_with_its_folder_and_the_ui() {
     );
 }
 
-/// The banner that `uc dev` prints once the server answers.
+/// What `uc dev` prints once the server answers.
 #[cfg(unix)]
 async fn banner(lines: &mut Lines<BufReader<ChildStdout>>) -> String {
     let mut banner = String::new();
