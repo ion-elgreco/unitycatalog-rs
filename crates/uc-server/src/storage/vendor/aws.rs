@@ -8,21 +8,32 @@
 //! The session lasts an hour and its policy, from [`policy`], allows only
 //! the requested locations and operations.
 //!
+//! Without configured keys, `object_store` finds the identity in the
+//! environment: the `AWS_*` variables, web identity (a Kubernetes service
+//! account), the container endpoint (ECS, EKS Pod Identity) or the
+//! instance role. `object_store` also signs the `AssumeRole` call.
+//!
 //! With `aws.endpoint`, an S3-compatible store ([`S3Store`]) takes AWS's
 //! place: STS calls go to it, and the policies have no KMS statement.
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
-use aws_config::{BehaviorVersion, Region};
-use aws_sdk_sts::Client as StsClient;
+use object_store::{
+    StaticCredentialProvider,
+    aws::{
+        AmazonS3Builder, AmazonS3ConfigKey, AwsAuthorizer, AwsCredential, AwsCredentialProvider,
+    },
+    client::{HttpRequest, SpawnedReqwestConnector},
+};
 use serde_json::{Value, json};
-use tokio::sync::Mutex;
 
 use uc_api::{AwsCredentials, TemporaryCredentials};
 use uc_common::{Error, NormalizedUrl, Result};
-use uc_storage::runtime::spawn_io;
+use uc_storage::runtime::io_handle;
 
-use super::{CredentialContext, StoragePrivilege};
+use super::{CredentialContext, StoragePrivilege, xml_text};
+use crate::http::outbound::SendOnIo;
 
 /// Upstream `S3StorageConfig`.
 #[derive(Debug, Clone, Default)]
@@ -50,9 +61,10 @@ pub struct AwsVendor {
     store: Option<S3Store>,
     /// STS, when not AWS's: the store's, or a test's.
     endpoint: Option<String>,
-    /// STS clients and their regions, by configuration (`master` or the
-    /// bucket), made on first use.
-    clients: Mutex<HashMap<String, (StsClient, String)>>,
+    http: reqwest::Client,
+    /// Identities and the regions of their STS calls, by configuration
+    /// (`master` or the bucket), made on first use.
+    identities: Mutex<HashMap<String, (AwsCredentialProvider, String)>>,
 }
 
 impl AwsVendor {
@@ -66,7 +78,8 @@ impl AwsVendor {
             buckets,
             endpoint: store.as_ref().map(|s| s.endpoint.clone()),
             store,
-            clients: Mutex::new(HashMap::new()),
+            http: reqwest::Client::new(),
+            identities: Mutex::new(HashMap::new()),
         }
     }
 
@@ -116,7 +129,7 @@ impl AwsVendor {
                 (ctx.storage_base.to_string(), config, role_arn, None)
             }
         };
-        let (client, region) = self.client(key, config).await;
+        let (identity, region) = self.identity(key, config)?;
         let session_policy = policy(
             &ctx.privileges,
             &ctx.locations,
@@ -124,81 +137,119 @@ impl AwsVendor {
             Some(&region),
             self.store.is_none(),
         )?;
-        let request = client
-            .assume_role()
-            .role_arn(&role_arn)
-            .policy(session_policy)
-            .role_session_name(format!("uc-{}", uuid::Uuid::new_v4()))
-            .duration_seconds(3600)
-            .set_external_id(external_id);
-        let assumed = spawn_io(request.send()).await.map_err(|e| {
-            Error::internal(format!(
-                "AWS AssumeRole of {role_arn} failed: {}",
-                error_chain(&e)
-            ))
-        })?;
-        let credentials = assumed
-            .credentials()
-            .ok_or_else(|| Error::internal("AWS AssumeRole returned no credentials"))?;
+        self.assume_role(&identity, &region, &role_arn, external_id, &session_policy)
+            .await
+            .map_err(|e| Error::internal(format!("AWS AssumeRole of {role_arn} failed: {e}")))
+    }
+
+    /// STS `AssumeRole` for an hour, signed by `object_store`.
+    async fn assume_role(
+        &self,
+        identity: &AwsCredentialProvider,
+        region: &str,
+        role_arn: &str,
+        external_id: Option<String>,
+        session_policy: &str,
+    ) -> std::result::Result<TemporaryCredentials, String> {
+        let identity = identity.get_credential().await.map_err(|e| e.to_string())?;
+        let endpoint = match &self.endpoint {
+            Some(endpoint) => format!("{}/", endpoint.trim_end_matches('/')),
+            None => {
+                let suffix = dns_suffix(&partition(None, Some(region)));
+                format!("https://sts.{region}.{suffix}/")
+            }
+        };
+        let session_name = format!("uc-{}", uuid::Uuid::new_v4());
+        let mut form = vec![
+            ("Action", "AssumeRole"),
+            ("Version", "2011-06-15"),
+            ("RoleArn", role_arn),
+            ("RoleSessionName", session_name.as_str()),
+            ("DurationSeconds", "3600"),
+            ("Policy", session_policy),
+        ];
+        if let Some(external_id) = &external_id {
+            form.push(("ExternalId", external_id));
+        }
+        let body = serde_urlencoded::to_string(&form).map_err(|e| e.to_string())?;
+        let mut request: HttpRequest = http::Request::post(&endpoint)
+            .header(
+                http::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
+            .body(body.clone().into())
+            .map_err(|e| e.to_string())?;
+        AwsAuthorizer::new(&identity, "sts", region).authorize(&mut request, None);
+        let response = self
+            .http
+            .post(&endpoint)
+            .headers(request.headers().clone())
+            .body(body)
+            .send_on_io()
+            .await
+            .map_err(|e| e.to_string())?;
+        let status = response.status();
+        let xml = response.text().await.map_err(|e| e.to_string())?;
+        if !status.is_success() {
+            let message = xml_text(&xml, "Message").unwrap_or(&xml);
+            return Err(format!("{status}: {message}"));
+        }
+        let field = |tag: &str| {
+            xml_text(&xml, tag)
+                .map(str::to_string)
+                .ok_or_else(|| format!("no {tag} in the answer"))
+        };
+        let expiration = chrono::DateTime::parse_from_rfc3339(&field("Expiration")?)
+            .map(|t| t.timestamp_millis())
+            .ok();
         Ok(TemporaryCredentials {
             aws_temp_credentials: Some(AwsCredentials {
-                access_key_id: Some(credentials.access_key_id().to_string()),
-                secret_access_key: Some(credentials.secret_access_key().to_string()),
-                session_token: Some(credentials.session_token().to_string()),
+                access_key_id: Some(field("AccessKeyId")?),
+                secret_access_key: Some(field("SecretAccessKey")?),
+                session_token: Some(field("SessionToken")?),
             }),
-            expiration_time: credentials.expiration().to_millis().ok(),
+            expiration_time: expiration,
             ..Default::default()
         })
     }
 
     /// Upstream `StsAwsCredentialGenerator`: the configured region, else the
-    /// store's, else the default region chain, else `us-east-1`; the
-    /// configured keys, else the default credential chain.
-    async fn client(&self, key: String, config: &S3Config) -> (StsClient, String) {
-        let mut clients = self.clients.lock().await;
-        if let Some((client, region)) = clients.get(&key) {
-            return (client.clone(), region.clone());
+    /// store's, else `AWS_REGION` or `AWS_DEFAULT_REGION`, else `us-east-1`;
+    /// the configured keys, else `object_store`'s identity from the
+    /// environment.
+    fn identity(&self, key: String, config: &S3Config) -> Result<(AwsCredentialProvider, String)> {
+        let mut identities = self.identities.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(found) = identities.get(&key) {
+            return Ok(found.clone());
         }
-        let configured = config
+        let env = AmazonS3Builder::from_env();
+        let region = config
             .region
             .clone()
-            .or_else(|| self.store.as_ref().map(|s| s.region.clone()));
-        let region = match configured {
-            Some(region) => region,
-            None => aws_config::default_provider::region::DefaultRegionChain::builder()
+            .or_else(|| self.store.as_ref().map(|s| s.region.clone()))
+            .or_else(|| env.get_config_value(&AmazonS3ConfigKey::Region))
+            .unwrap_or_else(|| "us-east-1".to_string());
+        let identity: AwsCredentialProvider = match (&config.access_key, &config.secret_key) {
+            (Some(key_id), Some(secret_key)) => {
+                Arc::new(StaticCredentialProvider::new(AwsCredential {
+                    key_id: key_id.clone(),
+                    secret_key: secret_key.clone(),
+                    token: None,
+                }))
+            }
+            // A store only for its credentials: it sends no requests.
+            _ => env
+                .with_bucket_name("uc-credentials")
+                .with_region(&region)
+                .with_http_connector(SpawnedReqwestConnector::new(io_handle()))
                 .build()
-                .region()
-                .await
-                .map(|r| r.to_string())
-                .unwrap_or_else(|| "us-east-1".to_string()),
+                .map_err(|e| Error::internal(format!("The server's AWS identity: {e}")))?
+                .credentials()
+                .clone(),
         };
-        let mut loader =
-            aws_config::defaults(BehaviorVersion::latest()).region(Region::new(region.clone()));
-        if let (Some(access_key), Some(secret_key)) = (&config.access_key, &config.secret_key) {
-            let static_keys = aws_sdk_sts::config::Credentials::new(
-                access_key, secret_key, None, None, "uc.toml",
-            );
-            loader = loader.credentials_provider(static_keys);
-        }
-        if let Some(endpoint) = &self.endpoint {
-            loader = loader.endpoint_url(endpoint);
-        }
-        let client = StsClient::new(&loader.load().await);
-        clients.insert(key, (client.clone(), region.clone()));
-        (client, region)
+        identities.insert(key, (identity.clone(), region.clone()));
+        Ok((identity, region))
     }
-}
-
-/// The error and its sources, one line.
-fn error_chain(e: &dyn std::error::Error) -> String {
-    let mut message = e.to_string();
-    let mut source = e.source();
-    while let Some(s) = source {
-        message.push_str(": ");
-        message.push_str(&s.to_string());
-        source = s.source();
-    }
-    message
 }
 
 /// The IAM partition of a role ARN, else of a region, else `aws`.

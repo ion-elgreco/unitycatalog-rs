@@ -1,24 +1,30 @@
 //! Azure credentials, after upstream `AzureCredentialVendor`.
 //!
 //! Each storage account is configured by `adls.*.N`. The service principal
-//! (tenant, client id and secret) signs in to Microsoft Entra ID, gets a
-//! user delegation key for the hour, and signs a directory SAS for the
-//! path: read and list, plus write and delete for writes. In test mode the
-//! SAS is `tenant/client/secret`. External locations are not supported for
-//! Azure yet, as upstream.
+//! (tenant, client id and secret) signs in to Microsoft Entra ID through
+//! `object_store`, gets a user delegation key for the hour, and signs a
+//! directory SAS for the path: read and list, plus write and delete for
+//! writes. In test mode the SAS is `tenant/client/secret`. External
+//! locations are not supported for Azure yet, as upstream.
 
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use hmac::{Hmac, Mac};
+use object_store::{
+    azure::{AzureCredential, AzureCredentialProvider, MicrosoftAzureBuilder},
+    client::SpawnedReqwestConnector,
+};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use sha2::Sha256;
 
 use uc_api::{AzureUserDelegationSAS, TemporaryCredentials};
 use uc_common::{Error, NormalizedUrl, Result};
+use uc_storage::runtime::io_handle;
 
-use super::{CredentialContext, StoragePrivilege};
+use super::{CredentialContext, StoragePrivilege, xml_text};
 use crate::http::outbound::SendOnIo;
 
 /// The SAS version signed: its string-to-sign is the one of
@@ -40,8 +46,11 @@ pub struct AdlsConfig {
 pub struct AzureVendor {
     accounts: HashMap<String, AdlsConfig>,
     http: reqwest::Client,
-    login: String,
+    /// Entra ID, when not Microsoft's: a test's.
+    login: Option<String>,
     blob: Option<String>,
+    /// The service principals' sign-ins, by account, made on first use.
+    sign_ins: Mutex<HashMap<String, AzureCredentialProvider>>,
 }
 
 /// Upstream `ADLSLocationUtils.ADLSLocationParts`.
@@ -189,28 +198,20 @@ fn permissions(privileges: &[StoragePrivilege]) -> String {
         .collect()
 }
 
-/// The text of the first `<tag>` element.
-fn xml_text<'a>(xml: &'a str, tag: &str) -> Option<&'a str> {
-    let start = xml.find(&format!("<{tag}>"))? + tag.len() + 2;
-    let end = xml[start..].find(&format!("</{tag}>"))? + start;
-    Some(&xml[start..end])
-}
-
 impl AzureVendor {
     pub fn new(accounts: HashMap<String, AdlsConfig>) -> Self {
         Self {
             accounts,
             http: reqwest::Client::new(),
-            login: "https://login.microsoftonline.com".to_string(),
+            login: None,
             blob: None,
+            sign_ins: Mutex::new(HashMap::new()),
         }
     }
 
     /// Entra ID and blob endpoints, for tests.
     pub fn with_endpoints(mut self, login: Option<String>, blob: Option<String>) -> Self {
-        if let Some(login) = login {
-            self.login = login;
-        }
+        self.login = login.or(self.login);
         self.blob = blob.or(self.blob);
         self
     }
@@ -261,7 +262,7 @@ impl AzureVendor {
         let start = DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap_or_else(Utc::now);
         let expiry = start + Duration::hours(1);
         let (start_text, expiry_text) = (rfc3339(start), rfc3339(expiry));
-        let token = self.access_token(config).await?;
+        let token = self.access_token(&parts.account_name, config).await?;
         let key = self
             .delegation_key(parts, &token, &start_text, &expiry_text)
             .await?;
@@ -281,32 +282,45 @@ impl AzureVendor {
         Ok((sas, expiry.timestamp_millis()))
     }
 
-    /// The service principal's token for Azure Storage.
-    async fn access_token(&self, config: &AdlsConfig) -> Result<String> {
-        let url = format!("{}/{}/oauth2/v2.0/token", self.login, config.tenant_id);
-        let response = self
-            .http
-            .post(&url)
-            .form(&[
-                ("grant_type", "client_credentials"),
-                ("client_id", config.client_id.as_str()),
-                ("client_secret", config.client_secret.as_str()),
-                ("scope", "https://storage.azure.com/.default"),
-            ])
-            .send_on_io()
+    /// The service principal's token for Azure Storage, from `object_store`,
+    /// which keeps it until it is about to expire.
+    async fn access_token(&self, account: &str, config: &AdlsConfig) -> Result<String> {
+        let failed = |e: String| Error::internal(format!("Azure sign-in failed: {e}"));
+        let credential = self
+            .sign_in(account, config)
+            .map_err(|e| failed(e.to_string()))?
+            .get_credential()
             .await
-            .map_err(|e| Error::internal(format!("Azure sign-in failed: {e}")))?;
-        let status = response.status();
-        let body: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| Error::internal(format!("Azure sign-in failed: {e}")))?;
-        match body["access_token"].as_str() {
-            Some(token) if status.is_success() => Ok(token.to_string()),
-            _ => Err(Error::internal(format!(
-                "Azure sign-in failed ({status}): {body}"
-            ))),
+            .map_err(|e| failed(e.to_string()))?;
+        match credential.as_ref() {
+            AzureCredential::BearerToken(token) => Ok(token.clone()),
+            _ => Err(failed("no bearer token".into())),
         }
+    }
+
+    fn sign_in(
+        &self,
+        account: &str,
+        config: &AdlsConfig,
+    ) -> object_store::Result<AzureCredentialProvider> {
+        let mut sign_ins = self.sign_ins.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(found) = sign_ins.get(account) {
+            return Ok(found.clone());
+        }
+        // A store only for its credentials: it sends no requests.
+        let mut builder = MicrosoftAzureBuilder::new()
+            .with_account(account)
+            .with_container_name("uc-credentials")
+            .with_tenant_id(&config.tenant_id)
+            .with_client_id(&config.client_id)
+            .with_client_secret(&config.client_secret)
+            .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
+        if let Some(login) = &self.login {
+            builder = builder.with_authority_host(login).with_allow_http(true);
+        }
+        let found = builder.build()?.credentials().clone();
+        sign_ins.insert(account.to_string(), found.clone());
+        Ok(found)
     }
 
     /// `Get User Delegation Key` from the account's blob service.

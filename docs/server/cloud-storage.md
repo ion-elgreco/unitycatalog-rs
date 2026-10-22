@@ -74,8 +74,10 @@ account or bucket.
 
 ### With an external location
 
-1. Give the server an AWS identity: the `[aws]` settings, or else the AWS SDK's default chain,
-   such as an instance role or the role of a Kubernetes service account.
+1. Give the server an AWS identity: the `[aws]` settings, or else the environment. That is the
+   `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` variables, the role of a Kubernetes service
+   account, an ECS task role, EKS Pod Identity or an instance role. AWS profiles in `~/.aws` are
+   not read.
 
 2. Make a storage credential with the IAM role that can read and write the data:
 
@@ -117,7 +119,7 @@ and the operation.
 ### With the settings of the bucket
 
 Without an external location, `[s3.<name>]` gives the role of a bucket. The entry's keys, or else
-the AWS SDK's default chain, assume the role:
+the identity from the environment, assume the role:
 
 ```toml
 [s3.analytics]

@@ -256,9 +256,9 @@ storage:
 
 `tableStorageRoot` and `modelStorageRoot` are the roots of managed tables and models that have no
 catalog or schema root. The server assumes the role of `awsRoleArn` to get credentials for the
-bucket. Each S3 entry needs `region` and `awsRoleArn`. Without `credentialsSecretName`, the AWS
-SDK's default chain finds the identity that assumes the role, such as the role of the pod's
-service account. For that, set `serviceAccount.create: true` and its `annotations`.
+bucket. Each S3 entry needs `region` and `awsRoleArn`. Without `credentialsSecretName`, the
+identity that assumes the role comes from the environment, such as the role of the pod's service
+account. For that, set `serviceAccount.create: true` and its `annotations`.
 [Cloud storage](server/cloud-storage.md) tells how the server vends credentials, also through
 external locations.
 
