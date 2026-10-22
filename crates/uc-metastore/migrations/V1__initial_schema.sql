@@ -239,6 +239,14 @@ CREATE TABLE scim_group (
     display_name TEXT NOT NULL UNIQUE,
     members      TEXT
 );
+-- The user ids of each group's members, written with `scim_group.members`:
+-- the groups whose grants a user gets.
+CREATE TABLE scim_group_member (
+    group_id TEXT NOT NULL,
+    user_id  TEXT NOT NULL,
+    PRIMARY KEY (group_id, user_id)
+);
+CREATE INDEX scim_group_member_by_user ON scim_group_member (user_id);
 
 -- Delta Sharing.
 CREATE TABLE share (

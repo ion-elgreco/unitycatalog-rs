@@ -121,8 +121,11 @@ uc user list --filter 'userName eq "alice@example.com"'
 ```
 
 When you delete a user, the server removes the user's grants and disables the user: the user
-stays, and its email cannot be used again. Groups (`uc group`) are SCIM groups too; privileges go
-to users, not to groups.
+stays, and its email cannot be used again.
+
+Groups (`uc group`) are SCIM groups too. A group's name is its name in grants: a privilege granted
+to a group counts for each member of the group. A group keeps its grants when it gets a new name,
+and its grants go when it is deleted. The name of a group cannot be the email of a user.
 
 The owner of the metastore and the users of `auth.admin_principals` (their emails) are admins:
 see [Privileges](#privileges).
@@ -330,7 +333,8 @@ In the policies, each privilege is an action, such as `Action::"SELECT"` or
 `Action::"USE CATALOG"`, and the user is `User::"<email>"`. Each securable is an entity of its
 type with its id, such as `Table::"<id>"`, with its schema, catalog and metastore as its parents:
 a policy can say `resource in Catalog::"<id>"`. A securable has the attributes
-`granted_privileges` (what is granted on it or a parent) and `owner`.
+`granted_privileges` (what is granted on it or a parent, to the user or to a group of the user)
+and `owner`.
 
 ```cedar
 // Grants of MODIFY do not count in this catalog:

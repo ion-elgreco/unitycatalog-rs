@@ -47,10 +47,15 @@ pub trait ScimOps: Send + Sync {
     /// differs from its user's, or belongs to another user, is an error.
     async fn seed_users(&self, users: &[SeedUser]) -> Result<SeedReport>;
 
+    /// A group's name is its name in grants, which its members get. No
+    /// user can have it as email.
     async fn create_group(&self, group: ScimGroup) -> Result<ScimGroup>;
     async fn get_group(&self, id: &str) -> Result<ScimGroup>;
     /// Every group, by name.
     async fn list_groups(&self) -> Result<Vec<ScimGroup>>;
+    /// Replace the group at `id` with `group`. A renamed group keeps its
+    /// grants.
     async fn update_group(&self, id: &str, group: ScimGroup) -> Result<ScimGroup>;
+    /// Delete the group and its grants.
     async fn delete_group(&self, id: &str) -> Result<()>;
 }
