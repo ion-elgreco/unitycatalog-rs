@@ -145,9 +145,9 @@ The server's own AWS identity, which assumes the roles of storage credentials.
 
 | Key | Variable | Default | Description |
 | --- | --- | --- | --- |
-| `region` | `UC_AWS_REGION` | the AWS SDK's region, else `us-east-1` | The region of the STS calls. |
-| `access_key` | `UC_AWS_ACCESS_KEY` | the AWS SDK's default chain | The access key. |
-| `secret_key` | `UC_AWS_SECRET_KEY` | the AWS SDK's default chain | The secret key. |
+| `region` | `UC_AWS_REGION` | `AWS_REGION`, else `AWS_DEFAULT_REGION`, else `us-east-1` | The region of the STS calls. |
+| `access_key` | `UC_AWS_ACCESS_KEY` | the identity from the environment | The access key. |
+| `secret_key` | `UC_AWS_SECRET_KEY` | the identity from the environment | The secret key. |
 | `master_role_arn` | `UC_AWS_MASTER_ROLE_ARN` | none | The server's role, shown as `unity_catalog_iam_arn` on storage credentials. |
 | `endpoint` | `UC_AWS_ENDPOINT` | AWS | The S3 and STS API of an S3-compatible store, such as MinIO or RustFS: `http://` or `https://`. See [Cloud storage](cloud-storage.md#an-s3-compatible-store). |
 
@@ -161,7 +161,7 @@ The credentials of one S3 bucket. An entry needs `region` and `role_arn`, or `ac
 | `bucket` | `UC_S3_<NAME>_BUCKET` | The bucket: `s3://bucket`. Required. |
 | `region` | `UC_S3_<NAME>_REGION` | Its region. Iceberg clients get it too. |
 | `role_arn` | `UC_S3_<NAME>_ROLE_ARN` | The role that the server assumes. |
-| `access_key` | `UC_S3_<NAME>_ACCESS_KEY` | Keys that assume the role; without them, the AWS SDK's default chain. |
+| `access_key` | `UC_S3_<NAME>_ACCESS_KEY` | Keys that assume the role; without them, the identity from the environment. |
 | `secret_key` | `UC_S3_<NAME>_SECRET_KEY` | |
 | `session_token` | `UC_S3_<NAME>_SESSION_TOKEN` | With the keys: a session that the server gives out as it is. For tests. |
 

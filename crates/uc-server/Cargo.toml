@@ -25,9 +25,8 @@ uc-delta.workspace = true
 uc-metastore.workspace = true
 uc-storage.workspace = true
 
-# Credential vending: AWS STS, and Azure SAS signing.
-aws-config = { version = "1", default-features = false, features = ["rustls", "rt-tokio", "behavior-version-latest"] }
-aws-sdk-sts = { version = "1", default-features = false, features = ["rustls", "rt-tokio", "behavior-version-latest"] }
+# Credential vending: the AWS STS request, and Azure SAS signing.
+http.workspace = true
 hmac = "0.12"
 # The trusted proxies of the forward sign-in (`UC_AUTH_MODE=forward`).
 ipnet = "2"
