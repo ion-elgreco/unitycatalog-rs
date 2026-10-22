@@ -120,13 +120,17 @@ pub fn build_app(state: AppState) -> Router {
 
     // Per-IP token-bucket rate limiter: `server.rate_limit_per_sec`. Off by
     // default: the layer needs the `ConnectInfo` extension, which requests
-    // sent to the router directly, such as in tests, do not have.
+    // sent to the router directly, such as in tests, do not have. A client
+    // gets one request back every `1s / rate`, and can send twice the rate
+    // at once.
     let http = state.http.clone();
     let rate = http.rate_limit_per_sec;
     let governor_layer = (rate > 0).then(|| {
+        let refill =
+            (std::time::Duration::from_secs(1) / rate).max(std::time::Duration::from_nanos(1));
         let config = GovernorConfigBuilder::default()
-            .per_second(rate.into())
-            .burst_size((rate * 2).max(1))
+            .period(refill)
+            .burst_size(rate.saturating_mul(2))
             .finish()
             .expect("valid governor config");
         GovernorLayer::new(config)

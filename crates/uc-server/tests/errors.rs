@@ -345,3 +345,34 @@ async fn bodies_over_10_mib_are_413(#[future(awt)] app: Router) {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+/// `server.rate_limit_per_sec`: a client can send twice the rate at once,
+/// then gets a request back every `1s / rate`; others are a 429.
+#[tokio::test]
+async fn requests_over_the_rate_are_429() {
+    let config = uc_metastore::MetastoreConfig::for_tests();
+    let metastore = uc_metastore::SqlMetastore::connect(config).await.unwrap();
+    let http = uc_server::server::app::HttpSettings {
+        rate_limit_per_sec: 10,
+        ..Default::default()
+    };
+    let app = uc_server::build_app(uc_server::AppState::new(metastore).with_http(http));
+    let get = |client: [u8; 4]| {
+        let mut request = req(Method::GET, "/catalogs");
+        let address = std::net::SocketAddr::from((client, 1234));
+        request
+            .extensions_mut()
+            .insert(axum::extract::ConnectInfo(address));
+        app.clone().oneshot(request)
+    };
+    for _ in 0..20 {
+        assert_eq!(get([10, 0, 0, 1]).await.unwrap().status(), StatusCode::OK);
+    }
+    assert_eq!(
+        get([10, 0, 0, 1]).await.unwrap().status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(get([10, 0, 0, 2]).await.unwrap().status(), StatusCode::OK);
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    assert_eq!(get([10, 0, 0, 1]).await.unwrap().status(), StatusCode::OK);
+}
