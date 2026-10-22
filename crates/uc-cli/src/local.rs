@@ -18,7 +18,6 @@ use axum::{
     routing::get,
 };
 
-use uc_common::API_BASE;
 use uc_common::settings::{self, Settings};
 
 use crate::args::{DevArgs, Global, WebArgs};
@@ -159,18 +158,13 @@ pub async fn dev(settings: &Settings, args: DevArgs) -> anyhow::Result<i32> {
         return stop_server(&mut child).await;
     }
 
+    // uc-server's banner shows the URLs and the data folder.
     let url = format!("http://localhost:{}", args.port);
-    println!(
-        "Unity Catalog runs on {url}, with its data in {}.",
-        dir.display()
-    );
-    println!("  API: {url}{API_BASE}");
-    match &ui {
-        Some(_) => println!("  UI:  {url}"),
-        None if !settings.ui.enabled => {
-            println!("  No web UI: {} is false.", settings::name("ui.enabled"))
+    if ui.is_none() {
+        match settings.ui.enabled {
+            false => println!("No web UI: {} is false.", settings::name("ui.enabled")),
+            true => println!("No web UI. {NO_UI}"),
         }
-        None => println!("  No web UI. {NO_UI}"),
     }
     println!("Press Ctrl+C to stop it.");
     if ui.is_some() && !args.no_browser {
