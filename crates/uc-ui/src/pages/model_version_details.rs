@@ -8,11 +8,11 @@ use uc_common::{three_part_full_name, wire_name};
 
 use super::model_details::is_pending;
 use crate::api;
-use crate::auth::use_auth;
-use crate::components::icons::{Box, CircleCheck, Trash2};
+use crate::auth::use_manages;
+use crate::components::icons::CircleCheck;
 use crate::components::{
-    Card, DeleteModal, DescriptionCard, EntityHeader, LoadError, Loaded, MetaGrid, MetaRow,
-    RawJsonCard, use_notify,
+    Card, DeleteButton, DeleteModal, DescriptionCard, EntityHeader, LoadError, Loaded, MetaGrid,
+    MetaRow, RawJsonCard, use_notify,
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
@@ -29,7 +29,7 @@ pub fn ModelVersionDetails() -> impl IntoView {
 
 #[component]
 fn VersionPage(catalog: String, schema: String, model: String, version: String) -> impl IntoView {
-    let icon = view! { <Box class="uc-icon--model"/> }.into_any();
+    let icon = Kind::Models.icon();
     let Ok(number) = version.parse::<i64>() else {
         return view! {
             <EntityHeader icon name=format!("{model} · v{version}")/>
@@ -55,15 +55,11 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
         async move { api::client().get_registered_model(&full_name).await }
     });
     let cache = use_cache();
-    let auth = use_auth();
     let notify = use_notify();
     let delete_open = RwSignal::new(false);
     let finalizing = RwSignal::new(false);
     let owner = field(model_info, |m: &RegisteredModelInfo| m.owner.clone());
-    let manages = Memo::new(move |_| {
-        auth.session
-            .with(|s| owner.with(|o| s.manages(o.as_deref())))
-    });
+    let manages = use_manages(owner);
     let comment = field(info, |v: &ModelVersionInfo| {
         v.comment.clone().unwrap_or_default()
     });
@@ -124,16 +120,7 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
                 "Finalize"
             </button>
         </Show>
-        <Show when=move || manages.get()>
-            <button
-                type="button"
-                class="uc-btn uc-btn--destructive uc-btn--sm"
-                on:click=move |_| delete_open.set(true)
-            >
-                <Trash2/>
-                "Delete"
-            </button>
-        </Show>
+        <DeleteButton open=delete_open when=manages/>
     }
     .into_any();
 
@@ -175,12 +162,7 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
 fn version_rows(v: &ModelVersionInfo) -> Vec<MetaRow> {
     vec![
         MetaRow::new("Model", or_dash(v.model_name.clone())),
-        MetaRow::new(
-            "Version",
-            v.version
-                .map(|n| format!("v{n}"))
-                .unwrap_or_else(|| "—".into()),
-        ),
+        MetaRow::new("Version", or_dash(v.version.map(|n| format!("v{n}")))),
         MetaRow::new("Status", or_dash(v.status.as_ref().map(wire_name))),
         MetaRow::mono("Source", or_dash(v.source.clone())),
         MetaRow::mono("Run ID", or_dash(v.run_id.clone())),

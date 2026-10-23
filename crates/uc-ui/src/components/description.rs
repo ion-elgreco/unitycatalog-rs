@@ -7,9 +7,23 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use super::card::Card;
+use super::field::TextArea;
 use super::icons::Pencil;
 use crate::api;
 use crate::components::{Modal, use_notify};
+
+/// The comment, else "No description provided.".
+#[component]
+pub fn Description(#[prop(into)] comment: Signal<String>) -> impl IntoView {
+    view! {
+        <Show
+            when=move || comment.with(|c| !c.is_empty())
+            fallback=|| view! { <p class="uc-empty">"No description provided."</p> }
+        >
+            <p class="uc-prewrap">{move || comment.get()}</p>
+        </Show>
+    }
+}
 
 #[component]
 pub fn DescriptionCard<F, Fut>(
@@ -46,7 +60,6 @@ where
             busy.set(false);
         });
     };
-    let has_comment = move || comment.with(|c| !c.is_empty());
     view! {
         <Card
             title="Description"
@@ -58,12 +71,7 @@ where
             }
                 .into_any()
         >
-            <Show
-                when=has_comment
-                fallback=|| view! { <p class="uc-empty">"No description provided."</p> }
-            >
-                <p class="uc-prewrap">{move || comment.get()}</p>
-            </Show>
+            <Description comment/>
         </Card>
         <Modal
             open
@@ -73,15 +81,7 @@ where
             on_cancel=move || open.set(false)
             on_ok
         >
-            <div class="uc-field">
-                <label class="uc-label" for="uc-description">"Description"</label>
-                <textarea
-                    id="uc-description"
-                    class="uc-textarea"
-                    prop:value=move || text.get()
-                    on:input=move |e| text.set(event_target_value(&e))
-                />
-            </div>
+            <TextArea id="uc-description" label="Description" value=text/>
         </Modal>
     }
 }

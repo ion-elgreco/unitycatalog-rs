@@ -1,4 +1,4 @@
-//! "Create …" with a name, a comment and, for catalogs and schemas, a
+//! "Create …" for a catalog or a schema, with a name, a comment and a
 //! storage root, as the console's `EntityFormDialog`. After the call, a
 //! toast, the list that gained the object loads again, and the UI goes to
 //! the object's page. Cancel empties the form; a failed call keeps it, so
@@ -10,6 +10,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 
+use super::field::{TextArea, TextField};
 use crate::api;
 use crate::components::{Modal, use_notify};
 use crate::load::{Key, use_cache};
@@ -18,7 +19,7 @@ use crate::load::{Key, use_cache};
 pub struct NewObject {
     pub name: String,
     pub comment: Option<String>,
-    /// The storage root, when the form has the field.
+    /// The storage root, when given.
     pub location: Option<String>,
 }
 
@@ -27,10 +28,6 @@ pub fn CreateModal<F, Fut>(
     open: RwSignal<bool>,
     /// What is created, such as "catalog".
     noun: &'static str,
-    /// The label of a storage field, such as "Storage root"; none for no
-    /// such field.
-    #[prop(optional)]
-    location: Option<&'static str>,
     /// Create the object; the page to go to then.
     create: F,
     /// The list that gains the object.
@@ -95,45 +92,14 @@ where
             on_cancel=move || close()
             on_ok
         >
-            <div class="uc-field">
-                <label class="uc-label" for="uc-create-name">
-                    <span class="req">"*"</span>
-                    "Name"
-                </label>
-                <input
-                    id="uc-create-name"
-                    class="uc-input"
-                    type="text"
-                    required
-                    prop:value=move || name.get()
-                    on:input=move |e| name.set(event_target_value(&e))
-                />
-            </div>
-            <div class="uc-field">
-                <label class="uc-label" for="uc-create-comment">"Comment"</label>
-                <textarea
-                    id="uc-create-comment"
-                    class="uc-textarea"
-                    prop:value=move || comment.get()
-                    on:input=move |e| comment.set(event_target_value(&e))
-                />
-            </div>
-            {location
-                .map(|label| {
-                    view! {
-                        <div class="uc-field">
-                            <label class="uc-label" for="uc-create-location">{label}</label>
-                            <input
-                                id="uc-create-location"
-                                class="uc-input"
-                                type="text"
-                                placeholder="s3://bucket/path"
-                                prop:value=move || root.get()
-                                on:input=move |e| root.set(event_target_value(&e))
-                            />
-                        </div>
-                    }
-                })}
+            <TextField id="uc-create-name" label="Name" value=name required=true/>
+            <TextArea id="uc-create-comment" label="Comment" value=comment/>
+            <TextField
+                id="uc-create-location"
+                label="Storage root"
+                value=root
+                placeholder="s3://bucket/path"
+            />
         </Modal>
     }
 }

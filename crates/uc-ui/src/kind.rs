@@ -3,10 +3,10 @@
 //! schema page.
 
 use leptos::prelude::*;
-use uc_common::{EpochMillis, SecurableType};
 
 use crate::api;
-use crate::components::icons::{Box, FunctionSquare, HardDrive, Table};
+use crate::components::icons::{Box, Database, FunctionSquare, HardDrive, Notebook, Table};
+use crate::util::schema_href;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
@@ -21,7 +21,6 @@ pub enum Kind {
 pub struct Entry {
     pub name: String,
     pub comment: Option<String>,
-    pub created_at: Option<EpochMillis>,
 }
 
 impl Kind {
@@ -50,7 +49,8 @@ impl Kind {
         }
     }
 
-    /// One object, such as "table".
+    /// One object, such as "table"; also the part of an object's URL that
+    /// names its kind.
     pub fn noun(self) -> &'static str {
         match self {
             Kind::Tables => "table",
@@ -60,27 +60,23 @@ impl Kind {
         }
     }
 
-    /// The part of an object's URL that names its kind.
-    fn segment(self) -> &'static str {
-        match self {
-            Kind::Tables => "table",
-            Kind::Volumes => "volume",
-            Kind::Functions => "function",
-            Kind::Models => "model",
-        }
+    /// The kind that the part `segment` of an object's URL names.
+    pub fn from_segment(segment: &str) -> Option<Kind> {
+        Kind::ALL.into_iter().find(|kind| kind.noun() == segment)
     }
 
-    pub fn securable(self) -> SecurableType {
+    /// Its name in the "New" dialog's picker.
+    pub fn new_label(self) -> &'static str {
         match self {
-            Kind::Tables => SecurableType::Table,
-            Kind::Volumes => SecurableType::Volume,
-            Kind::Functions => SecurableType::Function,
-            Kind::Models => SecurableType::RegisteredModel,
+            Kind::Tables => "External table",
+            Kind::Volumes => "Volume",
+            Kind::Functions => "Function",
+            Kind::Models => "Registered model",
         }
     }
 
     /// The class that colors the kind's icon.
-    pub fn color(self) -> &'static str {
+    fn color(self) -> &'static str {
         match self {
             Kind::Tables => "uc-icon--table",
             Kind::Volumes => "uc-icon--volume",
@@ -101,12 +97,12 @@ impl Kind {
 
     /// The schema page, on this kind.
     pub fn tab_href(self, catalog: &str, schema: &str) -> String {
-        format!("/catalog/{catalog}/{schema}?tab={}", self.tab())
+        format!("{}?tab={}", schema_href(catalog, schema), self.tab())
     }
 
     /// The page of the object `name` in `catalog.schema`.
     pub fn href(self, catalog: &str, schema: &str, name: &str) -> String {
-        format!("/catalog/{catalog}/{schema}/{}/{name}", self.segment())
+        format!("{}/{}/{name}", schema_href(catalog, schema), self.noun())
     }
 
     /// The objects of this kind in `catalog.schema`.
@@ -115,42 +111,41 @@ impl Kind {
             Kind::Tables => api::tables(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|t| entry(t.name, t.comment, t.created_at))
+                .map(|t| entry(t.name, t.comment))
                 .collect(),
             Kind::Volumes => api::volumes(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|v| entry(v.name, v.comment, v.created_at))
+                .map(|v| entry(v.name, v.comment))
                 .collect(),
             Kind::Functions => api::functions(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|f| entry(f.name, f.comment, f.created_at))
+                .map(|f| entry(f.name, f.comment))
                 .collect(),
             Kind::Models => api::models(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|m| entry(m.name, m.comment, m.created_at))
+                .map(|m| entry(m.name, m.comment))
                 .collect(),
         };
         Ok(entries)
     }
 }
 
-fn entry(name: Option<String>, comment: Option<String>, created_at: Option<EpochMillis>) -> Entry {
+fn entry(name: Option<String>, comment: Option<String>) -> Entry {
     Entry {
         name: name.unwrap_or_default(),
         comment: comment.filter(|c| !c.is_empty()),
-        created_at,
     }
 }
 
-/// The catalog page.
-pub fn catalog_href(catalog: &str) -> String {
-    format!("/catalog/{catalog}")
+/// A catalog's icon, in its color.
+pub fn catalog_icon() -> AnyView {
+    view! { <Notebook class="uc-icon--catalog"/> }.into_any()
 }
 
-/// The schema page.
-pub fn schema_href(catalog: &str, schema: &str) -> String {
-    format!("/catalog/{catalog}/{schema}")
+/// A schema's icon, in its color.
+pub fn schema_icon() -> AnyView {
+    view! { <Database class="uc-icon--schema"/> }.into_any()
 }

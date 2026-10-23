@@ -8,6 +8,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 
+use super::field::{TextArea, TextField};
 use super::icons::Pencil;
 use crate::api;
 use crate::components::{Modal, use_notify};
@@ -91,29 +92,8 @@ where
             on_cancel=move || open.set(false)
             on_ok
         >
-            <div class="uc-field">
-                <label class="uc-label" for="uc-edit-name">
-                    <span class="req">"*"</span>
-                    "Name"
-                </label>
-                <input
-                    id="uc-edit-name"
-                    class="uc-input"
-                    type="text"
-                    required
-                    prop:value=move || new_name.get()
-                    on:input=move |e| new_name.set(event_target_value(&e))
-                />
-            </div>
-            <div class="uc-field">
-                <label class="uc-label" for="uc-edit-comment">"Comment"</label>
-                <textarea
-                    id="uc-edit-comment"
-                    class="uc-textarea"
-                    prop:value=move || new_comment.get()
-                    on:input=move |e| new_comment.set(event_target_value(&e))
-                />
-            </div>
+            <TextField id="uc-edit-name" label="Name" value=new_name required=true/>
+            <TextArea id="uc-edit-comment" label="Comment" value=new_comment/>
         </Modal>
     }
 }

@@ -38,6 +38,32 @@ where
     }
 }
 
+/// A loaded list, as a view: the skeleton while it loads, the failure,
+/// `empty` for none, else `rows` of the items.
+pub fn loaded_list<T>(
+    load: Load<Vec<T>>,
+    empty: impl Into<String>,
+    rows: impl FnOnce(Vec<T>) -> AnyView,
+) -> AnyView {
+    match load {
+        Load::Loading => view! { <LoadingBlock/> }.into_any(),
+        Load::Failed(message) => view! { <LoadError message/> }.into_any(),
+        Load::Ready(list) if list.is_empty() => {
+            view! { <p class="uc-empty">{empty.into()}</p> }.into_any()
+        }
+        Load::Ready(list) => rows(list),
+    }
+}
+
+/// How many items a loaded list has, for a badge: nothing until it loads.
+pub fn count<T: Send + Sync + 'static>(list: RwSignal<Load<Vec<T>>>) -> Signal<String> {
+    Signal::derive(move || {
+        list.with(|l| l.ready().map(Vec::len))
+            .map(|n| n.to_string())
+            .unwrap_or_default()
+    })
+}
+
 /// The console's skeleton: a short bar and a block that pulse.
 #[component]
 pub fn LoadingBlock() -> impl IntoView {

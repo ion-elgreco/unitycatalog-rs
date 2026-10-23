@@ -10,18 +10,19 @@ use uc_api::{SchemaInfo, UpdateSchema};
 use uc_common::{SecurableType, schema_full_name};
 
 use crate::api;
-use crate::auth::use_auth;
+use crate::auth::use_manages;
 use crate::components::edit_modal::Changes;
-use crate::components::icons::{Database, Plus, Trash2};
+use crate::components::icons::Plus;
 use crate::components::{
-    Card, CreateObjectModal, DeleteModal, DescriptionCard, EditMetadata, EntityHeader, LoadError,
-    Loaded, LoadingBlock, MetaGrid, MetaRow, PermissionsCard, PropertiesCard, RawJsonCard, Tab,
-    Tabs, properties,
+    Card, CreateObjectModal, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata,
+    EntityHeader, Loaded, MetaRow, ObjectRow, PermissionsCard, Tabs, loaded_list, properties,
 };
 use crate::contents::Holder;
-use crate::kind::{Kind, schema_href};
-use crate::load::{Key, Load, field, use_cache, use_load};
-use crate::util::{format_timestamp, or_dash, pretty_json, route_params};
+use crate::kind::{Kind, schema_icon};
+use crate::load::{Key, field, use_cache, use_load};
+use crate::util::{
+    catalog_href, format_timestamp, or_dash, pretty_json, route_params, schema_href,
+};
 
 #[component]
 pub fn SchemaDetails() -> impl IntoView {
@@ -41,8 +42,6 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
         async move { api::client().get_schema(&full_name).await }
     });
     let cache = use_cache();
-    let auth = use_auth();
-    let tab = RwSignal::new(Tab::Overview);
     let query = use_query_map();
     let kind = Memo::new(move |_| {
         query
@@ -54,25 +53,9 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
     let create_open = RwSignal::new(false);
     let new_kind = RwSignal::new(Kind::Tables);
     let owner = field(info, |s: &SchemaInfo| s.owner.clone());
-    let manages = Memo::new(move |_| {
-        auth.session
-            .with(|s| owner.with(|o| s.manages(o.as_deref())))
-    });
+    let manages = use_manages(owner);
     let comment = field(info, |s: &SchemaInfo| s.comment.clone().unwrap_or_default());
 
-    let save_comment = move |comment: String| {
-        let (_, _, full_name) = names.get_value();
-        async move {
-            let request = UpdateSchema {
-                comment: Some(comment),
-                properties: None,
-                new_name: None,
-            };
-            let updated = api::client().update_schema(&full_name, &request).await?;
-            cache.set(Key::Schema(full_name), updated);
-            Ok(())
-        }
-    };
     let save_metadata = move |changes: Changes| {
         let (catalog, _, full_name) = names.get_value();
         async move {
@@ -82,19 +65,26 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
                 new_name: changes.new_name.clone(),
             };
             let updated = api::client().update_schema(&full_name, &request).await?;
-            match changes.new_name {
-                Some(new_name) => {
-                    cache.forget(Key::Schema(full_name));
-                    cache.changed(Key::Schemas(catalog.clone()));
-                    cache.set(Key::Schema(schema_full_name(&catalog, &new_name)), updated);
-                    Ok(Some(schema_href(&catalog, &new_name)))
-                }
-                None => {
-                    cache.set(Key::Schema(full_name), updated);
-                    Ok(None)
-                }
-            }
+            let page = changes
+                .new_name
+                .as_deref()
+                .map(|new_name| schema_href(&catalog, new_name));
+            let renamed = changes.new_name.map(|new_name| {
+                (
+                    Key::Schema(schema_full_name(&catalog, &new_name)),
+                    Key::Schemas(catalog.clone()),
+                )
+            });
+            cache.edited(Key::Schema(full_name), updated, renamed);
+            Ok(page)
         }
+    };
+    let save_comment = move |comment: String| {
+        let saving = save_metadata(Changes {
+            new_name: None,
+            comment: Some(comment),
+        });
+        async move { saving.await.map(|_| ()) }
     };
     let refresh = Callback::new(move |_| {
         let (catalog, schema, full_name) = names.get_value();
@@ -106,77 +96,61 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
         create_open.set(true);
     };
 
-    let actions = view! {
-        <EditMetadata name=schema.clone() comment noun="schema" save=save_metadata/>
-        <button type="button" class="uc-btn uc-btn--sm" on:click=new_object>
-            <Plus/>
-            "New"
-        </button>
-        <Show when=move || manages.get()>
-            <button
-                type="button"
-                class="uc-btn uc-btn--destructive uc-btn--sm"
-                on:click=move |_| delete_open.set(true)
-            >
-                <Trash2/>
-                "Delete"
-            </button>
-        </Show>
-    }
-    .into_any();
-
-    let content = move || {
-        match tab.get() {
-        Tab::Overview => {
-            let (catalog, schema, _) = names.get_value();
-            view! {
-                <DescriptionCard comment noun="schema" save=save_comment/>
-                <Card
-                    title="Objects"
-                    actions=view! {
-                        <KindPicker kind catalog=catalog.clone() schema=schema.clone()/>
-                        <button type="button" class="uc-btn uc-btn--outline uc-btn--sm" on:click=new_object>
-                            <Plus/>
-                            "New"
-                        </button>
-                    }
-                        .into_any()
-                >
-                    {move || {
-                        let (catalog, schema, _) = names.get_value();
-                        view! { <Entries kind=kind.get() catalog schema/> }
-                    }}
-                </Card>
-            }
-            .into_any()
-        }
-        Tab::Details => view! {
-            <Card>
-                <MetaGrid rows=field(info, schema_rows)/>
-            </Card>
-            <PropertiesCard properties=field(info, |s: &SchemaInfo| properties(s.properties.as_ref()))/>
-            <RawJsonCard json=field(info, pretty_json)/>
-        }
-        .into_any(),
-        Tab::Permissions => {
-            let (_, _, full_name) = names.get_value();
-            view! { <PermissionsCard kind=SecurableType::Schema full_name owner/> }.into_any()
-        }
-    }
-    };
-
     view! {
         <EntityHeader
-            icon=view! { <Database class="uc-icon--schema"/> }.into_any()
+            icon=schema_icon()
             name=schema.clone()
             badges=vec!["SCHEMA".to_string()]
             on_refresh=refresh
-            actions
+            actions=view! {
+                <EditMetadata name=schema.clone() comment noun="schema" save=save_metadata/>
+                <button type="button" class="uc-btn uc-btn--sm" on:click=new_object>
+                    <Plus/>
+                    "New"
+                </button>
+                <DeleteButton open=delete_open when=manages/>
+            }
+                .into_any()
         />
         <div class="uc-page">
             <Loaded state=info>
-                <Tabs tab/>
-                {content}
+                <Tabs
+                    overview=move || {
+                        let (catalog, schema, _) = names.get_value();
+                        view! {
+                            <DescriptionCard comment noun="schema" save=save_comment/>
+                            <Card
+                                title="Objects"
+                                actions=view! {
+                                    <KindPicker kind catalog=catalog.clone() schema=schema.clone()/>
+                                    <button type="button" class="uc-btn uc-btn--outline uc-btn--sm" on:click=new_object>
+                                        <Plus/>
+                                        "New"
+                                    </button>
+                                }
+                                    .into_any()
+                            >
+                                {move || {
+                                    let (catalog, schema, _) = names.get_value();
+                                    view! { <Entries kind=kind.get() catalog schema/> }
+                                }}
+                            </Card>
+                        }
+                    }
+                    details=move || {
+                        view! {
+                            <DetailsTab
+                                rows=field(info, schema_rows)
+                                properties=field(info, |s: &SchemaInfo| properties(s.properties.as_ref()))
+                                json=field(info, pretty_json)
+                            />
+                        }
+                    }
+                    permissions=move || {
+                        let (_, _, full_name) = names.get_value();
+                        view! { <PermissionsCard kind=SecurableType::Schema full_name owner/> }
+                    }
+                />
             </Loaded>
         </div>
         <DeleteModal
@@ -191,7 +165,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
             }
             key=Key::Schema(full_name.clone())
             list=Key::Schemas(catalog.clone())
-            then=format!("/catalog/{catalog}")
+            then=catalog_href(&catalog)
             holder=Holder::Schema(catalog.clone(), schema.clone())
         />
         <CreateObjectModal open=create_open kind=new_kind catalog=catalog.clone() schema=schema.clone()/>
@@ -247,34 +221,29 @@ fn Entries(kind: Kind, catalog: String, schema: String) -> impl IntoView {
             async move { kind.entries(&catalog, &schema).await }
         },
     );
-    move || match entries.get() {
-        Load::Loading => view! { <LoadingBlock/> }.into_any(),
-        Load::Failed(message) => view! { <LoadError message/> }.into_any(),
-        Load::Ready(list) if list.is_empty() => {
-            view! { <p class="uc-empty">{format!("No {}.", kind.label().to_lowercase())}</p> }
-                .into_any()
-        }
-        Load::Ready(list) => view! {
-            <div class="uc-rows">
-                {list
-                    .into_iter()
-                    .map(|entry| {
-                        let (catalog, schema) = names.get_value();
-                        let href = kind.href(&catalog, &schema, &entry.name);
-                        view! {
-                            <a class="uc-row" href=href>
-                                {kind.icon()}
-                                <span class="uc-row__name">{entry.name}</span>
-                                {entry
-                                    .comment
-                                    .map(|c| view! { <span class="uc-row__comment">{c}</span> })}
-                            </a>
-                        }
-                    })
-                    .collect_view()}
-            </div>
-        }
-        .into_any(),
+    move || {
+        let empty = format!("No {}.", kind.label().to_lowercase());
+        loaded_list(entries.get(), empty, |list| {
+            let (catalog, schema) = names.get_value();
+            view! {
+                <div class="uc-rows">
+                    {list
+                        .into_iter()
+                        .map(|entry| {
+                            view! {
+                                <ObjectRow
+                                    icon=kind.icon()
+                                    name=entry.name.clone()
+                                    href=kind.href(&catalog, &schema, &entry.name)
+                                    comment=entry.comment
+                                />
+                            }
+                        })
+                        .collect_view()}
+                </div>
+            }
+            .into_any()
+        })
     }
 }
 

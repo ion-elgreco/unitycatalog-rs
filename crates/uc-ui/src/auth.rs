@@ -218,6 +218,16 @@ pub fn use_auth() -> Auth {
     expect_context::<Auth>()
 }
 
+/// Whether the user may manage the object of `owner`: its owner, or an
+/// admin (see [`Session::manages`]).
+pub fn use_manages(owner: Signal<Option<String>>) -> Memo<bool> {
+    let auth = use_auth();
+    Memo::new(move |_| {
+        auth.session
+            .with(|s| owner.with(|o| s.manages(o.as_deref())))
+    })
+}
+
 /// A call failed with 401 or 403: the session may have ended, so ask the
 /// server again. A 401 then shows the login page, a 403 the "No access"
 /// page.

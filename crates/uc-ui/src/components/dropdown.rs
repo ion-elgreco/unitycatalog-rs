@@ -1,7 +1,7 @@
-//! A click menu, as the console's `DropdownMenu`: the account menu and the
-//! page size. A click outside the menu, Escape, Tab and a change of page
-//! close it. The open menu takes the focus, and the arrow keys move it
-//! between the items.
+//! A click menu, as the console's `DropdownMenu`: the account menu. A
+//! click outside the menu, Escape, Tab and a change of page close it. The
+//! open menu takes the focus, and the arrow keys move it between the
+//! items.
 
 use leptos::ev;
 use leptos::html;
@@ -10,15 +10,6 @@ use leptos_router::hooks::use_location;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlElement;
 
-/// Where the menu opens.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Placement {
-    /// Below the button, from its left edge.
-    BottomLeft,
-    /// Below the button, to its right edge.
-    BottomRight,
-}
-
 #[component]
 pub fn Dropdown(
     /// The class of the button that opens the menu.
@@ -26,7 +17,6 @@ pub fn Dropdown(
     #[prop(optional)] title: &'static str,
     /// What the button shows.
     button: AnyView,
-    #[prop(default = Placement::BottomRight)] placement: Placement,
     /// The menu's items; a click on one closes the menu.
     children: ChildrenFn,
 ) -> impl IntoView {
@@ -61,19 +51,19 @@ pub fn Dropdown(
             // `Show` keeps its condition in a memo, which can run once more
             // after the page that owns `open` is gone.
             <Show when=move || open.try_get().unwrap_or(false)>
-                <Menu open trigger placement content=children.clone()/>
+                <Menu open trigger content=children.clone()/>
             </Show>
         </div>
     }
 }
 
-/// The open menu, over a backdrop that takes the clicks outside it. It
-/// listens for Escape while it is open.
+/// The open menu, below the button and to its right edge, over a backdrop
+/// that takes the clicks outside it. It listens for Escape while it is
+/// open.
 #[component]
 fn Menu(
     open: RwSignal<bool>,
     trigger: NodeRef<html::Button>,
-    placement: Placement,
     content: ChildrenFn,
 ) -> impl IntoView {
     let escape = window_event_listener(ev::keydown, move |e| {
@@ -123,15 +113,11 @@ fn Menu(
             let _ = item.focus();
         }
     };
-    let class = match placement {
-        Placement::BottomLeft => "uc-menu__panel uc-menu__panel--left",
-        Placement::BottomRight => "uc-menu__panel",
-    };
     view! {
         <div class="uc-menu__backdrop" on:click=move |_| open.set(false)></div>
         <div
             node_ref=menu
-            class=class
+            class="uc-menu__panel"
             role="menu"
             on:click=move |_| open.set(false)
             on:keydown=keys

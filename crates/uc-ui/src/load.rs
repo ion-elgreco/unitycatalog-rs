@@ -171,6 +171,25 @@ impl Cache {
         signal.set(Load::Ready(Arc::new(value)));
     }
 
+    /// `key`'s new value, from the answer of an edit that may have renamed
+    /// the object: then `renamed` is its key now and the list that names
+    /// it, which loads again.
+    pub fn edited<T: Send + Sync + 'static>(
+        &self,
+        key: Key,
+        value: T,
+        renamed: Option<(Key, Key)>,
+    ) {
+        match renamed {
+            Some((new_key, list)) => {
+                self.forget(key);
+                self.changed(list);
+                self.set(new_key, value);
+            }
+            None => self.set(key, value),
+        }
+    }
+
     /// `key` is gone, such as a deleted object: a view of it loads it
     /// again.
     pub fn forget(&self, key: Key) {

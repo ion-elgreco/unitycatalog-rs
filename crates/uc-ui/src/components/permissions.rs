@@ -11,12 +11,13 @@ use uc_api::{Privilege, PrivilegeAssignment};
 use uc_common::{SecurableType, wire_name};
 
 use super::card::Card;
+use super::field::{Select, TextField};
 use super::icons::{ShieldCheck, X};
-use super::loaded::{LoadError, LoadingBlock};
+use super::loaded::loaded_list;
 use crate::api;
-use crate::auth::{Session, use_auth};
+use crate::auth::{Session, use_auth, use_manages};
 use crate::components::use_notify;
-use crate::load::{Key, Load, use_cache, use_load};
+use crate::load::{Key, use_cache, use_load};
 
 /// The privileges that a securable of `kind` can hold.
 fn choices(kind: SecurableType) -> &'static [Privilege] {
@@ -71,12 +72,9 @@ pub fn PermissionsCard(
     let cache = use_cache();
     let notify = use_notify();
     let me = Memo::new(move |_| auth.session.with(|s| s.principal().map(str::to_string)));
-    let manages = Memo::new(move |_| {
-        auth.session
-            .with(|s| owner.with(|o| s.manages(o.as_deref())))
-    });
+    let manages = use_manages(owner);
     let anonymous = move || auth.session.with(|s| matches!(s, Session::Anonymous));
-    let is_owner = Memo::new(move |_| me.get().is_some() && me.get() == owner.get());
+    let is_owner = Memo::new(move |_| me.with(|me| me.is_some() && *me == owner.get()));
     // The user's own grants.
     let mine = Memo::new(move |_| {
         let me = me.get();
@@ -152,31 +150,28 @@ pub fn PermissionsCard(
         .into_any()
     };
 
-    let table = move || match grants.get() {
-        Load::Loading => view! { <LoadingBlock/> }.into_any(),
-        Load::Failed(message) => view! { <LoadError message/> }.into_any(),
-        Load::Ready(list) if list.is_empty() => {
-            view! { <p class="uc-empty">"No privileges granted."</p> }.into_any()
-        }
-        Load::Ready(list) => view! {
-            <div class="uc-table-wrap">
-                <table class="uc-table">
-                    <thead>
-                        <tr>
-                            <th>"Principal"</th>
-                            <th>"Privileges"</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {list
-                            .into_iter()
-                            .map(|assignment| view! { <GrantRow assignment manages change/> })
-                            .collect_view()}
-                    </tbody>
-                </table>
-            </div>
-        }
-        .into_any(),
+    let table = move || {
+        loaded_list(grants.get(), "No privileges granted.", |list| {
+            view! {
+                <div class="uc-table-wrap">
+                    <table class="uc-table">
+                        <thead>
+                            <tr>
+                                <th>"Principal"</th>
+                                <th>"Privileges"</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {list
+                                .into_iter()
+                                .map(|assignment| view! { <GrantRow assignment manages change/> })
+                                .collect_view()}
+                        </tbody>
+                    </table>
+                </div>
+            }
+            .into_any()
+        })
     };
 
     view! {
@@ -274,40 +269,21 @@ fn GrantForm(
     };
     view! {
         <form class="uc-form-row" on:submit=submit>
-            <div class="uc-field">
-                <label class="uc-label" for="uc-grant-principal">"Principal (email)"</label>
-                <input
-                    id="uc-grant-principal"
-                    class="uc-input"
-                    type="text"
-                    placeholder="ada@example.com"
-                    autocomplete="off"
-                    prop:value=move || principal.get()
-                    on:input=move |e| principal.set(event_target_value(&e))
-                />
-            </div>
-            <div class="uc-field uc-field--fixed">
-                <label class="uc-label" for="uc-grant-privilege">"Privilege"</label>
-                <select
-                    id="uc-grant-privilege"
-                    class="uc-select"
-                    on:change=move |e| {
-                        let value = event_target_value(&e);
-                        if let Some(p) = choices.iter().find(|p| wire_name(*p) == value) {
-                            privilege.set(*p);
-                        }
-                    }
-                >
-                    {choices
-                        .iter()
-                        .map(|p| {
-                            let name = wire_name(p);
-                            let value = name.clone();
-                            view! { <option value=value>{name}</option> }
-                        })
-                        .collect_view()}
-                </select>
-            </div>
+            <TextField
+                id="uc-grant-principal"
+                label="Principal (email)"
+                value=principal
+                placeholder="ada@example.com"
+                autocomplete="off"
+            />
+            <Select
+                id="uc-grant-privilege"
+                label="Privilege"
+                choices
+                value=privilege
+                name=wire_name
+                fixed=true
+            />
             <button
                 type="submit"
                 class="uc-btn"

@@ -6,18 +6,20 @@ use uc_api::{CatalogInfo, CreateSchema, UpdateCatalog};
 use uc_common::SecurableType;
 
 use crate::api;
-use crate::auth::use_auth;
+use crate::auth::use_manages;
 use crate::components::edit_modal::Changes;
-use crate::components::icons::{Database, Notebook, Plus, Trash2};
+use crate::components::icons::Plus;
 use crate::components::{
-    Card, CreateModal, DeleteModal, DescriptionCard, EditMetadata, EntityHeader, LoadError, Loaded,
-    LoadingBlock, MetaGrid, MetaRow, NewObject, PermissionsCard, PropertiesCard, RawJsonCard, Tab,
-    Tabs, properties,
+    Card, CreateModal, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata,
+    EntityHeader, Loaded, MetaRow, NewObject, ObjectRow, PermissionsCard, Tabs, count, loaded_list,
+    properties,
 };
 use crate::contents::Holder;
-use crate::kind::{catalog_href, schema_href};
-use crate::load::{Key, Load, field, use_cache, use_load};
-use crate::util::{format_timestamp, or_dash, pretty_json, route_params};
+use crate::kind::{catalog_icon, schema_icon};
+use crate::load::{Key, field, use_cache, use_load};
+use crate::util::{
+    catalog_href, format_timestamp, or_dash, pretty_json, route_params, schema_href,
+};
 
 #[component]
 pub fn CatalogDetails() -> impl IntoView {
@@ -40,32 +42,14 @@ fn CatalogPage(catalog: String) -> impl IntoView {
         async move { api::schemas(&catalog).await }
     });
     let cache = use_cache();
-    let auth = use_auth();
-    let tab = RwSignal::new(Tab::Overview);
     let delete_open = RwSignal::new(false);
     let create_open = RwSignal::new(false);
     let owner = field(info, |c: &CatalogInfo| c.owner.clone());
-    let manages = Memo::new(move |_| {
-        auth.session
-            .with(|s| owner.with(|o| s.manages(o.as_deref())))
-    });
+    let manages = use_manages(owner);
     let comment = field(info, |c: &CatalogInfo| {
         c.comment.clone().unwrap_or_default()
     });
 
-    let save_comment = move |comment: String| {
-        let catalog = name.get_value();
-        async move {
-            let request = UpdateCatalog {
-                comment: Some(comment),
-                properties: None,
-                new_name: None,
-            };
-            let updated = api::client().update_catalog(&catalog, &request).await?;
-            cache.set(Key::Catalog(catalog), updated);
-            Ok(())
-        }
-    };
     let save_metadata = move |changes: Changes| {
         let catalog = name.get_value();
         async move {
@@ -75,119 +59,94 @@ fn CatalogPage(catalog: String) -> impl IntoView {
                 new_name: changes.new_name.clone(),
             };
             let updated = api::client().update_catalog(&catalog, &request).await?;
-            match changes.new_name {
-                Some(new_name) => {
-                    cache.forget(Key::Catalog(catalog));
-                    cache.changed(Key::Catalogs);
-                    cache.set(Key::Catalog(new_name.clone()), updated);
-                    Ok(Some(catalog_href(&new_name)))
-                }
-                None => {
-                    cache.set(Key::Catalog(catalog), updated);
-                    Ok(None)
-                }
-            }
+            let page = changes.new_name.as_deref().map(catalog_href);
+            let renamed = changes
+                .new_name
+                .map(|new_name| (Key::Catalog(new_name), Key::Catalogs));
+            cache.edited(Key::Catalog(catalog), updated, renamed);
+            Ok(page)
         }
+    };
+    let save_comment = move |comment: String| {
+        let saving = save_metadata(Changes {
+            new_name: None,
+            comment: Some(comment),
+        });
+        async move { saving.await.map(|_| ()) }
     };
     let refresh = Callback::new(move |_| {
         cache.changed(Key::Catalog(name.get_value()));
         cache.changed(Key::Schemas(name.get_value()));
     });
 
-    let actions = view! {
-        <EditMetadata name=catalog.clone() comment noun="catalog" save=save_metadata/>
-        <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>
-            <Plus/>
-            "Create schema"
-        </button>
-        <Show when=move || manages.get()>
-            <button
-                type="button"
-                class="uc-btn uc-btn--destructive uc-btn--sm"
-                on:click=move |_| delete_open.set(true)
-            >
-                <Trash2/>
-                "Delete"
-            </button>
-        </Show>
-    }
-    .into_any();
-
-    let schema_rows = move || match schemas.get() {
-        Load::Loading => view! { <LoadingBlock/> }.into_any(),
-        Load::Failed(message) => view! { <LoadError message/> }.into_any(),
-        Load::Ready(list) if list.is_empty() => {
-            view! { <p class="uc-empty">"No schemas."</p> }.into_any()
-        }
-        Load::Ready(list) => view! {
-            <div class="uc-rows">
-                {list
-                    .into_iter()
-                    .map(|s| {
-                        let schema = s.name.unwrap_or_default();
-                        let href = schema_href(&name.get_value(), &schema);
-                        view! {
-                            <a class="uc-row" href=href>
-                                <Database class="uc-icon--schema"/>
-                                <span class="uc-row__name">{schema}</span>
-                                {s
-                                    .comment
-                                    .filter(|c| !c.is_empty())
-                                    .map(|c| view! { <span class="uc-row__comment">{c}</span> })}
-                            </a>
-                        }
-                    })
-                    .collect_view()}
-            </div>
-        }
-        .into_any(),
-    };
-    let schema_count = move || {
-        schemas
-            .with(|s| s.ready().map(Vec::len))
-            .map(|n| n.to_string())
-            .unwrap_or_default()
-    };
-
-    let content = move || {
-        match tab.get() {
-        Tab::Overview => view! {
-            <DescriptionCard comment noun="catalog" save=save_comment/>
-            <Card
-                title="Schemas"
-                actions=view! { <span class="uc-badge">{schema_count}</span> }.into_any()
-            >
-                {schema_rows}
-            </Card>
-        }
-        .into_any(),
-        Tab::Details => view! {
-            <Card>
-                <MetaGrid rows=field(info, catalog_rows)/>
-            </Card>
-            <PropertiesCard properties=field(info, |c: &CatalogInfo| properties(c.properties.as_ref()))/>
-            <RawJsonCard json=field(info, pretty_json)/>
-        }
-        .into_any(),
-        Tab::Permissions => view! {
-            <PermissionsCard kind=SecurableType::Catalog full_name=name.get_value() owner/>
-        }
-        .into_any(),
-    }
+    let schema_rows = move || {
+        loaded_list(schemas.get(), "No schemas.", |list| {
+            let catalog = name.get_value();
+            view! {
+                <div class="uc-rows">
+                    {list
+                        .into_iter()
+                        .map(|s| {
+                            let schema = s.name.unwrap_or_default();
+                            view! {
+                                <ObjectRow
+                                    icon=schema_icon()
+                                    name=schema.clone()
+                                    href=schema_href(&catalog, &schema)
+                                    comment=s.comment
+                                />
+                            }
+                        })
+                        .collect_view()}
+                </div>
+            }
+            .into_any()
+        })
     };
 
     view! {
         <EntityHeader
-            icon=view! { <Notebook class="uc-icon--catalog"/> }.into_any()
+            icon=catalog_icon()
             name=catalog.clone()
             badges=vec!["CATALOG".to_string()]
             on_refresh=refresh
-            actions
+            actions=view! {
+                <EditMetadata name=catalog.clone() comment noun="catalog" save=save_metadata/>
+                <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>
+                    <Plus/>
+                    "Create schema"
+                </button>
+                <DeleteButton open=delete_open when=manages/>
+            }
+                .into_any()
         />
         <div class="uc-page">
             <Loaded state=info>
-                <Tabs tab/>
-                {content}
+                <Tabs
+                    overview=move || {
+                        view! {
+                            <DescriptionCard comment noun="catalog" save=save_comment/>
+                            <Card
+                                title="Schemas"
+                                actions=view! { <span class="uc-badge">{count(schemas)}</span> }.into_any()
+                            >
+                                {schema_rows}
+                            </Card>
+                        }
+                    }
+                    details=move || {
+                        view! {
+                            <DetailsTab
+                                rows=field(info, catalog_rows)
+                                properties=field(info, |c: &CatalogInfo| properties(c.properties.as_ref()))
+                                json=field(info, pretty_json)
+                            />
+                        }
+                    }
+                    permissions=move || {
+                        view! { <PermissionsCard kind=SecurableType::Catalog full_name=name.get_value() owner/> }
+                    }
+                />
             </Loaded>
         </div>
         <DeleteModal
@@ -208,7 +167,6 @@ fn CatalogPage(catalog: String) -> impl IntoView {
         <CreateModal
             open=create_open
             noun="schema"
-            location="Storage root"
             create=move |form: NewObject| {
                 let catalog = name.get_value();
                 async move {

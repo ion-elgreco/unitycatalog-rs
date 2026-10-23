@@ -6,12 +6,10 @@ use uc_api::{TableInfo, UpdateTable};
 use uc_common::{SecurableType, three_part_full_name, wire_name};
 
 use crate::api;
-use crate::auth::use_auth;
-use crate::components::icons::{Table, Trash2};
+use crate::auth::use_manages;
 use crate::components::{
-    Card, ColumnsCard, CredentialsCard, DeleteModal, DescriptionCard, EntityHeader, Loaded,
-    MetaGrid, MetaRow, PermissionsCard, PropertiesCard, RawJsonCard, Tab, Tabs, Vendable,
-    properties,
+    ColumnsCard, CredentialsCard, DeleteButton, DeleteModal, DescriptionCard, DetailsTab,
+    EntityHeader, Loaded, MetaRow, PermissionsCard, Tabs, Vendable, properties,
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
@@ -35,14 +33,9 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
         async move { api::client().get_table(&full_name, false, false).await }
     });
     let cache = use_cache();
-    let auth = use_auth();
-    let tab = RwSignal::new(Tab::Overview);
     let delete_open = RwSignal::new(false);
     let owner = field(info, |t: &TableInfo| t.owner.clone());
-    let manages = Memo::new(move |_| {
-        auth.session
-            .with(|s| owner.with(|o| s.manages(o.as_deref())))
-    });
+    let manages = use_manages(owner);
     let comment = field(info, |t: &TableInfo| t.comment.clone().unwrap_or_default());
     let badges = field(info, |t: &TableInfo| {
         [
@@ -69,55 +62,39 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
     };
     let refresh = Callback::new(move |_| cache.changed(Key::Table(name.get_value())));
 
-    let actions = view! {
-        <Show when=move || manages.get()>
-            <button
-                type="button"
-                class="uc-btn uc-btn--destructive uc-btn--sm"
-                on:click=move |_| delete_open.set(true)
-            >
-                <Trash2/>
-                "Delete"
-            </button>
-        </Show>
-    }
-    .into_any();
-
-    let content = move || {
-        match tab.get() {
-        Tab::Overview => view! {
-            <DescriptionCard comment noun="table" save=save_comment/>
-            <ColumnsCard info full_name=name.get_value()/>
-        }
-        .into_any(),
-        Tab::Details => view! {
-            <Card>
-                <MetaGrid rows=field(info, table_rows)/>
-            </Card>
-            <PropertiesCard properties=field(info, |t: &TableInfo| properties(t.properties.as_ref()))/>
-            <RawJsonCard json=field(info, pretty_json)/>
-        }
-        .into_any(),
-        Tab::Permissions => view! {
-            <CredentialsCard kind=Vendable::Table id=table_id/>
-            <PermissionsCard kind=SecurableType::Table full_name=name.get_value() owner/>
-        }
-        .into_any(),
-    }
-    };
-
     view! {
         <EntityHeader
-            icon=view! { <Table class="uc-icon--table"/> }.into_any()
+            icon=Kind::Tables.icon()
             name=full_name.clone()
             badges
             on_refresh=refresh
-            actions
+            actions=view! { <DeleteButton open=delete_open when=manages/> }.into_any()
         />
         <div class="uc-page">
             <Loaded state=info>
-                <Tabs tab/>
-                {content}
+                <Tabs
+                    overview=move || {
+                        view! {
+                            <DescriptionCard comment noun="table" save=save_comment/>
+                            <ColumnsCard info full_name=name.get_value()/>
+                        }
+                    }
+                    details=move || {
+                        view! {
+                            <DetailsTab
+                                rows=field(info, table_rows)
+                                properties=field(info, |t: &TableInfo| properties(t.properties.as_ref()))
+                                json=field(info, pretty_json)
+                            />
+                        }
+                    }
+                    permissions=move || {
+                        view! {
+                            <CredentialsCard kind=Vendable::Table id=table_id/>
+                            <PermissionsCard kind=SecurableType::Table full_name=name.get_value() owner/>
+                        }
+                    }
+                />
             </Loaded>
         </div>
         <DeleteModal

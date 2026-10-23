@@ -14,6 +14,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 
+use super::icons::Trash2;
 use crate::api;
 use crate::auth::use_auth;
 use crate::components::{Modal, use_notify};
@@ -219,6 +220,24 @@ where
             <p>{summary.clone()}</p>
             <p class="uc-strong">"This operation cannot be undone."</p>
         </Modal>
+    }
+}
+
+/// "Delete" in a page's actions, for those who manage the object (`when`):
+/// it opens the modal.
+#[component]
+pub fn DeleteButton(open: RwSignal<bool>, when: Memo<bool>) -> impl IntoView {
+    view! {
+        <Show when=move || when.get()>
+            <button
+                type="button"
+                class="uc-btn uc-btn--destructive uc-btn--sm"
+                on:click=move |_| open.set(true)
+            >
+                <Trash2/>
+                "Delete"
+            </button>
+        </Show>
     }
 }
 

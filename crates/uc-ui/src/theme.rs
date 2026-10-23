@@ -44,25 +44,30 @@ pub struct Theme {
     pub mode: RwSignal<ColorMode>,
 }
 
-/// The kept mode, else `Auto`; each change goes to `<html>` and to
-/// `localStorage`.
-pub fn provide_theme() {
-    let storage = window().local_storage().ok().flatten();
-    let kept = storage
-        .as_ref()
-        .and_then(|s| s.get_item(STORAGE_KEY).ok().flatten())
-        .and_then(|value| ColorMode::parse(&value))
-        .unwrap_or(ColorMode::Auto);
-    let mode = RwSignal::new(kept);
-    provide_context(Theme { mode });
-    Effect::new(move |_| {
-        let mode = mode.get();
+impl Theme {
+    /// A new mode: on `<html>` and in `localStorage`.
+    pub fn set(&self, mode: ColorMode) {
+        self.mode.set(mode);
         if let Some(html) = document().document_element() {
             let _ = html.set_attribute("data-color-mode", mode.as_str());
         }
-        if let Some(storage) = &storage {
+        if let Some(storage) = window().local_storage().ok().flatten() {
             let _ = storage.set_item(STORAGE_KEY, mode.as_str());
         }
+    }
+}
+
+/// The kept mode, else `Auto`, which `index.html` has set on `<html>`.
+pub fn provide_theme() {
+    let kept = window()
+        .local_storage()
+        .ok()
+        .flatten()
+        .and_then(|s| s.get_item(STORAGE_KEY).ok().flatten())
+        .and_then(|value| ColorMode::parse(&value))
+        .unwrap_or(ColorMode::Auto);
+    provide_context(Theme {
+        mode: RwSignal::new(kept),
     });
 }
 

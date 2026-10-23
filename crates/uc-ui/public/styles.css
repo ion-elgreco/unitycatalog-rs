@@ -932,6 +932,9 @@ pre,
   border-bottom: 1px solid var(--border);
 }
 
+/* A tab's panel: its cards stack in the page like the tabs' siblings. */
+.uc-tab-panel { display: contents; }
+
 .uc-tabs button {
   position: relative;
   display: inline-flex;
@@ -1068,7 +1071,6 @@ pre,
 
 .uc-table tbody tr:last-child td { border-bottom: 0; }
 .uc-table tbody tr:hover { background: color-mix(in srgb, var(--muted) 60%, transparent); }
-.uc-table--clickable tbody tr { cursor: pointer; }
 .uc-table .uc-right { text-align: right; }
 .uc-table th.uc-center,
 .uc-table td.uc-center { text-align: center; }
@@ -1388,11 +1390,6 @@ pre,
   animation: uc-pop 0.15s ease-out;
 }
 
-.uc-menu__panel--left {
-  left: 0;
-  right: auto;
-}
-
 .uc-menu__item {
   display: flex;
   width: 100%;
@@ -1494,33 +1491,6 @@ pre,
 
 .uc-toast__close:hover { color: var(--foreground); }
 .uc-toast__close svg { width: 14px; height: 14px; }
-
-/* ---------- Tooltips ---------- */
-
-.uc-tooltip {
-  position: relative;
-  display: inline-flex;
-}
-
-.uc-tooltip__bubble {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  z-index: 60;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--foreground);
-  color: var(--background);
-  font-size: 12px;
-  white-space: nowrap;
-  translate: -50% 0;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s 0.1s;
-}
-
-.uc-tooltip:hover .uc-tooltip__bubble,
-.uc-tooltip:focus-within .uc-tooltip__bubble { opacity: 1; }
 
 /* ---------- Loading ---------- */
 

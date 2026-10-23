@@ -6,11 +6,10 @@ use uc_api::FunctionInfo;
 use uc_common::{SecurableType, three_part_full_name, wire_name};
 
 use crate::api;
-use crate::auth::use_auth;
-use crate::components::icons::{FunctionSquare, Trash2};
+use crate::auth::use_manages;
 use crate::components::{
-    Card, CodeBlock, DeleteModal, EntityHeader, Loaded, MetaGrid, MetaRow, PermissionsCard,
-    RawJsonCard, Tab, Tabs,
+    Card, CodeBlock, DeleteButton, DeleteModal, Description, DetailsTab, EntityHeader, Loaded,
+    MetaRow, PermissionsCard, Tabs,
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
@@ -34,14 +33,9 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
         async move { api::client().get_function(&full_name).await }
     });
     let cache = use_cache();
-    let auth = use_auth();
-    let tab = RwSignal::new(Tab::Overview);
     let delete_open = RwSignal::new(false);
     let owner = field(info, |f: &FunctionInfo| f.owner.clone());
-    let manages = Memo::new(move |_| {
-        auth.session
-            .with(|s| owner.with(|o| s.manages(o.as_deref())))
-    });
+    let manages = use_manages(owner);
     let comment = field(info, |f: &FunctionInfo| {
         f.comment.clone().unwrap_or_default()
     });
@@ -69,20 +63,6 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
         f.routine_definition.clone().unwrap_or_default()
     });
     let refresh = Callback::new(move |_| cache.changed(Key::Function(name.get_value())));
-
-    let actions = view! {
-        <Show when=move || manages.get()>
-            <button
-                type="button"
-                class="uc-btn uc-btn--destructive uc-btn--sm"
-                on:click=move |_| delete_open.set(true)
-            >
-                <Trash2/>
-                "Delete"
-            </button>
-        </Show>
-    }
-    .into_any();
 
     let parameter_rows = move || {
         let parameters = parameters.get();
@@ -128,47 +108,35 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
         .into_any()
     };
 
-    let content = move || match tab.get() {
-        Tab::Overview => view! {
-            <Card title="Description">
-                <Show
-                    when=move || comment.with(|c| !c.is_empty())
-                    fallback=|| view! { <p class="uc-empty">"No description provided."</p> }
-                >
-                    <p class="uc-prewrap">{move || comment.get()}</p>
-                </Show>
-            </Card>
-            <Card title="Input parameters">{parameter_rows}</Card>
-            <Card title="Routine definition">
-                <CodeBlock text=definition/>
-            </Card>
-        }
-        .into_any(),
-        Tab::Details => view! {
-            <Card>
-                <MetaGrid rows=field(info, function_rows)/>
-            </Card>
-            <RawJsonCard json=field(info, pretty_json)/>
-        }
-        .into_any(),
-        Tab::Permissions => view! {
-            <PermissionsCard kind=SecurableType::Function full_name=name.get_value() owner/>
-        }
-        .into_any(),
-    };
-
     view! {
         <EntityHeader
-            icon=view! { <FunctionSquare class="uc-icon--function"/> }.into_any()
+            icon=Kind::Functions.icon()
             name=full_name.clone()
             badges
             on_refresh=refresh
-            actions
+            actions=view! { <DeleteButton open=delete_open when=manages/> }.into_any()
         />
         <div class="uc-page">
             <Loaded state=info>
-                <Tabs tab/>
-                {content}
+                <Tabs
+                    overview=move || {
+                        view! {
+                            <Card title="Description">
+                                <Description comment/>
+                            </Card>
+                            <Card title="Input parameters">{parameter_rows}</Card>
+                            <Card title="Routine definition">
+                                <CodeBlock text=definition/>
+                            </Card>
+                        }
+                    }
+                    details=move || {
+                        view! { <DetailsTab rows=field(info, function_rows) json=field(info, pretty_json)/> }
+                    }
+                    permissions=move || {
+                        view! { <PermissionsCard kind=SecurableType::Function full_name=name.get_value() owner/> }
+                    }
+                />
             </Loaded>
         </div>
         <DeleteModal

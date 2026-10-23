@@ -16,7 +16,7 @@ use uc_common::EpochMillis;
 use crate::api;
 use crate::auth::use_auth;
 use crate::components::icons::{Check, CircleCheck, Copy, Plus, Trash2, X};
-use crate::components::{Modal, use_notify};
+use crate::components::{Modal, TextField, use_notify};
 use crate::layout::{Column, ListLayout};
 use crate::load::{Key, use_cache, use_load};
 use crate::util::{copy_text, format_timestamp};
@@ -341,20 +341,7 @@ fn CreateToken(open: RwSignal<bool>, created: RwSignal<Option<PatInfo>>) -> impl
             on_cancel=move || close()
             on_ok
         >
-            <div class="uc-field">
-                <label class="uc-label" for="uc-token-name">
-                    <span class="req">"*"</span>
-                    "Name"
-                </label>
-                <input
-                    id="uc-token-name"
-                    class="uc-input"
-                    type="text"
-                    required
-                    prop:value=move || name.get()
-                    on:input=move |e| name.set(event_target_value(&e))
-                />
-            </div>
+            <TextField id="uc-token-name" label="Name" value=name required=true/>
             <div class="uc-field">
                 <span class="uc-label">"Expiration"</span>
                 <div class="uc-segmented" role="radiogroup" aria-label="Expiration">

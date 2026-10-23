@@ -9,14 +9,13 @@ use leptos::prelude::*;
 use leptos_router::components::Outlet;
 
 use crate::auth::{Session, SignIn, logout, logout_url, use_auth};
-use crate::components::catalog_tree::use_route;
-use crate::components::entity_header::Parent;
 use crate::components::icons::{
     ExternalLink, KeyRound, LogOut, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Sun, User,
 };
 use crate::components::{CatalogTree, Crumbs, Dropdown};
 use crate::pages::{Denied, Login};
 use crate::theme::{ColorMode, use_theme};
+use crate::util::{provide_route, use_route};
 
 /// What the shell shows. A new answer of the same kind, such as the
 /// check when the window gets the focus, keeps the page as it is.
@@ -49,6 +48,7 @@ pub fn Shell() -> impl IntoView {
 
 #[component]
 fn Layout() -> impl IntoView {
+    provide_route();
     let auth = use_auth();
     let signed_in = move || auth.session.with(|session| session.user().is_some());
     // The server signs users in: the sidebar says who.
@@ -59,6 +59,13 @@ fn Layout() -> impl IntoView {
         })
     };
     let nav_open = RwSignal::new(true);
+    let toggle_label = move || {
+        if nav_open.get() {
+            "Collapse navigation"
+        } else {
+            "Expand navigation"
+        }
+    };
     view! {
         <div class="uc-app">
             <header class="uc-header">
@@ -68,12 +75,8 @@ fn Layout() -> impl IntoView {
                         class="uc-header__btn"
                         aria-expanded=move || nav_open.get().to_string()
                         aria-controls="uc-nav"
-                        aria-label=move || {
-                            if nav_open.get() { "Collapse navigation" } else { "Expand navigation" }
-                        }
-                        title=move || {
-                            if nav_open.get() { "Collapse navigation" } else { "Expand navigation" }
-                        }
+                        aria-label=toggle_label
+                        title=toggle_label
                         on:click=move |_| nav_open.update(|open| *open = !*open)
                     >
                         <Show when=move || nav_open.get() fallback=|| view! { <PanelLeftOpen/> }>
@@ -141,25 +144,7 @@ fn Layout() -> impl IntoView {
 #[component]
 fn Path() -> impl IntoView {
     let route = use_route();
-    move || {
-        let route = route.get();
-        let (parent, leaf) = match (&route.object, &route.version) {
-            (Some((kind, name)), Some(version)) => {
-                let (catalog, schema) = (
-                    route.catalog.clone().unwrap_or_default(),
-                    route.schema.clone().unwrap_or_default(),
-                );
-                let parent = Parent {
-                    label: name.clone(),
-                    href: kind.href(&catalog, &schema, name),
-                };
-                (Some(parent), Some(format!("v{version}")))
-            }
-            (Some((_, name)), None) => (None, Some(name.clone())),
-            (None, _) => (None, route.page.map(str::to_string)),
-        };
-        view! { <Crumbs catalog=route.catalog schema=route.schema parent leaf/> }
-    }
+    move || view! { <Crumbs route=route.get()/> }
 }
 
 /// Light, dark or the system's theme, as the console's `ThemeSwitcher`.
@@ -184,7 +169,7 @@ fn ThemeSwitcher() -> impl IntoView {
                             aria-label=format!("{label} theme")
                             aria-pressed=move || (theme.mode.get() == mode).to_string()
                             class:is-active=move || theme.mode.get() == mode
-                            on:click=move |_| theme.mode.set(mode)
+                            on:click=move |_| theme.set(mode)
                         >
                             {icon}
                         </button>

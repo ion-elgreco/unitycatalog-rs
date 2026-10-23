@@ -8,102 +8,15 @@
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
-use leptos_router::hooks::use_location;
 use wasm_bindgen::JsCast;
 use web_sys::{Element, HtmlElement};
 
-use super::icons::{ChevronDown, ChevronRight, Database, Notebook};
+use super::icons::{ChevronDown, ChevronRight};
 use super::loaded::Stage;
 use crate::api;
-use crate::kind::{Kind, catalog_href, schema_href};
+use crate::kind::{Kind, catalog_icon, schema_icon};
 use crate::load::{Key, Load, use_load};
-
-/// What the URL names: the catalog, the schema, an object of a kind, and
-/// a model's version; or a page of the user's own, such as the tokens.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Route {
-    pub catalog: Option<String>,
-    pub schema: Option<String>,
-    pub object: Option<(Kind, String)>,
-    pub version: Option<String>,
-    /// The title of a page outside the catalogs.
-    pub page: Option<&'static str>,
-}
-
-impl Route {
-    fn parse(path: &str) -> Self {
-        let mut parts = path.trim_start_matches('/').split('/').map(decode);
-        match parts.next().as_deref() {
-            Some("catalog") => {}
-            Some("settings") => {
-                let page = (parts.next().as_deref() == Some("tokens")).then_some("Access tokens");
-                return Self {
-                    page,
-                    ..Self::default()
-                };
-            }
-            _ => return Self::default(),
-        }
-        let catalog = parts.next().filter(|s| !s.is_empty());
-        let schema = parts.next().filter(|s| !s.is_empty());
-        let kind = parts.next().and_then(|segment| match segment.as_str() {
-            "table" => Some(Kind::Tables),
-            "volume" => Some(Kind::Volumes),
-            "function" => Some(Kind::Functions),
-            "model" => Some(Kind::Models),
-            _ => None,
-        });
-        let name = parts.next().filter(|s| !s.is_empty());
-        let version = (parts.next().as_deref() == Some("version"))
-            .then(|| parts.next().filter(|s| !s.is_empty()))
-            .flatten();
-        Self {
-            catalog,
-            schema,
-            object: kind.zip(name),
-            version,
-            page: None,
-        }
-    }
-
-    fn in_catalog(&self, catalog: &str) -> bool {
-        self.catalog.as_deref() == Some(catalog)
-    }
-
-    fn in_schema(&self, catalog: &str, schema: &str) -> bool {
-        self.in_catalog(catalog) && self.schema.as_deref() == Some(schema)
-    }
-}
-
-/// A part of the URL, as the name it stands for: its `%XX` escapes
-/// decoded.
-fn decode(part: &str) -> String {
-    let bytes = part.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let escaped = (bytes[i] == b'%' && i + 2 < bytes.len())
-            .then(|| u8::from_str_radix(&part[i + 1..i + 3], 16).ok())
-            .flatten();
-        match escaped {
-            Some(byte) => {
-                out.push(byte);
-                i += 3;
-            }
-            None => {
-                out.push(bytes[i]);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// What the page shows, from the URL.
-pub fn use_route() -> Memo<Route> {
-    let pathname = use_location().pathname;
-    Memo::new(move |_| pathname.with(|path| Route::parse(path)))
-}
+use crate::util::{Route, catalog_href, schema_href, use_route};
 
 #[component]
 pub fn CatalogTree() -> impl IntoView {
@@ -150,36 +63,12 @@ fn CatalogNode(name: String, route: Memo<Route>) -> impl IntoView {
         let name = name.clone();
         Memo::new(move |_| route.with(|r| r.in_catalog(&name)))
     };
-    let open = RwSignal::new(here.get_untracked());
-    Effect::new(move |_| {
-        if here.get() {
-            open.set(true);
-        }
-    });
-    let active = move || here.get() && route.with(|r| r.schema.is_none());
-    let href = catalog_href(&name);
-    let label = name.clone();
+    let active = Signal::derive(move || here.get() && route.with(|r| r.schema.is_none()));
+    let catalog = name.clone();
     view! {
-        <li role="none">
-            <div class="uc-tree__row" class:is-active=active>
-                <Chevron open/>
-                <a
-                    class="uc-tree__label"
-                    class:is-active=active
-                    href=href
-                    role="treeitem"
-                    aria-selected=move || active().to_string()
-                    aria-expanded=move || open.get().to_string()
-                    on:click=move |_| open.set(true)
-                >
-                    <Notebook class="uc-icon--catalog"/>
-                    <span class="uc-truncate">{label}</span>
-                </a>
-            </div>
-            <Subtree open>
-                <SchemaNodes catalog=name.clone() route/>
-            </Subtree>
-        </li>
+        <Branch here active href=catalog_href(&name) icon=catalog_icon() label=name.clone()>
+            <SchemaNodes catalog=catalog.clone() route/>
+        </Branch>
     }
 }
 
@@ -210,40 +99,61 @@ fn SchemaNode(catalog: String, schema: String, route: Memo<Route>) -> impl IntoV
         let schema = schema.clone();
         Memo::new(move |_| route.with(|r| r.in_schema(&catalog, &schema)))
     };
-    let open = RwSignal::new(here.get_untracked());
-    Effect::new(move |_| {
-        if here.get() {
-            open.set(true);
-        }
-    });
-    let active = move || here.get() && route.with(|r| r.object.is_none());
+    let active = Signal::derive(move || here.get() && route.with(|r| r.object.is_none()));
     let href = schema_href(&catalog, &schema);
     let label = schema.clone();
     view! {
+        <Branch here active href icon=schema_icon() label small=true>
+            {Kind::ALL
+                .into_iter()
+                .map(|kind| {
+                    view! { <GroupNode kind catalog=catalog.clone() schema=schema.clone() route/> }
+                })
+                .collect_view()}
+        </Branch>
+    }
+}
+
+/// A catalog or schema node: its label links to its page, and it opens
+/// when the page shown is in it.
+#[component]
+fn Branch(
+    /// Whether the page shown is in the node.
+    here: Memo<bool>,
+    /// Whether the page shown is the node's own.
+    active: Signal<bool>,
+    href: String,
+    icon: AnyView,
+    label: String,
+    /// In the smaller font of the nodes under a catalog.
+    #[prop(optional)]
+    small: bool,
+    children: ChildrenFn,
+) -> impl IntoView {
+    let open = opens_with(here, false);
+    let class = if small {
+        "uc-tree__label uc-tree__label--sm"
+    } else {
+        "uc-tree__label"
+    };
+    view! {
         <li role="none">
-            <div class="uc-tree__row" class:is-active=active>
+            <div class="uc-tree__row" class:is-active=move || active.get()>
                 <Chevron open/>
                 <a
-                    class="uc-tree__label uc-tree__label--sm"
-                    class:is-active=active
+                    class=class
+                    class:is-active=move || active.get()
                     href=href
                     role="treeitem"
-                    aria-selected=move || active().to_string()
-                    aria-expanded=move || open.get().to_string()
+                    aria-selected=move || aria(active.get())
+                    aria-expanded=move || aria(open.get())
                     on:click=move |_| open.set(true)
                 >
-                    <Database class="uc-icon--schema"/>
+                    {icon}
                     <span class="uc-truncate">{label}</span>
                 </a>
             </div>
-            <Subtree open>
-                {Kind::ALL
-                    .into_iter()
-                    .map(|kind| {
-                        view! { <GroupNode kind catalog=catalog.clone() schema=schema.clone() route/> }
-                    })
-                    .collect_view()}
-            </Subtree>
+            <Subtree open>{children()}</Subtree>
         </li>
     }
 }
@@ -253,7 +163,7 @@ fn SchemaNode(catalog: String, schema: String, route: Memo<Route>) -> impl IntoV
 /// loaded.
 #[component]
 fn GroupNode(kind: Kind, catalog: String, schema: String, route: Memo<Route>) -> impl IntoView {
-    let route_open = {
+    let here = {
         let catalog = catalog.clone();
         let schema = schema.clone();
         Memo::new(move |_| {
@@ -262,12 +172,7 @@ fn GroupNode(kind: Kind, catalog: String, schema: String, route: Memo<Route>) ->
             })
         })
     };
-    let open = RwSignal::new(kind == Kind::Tables || route_open.get_untracked());
-    Effect::new(move |_| {
-        if route_open.get() {
-            open.set(true);
-        }
-    });
+    let open = opens_with(here, kind == Kind::Tables);
     let count: RwSignal<Option<usize>> = RwSignal::new(None);
     let title = move || match count.get() {
         Some(n) => format!("{} ({n})", kind.label()),
@@ -281,7 +186,7 @@ fn GroupNode(kind: Kind, catalog: String, schema: String, route: Memo<Route>) ->
                     type="button"
                     class="uc-tree__label uc-tree__label--sm uc-tree__label--group"
                     role="treeitem"
-                    aria-expanded=move || open.get().to_string()
+                    aria-expanded=move || aria(open.get())
                     on:click=move |_| open.update(|open| *open = !*open)
                 >
                     {kind.icon()}
@@ -318,10 +223,18 @@ fn EntryNodes(
             count.set(n);
         }
     });
-    let in_schema = {
+    // The object of this group whose page shows, if any.
+    let selected = {
         let catalog = catalog.clone();
         let schema = schema.clone();
-        move |r: &Route| r.in_schema(&catalog, &schema)
+        Memo::new(move |_| {
+            route.with(|r| match &r.object {
+                Some((k, name)) if *k == kind && r.in_schema(&catalog, &schema) => {
+                    Some(name.clone())
+                }
+                _ => None,
+            })
+        })
     };
     view! {
         <Names
@@ -329,16 +242,9 @@ fn EntryNodes(
             empty="None"
             node=Callback::new(move |name: String| {
                 let href = kind.href(&catalog, &schema, &name);
-                let in_schema = in_schema.clone();
                 let active = {
                     let name = name.clone();
-                    Memo::new(move |_| {
-                        route
-                            .with(|r| {
-                                in_schema(r)
-                                    && r.object.as_ref().is_some_and(|(k, n)| *k == kind && *n == name)
-                            })
-                    })
+                    Signal::derive(move || selected.with(|s| s.as_deref() == Some(name.as_str())))
                 };
                 view! {
                     <li role="none">
@@ -348,7 +254,7 @@ fn EntryNodes(
                                 class:is-active=move || active.get()
                                 href=href
                                 role="treeitem"
-                                aria-selected=move || active.get().to_string()
+                                aria-selected=move || aria(active.get())
                             >
                                 {kind.icon()}
                                 <span class="uc-truncate">{name}</span>
@@ -360,6 +266,23 @@ fn EntryNodes(
             })
         />
     }
+}
+
+/// Whether a node is open: at first when `at_first` or when the page shown
+/// is in it (`here`), and again whenever the page shown comes into it.
+fn opens_with(here: Memo<bool>, at_first: bool) -> RwSignal<bool> {
+    let open = RwSignal::new(at_first || here.get_untracked());
+    Effect::new(move |_| {
+        if here.get() {
+            open.set(true);
+        }
+    });
+    open
+}
+
+/// An ARIA state, as its attribute's text.
+fn aria(state: bool) -> &'static str {
+    if state { "true" } else { "false" }
 }
 
 /// The button that opens and closes a node. The arrow keys do the same,
@@ -407,12 +330,12 @@ fn Names(
     let is_empty = move || names.with(|names| names.ready().is_some_and(Vec::is_empty));
     let each = move || names.with(|names| names.ready().cloned().unwrap_or_default());
     move || match stage.get() {
-        Stage::Loading => note("Loading…".into(), false),
-        Stage::Failed(message) => note(message, true),
+        Stage::Loading => note("Loading…".into(), "uc-tree__note"),
+        Stage::Failed(message) => note(message, "uc-tree__note uc-tree__note--error"),
         Stage::Ready => {
             let empty = empty.clone();
             view! {
-                <Show when=is_empty>{note(empty.clone(), false)}</Show>
+                <Show when=is_empty>{note(empty.clone(), "uc-tree__note")}</Show>
                 <For each key=|name| name.clone() children=move |name| node.run(name)/>
             }
             .into_any()
@@ -420,12 +343,7 @@ fn Names(
     }
 }
 
-fn note(text: String, error: bool) -> AnyView {
-    let class = if error {
-        "uc-tree__note uc-tree__note--error"
-    } else {
-        "uc-tree__note"
-    };
+fn note(text: String, class: &'static str) -> AnyView {
     view! { <li class=class role="none">{text}</li> }.into_any()
 }
 
@@ -509,33 +427,4 @@ fn parent_label(label: &HtmlElement) -> Option<HtmlElement> {
         .ok()??
         .dyn_into::<HtmlElement>()
         .ok()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Route;
-    use crate::kind::Kind;
-
-    #[test]
-    fn routes_name_the_objects() {
-        assert_eq!(Route::parse("/"), Route::default());
-        assert_eq!(Route::parse("/settings/other"), Route::default());
-        let route = Route::parse("/catalog/unity");
-        assert_eq!(route.catalog.as_deref(), Some("unity"));
-        assert_eq!(route.schema, None);
-        let route = Route::parse("/catalog/unity/default/table/marksheet");
-        assert_eq!(route.schema.as_deref(), Some("default"));
-        assert_eq!(route.object, Some((Kind::Tables, "marksheet".into())));
-        let route = Route::parse("/catalog/unity/default/model/iris/version/2");
-        assert_eq!(route.object, Some((Kind::Models, "iris".into())));
-        assert_eq!(route.version.as_deref(), Some("2"));
-        let route = Route::parse("/catalog/unity/default/view/x");
-        assert_eq!(route.object, None);
-        let route = Route::parse("/settings/tokens");
-        assert_eq!(route.page, Some("Access tokens"));
-        assert_eq!(route.catalog, None);
-        let route = Route::parse("/catalog/caf%C3%A9%20bar/a%2Fb");
-        assert_eq!(route.catalog.as_deref(), Some("café bar"));
-        assert_eq!(route.schema.as_deref(), Some("a/b"));
-    }
 }

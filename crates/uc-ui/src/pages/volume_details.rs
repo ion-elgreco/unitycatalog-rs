@@ -6,12 +6,11 @@ use uc_api::{UpdateVolumeRequestContent, VolumeInfo};
 use uc_common::{SecurableType, three_part_full_name, wire_name};
 
 use crate::api;
-use crate::auth::use_auth;
+use crate::auth::use_manages;
 use crate::components::edit_modal::Changes;
-use crate::components::icons::{HardDrive, Trash2};
 use crate::components::{
-    Card, CredentialsCard, DeleteModal, DescriptionCard, EditMetadata, EntityHeader, Loaded,
-    MetaGrid, MetaRow, PermissionsCard, RawJsonCard, Tab, Tabs, Vendable,
+    CredentialsCard, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata,
+    EntityHeader, Loaded, MetaRow, PermissionsCard, Tabs, Vendable,
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
@@ -35,14 +34,9 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
         async move { api::client().get_volume(&full_name).await }
     });
     let cache = use_cache();
-    let auth = use_auth();
-    let tab = RwSignal::new(Tab::Overview);
     let delete_open = RwSignal::new(false);
     let owner = field(info, |v: &VolumeInfo| v.owner.clone());
-    let manages = Memo::new(move |_| {
-        auth.session
-            .with(|s| owner.with(|o| s.manages(o.as_deref())))
-    });
+    let manages = use_manages(owner);
     let comment = field(info, |v: &VolumeInfo| v.comment.clone().unwrap_or_default());
     let badges = field(info, |v: &VolumeInfo| {
         let mut badges: Vec<String> = v.volume_type.as_ref().map(wire_name).into_iter().collect();
@@ -51,18 +45,6 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
     });
     let volume_id = field(info, |v: &VolumeInfo| v.volume_id.clone());
 
-    let save_comment = move |comment: String| {
-        let (_, _, full_name) = names.get_value();
-        async move {
-            let request = UpdateVolumeRequestContent {
-                comment: Some(comment),
-                new_name: None,
-            };
-            let updated = api::client().update_volume(&full_name, &request).await?;
-            cache.set(Key::Volume(full_name), updated);
-            Ok(())
-        }
-    };
     let save_metadata = move |changes: Changes| {
         let (catalog, schema, full_name) = names.get_value();
         async move {
@@ -71,76 +53,59 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
                 new_name: changes.new_name.clone(),
             };
             let updated = api::client().update_volume(&full_name, &request).await?;
-            match changes.new_name {
-                Some(new_name) => {
-                    cache.forget(Key::Volume(full_name));
-                    cache.changed(Key::Entries(catalog.clone(), schema.clone(), Kind::Volumes));
-                    cache.set(
-                        Key::Volume(three_part_full_name(&catalog, &schema, &new_name)),
-                        updated,
-                    );
-                    Ok(Some(Kind::Volumes.href(&catalog, &schema, &new_name)))
-                }
-                None => {
-                    cache.set(Key::Volume(full_name), updated);
-                    Ok(None)
-                }
-            }
+            let page = changes
+                .new_name
+                .as_deref()
+                .map(|new_name| Kind::Volumes.href(&catalog, &schema, new_name));
+            let renamed = changes.new_name.map(|new_name| {
+                (
+                    Key::Volume(three_part_full_name(&catalog, &schema, &new_name)),
+                    Key::Entries(catalog.clone(), schema.clone(), Kind::Volumes),
+                )
+            });
+            cache.edited(Key::Volume(full_name), updated, renamed);
+            Ok(page)
         }
+    };
+    let save_comment = move |comment: String| {
+        let saving = save_metadata(Changes {
+            new_name: None,
+            comment: Some(comment),
+        });
+        async move { saving.await.map(|_| ()) }
     };
     let refresh = Callback::new(move |_| {
         let (_, _, full_name) = names.get_value();
         cache.changed(Key::Volume(full_name));
     });
 
-    let actions = view! {
-        <EditMetadata name=volume.clone() comment noun="volume" save=save_metadata/>
-        <Show when=move || manages.get()>
-            <button
-                type="button"
-                class="uc-btn uc-btn--destructive uc-btn--sm"
-                on:click=move |_| delete_open.set(true)
-            >
-                <Trash2/>
-                "Delete"
-            </button>
-        </Show>
-    }
-    .into_any();
-
-    let content = move || match tab.get() {
-        Tab::Overview => {
-            view! { <DescriptionCard comment noun="volume" save=save_comment/> }.into_any()
-        }
-        Tab::Details => view! {
-            <Card>
-                <MetaGrid rows=field(info, volume_rows)/>
-            </Card>
-            <RawJsonCard json=field(info, pretty_json)/>
-        }
-        .into_any(),
-        Tab::Permissions => {
-            let (_, _, full_name) = names.get_value();
-            view! {
-                <CredentialsCard kind=Vendable::Volume id=volume_id/>
-                <PermissionsCard kind=SecurableType::Volume full_name owner/>
-            }
-            .into_any()
-        }
-    };
-
     view! {
         <EntityHeader
-            icon=view! { <HardDrive class="uc-icon--volume"/> }.into_any()
+            icon=Kind::Volumes.icon()
             name=full_name.clone()
             badges
             on_refresh=refresh
-            actions
+            actions=view! {
+                <EditMetadata name=volume.clone() comment noun="volume" save=save_metadata/>
+                <DeleteButton open=delete_open when=manages/>
+            }
+                .into_any()
         />
         <div class="uc-page">
             <Loaded state=info>
-                <Tabs tab/>
-                {content}
+                <Tabs
+                    overview=move || view! { <DescriptionCard comment noun="volume" save=save_comment/> }
+                    details=move || {
+                        view! { <DetailsTab rows=field(info, volume_rows) json=field(info, pretty_json)/> }
+                    }
+                    permissions=move || {
+                        let (_, _, full_name) = names.get_value();
+                        view! {
+                            <CredentialsCard kind=Vendable::Volume id=volume_id/>
+                            <PermissionsCard kind=SecurableType::Volume full_name owner/>
+                        }
+                    }
+                />
             </Loaded>
         </div>
         <DeleteModal

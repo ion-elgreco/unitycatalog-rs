@@ -5,28 +5,25 @@ use leptos::prelude::*;
 use uc_api::{CatalogInfo, CreateCatalog};
 
 use crate::api;
-use crate::components::icons::{Notebook, Plus};
-use crate::components::{CreateModal, LoadError, LoadingBlock, NewObject};
-use crate::kind::catalog_href;
-use crate::load::{Key, Load, use_load};
-use crate::util::format_timestamp;
+use crate::components::icons::Plus;
+use crate::components::{CreateModal, NewObject, loaded_list};
+use crate::kind::catalog_icon;
+use crate::load::{Key, use_load};
+use crate::util::{catalog_href, format_timestamp};
 
 #[component]
 pub fn CatalogsList() -> impl IntoView {
     let catalogs = use_load(Key::Catalogs, api::catalogs);
     let create_open = RwSignal::new(false);
-    let cards = move || match catalogs.get() {
-        Load::Loading => view! { <LoadingBlock/> }.into_any(),
-        Load::Failed(message) => view! { <LoadError message/> }.into_any(),
-        Load::Ready(list) if list.is_empty() => {
-            view! { <p class="uc-empty">"No catalogs yet."</p> }.into_any()
-        }
-        Load::Ready(list) => view! {
-            <div class="uc-grid">
-                {list.into_iter().map(|c| view! { <CatalogCard catalog=c/> }).collect_view()}
-            </div>
-        }
-        .into_any(),
+    let cards = move || {
+        loaded_list(catalogs.get(), "No catalogs yet.", |list| {
+            view! {
+                <div class="uc-grid">
+                    {list.into_iter().map(|c| view! { <CatalogCard catalog=c/> }).collect_view()}
+                </div>
+            }
+            .into_any()
+        })
     };
     view! {
         <div class="uc-page">
@@ -41,7 +38,6 @@ pub fn CatalogsList() -> impl IntoView {
             <CreateModal
                 open=create_open
                 noun="catalog"
-                location="Storage root"
                 create=|form: NewObject| async move {
                     let request = CreateCatalog {
                         name: form.name,
@@ -66,7 +62,7 @@ fn CatalogCard(catalog: CatalogInfo) -> impl IntoView {
     view! {
         <a class="uc-card uc-card--link" href=href>
             <span class="uc-card__name">
-                <Notebook class="uc-icon--catalog"/>
+                {catalog_icon()}
                 <span class="uc-truncate">{name}</span>
             </span>
             {catalog

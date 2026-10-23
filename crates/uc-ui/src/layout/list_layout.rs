@@ -31,10 +31,6 @@ const SIZE_CHOICE_ABOVE: usize = 50;
 pub fn ListLayout<T>(
     #[prop(into)] data: Signal<Load<Vec<T>>>,
     columns: Vec<Column<T>>,
-    /// The clicked row.
-    #[prop(into, optional)]
-    on_row_click: Option<Callback<T>>,
-    #[prop(default = true)] show_search: bool,
     /// What the table says when it has no rows.
     #[prop(default = "No data.")]
     empty: &'static str,
@@ -74,7 +70,6 @@ where
         page.get().min(pages - 1)
     });
 
-    let clickable = on_row_click.is_some();
     let table = move || {
         let columns = columns.clone();
         let header = columns
@@ -108,25 +103,14 @@ where
                         .iter()
                         .map(|c| view! { <td>{(c.render)(&row)}</td> })
                         .collect_view();
-                    view! {
-                        <tr on:click=move |_| {
-                            if let Some(on_row_click) = on_row_click {
-                                on_row_click.run(row.clone());
-                            }
-                        }>{cells}</tr>
-                    }
+                    view! { <tr>{cells}</tr> }
                 })
                 .collect_view()
                 .into_any()
         };
-        let class = if clickable {
-            "uc-table uc-table--clickable"
-        } else {
-            "uc-table"
-        };
         view! {
             <div class="uc-table-wrap">
-                <table class=class>
+                <table class="uc-table">
                     <thead>
                         <tr>{header}</tr>
                     </thead>
@@ -137,8 +121,8 @@ where
         }
     };
 
-    let search = show_search.then(|| {
-        view! {
+    view! {
+        <div class="uc-stack">
             <div class="uc-search">
                 <Search/>
                 <input
@@ -152,12 +136,6 @@ where
                     }
                 />
             </div>
-        }
-    });
-
-    view! {
-        <div class="uc-stack">
-            {search}
             {move || match stage.get() {
                 Stage::Loading => view! { <LoadingBlock/> }.into_any(),
                 Stage::Failed(message) => view! { <LoadError message/> }.into_any(),

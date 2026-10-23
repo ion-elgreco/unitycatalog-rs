@@ -7,6 +7,23 @@ use uc_common::SecurablePropertiesMap;
 
 use super::card::Card;
 
+/// The Details tab: the grid, the properties of an object that has them,
+/// and the raw JSON.
+#[component]
+pub fn DetailsTab(
+    #[prop(into)] rows: Signal<Vec<MetaRow>>,
+    #[prop(into, optional)] properties: Option<Signal<Vec<(String, String)>>>,
+    #[prop(into)] json: Signal<String>,
+) -> impl IntoView {
+    view! {
+        <Card>
+            <MetaGrid rows/>
+        </Card>
+        {properties.map(|properties| view! { <PropertiesCard properties/> })}
+        <RawJsonCard json/>
+    }
+}
+
 /// One row of the grid.
 #[derive(Clone, PartialEq)]
 pub struct MetaRow {

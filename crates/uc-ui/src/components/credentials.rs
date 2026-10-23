@@ -219,14 +219,15 @@ fn Secret(value: String) -> impl IntoView {
             false => "•".repeat(24),
         }
     };
+    let toggle = move || if shown.get() { "Hide" } else { "Show" };
     view! {
         <div class="uc-secret">
             <code>{text}</code>
             <button
                 type="button"
                 class="uc-btn uc-btn--ghost uc-btn--icon uc-btn--xs"
-                title=move || if shown.get() { "Hide" } else { "Show" }
-                aria-label=move || if shown.get() { "Hide" } else { "Show" }
+                title=toggle
+                aria-label=toggle
                 on:click=move |_| shown.update(|s| *s = !*s)
             >
                 <Show when=move || shown.get() fallback=|| view! { <Eye/> }>
@@ -240,7 +241,7 @@ fn Secret(value: String) -> impl IntoView {
 
 /// Copies `value`, and says so in a toast.
 #[component]
-pub fn CopyButton(value: String) -> impl IntoView {
+fn CopyButton(value: String) -> impl IntoView {
     let notify = use_notify();
     let copy = move |_| {
         let value = value.clone();

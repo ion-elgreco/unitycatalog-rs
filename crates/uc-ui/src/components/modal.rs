@@ -32,9 +32,6 @@ pub fn Modal(
     /// The title: a text, or a closure for one that changes.
     #[prop(into)]
     title: TextProp,
-    /// A line under the title.
-    #[prop(into, optional)]
-    description: Option<String>,
     ok_text: &'static str,
     /// A red title and a red OK button, for deletes.
     #[prop(optional)]
@@ -55,7 +52,6 @@ pub fn Modal(
         <Show when=move || open.try_get().unwrap_or(false)>
             <Dialog
                 title=title.clone()
-                description=description.clone()
                 ok_text
                 danger
                 busy
@@ -72,7 +68,6 @@ pub fn Modal(
 #[component]
 fn Dialog(
     title: TextProp,
-    description: Option<String>,
     ok_text: &'static str,
     danger: bool,
     busy: Signal<bool>,
@@ -148,10 +143,7 @@ fn Dialog(
                 on:keydown=move |e| keep_tab_inside(&e, panel)
             >
                 <div class="uc-dialog__head">
-                    <div>
-                        <h2 class="uc-dialog__title">{move || title.get()}</h2>
-                        {description.map(|text| view! { <p class="uc-muted">{text}</p> })}
-                    </div>
+                    <h2 class="uc-dialog__title">{move || title.get()}</h2>
                     <button
                         type="button"
                         class="uc-btn uc-btn--ghost uc-btn--icon uc-btn--sm"
