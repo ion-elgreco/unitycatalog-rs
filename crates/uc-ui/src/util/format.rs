@@ -1,38 +1,34 @@
-use js_sys::{Array, Date, Function, Intl, Object, Reflect};
+use js_sys::Date;
 use uc_common::EpochMillis;
 use wasm_bindgen::JsValue;
 
-thread_local! {
-    /// Upstream's `Intl.DateTimeFormat`, made once.
-    static FORMAT: Function = {
-        let options = Object::new();
-        for (key, value) in [
-            ("year", "numeric"),
-            ("month", "2-digit"),
-            ("day", "2-digit"),
-            ("hour", "2-digit"),
-            ("minute", "2-digit"),
-            ("second", "2-digit"),
-        ] {
-            let _ = Reflect::set(&options, &key.into(), &value.into());
-        }
-        let _ = Reflect::set(&options, &"hour12".into(), &false.into());
-        let locales = Array::of1(&"en-US".into());
-        Intl::DateTimeFormat::new(&locales, &options).format()
-    };
+/// The browser's language, for the dates.
+fn language() -> String {
+    web_sys::window()
+        .and_then(|w| w.navigator().language())
+        .unwrap_or_else(|| "en-US".into())
 }
 
-/// Upstream's `formatTimestamp`: an epoch-millis time in the browser's
-/// time zone, as `en-US` numbers, such as `10/15/2026, 17:27:41`. Empty for
-/// a missing value, as upstream's pages show it.
+/// The console's `formatTimestamp`: `Date.toLocaleString()`, such as
+/// `6/5/2026, 7:14:51 PM`. A dash for a missing value, as the console's
+/// pages show it.
 pub fn format_timestamp(value: Option<EpochMillis>) -> String {
     let Some(ms) = value else {
-        return String::new();
+        return "—".into();
     };
     let date = Date::new(&JsValue::from_f64(ms as f64));
-    FORMAT
-        .with(|format| format.call1(&JsValue::NULL, &date))
-        .ok()
-        .and_then(|text| text.as_string())
-        .unwrap_or_default()
+    String::from(date.to_locale_string(&language(), &JsValue::UNDEFINED))
+}
+
+/// `value`, else a dash.
+pub fn or_dash(value: Option<String>) -> String {
+    match value {
+        Some(value) if !value.is_empty() => value,
+        _ => "—".into(),
+    }
+}
+
+/// An object as the server sent it, for the "Raw JSON" card.
+pub fn pretty_json<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_default()
 }

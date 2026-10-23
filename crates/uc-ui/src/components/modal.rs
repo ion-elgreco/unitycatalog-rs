@@ -1,19 +1,19 @@
-//! A modal dialog, as antd's `Modal`: a title, a close button, a body,
-//! Cancel and OK. Escape, the close button, Cancel and a click on the
-//! backdrop close it; Enter in a field submits it, as the forms in
-//! upstream's modals do. As antd's, it takes the focus when it opens, keeps
-//! Tab inside, and gives the focus back when it closes. A modal can open
-//! over another: Escape closes the top one.
+//! A dialog, as the console's `EntityFormDialog`: a title, a close button,
+//! a body, Cancel and OK. Escape, the close button, Cancel and a click on
+//! the backdrop close it; Enter in a field submits it. It takes the focus
+//! when it opens, keeps Tab inside, and gives the focus back when it
+//! closes. A dialog can open over another: Escape closes the top one.
 
 use std::cell::{Cell, RefCell};
 
 use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
+use leptos::text_prop::TextProp;
 use wasm_bindgen::JsCast;
 use web_sys::{Element, HtmlElement};
 
-use super::icons::{CloseOutlined, LoadingOutlined};
+use super::icons::{LoaderCircle, X};
 
 /// What takes the focus in a dialog, for Tab.
 const FOCUSABLE: &str = "button:not([disabled]), input:not([disabled]), \
@@ -29,7 +29,12 @@ thread_local! {
 #[component]
 pub fn Modal(
     #[prop(into)] open: Signal<bool>,
-    #[prop(into)] title: String,
+    /// The title: a text, or a closure for one that changes.
+    #[prop(into)]
+    title: TextProp,
+    /// A line under the title.
+    #[prop(into, optional)]
+    description: Option<String>,
     ok_text: &'static str,
     /// A red title and a red OK button, for deletes.
     #[prop(optional)]
@@ -50,6 +55,7 @@ pub fn Modal(
         <Show when=move || open.try_get().unwrap_or(false)>
             <Dialog
                 title=title.clone()
+                description=description.clone()
                 ok_text
                 danger
                 busy
@@ -62,10 +68,11 @@ pub fn Modal(
     }
 }
 
-/// The open modal. It listens for Escape while it is open.
+/// The open dialog. It listens for Escape while it is open.
 #[component]
 fn Dialog(
-    title: String,
+    title: TextProp,
+    description: Option<String>,
     ok_text: &'static str,
     danger: bool,
     busy: Signal<bool>,
@@ -102,11 +109,11 @@ fn Dialog(
         }
     });
     // A press of the main button on the backdrop closes the dialog when it
-    // ends, as a click on antd's mask does. A press in the dialog, such as
-    // a text selection that ends on the backdrop, does not. The backdrop
-    // has no click handler: Leptos 0.7 drops the handlers of a closed
-    // dialog but leaves them on its elements, and the click on Cancel or ×
-    // that closes the dialog goes on up to the backdrop.
+    // ends. A press in the dialog, such as a text selection that ends on
+    // the backdrop, does not. The backdrop has no click handler: Leptos 0.7
+    // drops the handlers of a closed dialog but leaves them on its
+    // elements, and the click on Cancel or × that closes the dialog goes on
+    // up to the backdrop.
     let pressed_on_backdrop = StoredValue::new(false);
     let submit = move |e: ev::SubmitEvent| {
         e.prevent_default();
@@ -114,14 +121,14 @@ fn Dialog(
             on_ok.run(());
         }
     };
-    let (title_class, ok_class) = if danger {
-        ("uc-title-4 uc-text-danger", "uc-btn uc-btn--danger")
+    let (panel_class, ok_class) = if danger {
+        ("uc-dialog uc-dialog--danger", "uc-btn uc-btn--destructive")
     } else {
-        ("uc-title-4", "uc-btn uc-btn--primary")
+        ("uc-dialog", "uc-btn")
     };
     view! {
         <div
-            class="uc-modal-backdrop"
+            class="uc-dialog-backdrop"
             on:mousedown=move |e| {
                 pressed_on_backdrop.set_value(e.button() == 0 && e.target() == e.current_target())
             }
@@ -133,39 +140,43 @@ fn Dialog(
         >
             <form
                 node_ref=panel
-                class="uc-modal"
+                class=panel_class
                 role="dialog"
                 aria-modal="true"
                 tabindex="-1"
                 on:submit=submit
                 on:keydown=move |e| keep_tab_inside(&e, panel)
             >
-                <button
-                    type="button"
-                    class="uc-modal__close"
-                    aria-label="Close"
-                    on:click=move |_| on_cancel.run(())
-                >
-                    <CloseOutlined/>
-                </button>
-                <div class="uc-modal__header">
-                    <h4 class=title_class>{title}</h4>
+                <div class="uc-dialog__head">
+                    <div>
+                        <h2 class="uc-dialog__title">{move || title.get()}</h2>
+                        {description.map(|text| view! { <p class="uc-muted">{text}</p> })}
+                    </div>
+                    <button
+                        type="button"
+                        class="uc-btn uc-btn--ghost uc-btn--icon uc-btn--sm"
+                        aria-label="Close"
+                        on:click=move |_| on_cancel.run(())
+                    >
+                        <X/>
+                    </button>
                 </div>
-                <div class="uc-modal__body">{content()}</div>
-                <div class="uc-modal__footer">
-                    <button type="button" class="uc-btn" on:click=move |_| on_cancel.run(())>
+                <div class="uc-dialog__body">{content()}</div>
+                <div class="uc-dialog__foot">
+                    <button
+                        type="button"
+                        class="uc-btn uc-btn--outline"
+                        on:click=move |_| on_cancel.run(())
+                    >
                         "Cancel"
                     </button>
                     <button
                         type="submit"
                         class=ok_class
-                        class:uc-btn--loading=move || busy.get()
-                        disabled=move || disabled.get()
+                        disabled=move || disabled.get() || busy.get()
                     >
                         <Show when=move || busy.get()>
-                            <span class="uc-spin-icon">
-                                <LoadingOutlined/>
-                            </span>
+                            <LoaderCircle class="uc-spin"/>
                         </Show>
                         <span>{ok_text}</span>
                     </button>
@@ -176,7 +187,7 @@ fn Dialog(
 }
 
 /// Tab from the last control goes to the first, and Shift+Tab from the
-/// first to the last, as antd's focus trap.
+/// first to the last.
 fn keep_tab_inside(e: &ev::KeyboardEvent, panel: NodeRef<html::Form>) {
     if e.key() != "Tab" {
         return;

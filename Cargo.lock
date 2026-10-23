@@ -7816,6 +7816,7 @@ dependencies = [
  "js-sys",
  "leptos",
  "leptos_router",
+ "serde",
  "serde_json",
  "uc-api",
  "uc-client",

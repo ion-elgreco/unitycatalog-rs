@@ -9,11 +9,12 @@ use std::cmp::Reverse;
 use std::future::Future;
 
 use uc_api::{
-    CatalogInfo, FunctionInfo, ModelVersionInfo, PatInfo, RegisteredModelInfo, SchemaInfo,
-    TableInfo, VolumeInfo,
+    CatalogInfo, FunctionInfo, ModelVersionInfo, PatInfo, PermissionsChange, PermissionsList,
+    Privilege, PrivilegeAssignment, RegisteredModelInfo, SchemaInfo, TableInfo, UpdatePermissions,
+    VolumeInfo,
 };
 use uc_client::{API_BASE, Client, Page};
-use uc_common::PageToken;
+use uc_common::{PageToken, SecurableType};
 
 pub use uc_client::{Error, Result};
 
@@ -128,6 +129,36 @@ pub async fn model_versions(full_name: &str) -> Result<Vec<ModelVersionInfo>> {
         Ok((list.model_versions, list.next_page_token))
     })
     .await
+}
+
+/// The grants on a securable, by principal, as the server lets the caller
+/// see them: all of them for the admin and the owners, else the caller's
+/// own.
+pub async fn permissions(kind: SecurableType, full_name: &str) -> Result<Vec<PrivilegeAssignment>> {
+    let list = client().get_permissions(kind, full_name, None).await?;
+    Ok(list.privilege_assignments)
+}
+
+/// Grant or revoke one privilege: the grants afterwards.
+pub async fn change_permission(
+    kind: SecurableType,
+    full_name: &str,
+    principal: String,
+    privilege: Privilege,
+    grant: bool,
+) -> Result<PermissionsList> {
+    let (add, remove) = match grant {
+        true => (vec![privilege], Vec::new()),
+        false => (Vec::new(), vec![privilege]),
+    };
+    let request = UpdatePermissions {
+        changes: vec![PermissionsChange {
+            principal,
+            add,
+            remove,
+        }],
+    };
+    client().update_permissions(kind, full_name, &request).await
 }
 
 /// The signed-in user's access tokens, the newest first.

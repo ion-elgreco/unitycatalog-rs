@@ -1,9 +1,8 @@
-//! A view's content once its data is loaded: before, a spinner; after a
-//! failure, the server's message.
+//! A view's content once its data is loaded: before, a skeleton, as the
+//! console's `QueryState`; after a failure, the server's message.
 
 use leptos::prelude::*;
 
-use super::spinner::LoadingBlock;
 use crate::load::Load;
 
 /// How far a load is, without its value.
@@ -39,7 +38,18 @@ where
     }
 }
 
+/// The console's skeleton: a short bar and a block that pulse.
+#[component]
+pub fn LoadingBlock() -> impl IntoView {
+    view! {
+        <div class="uc-skeleton" role="status" aria-label="Loading">
+            <div class="uc-skeleton__bar"></div>
+            <div class="uc-skeleton__bar uc-skeleton__bar--block"></div>
+        </div>
+    }
+}
+
 #[component]
 pub fn LoadError(message: String) -> impl IntoView {
-    view! { <div class="uc-load-error">{message}</div> }
+    view! { <p class="uc-error" role="alert">{message}</p> }
 }

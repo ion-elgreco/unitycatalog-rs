@@ -1,4 +1,5 @@
-//! The root component: the router, the notifications and the shell.
+//! The root component: the router, the toasts and the shell. The routes
+//! are the console's (`web/src/routes`), with the access tokens page added.
 
 use leptos::prelude::*;
 use leptos_router::components::{ParentRoute, Route, Router, Routes};
@@ -12,9 +13,11 @@ use crate::pages::{
     AccessTokens, CatalogDetails, CatalogsList, FunctionDetails, Login, ModelDetails,
     ModelVersionDetails, SchemaDetails, TableDetails, VolumeDetails,
 };
+use crate::theme::provide_theme;
 
 #[component]
 pub fn App() -> impl IntoView {
+    provide_theme();
     provide_notifications();
     provide_cache();
     provide_auth();
@@ -22,17 +25,17 @@ pub fn App() -> impl IntoView {
     view! {
         <Router>
             <Notifications/>
-            <Routes fallback=|| view! { <div style="padding:24px;">"Page not found."</div> }>
+            <Routes fallback=|| view! { <div class="uc-page">"Page not found."</div> }>
                 <Route path=path!("/login") view=Login/>
                 <ParentRoute path=path!("/") view=Shell>
                     <Route path=path!("") view=CatalogsList/>
-                    <Route path=path!("data/:catalog") view=CatalogDetails/>
-                    <Route path=path!("data/:catalog/:schema") view=SchemaDetails/>
-                    <Route path=path!("data/:catalog/:schema/:table") view=TableDetails/>
-                    <Route path=path!("volumes/:catalog/:schema/:volume") view=VolumeDetails/>
-                    <Route path=path!("functions/:catalog/:schema/:function") view=FunctionDetails/>
-                    <Route path=path!("models/:catalog/:schema/:model") view=ModelDetails/>
-                    <Route path=path!("models/:catalog/:schema/:model/versions/:version") view=ModelVersionDetails/>
+                    <Route path=path!("catalog/:catalog") view=CatalogDetails/>
+                    <Route path=path!("catalog/:catalog/:schema") view=SchemaDetails/>
+                    <Route path=path!("catalog/:catalog/:schema/table/:table") view=TableDetails/>
+                    <Route path=path!("catalog/:catalog/:schema/volume/:volume") view=VolumeDetails/>
+                    <Route path=path!("catalog/:catalog/:schema/function/:function") view=FunctionDetails/>
+                    <Route path=path!("catalog/:catalog/:schema/model/:model") view=ModelDetails/>
+                    <Route path=path!("catalog/:catalog/:schema/model/:model/version/:version") view=ModelVersionDetails/>
                     <Route path=path!("settings/tokens") view=AccessTokens/>
                 </ParentRoute>
             </Routes>

@@ -103,6 +103,22 @@ impl Session {
         }
     }
 
+    /// The signed-in user's principal, as the server names owners and
+    /// grantees: their email.
+    pub fn principal(&self) -> Option<&str> {
+        self.user().map(|user| user.user_name.as_str())
+    }
+
+    /// Whether the user may manage `owner`'s object: its owner, or an
+    /// admin. Without a user, authorization is off.
+    pub fn manages(&self, owner: Option<&str>) -> bool {
+        match self {
+            Session::User(user) => user.is_admin() || owner == Some(user.user_name.as_str()),
+            Session::Anonymous => true,
+            Session::Unknown | Session::SignedOut | Session::Denied(_) => false,
+        }
+    }
+
     /// Whether the server lets the user do what the metastore admin does:
     /// `/scim2/Me` names the role `admin`. Without a user, authorization is
     /// off, and the server lets everyone.

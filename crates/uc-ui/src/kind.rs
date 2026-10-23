@@ -1,14 +1,12 @@
 //! What a schema holds: tables, volumes, functions and registered models.
-//! They are the tabs of the schema page and the rows under a schema in the
-//! sidebar.
+//! They are the groups under a schema in the tree and the picker on the
+//! schema page.
 
 use leptos::prelude::*;
-use uc_common::EpochMillis;
+use uc_common::{EpochMillis, SecurableType};
 
 use crate::api;
-use crate::components::icons::{
-    DeploymentUnitOutlined, FolderOutlined, FunctionOutlined, TableOutlined,
-};
+use crate::components::icons::{Box, FunctionSquare, HardDrive, Table};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
@@ -22,6 +20,7 @@ pub enum Kind {
 #[derive(Clone, Debug)]
 pub struct Entry {
     pub name: String,
+    pub comment: Option<String>,
     pub created_at: Option<EpochMillis>,
 }
 
@@ -51,28 +50,63 @@ impl Kind {
         }
     }
 
-    pub fn icon(self) -> AnyView {
+    /// One object, such as "table".
+    pub fn noun(self) -> &'static str {
         match self {
-            Kind::Tables => view! { <TableOutlined/> }.into_any(),
-            Kind::Volumes => view! { <FolderOutlined/> }.into_any(),
-            Kind::Functions => view! { <FunctionOutlined/> }.into_any(),
-            Kind::Models => view! { <DeploymentUnitOutlined/> }.into_any(),
+            Kind::Tables => "table",
+            Kind::Volumes => "volume",
+            Kind::Functions => "function",
+            Kind::Models => "model",
         }
     }
 
-    /// The schema page, on this kind's tab.
+    /// The part of an object's URL that names its kind.
+    fn segment(self) -> &'static str {
+        match self {
+            Kind::Tables => "table",
+            Kind::Volumes => "volume",
+            Kind::Functions => "function",
+            Kind::Models => "model",
+        }
+    }
+
+    pub fn securable(self) -> SecurableType {
+        match self {
+            Kind::Tables => SecurableType::Table,
+            Kind::Volumes => SecurableType::Volume,
+            Kind::Functions => SecurableType::Function,
+            Kind::Models => SecurableType::RegisteredModel,
+        }
+    }
+
+    /// The class that colors the kind's icon.
+    pub fn color(self) -> &'static str {
+        match self {
+            Kind::Tables => "uc-icon--table",
+            Kind::Volumes => "uc-icon--volume",
+            Kind::Functions => "uc-icon--function",
+            Kind::Models => "uc-icon--model",
+        }
+    }
+
+    pub fn icon(self) -> AnyView {
+        let class = self.color();
+        match self {
+            Kind::Tables => view! { <Table class/> }.into_any(),
+            Kind::Volumes => view! { <HardDrive class/> }.into_any(),
+            Kind::Functions => view! { <FunctionSquare class/> }.into_any(),
+            Kind::Models => view! { <Box class/> }.into_any(),
+        }
+    }
+
+    /// The schema page, on this kind.
     pub fn tab_href(self, catalog: &str, schema: &str) -> String {
-        format!("/data/{catalog}/{schema}?tab={}", self.tab())
+        format!("/catalog/{catalog}/{schema}?tab={}", self.tab())
     }
 
     /// The page of the object `name` in `catalog.schema`.
     pub fn href(self, catalog: &str, schema: &str, name: &str) -> String {
-        match self {
-            Kind::Tables => format!("/data/{catalog}/{schema}/{name}"),
-            Kind::Volumes => format!("/volumes/{catalog}/{schema}/{name}"),
-            Kind::Functions => format!("/functions/{catalog}/{schema}/{name}"),
-            Kind::Models => format!("/models/{catalog}/{schema}/{name}"),
-        }
+        format!("/catalog/{catalog}/{schema}/{}/{name}", self.segment())
     }
 
     /// The objects of this kind in `catalog.schema`.
@@ -81,31 +115,42 @@ impl Kind {
             Kind::Tables => api::tables(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|t| entry(t.name, t.created_at))
+                .map(|t| entry(t.name, t.comment, t.created_at))
                 .collect(),
             Kind::Volumes => api::volumes(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|v| entry(v.name, v.created_at))
+                .map(|v| entry(v.name, v.comment, v.created_at))
                 .collect(),
             Kind::Functions => api::functions(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|f| entry(f.name, f.created_at))
+                .map(|f| entry(f.name, f.comment, f.created_at))
                 .collect(),
             Kind::Models => api::models(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|m| entry(m.name, m.created_at))
+                .map(|m| entry(m.name, m.comment, m.created_at))
                 .collect(),
         };
         Ok(entries)
     }
 }
 
-fn entry(name: Option<String>, created_at: Option<EpochMillis>) -> Entry {
+fn entry(name: Option<String>, comment: Option<String>, created_at: Option<EpochMillis>) -> Entry {
     Entry {
         name: name.unwrap_or_default(),
+        comment: comment.filter(|c| !c.is_empty()),
         created_at,
     }
+}
+
+/// The catalog page.
+pub fn catalog_href(catalog: &str) -> String {
+    format!("/catalog/{catalog}")
+}
+
+/// The schema page.
+pub fn schema_href(catalog: &str, schema: &str) -> String {
+    format!("/catalog/{catalog}/{schema}")
 }

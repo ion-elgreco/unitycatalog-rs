@@ -1,19 +1,21 @@
-//! A table's page, as upstream's `pages/TableDetails.tsx`: its description,
-//! its columns, its details and the action menu.
+//! A table's page, as the console's `TableDetails`: its description and
+//! columns, its details, its credentials and grants; "Delete".
 
 use leptos::prelude::*;
-use uc_api::{ColumnInfo, TableInfo};
-use uc_common::{three_part_full_name, wire_name};
+use uc_api::{TableInfo, UpdateTable};
+use uc_common::{SecurableType, three_part_full_name, wire_name};
 
 use crate::api;
-use crate::components::icons::TableOutlined;
+use crate::auth::use_auth;
+use crate::components::icons::{Table, Trash2};
 use crate::components::{
-    ActionDropdown, DeleteModal, Loaded, MenuIcon, MenuItem, MetadataList, MetadataRow,
+    Card, ColumnsCard, CredentialsCard, DeleteModal, DescriptionCard, EntityHeader, Loaded,
+    MetaGrid, MetaRow, PermissionsCard, PropertiesCard, RawJsonCard, Tab, Tabs, Vendable,
+    properties,
 };
 use crate::kind::Kind;
-use crate::layout::{Breadcrumb, Column, DetailsLayout, ListLayout};
-use crate::load::{Key, Load, field, use_load};
-use crate::util::{format_timestamp, route_params};
+use crate::load::{Key, field, use_cache, use_load};
+use crate::util::{format_timestamp, or_dash, pretty_json, route_params};
 
 #[component]
 pub fn TableDetails() -> impl IntoView {
@@ -27,143 +29,128 @@ pub fn TableDetails() -> impl IntoView {
 #[component]
 fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
     let full_name = three_part_full_name(&catalog, &schema, &table);
-    let info = use_load(Key::Table(full_name.clone()), {
-        let full_name = full_name.clone();
-        move || {
-            let full_name = full_name.clone();
-            async move { api::client().get_table(&full_name, false, false).await }
-        }
+    let name = StoredValue::new(full_name.clone());
+    let info = use_load(Key::Table(full_name.clone()), move || {
+        let full_name = name.get_value();
+        async move { api::client().get_table(&full_name, false, false).await }
     });
+    let cache = use_cache();
+    let auth = use_auth();
+    let tab = RwSignal::new(Tab::Overview);
     let delete_open = RwSignal::new(false);
+    let owner = field(info, |t: &TableInfo| t.owner.clone());
+    let manages = Memo::new(move |_| {
+        auth.session
+            .with(|s| owner.with(|o| s.manages(o.as_deref())))
+    });
+    let comment = field(info, |t: &TableInfo| t.comment.clone().unwrap_or_default());
+    let badges = field(info, |t: &TableInfo| {
+        [
+            t.table_type.as_ref().map(wire_name),
+            t.data_source_format.as_ref().map(wire_name),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+    });
+    let table_id = field(info, |t: &TableInfo| t.table_id.clone());
 
-    let modals = view! {
+    let save_comment = move |comment: String| {
+        let full_name = name.get_value();
+        async move {
+            let request = UpdateTable {
+                comment: Some(comment),
+                columns: Vec::new(),
+            };
+            let updated = api::client().update_table(&full_name, &request).await?;
+            cache.set(Key::Table(full_name), updated);
+            Ok(())
+        }
+    };
+    let refresh = Callback::new(move |_| cache.changed(Key::Table(name.get_value())));
+
+    let actions = view! {
+        <Show when=move || manages.get()>
+            <button
+                type="button"
+                class="uc-btn uc-btn--destructive uc-btn--sm"
+                on:click=move |_| delete_open.set(true)
+            >
+                <Trash2/>
+                "Delete"
+            </button>
+        </Show>
+    }
+    .into_any();
+
+    let content = move || {
+        match tab.get() {
+        Tab::Overview => view! {
+            <DescriptionCard comment noun="table" save=save_comment/>
+            <ColumnsCard info full_name=name.get_value()/>
+        }
+        .into_any(),
+        Tab::Details => view! {
+            <Card>
+                <MetaGrid rows=field(info, table_rows)/>
+            </Card>
+            <PropertiesCard properties=field(info, |t: &TableInfo| properties(t.properties.as_ref()))/>
+            <RawJsonCard json=field(info, pretty_json)/>
+        }
+        .into_any(),
+        Tab::Permissions => view! {
+            <CredentialsCard kind=Vendable::Table id=table_id/>
+            <PermissionsCard kind=SecurableType::Table full_name=name.get_value() owner/>
+        }
+        .into_any(),
+    }
+    };
+
+    view! {
+        <EntityHeader
+            icon=view! { <Table class="uc-icon--table"/> }.into_any()
+            name=full_name.clone()
+            badges
+            on_refresh=refresh
+            actions
+        />
+        <div class="uc-page">
+            <Loaded state=info>
+                <Tabs tab/>
+                {content}
+            </Loaded>
+        </div>
         <DeleteModal
             open=delete_open
             noun="table"
             question="Are you sure you want to delete the table"
             name=full_name.clone()
             label=format!("{table} table")
-            delete={
-                let full_name = full_name.clone();
-                move |_| {
-                    let full_name = full_name.clone();
-                    async move { api::client().delete_table(&full_name).await }
-                }
+            delete=move |_| {
+                let full_name = name.get_value();
+                async move { api::client().delete_table(&full_name).await }
             }
             key=Key::Table(full_name.clone())
             list=Key::Entries(catalog.clone(), schema.clone(), Kind::Tables)
             then=Kind::Tables.tab_href(&catalog, &schema)
         />
-    };
-
-    view! {
-        <DetailsLayout
-            title=view! {
-                <div class="uc-flex uc-justify-between uc-items-start uc-gap-md">
-                    <h3 class="uc-title-3">
-                        <TableOutlined/>
-                        " "
-                        {full_name.clone()}
-                    </h3>
-                    <Show when=move || info.with(|i| i.ready().is_some())>
-                        <ActionDropdown items=vec![
-                            MenuItem {
-                                label: "Delete Table",
-                                icon: MenuIcon::Delete,
-                                on_click: Callback::new(move |_| delete_open.set(true)),
-                            },
-                        ]/>
-                    </Show>
-                </div>
-            }
-                .into_any()
-            breadcrumbs=vec![
-                Breadcrumb::link("Catalogs", "/"),
-                Breadcrumb::link(catalog.clone(), format!("/data/{catalog}")),
-                Breadcrumb::link(schema.clone(), format!("/data/{catalog}/{schema}")),
-                Breadcrumb::current(table.clone()),
-            ]
-        >
-            <Loaded state=info>
-                <div class="uc-flex-col uc-gap-md">
-                    <div>
-                        <h5 class="uc-title-5">"Description"</h5>
-                        <div class="uc-text-secondary uc-pre-wrap">
-                            {field(info, |t: &TableInfo| t.comment.clone().unwrap_or_default())}
-                        </div>
-                    </div>
-                    <ListLayout
-                        title=view! { <h4 class="uc-title-4">"Columns"</h4> }.into_any()
-                        data=table_columns(info)
-                        columns=column_columns()
-                    />
-                </div>
-                <aside>
-                    <MetadataList title="Table details" rows=field(info, table_rows)/>
-                </aside>
-            </Loaded>
-        </DetailsLayout>
-        {modals}
     }
 }
 
-/// The columns of the loaded table.
-fn table_columns(info: RwSignal<Load<TableInfo>>) -> Signal<Load<Vec<ColumnInfo>>> {
-    Signal::derive(move || {
-        info.with(|i| match i {
-            Load::Ready(table) => Load::Ready(table.columns.clone().unwrap_or_default()),
-            Load::Loading => Load::Loading,
-            Load::Failed(message) => Load::Failed(message.clone()),
-        })
-    })
-}
-
-fn column_columns() -> Vec<Column<ColumnInfo>> {
+fn table_rows(t: &TableInfo) -> Vec<MetaRow> {
     vec![
-        Column {
-            title: "Name",
-            width: "60%",
-            center: false,
-            render: Box::new(|c: &ColumnInfo| {
-                view! { <span>{c.name.clone().unwrap_or_default()}</span> }.into_any()
-            }),
-            search_key: Some(Box::new(|c: &ColumnInfo| {
-                c.name.clone().unwrap_or_default()
-            })),
-        },
-        Column {
-            title: "Type",
-            width: "40%",
-            center: false,
-            render: Box::new(|c: &ColumnInfo| {
-                let type_name = c.type_name.as_ref().map(wire_name).unwrap_or_default();
-                view! { <span>{type_name}</span> }.into_any()
-            }),
-            search_key: None,
-        },
-    ]
-}
-
-fn table_rows(t: &TableInfo) -> Vec<MetadataRow> {
-    vec![
-        MetadataRow {
-            label: "Created at",
-            value: format_timestamp(t.created_at),
-            code: false,
-        },
-        MetadataRow {
-            label: "Updated at",
-            value: format_timestamp(t.updated_at),
-            code: false,
-        },
-        MetadataRow {
-            label: "Data source format",
-            value: t
-                .data_source_format
-                .as_ref()
-                .map(wire_name)
-                .unwrap_or_default(),
-            code: true,
-        },
+        MetaRow::new("Name", or_dash(t.name.clone())),
+        MetaRow::new("Owner", or_dash(t.owner.clone())),
+        MetaRow::new("Type", or_dash(t.table_type.as_ref().map(wire_name))),
+        MetaRow::new(
+            "Format",
+            or_dash(t.data_source_format.as_ref().map(wire_name)),
+        ),
+        MetaRow::new("Created at", format_timestamp(t.created_at)),
+        MetaRow::new("Created by", or_dash(t.created_by.clone())),
+        MetaRow::new("Updated at", format_timestamp(t.updated_at)),
+        MetaRow::new("Updated by", or_dash(t.updated_by.clone())),
+        MetaRow::mono("Table ID", or_dash(t.table_id.clone())),
+        MetaRow::mono("Storage location", or_dash(t.storage_location.clone())),
     ]
 }

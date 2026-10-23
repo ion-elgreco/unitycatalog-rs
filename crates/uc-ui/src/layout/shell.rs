@@ -1,17 +1,22 @@
-//! The app's shell, as upstream's `AppProvider` in `App.tsx`. A dark header
-//! has the logo, the Catalogs menu item, a link to the API docs and the
-//! user's avatar when one is signed in. Below it, the schema browser is on
-//! the left and the page on the right. Signed out, the login screen takes
-//! its place. The avatar's menu also opens the user's access tokens.
+//! The app's shell, as upstream's console lays it out. A dark header has a
+//! button that hides the sidebar, the logo, the theme switcher, a link to
+//! the API docs and the account menu when a user is signed in. Below it,
+//! on the gray page: the path of the page shown, then the catalog tree in
+//! a card on the left and the page on the right. Signed out, the login
+//! screen takes its place.
 
 use leptos::prelude::*;
 use leptos_router::components::Outlet;
-use leptos_router::hooks::use_location;
 
-use crate::auth::{Session, logout, logout_url, use_auth};
-use crate::components::icons::{ExportOutlined, UserOutlined};
-use crate::components::{Dropdown, Placement, SchemaBrowser};
+use crate::auth::{Session, SignIn, logout, logout_url, use_auth};
+use crate::components::catalog_tree::use_route;
+use crate::components::entity_header::Parent;
+use crate::components::icons::{
+    ExternalLink, KeyRound, LogOut, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Sun, User,
+};
+use crate::components::{CatalogTree, Crumbs, Dropdown};
 use crate::pages::{Denied, Login};
+use crate::theme::{ColorMode, use_theme};
 
 /// What the shell shows. A new answer of the same kind, such as the
 /// check when the window gets the focus, keeps the page as it is.
@@ -46,88 +51,188 @@ pub fn Shell() -> impl IntoView {
 fn Layout() -> impl IntoView {
     let auth = use_auth();
     let signed_in = move || auth.session.with(|session| session.user().is_some());
-    // "Catalogs" is selected on every page but the user's own.
-    let pathname = use_location().pathname;
-    let on_catalogs = move || !pathname.with(|path| path.starts_with("/settings/"));
+    // The server signs users in: the sidebar says who.
+    let auth_enabled = move || {
+        auth.mode.with(|mode| {
+            mode.as_ref()
+                .is_some_and(|mode| !matches!(mode.sign_in, SignIn::Off | SignIn::None))
+        })
+    };
+    let nav_open = RwSignal::new(true);
     view! {
-        <div class="uc-layout">
+        <div class="uc-app">
             <header class="uc-header">
-                <div class="uc-header__left">
-                    <a class="uc-header__logo" href="/">
-                        <img src="/uc-logo-reverse.svg" height="32" alt="Unity Catalog"/>
+                <div class="uc-header__group">
+                    <button
+                        type="button"
+                        class="uc-header__btn"
+                        aria-expanded=move || nav_open.get().to_string()
+                        aria-controls="uc-nav"
+                        aria-label=move || {
+                            if nav_open.get() { "Collapse navigation" } else { "Expand navigation" }
+                        }
+                        title=move || {
+                            if nav_open.get() { "Collapse navigation" } else { "Expand navigation" }
+                        }
+                        on:click=move |_| nav_open.update(|open| *open = !*open)
+                    >
+                        <Show when=move || nav_open.get() fallback=|| view! { <PanelLeftOpen/> }>
+                            <PanelLeftClose/>
+                        </Show>
+                    </button>
+                    <a class="uc-header__logo" href="/" title="Unity Catalog">
+                        <img src="/uc-logo-reverse.svg" alt="Unity Catalog"/>
                     </a>
-                    <nav class="uc-header__menu">
-                        <a class="uc-header__menu-item" class:is-selected=on_catalogs href="/">
-                            "Catalogs"
-                        </a>
-                    </nav>
                 </div>
-                <div class="uc-header__right">
+                <div class="uc-header__group">
+                    <ThemeSwitcher/>
                     // The server's Swagger UI, outside the app: the router
                     // leaves links with a target to the browser.
                     <a
-                        class="uc-header__link"
+                        class="uc-header__btn"
                         href="/docs"
                         target="_blank"
                         rel="noopener"
-                        title="The server's REST API in Swagger UI, in a new tab"
+                        title="API docs, in a new tab"
+                        aria-label="API docs"
                     >
-                        "API docs"
-                        <ExportOutlined/>
+                        <ExternalLink/>
                     </a>
                     <Show when=signed_in>
-                        <ProfileMenu/>
+                        <AccountMenu/>
                     </Show>
                 </div>
             </header>
-            <div class="uc-content">
-                <aside class="uc-sidebar">
-                    <SchemaBrowser/>
-                </aside>
-                <main class="uc-main">
-                    <Outlet/>
-                </main>
+            <div class="uc-body">
+                <Path/>
+                <div class="uc-columns">
+                    <aside
+                        id="uc-nav"
+                        class="uc-sidebar"
+                        class:is-closed=move || !nav_open.get()
+                        aria-hidden=move || (!nav_open.get()).to_string()
+                    >
+                        <div class="uc-sidebar__head">
+                            <span class="uc-sidebar__title">"Catalogs"</span>
+                            <Show when=auth_enabled>
+                                <Show
+                                    when=signed_in
+                                    fallback=|| view! { <span class="uc-badge">"anonymous"</span> }
+                                >
+                                    <span class="uc-badge uc-badge--primary">"authenticated"</span>
+                                </Show>
+                            </Show>
+                        </div>
+                        <div class="uc-sidebar__tree">
+                            <CatalogTree/>
+                        </div>
+                    </aside>
+                    <main class="uc-main">
+                        <Outlet/>
+                    </main>
+                </div>
             </div>
         </div>
     }
 }
 
-/// Upstream's avatar dropdown: the user's name and email, and "Log out"
-/// where the server says that sign-out goes. Here also the user's access
-/// tokens: a link, which the router follows after the menu closes.
+/// The path of the page shown, from the URL: "Catalog > unity > default >
+/// marksheet", or "Catalog > ml > models > iris > v2".
 #[component]
-fn ProfileMenu() -> impl IntoView {
+fn Path() -> impl IntoView {
+    let route = use_route();
+    move || {
+        let route = route.get();
+        let (parent, leaf) = match (&route.object, &route.version) {
+            (Some((kind, name)), Some(version)) => {
+                let (catalog, schema) = (
+                    route.catalog.clone().unwrap_or_default(),
+                    route.schema.clone().unwrap_or_default(),
+                );
+                let parent = Parent {
+                    label: name.clone(),
+                    href: kind.href(&catalog, &schema, name),
+                };
+                (Some(parent), Some(format!("v{version}")))
+            }
+            (Some((_, name)), None) => (None, Some(name.clone())),
+            (None, _) => (None, route.page.map(str::to_string)),
+        };
+        view! { <Crumbs catalog=route.catalog schema=route.schema parent leaf/> }
+    }
+}
+
+/// Light, dark or the system's theme, as the console's `ThemeSwitcher`.
+#[component]
+fn ThemeSwitcher() -> impl IntoView {
+    let theme = use_theme();
+    view! {
+        <div class="uc-theme" role="group" aria-label="Theme">
+            {ColorMode::ALL
+                .into_iter()
+                .map(|mode| {
+                    let label = mode.label();
+                    let icon = match mode {
+                        ColorMode::Light => view! { <Sun/> }.into_any(),
+                        ColorMode::Dark => view! { <Moon/> }.into_any(),
+                        ColorMode::Auto => view! { <Monitor/> }.into_any(),
+                    };
+                    view! {
+                        <button
+                            type="button"
+                            title=label
+                            aria-label=format!("{label} theme")
+                            aria-pressed=move || (theme.mode.get() == mode).to_string()
+                            class:is-active=move || theme.mode.get() == mode
+                            on:click=move |_| theme.mode.set(mode)
+                        >
+                            {icon}
+                        </button>
+                    }
+                })
+                .collect_view()}
+        </div>
+    }
+}
+
+/// The account menu, as the console's: the user's name and email, their
+/// access tokens, and "Log out" where the server says that sign-out goes.
+#[component]
+fn AccountMenu() -> impl IntoView {
     let auth = use_auth();
     let logout_url = logout_url(auth);
+    let email = move || {
+        auth.session.with(|session| {
+            session
+                .user()
+                .and_then(|user| {
+                    user.emails
+                        .as_ref()?
+                        .first()
+                        .map(|e| e.value.clone())
+                        .or_else(|| Some(user.user_name.clone()))
+                })
+                .unwrap_or_default()
+        })
+    };
     let name = move || {
         auth.session.with(|session| {
             session
                 .user()
                 .and_then(|user| user.display_name.clone())
-                .unwrap_or_default()
-        })
-    };
-    let email = move || {
-        auth.session.with(|session| {
-            session
-                .user()
-                .and_then(|user| user.emails.as_ref()?.first().map(|e| e.value.clone()))
-                .unwrap_or_default()
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(email)
         })
     };
     view! {
-        <Dropdown
-            button_class="uc-avatar"
-            title="Account"
-            placement=Placement::BottomRight
-            button=view! { <UserOutlined/> }.into_any()
-        >
-            <div class="uc-dropdown__item uc-dropdown__user">
-                <span>{name}</span>
-                <span>{email}</span>
+        <Dropdown button_class="uc-avatar" title="Account" button=view! { <User/> }.into_any()>
+            <div class="uc-menu__label">
+                <span class="uc-truncate">{name}</span>
+                <small>{email}</small>
             </div>
-            <div class="uc-dropdown__divider"></div>
-            <a class="uc-dropdown__item" role="menuitem" href="/settings/tokens">
+            <div class="uc-menu__sep"></div>
+            <a class="uc-menu__item" role="menuitem" href="/settings/tokens">
+                <KeyRound/>
                 "Access tokens"
             </a>
             {move || {
@@ -135,13 +240,14 @@ fn ProfileMenu() -> impl IntoView {
                     .get()
                     .map(|url| {
                         view! {
-                            <div class="uc-dropdown__divider"></div>
+                            <div class="uc-menu__sep"></div>
                             <button
                                 type="button"
-                                class="uc-dropdown__item"
+                                class="uc-menu__item"
                                 role="menuitem"
                                 on:click=move |_| logout(&url)
                             >
+                                <LogOut/>
                                 "Log out"
                             </button>
                         }

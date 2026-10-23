@@ -1,8 +1,8 @@
-//! The signed-in user's personal access tokens, from the profile menu: a
+//! The signed-in user's personal access tokens, from the account menu: a
 //! list with each token's name, first characters, creation and expiry;
-//! "Create Token" with a name and an expiry; and Delete. A new token shows
+//! "Create token" with a name and an expiry; and Delete. A new token shows
 //! once, above the list, with a button that copies it: the server keeps
-//! only its hash. Upstream's UI has no such page.
+//! only its hash. Upstream's console has no such page.
 
 use std::time::Duration;
 
@@ -12,22 +12,19 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use uc_api::{CreatePat, PatInfo};
 use uc_common::EpochMillis;
-use wasm_bindgen::JsCast;
 
 use crate::api;
 use crate::auth::use_auth;
-use crate::components::icons::{
-    CheckCircleFilled, CheckOutlined, CloseOutlined, CopyOutlined, DeleteOutlined,
-};
+use crate::components::icons::{Check, CircleCheck, Copy, Plus, Trash2, X};
 use crate::components::{Modal, use_notify};
 use crate::layout::{Column, ListLayout};
 use crate::load::{Key, use_cache, use_load};
-use crate::util::format_timestamp;
+use crate::util::{copy_text, format_timestamp};
 
 /// A day, in milliseconds.
 const DAY_MS: f64 = 24.0 * 60.0 * 60.0 * 1000.0;
 
-/// How long the copy button says "Copied": antd's.
+/// How long the copy button says "Copied".
 const COPIED_FOR: Duration = Duration::from_secs(3);
 
 #[component]
@@ -39,11 +36,11 @@ pub fn AccessTokens() -> impl IntoView {
             when=signed_in
             fallback=|| {
                 view! {
-                    <div class="uc-flex-col uc-gap-md uc-grow">
-                        <h2 class="uc-title-2">"Access tokens"</h2>
-                        <div class="uc-text-secondary">
+                    <div class="uc-page">
+                        <h1 class="uc-page__title">"Access tokens"</h1>
+                        <p class="uc-muted">
                             "Access tokens belong to a signed-in user, and no one is signed in."
-                        </div>
+                        </p>
                     </div>
                 }
             }
@@ -66,53 +63,51 @@ fn TokenList() -> impl IntoView {
         Column {
             title: "Name",
             width: "28%",
-            center: false,
             render: Box::new(|t: &PatInfo| {
-                view! { <span>{t.name.clone().unwrap_or_default()}</span> }.into_any()
+                view! { <span class="uc-strong">{t.name.clone().unwrap_or_default()}</span> }
+                    .into_any()
             }),
             search_key: Some(Box::new(|t: &PatInfo| t.name.clone().unwrap_or_default())),
         },
         Column {
             title: "Token",
             width: "16%",
-            center: false,
             render: Box::new(|t: &PatInfo| {
                 let start = t.token_prefix.clone().unwrap_or_default();
-                view! { <code class="uc-text-code">{format!("{start}…")}</code> }.into_any()
+                view! { <code>{format!("{start}…")}</code> }.into_any()
             }),
             search_key: None,
         },
         Column {
-            title: "Created At",
+            title: "Created",
             width: "22%",
-            center: false,
             render: Box::new(|t: &PatInfo| {
-                view! { <span>{format_timestamp(t.created_at)}</span> }.into_any()
+                view! { <span class="uc-muted">{format_timestamp(t.created_at)}</span> }.into_any()
             }),
             search_key: None,
         },
         Column {
-            title: "Expires At",
+            title: "Expires",
             width: "22%",
-            center: false,
             render: Box::new(|t: &PatInfo| expiry(t.expires_at)),
             search_key: None,
         },
         Column {
             title: "",
             width: "12%",
-            center: false,
             render: Box::new(move |t: &PatInfo| {
                 let token = t.clone();
                 view! {
-                    <button
-                        type="button"
-                        class="uc-btn uc-btn--text uc-btn--text-danger"
-                        on:click=move |_| deleting.set(Some(token.clone()))
-                    >
-                        <DeleteOutlined/>
-                        <span>"Delete"</span>
-                    </button>
+                    <div class="uc-right" style="display:flex;justify-content:flex-end">
+                        <button
+                            type="button"
+                            class="uc-btn uc-btn--ghost uc-btn--sm uc-danger"
+                            on:click=move |_| deleting.set(Some(token.clone()))
+                        >
+                            <Trash2/>
+                            "Delete"
+                        </button>
+                    </div>
                 }
                 .into_any()
             }),
@@ -121,20 +116,21 @@ fn TokenList() -> impl IntoView {
     ];
 
     view! {
-        <div class="uc-flex-col uc-gap-md uc-grow">
-            <div class="uc-flex uc-justify-between uc-items-start uc-gap-md">
-                <h2 class="uc-title-2">"Access tokens"</h2>
-                <button class="uc-btn uc-btn--primary" on:click=move |_| create_open.set(true)>
-                    "Create Token"
+        <div class="uc-page">
+            <div class="uc-between">
+                <h1 class="uc-page__title">"Access tokens"</h1>
+                <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>
+                    <Plus/>
+                    "Create token"
                 </button>
             </div>
-            <div class="uc-text-secondary">
+            <p class="uc-muted">
                 "Scripts and tools call the API as you with an access token: they send it in the "
-                <code class="uc-text-code">"Authorization: Bearer <token>"</code>
+                <code>"Authorization: Bearer <token>"</code>
                 " header."
-            </div>
+            </p>
             <NewToken created/>
-            <ListLayout data=tokens columns/>
+            <ListLayout data=tokens columns empty="No tokens."/>
             <CreateToken open=create_open created/>
             <DeleteToken deleting created/>
         </div>
@@ -144,12 +140,12 @@ fn TokenList() -> impl IntoView {
 /// The expiry in the list: the time, "Never", or in red once it passed.
 fn expiry(expires_at: Option<EpochMillis>) -> AnyView {
     match expires_at {
-        None | Some(0) => view! { <span>"Never"</span> }.into_any(),
+        None | Some(0) => view! { <span class="uc-muted">"Never"</span> }.into_any(),
         Some(ms) if (ms as f64) <= Date::now() => view! {
-            <span class="uc-text-danger">{format!("Expired on {}", format_timestamp(Some(ms)))}</span>
+            <span class="uc-danger">{format!("Expired on {}", format_timestamp(Some(ms)))}</span>
         }
         .into_any(),
-        Some(ms) => view! { <span>{format_timestamp(Some(ms))}</span> }.into_any(),
+        Some(ms) => view! { <span class="uc-muted">{format_timestamp(Some(ms))}</span> }.into_any(),
     }
 }
 
@@ -161,15 +157,13 @@ fn NewToken(created: RwSignal<Option<PatInfo>>) -> impl IntoView {
             let name = token.name.unwrap_or_default();
             let value = token.token_value.unwrap_or_default();
             view! {
-                <div class="uc-alert uc-alert--success uc-alert--large" role="status">
-                    <span class="uc-alert__icon">
-                        <CheckCircleFilled/>
-                    </span>
+                <div class="uc-alert uc-alert--success" role="status">
+                    <CircleCheck/>
                     <div class="uc-alert__content">
-                        <div class="uc-alert__message">"Copy your new access token now"</div>
+                        <div class="uc-alert__title">"Copy your new access token now"</div>
                         <div>
                             "You cannot see the token "
-                            <span class="uc-text-strong">{name}</span>
+                            <span class="uc-strong">{name}</span>
                             " again after you leave this page."
                         </div>
                         <TokenField value/>
@@ -180,7 +174,7 @@ fn NewToken(created: RwSignal<Option<PatInfo>>) -> impl IntoView {
                         aria-label="Close"
                         on:click=move |_| created.set(None)
                     >
-                        <CloseOutlined/>
+                        <X/>
                     </button>
                 </div>
             }
@@ -233,17 +227,15 @@ fn TokenField(value: String) -> impl IntoView {
                 value=value
                 on:focus=move |_| select()
             />
-            <button type="button" class="uc-btn" on:click=copy>
+            <button type="button" class="uc-btn uc-btn--outline" on:click=copy>
                 {move || match copied.get() {
                     true => view! {
-                        <span class="uc-text-success">
-                            <CheckOutlined/>
-                        </span>
+                        <Check class="uc-success"/>
                         <span>"Copied"</span>
                     }
                     .into_any(),
                     false => view! {
-                        <CopyOutlined/>
+                        <Copy/>
                         <span>"Copy"</span>
                     }
                     .into_any(),
@@ -251,21 +243,6 @@ fn TokenField(value: String) -> impl IntoView {
             </button>
         </div>
     }
-}
-
-/// Copy `text`: with the Clipboard API where the browser has it (https and
-/// localhost), else with the `copy` command on the selected field.
-async fn copy_text(text: &str) -> bool {
-    let clipboard = window().navigator().clipboard();
-    if !clipboard.is_undefined() {
-        let written = clipboard.write_text(text);
-        return wasm_bindgen_futures::JsFuture::from(written).await.is_ok();
-    }
-    document()
-        .dyn_into::<web_sys::HtmlDocument>()
-        .ok()
-        .and_then(|document| document.exec_command("copy").ok())
-        .unwrap_or(false)
 }
 
 /// When a new token expires.
@@ -364,21 +341,23 @@ fn CreateToken(open: RwSignal<bool>, created: RwSignal<Option<PatInfo>>) -> impl
             on_cancel=move || close()
             on_ok
         >
-            <div class="uc-form-item">
-                <label>
+            <div class="uc-field">
+                <label class="uc-label" for="uc-token-name">
                     <span class="req">"*"</span>
                     "Name"
                 </label>
                 <input
+                    id="uc-token-name"
                     class="uc-input"
                     type="text"
+                    required
                     prop:value=move || name.get()
                     on:input=move |e| name.set(event_target_value(&e))
                 />
             </div>
-            <div class="uc-form-item">
-                <label>"Expiration"</label>
-                <div class="uc-radio-group" role="radiogroup" aria-label="Expiration">
+            <div class="uc-field">
+                <span class="uc-label">"Expiration"</span>
+                <div class="uc-segmented" role="radiogroup" aria-label="Expiration">
                     {Expiry::ALL
                         .into_iter()
                         .map(|choice| {
@@ -387,7 +366,7 @@ fn CreateToken(open: RwSignal<bool>, created: RwSignal<Option<PatInfo>>) -> impl
                                     type="button"
                                     role="radio"
                                     aria-checked=move || (expiry.get() == choice).to_string()
-                                    class:is-checked=move || expiry.get() == choice
+                                    class:is-active=move || expiry.get() == choice
                                     on:click=move |_| expiry.set(choice)
                                 >
                                     {choice.label()}
@@ -401,7 +380,7 @@ fn CreateToken(open: RwSignal<bool>, created: RwSignal<Option<PatInfo>>) -> impl
                         .then(|| {
                             view! {
                                 <input
-                                    class="uc-input uc-form-hint"
+                                    class="uc-input"
                                     type="date"
                                     aria-label="Expiration date"
                                     min=today()
@@ -429,17 +408,17 @@ fn ExpiryNote(expiry: RwSignal<Expiry>, date: RwSignal<String>) -> impl IntoView
     move || match expiry.get() {
         Expiry::Days(days) => {
             let text = on(Date::now() + f64::from(days) * DAY_MS);
-            view! { <div class="uc-form-hint uc-text-secondary">{text}</div> }.into_any()
+            view! { <p class="uc-hint">{text}</p> }.into_any()
         }
         Expiry::Date => {
             let text = match date.with(|date| end_of(date)) {
                 Some(end) => on(end),
                 None => "The token works until the end of the date.".to_string(),
             };
-            view! { <div class="uc-form-hint uc-text-secondary">{text}</div> }.into_any()
+            view! { <p class="uc-hint">{text}</p> }.into_any()
         }
         Expiry::Never => view! {
-            <div class="uc-alert uc-alert--warning uc-form-hint">
+            <div class="uc-alert uc-alert--warning">
                 "The token never expires. Delete it when you no longer need it."
             </div>
         }
@@ -489,7 +468,7 @@ fn DeleteToken(
         spawn_local(async move {
             match api::client().revoke_pat(&id).await {
                 Ok(()) => {
-                    notify.success(format!("{name} token successfully deleted"));
+                    notify.success(format!("Deleted the token {name}"));
                     cache.changed(Key::Tokens);
                     // Only when the user is still on the page.
                     if busy.try_get_untracked().is_some() {
@@ -523,11 +502,11 @@ fn DeleteToken(
             on_cancel=move || deleting.set(None)
             on_ok
         >
-            <span>"Are you sure you want to delete the token "</span>
-            <span class="uc-text-strong">{name}</span>
-            <span>
+            <p>
+                "Are you sure you want to delete the token "
+                <span class="uc-strong">{name}</span>
                 "? Scripts and tools that use it can no longer call the API. This operation cannot be undone."
-            </span>
+            </p>
         </Modal>
     }
 }

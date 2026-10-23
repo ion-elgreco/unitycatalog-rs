@@ -1,11 +1,13 @@
 # Web UI
 
 The web UI shows the catalogs of a server, and creates, edits and deletes
-them and what they hold. It is a Leptos port of upstream's React UI, with
-the same pages, and a page for your access tokens. `uc-server` serves it at
-`/`, on the API's origin.
+them and what they hold. It is a Leptos port of upstream's new console: a
+dark header, the catalog tree on the left, and a page with Overview,
+Details and Permissions tabs. It adds grants, temporary credentials,
+column comments and a page for your access tokens. `uc-server` serves it
+at `/`, on the API's origin.
 
-![The catalogs, and the tree of the "unity" catalog](assets/ui/catalogs.png)
+![The catalogs, and the tree](assets/ui/catalogs.png)
 
 ## Start the UI
 
@@ -30,120 +32,156 @@ to set up the sign-in.
 
 ## Find your way
 
-- The header: "Catalogs" opens the list of catalogs. "API docs" opens the
-  server's REST API in Swagger UI (`/docs`), in a new tab. The avatar,
-  after a sign-in, shows your name and email, "Access tokens" and "Log
-  out". If the server is set up for it, "Log out" also signs you out of the
-  identity provider.
-- "Browse", on the left: the tree of the catalogs, their schemas, and the
-  tables, volumes, functions and models of each schema. A click on the
-  arrow opens a node; a click on a name opens its page. The page that
-  shows is selected in the tree. The arrow keys move between the names;
-  the right arrow opens a node, and the left arrow closes it.
-- Each page has a path at the top, such as "Catalogs / unity / default".
-  Click a part of it to go back up.
-- The three dots (⋮) at the right of a page's title open its actions, such
-  as "Delete Catalog".
-- Lists show 10 rows on each page. Above 50 rows, you can show 20, 50 or
-  100 rows. "Search" shows the rows whose name contains the text.
+- The header: the first button hides and shows the tree. The logo goes to
+  the list of catalogs. The three buttons at the right choose the light
+  theme, the dark theme, or the system's; the UI keeps your choice in the
+  browser. The arrow opens the server's REST API in Swagger UI (`/docs`),
+  in a new tab. The avatar, after a sign-in, shows your name and email,
+  "Access tokens" and "Log out". If the server is set up for it, "Log out"
+  also signs you out of the identity provider.
+- "Catalogs", on the left: the tree of the catalogs, their schemas, and
+  under each schema its tables, volumes, functions and models, with their
+  counts. A click on the arrow opens a node; a click on a name opens its
+  page. The page that shows is selected in the tree, and its nodes are
+  open. The arrow keys move between the names; the right arrow opens a
+  node, and the left arrow closes it.
+- Each page has a path at the top, such as "Catalog > unity > default".
+  Click a part of it to go back up. Beside the name are its type badges
+  and a button that loads the object again. The page's actions are at the
+  right: "Edit", "Create …" or "New", and "Delete". "Delete" shows only to
+  the owner of the object and to admins.
+- Each page has three tabs. **Overview** has the description, with
+  "Edit", and what the object holds. **Details** has the fields of the
+  object, its properties, and the JSON that the server sent. **Permissions**
+  has the grants, and for tables and volumes the temporary credentials.
 - A page shows the data that the UI has at once, and loads it again each
   time it opens. When you come back to the window, the page loads again
   too. So a change that you make elsewhere, such as a token that you make
   with `uc`, shows without a reload of the page.
 
+![The dark theme](assets/ui/dark.png)
+
 ## Catalogs
 
-1. Click **Catalogs** in the header to see the list of catalogs. Click a
-   row to open the catalog.
-2. To make a catalog, click **Create Catalog**. Give the name, and a
-   comment if you want one. Then click **Create**: the catalog's page
-   opens.
+1. Click the logo to see the catalogs. Click a card to open the catalog.
+2. To make a catalog, click **Create catalog**. Give the name, a comment if
+   you want one, and a storage root for its managed tables and volumes.
+   Then click **Create**: the catalog's page opens.
 
 ![Create catalog](assets/ui/catalog-create.png)
 
-3. A catalog's page shows its description, its schemas and its details.
-   Click the pencil to edit the description.
+3. A catalog's page lists its schemas. **Edit** changes its name and its
+   comment.
 
 ![A catalog](assets/ui/catalog.png)
 
-4. To delete the catalog, click ⋮, then **Delete Catalog**, then
-   **Delete**. The server deletes only a catalog without schemas. An
-   admin can tick **Also delete its schemas, …**: the dialog then counts
-   what goes with the catalog, and **Delete** asks again, in a second
-   dialog, before **Delete everything**.
+4. To delete the catalog, click **Delete**, then **Delete** again. The
+   server deletes only a catalog without schemas. An admin can tick **Also
+   delete its schemas, …**: the dialog then counts what goes with the
+   catalog, and **Delete** asks again, in a second dialog, before **Delete
+   everything**.
 
 ![Delete a catalog](assets/ui/catalog-delete.png)
 
 ## Schemas
 
-1. To make a schema, open its catalog and click **Create Schema**.
+1. To make a schema, open its catalog and click **Create schema**.
 
 ![Create schema](assets/ui/schema-create.png)
 
-2. A schema's page lists its tables. The buttons beside the search box
-   show its volumes, functions and models. The tree's "Tables", "Volumes",
+2. A schema's page lists its tables. The buttons above the list show its
+   volumes, functions and models. The tree's "Tables", "Volumes",
    "Functions" and "Models" open the same lists.
 
 ![A schema](assets/ui/schema.png)
 
-3. To delete the schema, click ⋮, then **Delete Schema**. The server
-   deletes only an empty schema; an admin can tick **Also delete its
-   tables, …**, as for catalogs.
+3. **New** makes an object in the schema: an external table with one
+   column, a volume, a function in Python or SQL, or a registered model.
+   Pick the type at the top of the dialog.
+
+![New object](assets/ui/object-create.png)
+
+4. To delete the schema, click **Delete**. The server deletes only an
+   empty schema; an admin can tick **Also delete its tables, …**, as for
+   catalogs.
 
 ## Tables
 
-A table's page shows its description, its columns with their types, and
-its details: when it was made and changed, and its data source format.
-To delete the table, click ⋮, then **Delete Table**. The UI does not make
-tables: make them with `uc table create`, an engine or the API.
+A table's page shows its description and its columns: their types, whether
+they take nulls, and their comments. Click the pencil in a column's row to
+edit its comment, and **Edit** on the description to change it. The
+Details tab has the type, the format, the storage location, the properties
+and the JSON of the table. To delete the table, click **Delete**.
 
 ![A table](assets/ui/table.png)
 
+The Permissions tab of a table or volume starts with **Credentials**:
+**Vend READ creds** asks the server for temporary credentials for the
+object's storage location, as an engine does. The card shows them, with
+their expiry; secrets stay hidden until you show them, and each value has
+a copy button. **Vend READ WRITE creds** asks for credentials that write
+too.
+
+![A table's permissions](assets/ui/table-permissions.png)
+
 ## Volumes
 
-A volume's page shows its description and its details: when it was made
-and changed, and its type. Click the pencil to edit the description. To
-delete the volume, click ⋮, then **Delete Volume**.
+A volume's page shows its description, and its type and storage location
+on the Details tab. **Edit** changes its name and its comment. The
+Permissions tab vends credentials, as for tables.
 
 ![A volume](assets/ui/volume.png)
 
-![Edit a volume's description](assets/ui/volume-edit.png)
+![Edit a volume](assets/ui/volume-edit.png)
 
 ## Functions
 
-A function's page shows its description, its definition and its details,
-such as its language. To delete the function, click ⋮, then **Delete
-Function**.
+A function's page shows its description, its parameters and its
+definition. The badges name its language and its return type. To delete
+the function, click **Delete**.
 
 ![A function](assets/ui/function.png)
 
 ## Models
 
 1. Open a schema and click **Models** to see its registered models.
-2. To make a model, click ⋮ on the schema's page, then **Create Registered
-   Model**.
+2. To make a model, click **New** and pick **Registered model**.
 
-![The models of a schema, and the schema's actions](assets/ui/models.png)
+![The models of a schema](assets/ui/models.png)
 
 ![Create a registered model](assets/ui/model-create.png)
 
-3. A model's page shows its description, its versions and its details.
-   The icon of a version tells its status: ready (green), pending (gray)
-   or failed (red); point to the icon to read it.
-4. To delete the model, click ⋮, then **Delete Model**. Delete its versions
-   first, or, as an admin, tick **Also delete its versions**, as for
-   catalogs.
+3. A model's page shows its description and its versions, with their
+   status, source and time. **Create version** registers a version from a
+   source location, with a run id if you have one.
+4. To delete the model, click **Delete**. Delete its versions first, or,
+   as an admin, tick **Also delete its versions**, as for catalogs.
 
 ![A model and its versions](assets/ui/model.png)
 
 ## Model versions
 
 Click a version on the model's page. The page shows the version's
-description, its details (when and by whom it was made and changed, its
-status and training run) and the model's details. To delete the version,
-click ⋮, then **Delete Model Version**.
+description, with **Edit**, and its details: its status, source, run id,
+storage location, and when and by whom it was made and changed. A pending
+version has **Finalize**, which marks it ready once its files are in
+place. To delete the version, click **Delete**.
 
 ![A model version](assets/ui/model-version.png)
+
+## Permissions
+
+The Permissions tab of every object shows **Your privileges**: OWNER when
+the object is yours, and the privileges granted to you. Below, **Grants**
+lists every principal with privileges on the object. The server shows
+every grant to the owner of the object, of its schema or of its catalog,
+and to admins; other users see their own.
+
+The owner and the admins also get **Manage grants**: type a user's email,
+pick a privilege, and click **Grant**. The × after a privilege revokes it.
+The privileges on offer are the ones that the kind of object can hold,
+such as SELECT and MODIFY on a table. [Authorization](server/auth.md)
+tells what each privilege allows.
 
 ## Access tokens
 
@@ -154,7 +192,7 @@ sign-in. It sends the token in the header `Authorization: Bearer <token>`;
 1. Click the avatar, then **Access tokens**. The list shows your tokens:
    the name, the first characters, and when each one was made and expires.
    An expired token shows in red.
-2. To make a token, click **Create Token**. Give a name, and choose when
+2. To make a token, click **Create token**. Give a name, and choose when
    the token expires: in 7, 30 or 90 days, at the end of a date that you
    choose (**Custom**), or **Never**. Then click **Create**.
 
@@ -175,9 +213,10 @@ Tokens tab.
 
 ## Upstream's React UI
 
-The server keeps upstream's REST API, so upstream's UI works against it
-too. Its development server sends the API calls to `http://localhost:8080`
-(`proxy` in its `package.json`), where `uc-server` listens by default:
+The server keeps upstream's REST API, so upstream's older React UI works
+against it too. Its development server sends the API calls to
+`http://localhost:8080` (`proxy` in its `package.json`), where `uc-server`
+listens by default:
 
 ```bash
 git clone https://github.com/unitycatalog/unitycatalog.git
@@ -189,4 +228,5 @@ bun run start
 Open `http://localhost:3000`. A UI on another origin than the API needs
 CORS: the server lets every origin call the API, unless
 `server.cors_allow_origins` (`UC_SERVER_CORS_ALLOW_ORIGINS`) names the
-allowed ones.
+allowed ones. Upstream's new console (`ui-new`) talks to its own Rust
+bridge, not to the REST API directly; this UI is its port.

@@ -1,52 +1,43 @@
-//! A list: a title, a search box with optional filters beside it, and a
-//! table with antd's pagination. Equivalent to upstream
-//! `components/layouts/ListLayout.tsx`.
+//! A list: a search box, a table and pages of 10 rows; above 50 rows, a
+//! choice of the page size. The access tokens page uses it.
 
 use leptos::prelude::*;
 use std::sync::Arc;
 
-use crate::components::icons::{
-    DoubleLeftOutlined, DoubleRightOutlined, DownOutlined, LeftOutlined, RightOutlined,
-    SearchOutlined,
-};
-use crate::components::{Dropdown, LoadError, LoadingBlock, Stage};
+use crate::components::icons::{ChevronLeft, ChevronRight, Search};
+use crate::components::{LoadError, LoadingBlock, Stage};
 use crate::load::Load;
 
-/// One column in a list-layout table.
+/// One column of the table.
 pub struct Column<T> {
     pub title: &'static str,
     pub width: &'static str,
-    /// Centered, as antd's `align: 'center'`.
-    pub center: bool,
     /// Renders the cell.
     pub render: Box<dyn Fn(&T) -> AnyView + Send + Sync + 'static>,
-    /// Returns the value used for the search filter. If `None`, the row is
-    /// not searchable on this column.
+    /// The value the search box matches; none for a column it skips.
     pub search_key: Option<SearchKey<T>>,
 }
 
 /// A column's search value.
 pub type SearchKey<T> = Box<dyn Fn(&T) -> String + Send + Sync + 'static>;
 
-/// The rows of a page, at first: antd's `pageSize`.
+/// The rows of a page, at first.
 const PAGE_SIZE: usize = 10;
-/// The page sizes to choose from, above 50 rows, as antd's.
+/// The page sizes to choose from, above 50 rows.
 const PAGE_SIZES: [usize; 4] = [10, 20, 50, 100];
 const SIZE_CHOICE_ABOVE: usize = 50;
 
 #[component]
 pub fn ListLayout<T>(
-    #[prop(optional)] title: Option<AnyView>,
     #[prop(into)] data: Signal<Load<Vec<T>>>,
     columns: Vec<Column<T>>,
-    /// Row click handler: the clicked record, as upstream's
-    /// `onRowClick(record)`.
+    /// The clicked row.
     #[prop(into, optional)]
     on_row_click: Option<Callback<T>>,
     #[prop(default = true)] show_search: bool,
-    /// Beside the search box, as upstream's `filters`.
-    #[prop(optional)]
-    filters: Option<AnyView>,
+    /// What the table says when it has no rows.
+    #[prop(default = "No data.")]
+    empty: &'static str,
 ) -> impl IntoView
 where
     T: Clone + Send + Sync + 'static,
@@ -88,13 +79,7 @@ where
         let columns = columns.clone();
         let header = columns
             .iter()
-            .map(|c| {
-                view! {
-                    <th class:uc-center=c.center style=format!("width:{}", c.width)>
-                        {c.title}
-                    </th>
-                }
-            })
+            .map(|c| view! { <th style=format!("width:{}", c.width)>{c.title}</th> })
             .collect_view();
         let body = move || {
             let size = page_size.get();
@@ -111,10 +96,8 @@ where
             });
             if rows.is_empty() {
                 return view! {
-                    <tr class="uc-table__placeholder">
-                        <td colspan="99">
-                            <Empty/>
-                        </td>
+                    <tr>
+                        <td colspan="99" class="uc-empty">{empty}</td>
                     </tr>
                 }
                 .into_any();
@@ -123,7 +106,7 @@ where
                 .map(|row| {
                     let cells = columns
                         .iter()
-                        .map(|c| view! { <td class:uc-center=c.center>{(c.render)(&row)}</td> })
+                        .map(|c| view! { <td>{(c.render)(&row)}</td> })
                         .collect_view();
                     view! {
                         <tr on:click=move |_| {
@@ -136,49 +119,45 @@ where
                 .collect_view()
                 .into_any()
         };
+        let class = if clickable {
+            "uc-table uc-table--clickable"
+        } else {
+            "uc-table"
+        };
         view! {
-            <table class=if clickable { "uc-table uc-table--clickable" } else { "uc-table" }>
-                <thead>
-                    <tr>{header}</tr>
-                </thead>
-                <tbody>{body}</tbody>
-            </table>
+            <div class="uc-table-wrap">
+                <table class=class>
+                    <thead>
+                        <tr>{header}</tr>
+                    </thead>
+                    <tbody>{body}</tbody>
+                </table>
+            </div>
             <Pager matches current page page_size/>
         }
     };
 
-    let bar = (show_search || filters.is_some()).then(|| {
+    let search = show_search.then(|| {
         view! {
-            <div class="uc-list__bar">
-                {show_search
-                    .then(|| {
-                        view! {
-                            <div class="uc-list__search">
-                                <span class="uc-input-affix">
-                                    <span class="uc-input-affix__prefix">
-                                        <SearchOutlined/>
-                                    </span>
-                                    <input
-                                        type="text"
-                                        placeholder="Search"
-                                        on:input=move |e| {
-                                            filter.set(event_target_value(&e));
-                                            page.set(0);
-                                        }
-                                    />
-                                </span>
-                            </div>
-                        }
-                    })}
-                {filters.map(|filters| view! { <div class="uc-list__filters">{filters}</div> })}
+            <div class="uc-search">
+                <Search/>
+                <input
+                    class="uc-input"
+                    type="search"
+                    placeholder="Search"
+                    aria-label="Search"
+                    on:input=move |e| {
+                        filter.set(event_target_value(&e));
+                        page.set(0);
+                    }
+                />
             </div>
         }
     });
 
     view! {
-        <div class="uc-flex-col uc-gap-md uc-grow">
-            {title}
-            {bar}
+        <div class="uc-stack">
+            {search}
             {move || match stage.get() {
                 Stage::Loading => view! { <LoadingBlock/> }.into_any(),
                 Stage::Failed(message) => view! { <LoadError message/> }.into_any(),
@@ -188,40 +167,16 @@ where
     }
 }
 
-/// antd's empty table: its image and "No data".
-#[component]
-fn Empty() -> impl IntoView {
-    view! {
-        <div class="uc-empty">
-            <svg class="uc-empty__image" width="64" height="41" viewBox="0 0 64 41" aria-hidden="true">
-                <g transform="translate(0 1)" fill="none" fill-rule="evenodd">
-                    <ellipse fill="#f5f5f5" cx="32" cy="33" rx="32" ry="7"/>
-                    <g fill-rule="nonzero" stroke="#d9d9d9">
-                        <path d="M55 12.76L44.854 1.258C44.367.474 43.656 0 42.907 0H21.093c-.749 0-1.46.474-1.947 1.257L9 12.761V22h46v-9.24z"/>
-                        <path
-                            d="M41.613 15.931c0-1.605.994-2.93 2.227-2.931H55v18.137C55 33.26 53.68 35 52.05 35h-40.1C10.32 35 9 33.259 9 31.137V13h11.16c1.233 0 2.227 1.323 2.227 2.928v.022c0 1.605 1.005 2.901 2.237 2.901h14.752c1.232 0 2.237-1.308 2.237-2.913v-.007z"
-                            fill="#fafafa"
-                        />
-                    </g>
-                </g>
-            </svg>
-            <div class="uc-empty__text">"No data"</div>
-        </div>
-    }
-}
-
 /// One item of the page list.
 #[derive(Clone, Copy, PartialEq)]
 enum Item {
     Page(usize),
-    /// Five pages back.
-    JumpBack,
-    /// Five pages on.
-    JumpOn,
+    /// Pages left out.
+    Gap,
 }
 
-/// The items of the page list for 1-based page `current` of `pages`, as
-/// antd's `Pagination` (`rc-pagination`, with 2 pages on each side).
+/// The items of the page list for 1-based page `current` of `pages`: the
+/// first, the last, and two on each side of the current one.
 fn items(current: usize, pages: usize) -> Vec<Item> {
     const AROUND: usize = 2;
     if pages <= 3 + AROUND * 2 {
@@ -236,11 +191,11 @@ fn items(current: usize, pages: usize) -> Vec<Item> {
         left = pages - AROUND * 2;
     }
     let mut items: Vec<Item> = (left..=right).map(Item::Page).collect();
-    if current > AROUND * 2 && current != 1 + 2 {
-        items.insert(0, Item::JumpBack);
+    if left > 2 {
+        items.insert(0, Item::Gap);
     }
-    if pages - current >= AROUND * 2 && current != pages - 2 {
-        items.push(Item::JumpOn);
+    if right < pages - 1 {
+        items.push(Item::Gap);
     }
     if left != 1 {
         items.insert(0, Item::Page(1));
@@ -251,8 +206,8 @@ fn items(current: usize, pages: usize) -> Vec<Item> {
     items
 }
 
-/// antd's pagination: "1-10 of 25", the pages, and above 50 rows the page
-/// size. None for a single page.
+/// "1-10 of 25", the pages, and above 50 rows the page size. None for a
+/// single page.
 #[component]
 fn Pager(
     matches: Memo<Vec<usize>>,
@@ -270,115 +225,80 @@ fn Pager(
         let p = current.get();
         let start = p * size + 1;
         let end = ((p + 1) * size).min(total);
-        let go = move |to: usize| page.set(to.min(pages) - 1);
         let page_items = items(p + 1, pages)
             .into_iter()
             .map(|item| match item {
                 Item::Page(n) => view! {
-                    <li class="uc-pagination__item" class:is-active={n == p + 1}>
-                        <button type="button" title=n.to_string() on:click=move |_| go(n)>
-                            {n}
-                        </button>
-                    </li>
+                    <button
+                        type="button"
+                        class="uc-btn uc-btn--ghost uc-btn--icon uc-btn--sm"
+                        class:is-active={n == p + 1}
+                        aria-current=move || (n == p + 1).then_some("page")
+                        on:click=move |_| page.set(n - 1)
+                    >
+                        {n}
+                    </button>
                 }
                 .into_any(),
-                Item::JumpBack => view! {
-                    <li class="uc-pagination__jump">
-                        <button
-                            type="button"
-                            title="Previous 5 Pages"
-                            on:click=move |_| go((p + 1).saturating_sub(5).max(1))
-                        >
-                            <span class="uc-pagination__dots">"•••"</span>
-                            <span class="uc-pagination__arrow">
-                                <DoubleLeftOutlined/>
-                            </span>
-                        </button>
-                    </li>
-                }
-                .into_any(),
-                Item::JumpOn => view! {
-                    <li class="uc-pagination__jump">
-                        <button
-                            type="button"
-                            title="Next 5 Pages"
-                            on:click=move |_| go(p + 1 + 5)
-                        >
-                            <span class="uc-pagination__dots">"•••"</span>
-                            <span class="uc-pagination__arrow">
-                                <DoubleRightOutlined/>
-                            </span>
-                        </button>
-                    </li>
-                }
-                .into_any(),
+                Item::Gap => view! { <span class="uc-muted">"…"</span> }.into_any(),
             })
             .collect_view();
         view! {
-            <ul class="uc-pagination">
-                <li class="uc-pagination__total">{format!("{start}-{end} of {total}")}</li>
-                <li class="uc-pagination__step" title="Previous Page">
-                    <button type="button" disabled={p == 0} on:click=move |_| page.set(p.saturating_sub(1))>
-                        <LeftOutlined/>
-                    </button>
-                </li>
-                {page_items}
-                <li class="uc-pagination__step" title="Next Page">
-                    <button type="button" disabled={p + 1 >= pages} on:click=move |_| page.set(p + 1)>
-                        <RightOutlined/>
-                    </button>
-                </li>
-                {(total > SIZE_CHOICE_ABOVE).then(|| view! { <SizeChoice page page_size total/> })}
-            </ul>
-        }
-            .into_any()
-    }
-}
-
-/// "10 / page": antd's size changer.
-#[component]
-fn SizeChoice(page: RwSignal<usize>, page_size: RwSignal<usize>, total: usize) -> impl IntoView {
-    view! {
-        <li class="uc-pagination__size">
-            <Dropdown
-                button_class="uc-select"
-                title="Page size"
-                button=view! {
-                    <span class="uc-select__value">{move || format!("{} / page", page_size.get())}</span>
-                    <span class="uc-select__arrow">
-                        <DownOutlined/>
-                    </span>
-                }
-                    .into_any()
-            >
-                {PAGE_SIZES
-                    .into_iter()
-                    .map(|size| {
+            <nav class="uc-pager" aria-label="Pages">
+                <span class="uc-pager__total">{format!("{start}-{end} of {total}")}</span>
+                {(total > SIZE_CHOICE_ABOVE)
+                    .then(|| {
                         view! {
-                            <button
-                                type="button"
-                                class="uc-dropdown__item uc-select__option"
-                                class:is-selected=move || page_size.get() == size
-                                role="menuitem"
-                                on:click=move |e| {
-                                    // The pager draws itself again with the new
-                                    // size, and this menu with it. Leptos 0.7 drops
-                                    // the menu's click handler but leaves it on the
-                                    // menu: the click must not go up to it.
-                                    e.stop_propagation();
-                                    // The page that shows the same first row, as antd.
-                                    let first = page.get_untracked() * page_size.get_untracked();
-                                    page_size.set(size);
-                                    page.set((first / size).min(total.div_ceil(size) - 1));
+                            <select
+                                class="uc-select"
+                                style="width:auto"
+                                aria-label="Page size"
+                                on:change=move |e| {
+                                    if let Ok(new_size) = event_target_value(&e).parse::<usize>() {
+                                        // The page that shows the same first row.
+                                        let first = page.get_untracked() * page_size.get_untracked();
+                                        page_size.set(new_size);
+                                        page.set((first / new_size).min(total.div_ceil(new_size) - 1));
+                                    }
                                 }
                             >
-                                {format!("{size} / page")}
-                            </button>
+                                {PAGE_SIZES
+                                    .into_iter()
+                                    .map(|n| {
+                                        view! {
+                                            <option value=n.to_string() selected=n == size>
+                                                {format!("{n} / page")}
+                                            </option>
+                                        }
+                                    })
+                                    .collect_view()}
+                            </select>
                         }
-                    })
-                    .collect_view()}
-            </Dropdown>
-        </li>
+                    })}
+                <div class="uc-pager__pages">
+                    <button
+                        type="button"
+                        class="uc-btn uc-btn--outline uc-btn--icon uc-btn--sm"
+                        aria-label="Previous page"
+                        disabled={p == 0}
+                        on:click=move |_| page.set(p.saturating_sub(1))
+                    >
+                        <ChevronLeft/>
+                    </button>
+                    {page_items}
+                    <button
+                        type="button"
+                        class="uc-btn uc-btn--outline uc-btn--icon uc-btn--sm"
+                        aria-label="Next page"
+                        disabled={p + 1 >= pages}
+                        on:click=move |_| page.set(p + 1)
+                    >
+                        <ChevronRight/>
+                    </button>
+                </div>
+            </nav>
+        }
+            .into_any()
     }
 }
 
@@ -390,22 +310,21 @@ mod tests {
         list.iter()
             .map(|item| match item {
                 Item::Page(n) => n.to_string(),
-                Item::JumpBack => "<".into(),
-                Item::JumpOn => ">".into(),
+                Item::Gap => "…".into(),
             })
             .collect::<Vec<_>>()
             .join(" ")
     }
 
     #[test]
-    fn pages_as_antd() {
+    fn pages_around_the_current_one() {
         assert_eq!(pages(&items(1, 3)), "1 2 3");
         assert_eq!(pages(&items(4, 7)), "1 2 3 4 5 6 7");
-        assert_eq!(pages(&items(1, 10)), "1 2 3 4 5 > 10");
-        assert_eq!(pages(&items(3, 10)), "1 2 3 4 5 > 10");
-        assert_eq!(pages(&items(4, 10)), "1 2 3 4 5 6 > 10");
-        assert_eq!(pages(&items(5, 10)), "1 < 3 4 5 6 7 > 10");
-        assert_eq!(pages(&items(8, 10)), "1 < 6 7 8 9 10");
-        assert_eq!(pages(&items(10, 10)), "1 < 6 7 8 9 10");
+        assert_eq!(pages(&items(1, 10)), "1 2 3 4 5 … 10");
+        assert_eq!(pages(&items(3, 10)), "1 2 3 4 5 … 10");
+        assert_eq!(pages(&items(4, 10)), "1 2 3 4 5 6 … 10");
+        assert_eq!(pages(&items(5, 10)), "1 … 3 4 5 6 7 … 10");
+        assert_eq!(pages(&items(8, 10)), "1 … 6 7 8 9 10");
+        assert_eq!(pages(&items(10, 10)), "1 … 6 7 8 9 10");
     }
 }

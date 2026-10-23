@@ -29,6 +29,7 @@ use std::time::Duration;
 use leptos::ev;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use uc_common::SecurableType;
 
 use crate::api;
 use crate::kind::Kind;
@@ -82,6 +83,8 @@ pub enum Key {
     /// The versions of a registered model, by its full name.
     Versions(String),
     Version(String, i64),
+    /// The grants on a securable, by its full name.
+    Permissions(SecurableType, String),
     /// The signed-in user's access tokens.
     Tokens,
 }
@@ -105,6 +108,7 @@ impl Key {
             Key::Model(_) => "Failed to fetch model",
             Key::Versions(_) => "Failed to list model versions",
             Key::Version(..) => "Failed to fetch model version",
+            Key::Permissions(..) => "Failed to fetch permissions",
             Key::Tokens => "Failed to list access tokens",
         }
     }

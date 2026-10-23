@@ -1,7 +1,7 @@
-//! Click menus, as antd's `Dropdown` with `trigger={['click']}`: the
-//! three-dot action menu of the detail pages and the avatar menu. A click
-//! outside the menu, Escape, Tab and a change of page close it. The open
-//! menu takes the focus, and the arrow keys move it between the items.
+//! A click menu, as the console's `DropdownMenu`: the account menu and the
+//! page size. A click outside the menu, Escape, Tab and a change of page
+//! close it. The open menu takes the focus, and the arrow keys move it
+//! between the items.
 
 use leptos::ev;
 use leptos::html;
@@ -10,13 +10,10 @@ use leptos_router::hooks::use_location;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlElement;
 
-use super::icons::{DeleteOutlined, DeploymentUnitOutlined, MoreOutlined};
-
-/// Where the menu opens, as antd's `placement`.
+/// Where the menu opens.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Placement {
-    /// Below the button, from its left edge; moved left when the window
-    /// is too narrow, as antd does.
+    /// Below the button, from its left edge.
     BottomLeft,
     /// Below the button, to its right edge.
     BottomRight,
@@ -29,7 +26,7 @@ pub fn Dropdown(
     #[prop(optional)] title: &'static str,
     /// What the button shows.
     button: AnyView,
-    #[prop(default = Placement::BottomLeft)] placement: Placement,
+    #[prop(default = Placement::BottomRight)] placement: Placement,
     /// The menu's items; a click on one closes the menu.
     children: ChildrenFn,
 ) -> impl IntoView {
@@ -48,12 +45,13 @@ pub fn Dropdown(
         path
     });
     view! {
-        <div class="uc-dropdown" class:is-open=move || open.try_get().unwrap_or(false)>
+        <div class="uc-menu">
             <button
                 node_ref=trigger
                 type="button"
                 class=button_class
                 title=title
+                aria-label=title
                 aria-haspopup="menu"
                 aria-expanded=move || open.try_get().unwrap_or(false).to_string()
                 on:click=move |_| open.update(|open| *open = !*open)
@@ -88,23 +86,9 @@ fn Menu(
     });
     on_cleanup(move || escape.remove());
     let menu = NodeRef::<html::Div>::new();
-    // Into the window, then the focus on the first item.
+    // The focus on the first item.
     Effect::new(move |_| {
-        let Some(menu) = menu.get() else {
-            return;
-        };
-        if placement == Placement::BottomLeft {
-            let width = window()
-                .inner_width()
-                .ok()
-                .and_then(|w| w.as_f64())
-                .unwrap_or_default();
-            let over = menu.get_bounding_client_rect().right() - (width - 8.0);
-            if over > 0.0 {
-                let _ = menu.set_attribute("style", &format!("left: -{over}px"));
-            }
-        }
-        if let Some(first) = items(&menu).first() {
+        if let Some(first) = menu.get().and_then(|menu| items(&menu).into_iter().next()) {
             let _ = first.focus();
         }
     });
@@ -140,11 +124,11 @@ fn Menu(
         }
     };
     let class = match placement {
-        Placement::BottomLeft => "uc-dropdown__menu",
-        Placement::BottomRight => "uc-dropdown__menu uc-dropdown__menu--right",
+        Placement::BottomLeft => "uc-menu__panel uc-menu__panel--left",
+        Placement::BottomRight => "uc-menu__panel",
     };
     view! {
-        <div class="uc-dropdown__backdrop" on:click=move |_| open.set(false)></div>
+        <div class="uc-menu__backdrop" on:click=move |_| open.set(false)></div>
         <div
             node_ref=menu
             class=class
@@ -165,63 +149,4 @@ fn items(menu: &web_sys::HtmlDivElement) -> Vec<HtmlElement> {
     (0..list.length())
         .filter_map(|i| list.item(i)?.dyn_into::<HtmlElement>().ok())
         .collect()
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum MenuIcon {
-    /// A red item.
-    Delete,
-    Model,
-}
-
-#[derive(Clone)]
-pub struct MenuItem {
-    pub label: &'static str,
-    pub icon: MenuIcon,
-    pub on_click: Callback<()>,
-}
-
-/// The three-dot menu of a detail page, as upstream's `*ActionsDropdown`:
-/// the dots turn while it is open.
-#[component]
-pub fn ActionDropdown(items: Vec<MenuItem>) -> impl IntoView {
-    view! {
-        <Dropdown
-            button_class="uc-btn uc-btn--text uc-btn--icon"
-            title="Actions"
-            button=view! {
-                <span class="uc-more">
-                    <MoreOutlined/>
-                </span>
-            }
-                .into_any()
-        >
-            {items
-                .iter()
-                .map(|item| {
-                    let on_click = item.on_click;
-                    let (class, icon) = match item.icon {
-                        MenuIcon::Delete => (
-                            "uc-dropdown__item uc-dropdown__item--danger",
-                            view! { <DeleteOutlined/> }.into_any(),
-                        ),
-                        MenuIcon::Model => {
-                            ("uc-dropdown__item", view! { <DeploymentUnitOutlined/> }.into_any())
-                        }
-                    };
-                    view! {
-                        <button
-                            type="button"
-                            class=class
-                            role="menuitem"
-                            on:click=move |_| on_click.run(())
-                        >
-                            <span class="uc-dropdown__icon">{icon}</span>
-                            <span>{item.label}</span>
-                        </button>
-                    }
-                })
-                .collect_view()}
-        </Dropdown>
-    }
 }

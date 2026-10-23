@@ -176,7 +176,7 @@ where
                     _ => {
                         view! {
                             <span>{question}</span>
-                            <span class="uc-text-strong">{format!(" {name}")}</span>
+                            <span class="uc-strong">{format!(" {name}")}</span>
                             <span>"? This operation cannot be undone."</span>
                         }
                             .into_any()
@@ -217,7 +217,7 @@ where
             on_ok=move || run(true)
         >
             <p>{summary.clone()}</p>
-            <p class="uc-text-strong">"This operation cannot be undone."</p>
+            <p class="uc-strong">"This operation cannot be undone."</p>
         </Modal>
     }
 }
@@ -240,7 +240,7 @@ fn ForceNote(
                 format!("The UI could not count what {what} holds: {message}")
             }
         };
-        view! { <p class="uc-force-note">{text}</p> }
+        view! { <p class="uc-hint">{text}</p> }
     }
 }
 

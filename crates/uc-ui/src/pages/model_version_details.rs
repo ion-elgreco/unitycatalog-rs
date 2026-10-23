@@ -1,18 +1,22 @@
-//! Model version detail page. Mirrors `pages/ModelVersionDetails.tsx`.
+//! A model version's page, as the console's `ModelVersionDetails`: its
+//! description and details; "Finalize" while it is pending, and "Delete".
 
 use leptos::prelude::*;
-use uc_api::{ModelVersionInfo, UpdateModelVersion};
+use leptos::task::spawn_local;
+use uc_api::{ModelVersionInfo, RegisteredModelInfo, UpdateModelVersion};
 use uc_common::{three_part_full_name, wire_name};
 
-use super::model_details::model_rows;
+use super::model_details::is_pending;
 use crate::api;
-use crate::components::icons::DeploymentUnitOutlined;
+use crate::auth::use_auth;
+use crate::components::icons::{Box, CircleCheck, Trash2};
 use crate::components::{
-    ActionDropdown, DeleteModal, Description, LoadError, Loaded, MenuIcon, MenuItem, MetadataList,
+    Card, DeleteModal, DescriptionCard, EntityHeader, LoadError, Loaded, MetaGrid, MetaRow,
+    RawJsonCard, use_notify,
 };
-use crate::layout::{Breadcrumb, DetailsLayout};
-use crate::load::{Key, Load, field, use_cache, use_load};
-use crate::util::{format_timestamp, route_params};
+use crate::kind::Kind;
+use crate::load::{Key, field, use_cache, use_load};
+use crate::util::{format_timestamp, or_dash, pretty_json, route_params};
 
 #[component]
 pub fn ModelVersionDetails() -> impl IntoView {
@@ -25,161 +29,166 @@ pub fn ModelVersionDetails() -> impl IntoView {
 
 #[component]
 fn VersionPage(catalog: String, schema: String, model: String, version: String) -> impl IntoView {
-    let title = view! {
-        <h3 class="uc-title-3">
-            <DeploymentUnitOutlined/>
-            " "
-            {format!("{model} version {version}")}
-        </h3>
-    };
-    let breadcrumbs = vec![
-        Breadcrumb::link("Catalogs", "/"),
-        Breadcrumb::link(catalog.clone(), format!("/data/{catalog}")),
-        Breadcrumb::link(schema.clone(), format!("/data/{catalog}/{schema}")),
-        Breadcrumb::link(model.clone(), format!("/models/{catalog}/{schema}/{model}")),
-        Breadcrumb::current(format!("version {version}")),
-    ];
+    let icon = view! { <Box class="uc-icon--model"/> }.into_any();
     let Ok(number) = version.parse::<i64>() else {
         return view! {
-            <DetailsLayout title=title.into_any() breadcrumbs>
+            <EntityHeader icon name=format!("{model} · v{version}")/>
+            <div class="uc-page">
                 <LoadError message=format!("\"{version}\" is not a version number.")/>
-            </DetailsLayout>
+            </div>
         }
         .into_any();
     };
-
     let full_name = three_part_full_name(&catalog, &schema, &model);
-    let info = use_load(Key::Version(full_name.clone(), number), {
-        let full_name = full_name.clone();
-        move || {
-            let full_name = full_name.clone();
-            async move { api::client().get_model_version(&full_name, number).await }
-        }
+    let names = StoredValue::new((
+        catalog.clone(),
+        schema.clone(),
+        model.clone(),
+        full_name.clone(),
+    ));
+    let info = use_load(Key::Version(full_name.clone(), number), move || {
+        let (_, _, _, full_name) = names.get_value();
+        async move { api::client().get_model_version(&full_name, number).await }
     });
-    // Upstream's `ModelSidebar`: the registered model's details.
-    let model_info = use_load(Key::Model(full_name.clone()), {
-        let full_name = full_name.clone();
-        move || {
-            let full_name = full_name.clone();
-            async move { api::client().get_registered_model(&full_name).await }
-        }
+    let model_info = use_load(Key::Model(full_name.clone()), move || {
+        let (_, _, _, full_name) = names.get_value();
+        async move { api::client().get_registered_model(&full_name).await }
     });
     let cache = use_cache();
+    let auth = use_auth();
+    let notify = use_notify();
     let delete_open = RwSignal::new(false);
-    let save = {
-        let full_name = full_name.clone();
-        move |comment| {
-            let full_name = full_name.clone();
-            async move {
-                let request = UpdateModelVersion {
-                    comment: Some(comment),
-                };
-                let updated = api::client()
-                    .update_model_version(&full_name, number, &request)
-                    .await?;
-                cache.set(Key::Version(full_name, number), updated);
-                Ok(())
-            }
+    let finalizing = RwSignal::new(false);
+    let owner = field(model_info, |m: &RegisteredModelInfo| m.owner.clone());
+    let manages = Memo::new(move |_| {
+        auth.session
+            .with(|s| owner.with(|o| s.manages(o.as_deref())))
+    });
+    let comment = field(info, |v: &ModelVersionInfo| {
+        v.comment.clone().unwrap_or_default()
+    });
+    let badges = field(info, |v: &ModelVersionInfo| {
+        v.status
+            .as_ref()
+            .map(wire_name)
+            .into_iter()
+            .collect::<Vec<_>>()
+    });
+    let pending = field(info, is_pending);
+
+    let save_comment = move |comment: String| {
+        let (_, _, _, full_name) = names.get_value();
+        async move {
+            let request = UpdateModelVersion {
+                comment: Some(comment),
+            };
+            let updated = api::client()
+                .update_model_version(&full_name, number, &request)
+                .await?;
+            cache.set(Key::Version(full_name, number), updated);
+            Ok(())
         }
     };
+    let finalize = move |_| {
+        let (_, _, _, full_name) = names.get_value();
+        finalizing.set(true);
+        spawn_local(async move {
+            match api::client()
+                .finalize_model_version(&full_name, number)
+                .await
+            {
+                Ok(updated) => {
+                    notify.success(format!("Finalized version {number}"));
+                    cache.set(Key::Version(full_name.clone(), number), updated);
+                    cache.changed(Key::Versions(full_name));
+                }
+                Err(e) => notify.failed(&e, "Failed to finalize the model version"),
+            }
+            finalizing.set(false);
+        });
+    };
+    let refresh = Callback::new(move |_| {
+        let (_, _, _, full_name) = names.get_value();
+        cache.changed(Key::Version(full_name, number));
+    });
 
-    let modals = view! {
+    let actions = view! {
+        <Show when=move || pending.get()>
+            <button
+                type="button"
+                class="uc-btn uc-btn--outline uc-btn--sm"
+                disabled=move || finalizing.get()
+                on:click=finalize
+            >
+                <CircleCheck/>
+                "Finalize"
+            </button>
+        </Show>
+        <Show when=move || manages.get()>
+            <button
+                type="button"
+                class="uc-btn uc-btn--destructive uc-btn--sm"
+                on:click=move |_| delete_open.set(true)
+            >
+                <Trash2/>
+                "Delete"
+            </button>
+        </Show>
+    }
+    .into_any();
+
+    view! {
+        <EntityHeader
+            icon
+            name=format!("{model} · v{version}")
+            badges
+            on_refresh=refresh
+            actions
+        />
+        <div class="uc-page">
+            <Loaded state=info>
+                <DescriptionCard comment noun="model version" save=save_comment/>
+                <Card title="Version details">
+                    <MetaGrid rows=field(info, version_rows)/>
+                </Card>
+                <RawJsonCard json=field(info, pretty_json)/>
+            </Loaded>
+        </div>
         <DeleteModal
             open=delete_open
             noun="model version"
             question="Are you sure you want to delete model version"
             name=number.to_string()
             label=format!("Model version {number}")
-            delete={
-                let full_name = full_name.clone();
-                move |_| {
-                    let full_name = full_name.clone();
-                    async move { api::client().delete_model_version(&full_name, number).await }
-                }
+            delete=move |_| {
+                let (_, _, _, full_name) = names.get_value();
+                async move { api::client().delete_model_version(&full_name, number).await }
             }
             key=Key::Version(full_name.clone(), number)
             list=Key::Versions(full_name.clone())
-            then=format!("/models/{catalog}/{schema}/{model}")
+            then=Kind::Models.href(&catalog, &schema, &model)
         />
-    };
-
-    view! {
-        <DetailsLayout
-            title=view! {
-                <div class="uc-flex uc-justify-between uc-items-start uc-gap-md">
-                    {title}
-                    <Show when=move || info.with(|i| i.ready().is_some())>
-                        <ActionDropdown items=vec![
-                            MenuItem {
-                                label: "Delete Model Version",
-                                icon: MenuIcon::Delete,
-                                on_click: Callback::new(move |_| delete_open.set(true)),
-                            },
-                        ]/>
-                    </Show>
-                </div>
-            }
-                .into_any()
-            breadcrumbs
-        >
-            <Loaded state=info>
-                <div class="uc-flex-col uc-gap-xl">
-                    <Description
-                        comment=field(info, |v: &ModelVersionInfo| v.comment.clone().unwrap_or_default())
-                        noun="model version"
-                        hint="Model version description"
-                        label=format!("Model version {number}")
-                        save=save.clone()
-                    />
-                    <div>
-                        <h5 class="uc-title-5 uc-mb-md">"Version details"</h5>
-                        <table class="uc-table uc-table--bordered">
-                            <tbody>
-                                {move || {
-                                    version_rows(info)
-                                        .into_iter()
-                                        .map(|(label, value)| {
-                                            view! {
-                                                <tr>
-                                                    <th scope="row">{label}</th>
-                                                    <td>{value}</td>
-                                                </tr>
-                                            }
-                                        })
-                                        .collect_view()
-                                }}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <aside>
-                    <Loaded state=model_info>
-                        <MetadataList title="Model details" rows=field(model_info, model_rows)/>
-                    </Loaded>
-                </aside>
-            </Loaded>
-        </DetailsLayout>
-        {modals}
     }
-        .into_any()
+    .into_any()
 }
 
-/// Upstream's version details table: empty values stay, as there.
-fn version_rows(info: RwSignal<Load<ModelVersionInfo>>) -> Vec<(&'static str, String)> {
-    info.with(|i| {
-        let Some(v) = i.ready() else {
-            return Vec::new();
-        };
-        vec![
-            ("Created at", format_timestamp(v.created_at)),
-            ("Created by", v.created_by.clone().unwrap_or_default()),
-            ("Updated at", format_timestamp(v.updated_at)),
-            ("Updated by", v.updated_by.clone().unwrap_or_default()),
-            (
-                "Status",
-                v.status.as_ref().map(wire_name).unwrap_or_default(),
-            ),
-            ("Training run", v.run_id.clone().unwrap_or_default()),
-        ]
-    })
+fn version_rows(v: &ModelVersionInfo) -> Vec<MetaRow> {
+    vec![
+        MetaRow::new("Model", or_dash(v.model_name.clone())),
+        MetaRow::new(
+            "Version",
+            v.version
+                .map(|n| format!("v{n}"))
+                .unwrap_or_else(|| "—".into()),
+        ),
+        MetaRow::new("Status", or_dash(v.status.as_ref().map(wire_name))),
+        MetaRow::mono("Source", or_dash(v.source.clone())),
+        MetaRow::mono("Run ID", or_dash(v.run_id.clone())),
+        MetaRow::mono("Storage location", or_dash(v.storage_location.clone())),
+        MetaRow::new("Created at", format_timestamp(v.created_at)),
+        MetaRow::new("Created by", or_dash(v.created_by.clone())),
+        MetaRow::new("Updated at", format_timestamp(v.updated_at)),
+        MetaRow::new("Updated by", or_dash(v.updated_by.clone())),
+        MetaRow::mono("Version ID", or_dash(v.id.clone())),
+    ]
 }
