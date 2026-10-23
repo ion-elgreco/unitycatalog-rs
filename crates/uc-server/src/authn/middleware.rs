@@ -2,8 +2,9 @@
 //!
 //! A request carries its token as `Authorization: Bearer <token>` or in the
 //! `UC_TOKEN` cookie. Tokens are UC access tokens (RS512 JWTs this server
-//! signed, see [`crate::authn::security`]), personal access tokens, or Delta
-//! Sharing recipient tokens on the sharing endpoints.
+//! signed, see [`crate::authn::security`]) or personal access tokens. Delta
+//! Sharing recipients sign in to the protocol, outside the API, with tokens
+//! of their own (`crate::routes::sharing`).
 //!
 //! With authorization on, every request to the API and the control plane
 //! must be signed in, except those that sign in (token exchange, client
@@ -59,7 +60,7 @@ pub async fn auth_layer(
         ),
         None => {
             match bearer_token(req.headers()).or_else(|| cookie(req.headers(), UC_TOKEN_COOKIE)) {
-                Some(token) => Some(authenticate(&state, &token, &path, required).await),
+                Some(token) => Some(authenticate(&state, &token, required).await),
                 None => None,
             }
         }
@@ -138,24 +139,8 @@ pub(crate) fn token_cookie(value: &str, max_age: Duration, secure: bool) -> Resu
 
 /// The caller a token names. `active_user` requires the caller to be an
 /// active user, as upstream does whenever authorization is on.
-async fn authenticate(
-    state: &AppState,
-    token: &str,
-    path: &str,
-    active_user: bool,
-) -> Result<Principal> {
+async fn authenticate(state: &AppState, token: &str, active_user: bool) -> Result<Principal> {
     let invalid = || Error::new(ErrorCode::Unauthenticated, "Invalid access token.");
-    // Delta Sharing recipients are not users; the sharing handlers check
-    // them against their recipient.
-    if token.starts_with("dsr_") && path.contains("/delta-sharing/") {
-        return match state.metastore.sharing().recipient_for_token(token).await {
-            Ok(Some(recipient)) => Ok(Principal::authenticated(format!(
-                "recipient:{}",
-                recipient.name
-            ))),
-            _ => Err(invalid()),
-        };
-    }
     let principal = if looks_like_jwt(token) {
         state
             .security

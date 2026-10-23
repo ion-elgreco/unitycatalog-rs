@@ -27,7 +27,7 @@ pub use validation::{MAX_NAME_LENGTH, require_non_empty, validate_sql_object_nam
 pub use wire::{from_wire, wire_name};
 
 /// The path of the API, as upstream's server has it: the Unity Catalog,
-/// Delta, Iceberg REST and Delta Sharing APIs are below it.
+/// Delta and Iceberg REST APIs are below it.
 pub const API_BASE: &str = "/api/2.1/unity-catalog";
 
 /// The path of the control plane, as upstream's server has it: the token

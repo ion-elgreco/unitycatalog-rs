@@ -96,9 +96,11 @@ time = { version = "0.3", features = ["parsing"] }
 # Iceberg table metadata (the Iceberg REST catalog)
 iceberg = { version = "0.10.1", default-features = false }
 flate2 = "1"
-# Cloud object storage (managed-storage cleanup)
-object_store = { version = "0.12", default-features = false, features = ["aws", "gcp", "azure", "fs"] }
-# Delta tables in the CLI (`uc table create/read/write`); Arrow 58 as iceberg.
+# Cloud object storage (managed-storage cleanup, Delta Sharing). The version
+# of the Delta kernel's object stores.
+object_store = { version = "0.13", default-features = false, features = ["aws", "gcp", "azure", "fs"] }
+# Delta tables in the CLI (`uc table create/read/write`) and Delta Sharing in
+# the server; Arrow 58 as iceberg.
 delta_kernel = { version = "0.29", default-features = false, features = ["arrow-58", "internal-api"] }
 delta_kernel_default_engine = { version = "0.29", default-features = false, features = ["arrow-58", "rustls"] }
 

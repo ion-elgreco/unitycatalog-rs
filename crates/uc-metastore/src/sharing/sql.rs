@@ -7,12 +7,13 @@ use uc_api::{
     UpdateShare,
 };
 use uc_common::{Error, Pagination, Result, now_epoch_millis, validate_sql_object_name};
+use uc_storage::Exec;
 
 use crate::SharingOps;
 use crate::sql::rows::{RECIPIENT, SHARE};
 use crate::sql::{
-    SqlMetastore, create_err, db_err, insert, random_token, select_one, sha256_hex, touch_audit,
-    update,
+    SqlMetastore, create_err, db_err, insert, random_token, select, select_one, sha256_hex,
+    touch_audit, update,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,6 +89,34 @@ impl From<RecipientRow> for RecipientInfo {
             shares: r.shares.unwrap_or_default(),
         }
     }
+}
+
+/// Grant the recipients of share `old` the share `new` instead, or nothing
+/// for none.
+async fn regrant(ex: &dyn Exec, old: &str, new: Option<&str>) -> Result<()> {
+    let recipients: Vec<RecipientRow> =
+        select(ex, &RECIPIENT, "WHERE shares IS NOT NULL", &[]).await?;
+    for mut row in recipients {
+        let Some(shares) = row.shares.as_mut() else {
+            continue;
+        };
+        if !shares.iter().any(|s| s == old) {
+            continue;
+        }
+        shares.retain(|s| s != old);
+        if let Some(new) = new
+            && !shares.iter().any(|s| s == new)
+        {
+            shares.push(new.to_string());
+        }
+        if shares.is_empty() {
+            row.shares = None;
+        }
+        update(ex, &RECIPIENT, &row)
+            .await
+            .map_err(db_err("update recipient"))?;
+    }
+    Ok(())
 }
 
 /// Mint a Delta Sharing recipient token (`dsr_<64 hex>`): returns
@@ -179,8 +208,12 @@ impl SharingOps for SqlMetastore {
             row.comment = Some(c);
         }
 
-        // Objects are unique by `source_table_full_name`.
+        // Objects are unique by `source_table_full_name`. Removals come
+        // first, so that an update can remove an object and add it anew.
         let mut objs = row.objects.unwrap_or_default();
+        for rm in &req.remove_objects {
+            objs.retain(|o| o.source_table_full_name != rm.source_table_full_name);
+        }
         for add in req.add_objects {
             if !objs
                 .iter()
@@ -189,31 +222,44 @@ impl SharingOps for SqlMetastore {
                 objs.push(add);
             }
         }
-        for rm in &req.remove_objects {
-            objs.retain(|o| o.source_table_full_name != rm.source_table_full_name);
-        }
         row.objects = if objs.is_empty() { None } else { Some(objs) };
         touch_audit(&mut row.updated_at, &mut row.updated_by, updated_by);
 
-        if let Some(new_name) = req.new_name {
-            row.name = new_name;
+        let renamed = req.new_name.filter(|new_name| *new_name != row.name);
+        if let Some(new_name) = &renamed {
+            validate_sql_object_name(new_name)?;
+            row.name = new_name.clone();
         }
-        let written = update(self.db.as_ref(), &SHARE, &row)
+        // A rename moves the recipients' grants along, in one transaction.
+        let failed = db_err("update share");
+        let tx = self.db.begin().await.map_err(&failed)?;
+        let written = update(tx.as_ref(), &SHARE, &row)
             .await
             .map_err(create_err)?;
         if written == 0 {
             return Err(Error::not_found(format!("share '{name}' not found")));
         }
+        if let Some(new_name) = &renamed {
+            regrant(tx.as_ref(), name, Some(new_name)).await?;
+        }
+        tx.commit().await.map_err(&failed)?;
         Ok(row.into())
     }
 
     async fn delete_share(&self, name: &str) -> Result<()> {
-        self.delete_named(
-            "share",
-            name,
-            Error::not_found(format!("Share not found: {name}")),
-        )
-        .await
+        // A later share of the same name is not granted to the recipients
+        // of this one.
+        let failed = db_err("delete share");
+        let tx = self.db.begin().await.map_err(&failed)?;
+        let removed = tx
+            .execute("DELETE FROM share WHERE name = $1", &[name.into()])
+            .await
+            .map_err(&failed)?;
+        if removed == 0 {
+            return Err(Error::not_found(format!("Share not found: {name}")));
+        }
+        regrant(tx.as_ref(), name, None).await?;
+        tx.commit().await.map_err(&failed)
     }
 
     async fn create_recipient(

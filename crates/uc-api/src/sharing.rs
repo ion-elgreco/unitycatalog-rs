@@ -35,14 +35,41 @@ pub struct ShareInfo {
     pub objects: Vec<SharedDataObject>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct SharedDataObject {
-    /// `<catalog>.<schema>.<table>` reference into UC.
+    /// The shared Delta table, `<catalog>.<schema>.<table>`.
     pub source_table_full_name: String,
-    /// Schema the recipient sees this table under (e.g. `default`).
+    /// The schema recipients see the table in; by default the table's
+    /// schema.
+    #[serde(default)]
     pub shared_as_schema: String,
-    /// Table name the recipient sees (defaults to source's name).
+    /// The name recipients see; by default the table's name.
+    #[serde(default)]
     pub shared_as_name: String,
+    /// The table's id in the share, which the server assigns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    /// Whether recipients may read the table's earlier versions and its
+    /// changes, or only its latest version.
+    #[serde(default)]
+    pub history_data_sharing_status: HistoryDataSharingStatus,
+    /// With history: the first version recipients may read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_version: Option<i64>,
+}
+
+impl SharedDataObject {
+    pub fn history_shared(&self) -> bool {
+        self.history_data_sharing_status == HistoryDataSharingStatus::Enabled
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum HistoryDataSharingStatus {
+    Enabled,
+    #[default]
+    Disabled,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
@@ -58,8 +85,12 @@ pub struct UpdateShare {
     pub comment: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub new_name: Option<String>,
+    /// Tables to share. A table already in the share stays as it is:
+    /// remove it and add it in one update to change it.
     #[serde(default)]
     pub add_objects: Vec<SharedDataObject>,
+    /// Tables to stop sharing, by `source_table_full_name`; removed
+    /// before `add_objects` are added.
     #[serde(default)]
     pub remove_objects: Vec<SharedDataObject>,
 }
@@ -145,6 +176,14 @@ pub struct SharingShare {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+}
+
+/// `GET /shares/{share}` (recipient-side).
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SharingGetShareResponse {
+    pub share: SharingShare,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
@@ -180,6 +219,8 @@ pub struct SharingTable {
     pub name: String,
     pub schema: String,
     pub share: String,
+    #[serde(rename = "shareId", default, skip_serializing_if = "Option::is_none")]
+    pub share_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
 }
@@ -201,8 +242,27 @@ mod tests {
             "nextPageToken": "p2",
         }));
         assert_round_trip::<SharingListTablesResponse>(json!({
-            "items": [{ "name": "events", "schema": "default", "share": "analytics", "id": "2" }],
+            "items": [{
+                "name": "events", "schema": "default", "share": "analytics", "shareId": "1",
+                "id": "2",
+            }],
             "nextPageToken": "p2",
+        }));
+    }
+
+    #[test]
+    fn shared_tables_default_to_no_history() {
+        let object: SharedDataObject =
+            serde_json::from_value(json!({ "source_table_full_name": "main.default.events" }))
+                .unwrap();
+        assert!(!object.history_shared());
+        assert_round_trip::<SharedDataObject>(json!({
+            "source_table_full_name": "main.default.events",
+            "shared_as_schema": "default",
+            "shared_as_name": "events",
+            "id": "1",
+            "history_data_sharing_status": "ENABLED",
+            "start_version": 3,
         }));
     }
 }

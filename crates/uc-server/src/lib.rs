@@ -8,6 +8,7 @@ pub mod iceberg;
 pub mod observability;
 pub mod routes;
 pub mod server;
+pub mod sharing;
 pub mod storage;
 
 pub use server::app::{build_app, build_observability_app};

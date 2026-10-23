@@ -29,6 +29,9 @@ dev = ["maturin>=1,<2", "mypy>=1.18", "pytest>=8", "ruff>=0.15"]
 # Python, leave this group out with UV_NO_GROUP=integrations.
 integrations = [
     "deltalake>=1.6",
+    # The Delta Sharing client; it reads the delta format with the Delta
+    # kernel.
+    "delta-sharing>=1.4",
     # moto: a local S3 and STS, in its server mode (flask, flask-cors). Its
     # `server` extra would add the dependencies of all other AWS services.
     "flask>=3",

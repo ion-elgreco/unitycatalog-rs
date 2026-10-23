@@ -9,6 +9,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use hmac::{Hmac, Mac};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use rsa::{
     RsaPrivateKey,
@@ -32,6 +33,10 @@ pub const ADMIN: &str = "admin";
 /// never a token that [`SecurityContext::verify`] accepts.
 pub const LOGIN_ISSUER: &str = "internal-login";
 
+/// Hashed with the RSA key into the key of Delta Sharing's file URLs, so
+/// that the key serves no other purpose.
+const FILE_URL_KEY_CONTEXT: &[u8] = b"unitycatalog-rs delta sharing file urls\n";
+
 /// The claims of a UC access token.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenClaims {
@@ -49,6 +54,9 @@ pub struct SecurityContext {
     encoding: EncodingKey,
     decoding: DecodingKey,
     key_id: String,
+    /// The HMAC key of Delta Sharing's file URLs, from the RSA key: the
+    /// servers that share a key file accept each other's URLs.
+    file_url_key: [u8; 32],
 }
 
 fn internal(context: &str, e: impl std::fmt::Display) -> Error {
@@ -108,11 +116,41 @@ impl SecurityContext {
         );
         let decoding =
             DecodingKey::from_rsa_components(&n, &e).map_err(|e| internal("public key", e))?;
+        let file_url_key = Sha256::new()
+            .chain_update(FILE_URL_KEY_CONTEXT)
+            .chain_update(pkcs1.as_bytes())
+            .finalize()
+            .into();
         Ok(Self {
             encoding: EncodingKey::from_rsa_der(pkcs1.as_bytes()),
             decoding,
             key_id: thumbprint(&n, &e),
+            file_url_key,
         })
+    }
+
+    /// The signature (an HMAC-SHA256, in base64url) of Delta Sharing's URL
+    /// for reading `file` until `expires_at` (epoch seconds).
+    pub fn sign_file(&self, file: &str, expires_at: i64) -> String {
+        let mac = self.file_mac(file, expires_at).finalize().into_bytes();
+        URL_SAFE_NO_PAD.encode(mac)
+    }
+
+    /// Whether `signature` is [`Self::sign_file`]'s for `file` and
+    /// `expires_at`, and `expires_at` has not passed.
+    pub fn verify_file(&self, file: &str, expires_at: i64, signature: &str) -> bool {
+        let Ok(mac) = URL_SAFE_NO_PAD.decode(signature) else {
+            return false;
+        };
+        self.file_mac(file, expires_at).verify_slice(&mac).is_ok()
+            && now_epoch_millis() / 1000 < expires_at
+    }
+
+    fn file_mac(&self, file: &str, expires_at: i64) -> Hmac<Sha256> {
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(&self.file_url_key).expect("HMAC takes any key length");
+        mac.update(format!("{expires_at}\n{file}").as_bytes());
+        mac
     }
 
     /// Upstream `createAccessToken`: a token for `principal` that expires
@@ -350,5 +388,24 @@ mod tests {
             context.verify(&foreign).unwrap_err().code(),
             ErrorCode::PermissionDenied
         );
+    }
+
+    #[test]
+    fn file_signatures_hold_for_their_file_until_they_expire() {
+        let context = SecurityContext::generate().unwrap();
+        let later = now_epoch_millis() / 1000 + 60;
+        let file = "file:///tmp/t/part-0.parquet";
+        let signature = context.sign_file(file, later);
+        assert!(context.verify_file(file, later, &signature));
+
+        let other = SecurityContext::generate().unwrap();
+        assert!(!other.verify_file(file, later, &signature));
+        // Another file or expiry with the same signature.
+        assert!(!context.verify_file("file:///etc/passwd", later, &signature));
+        assert!(!context.verify_file(file, later + 3600, &signature));
+        assert!(!context.verify_file(file, later, "not base64!"));
+        let earlier = now_epoch_millis() / 1000 - 1;
+        let expired = context.sign_file(file, earlier);
+        assert!(!context.verify_file(file, earlier, &expired));
     }
 }

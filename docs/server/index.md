@@ -104,8 +104,8 @@ as a catalog made in the web UI, go to `storage` in `--dir`, unless `storage.tab
 | `/api/2.1/unity-catalog/` | The Unity Catalog REST API. |
 | `/api/2.1/unity-catalog/delta/v1/` | The Delta REST API, for managed Delta tables. |
 | `/api/2.1/unity-catalog/iceberg/v1/` | The Iceberg REST catalog. |
-| `/api/2.1/unity-catalog/delta-sharing/` | The Delta Sharing protocol. |
 | `/api/1.0/unity-control/` | Token exchange, sign-out, and SCIM users and groups. |
+| `/delta-sharing/` | The Delta Sharing protocol, for recipients of shares. |
 | `/auth/login`, `/auth/callback`, `/auth/logout`, `/auth/mode` | The web UI's sign-in. |
 | `/docs` | The API docs (Swagger UI). |
 | `/api-docs/openapi.json` | The OpenAPI document of the APIs. |

@@ -56,6 +56,7 @@ rsa = "0.9"
 rand = "0.8"
 p521 = { version = "0.13", features = ["ecdsa"] }
 reqwest.workspace = true
+url.workspace = true
 percent-encoding.workspace = true
 sha2.workspace = true
 hex.workspace = true
@@ -73,6 +74,9 @@ async-trait.workspace = true
 bytes.workspace = true
 futures.workspace = true
 object_store.workspace = true
+# Delta Sharing reads the shared tables with the Delta kernel.
+delta_kernel.workspace = true
+delta_kernel_default_engine.workspace = true
 iceberg.workspace = true
 flate2.workspace = true
 uuid.workspace = true

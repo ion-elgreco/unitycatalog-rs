@@ -13,7 +13,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use futures::{StreamExt, stream::BoxStream};
 use object_store::{
-    ObjectStore, StaticCredentialProvider,
+    ObjectStore, ObjectStoreExt, StaticCredentialProvider,
     aws::AmazonS3Builder,
     azure::{AzureConfigKey, MicrosoftAzureBuilder},
     client::SpawnedReqwestConnector,
@@ -70,18 +70,28 @@ impl ServerStorage {
         if location.scheme() == UriScheme::File {
             return Ok((Arc::new(LocalFileSystem::new()), path));
         }
+        let credentials = self.credentials(location, op).await?;
+        let store = build_store(location, credentials.as_ref(), self.vendor.s3_store())?;
+        Ok((store, path))
+    }
+
+    /// Credentials for the cloud `location` that allow `op`: vended, or
+    /// none for the environment's credentials.
+    pub async fn credentials(
+        &self,
+        location: &NormalizedUrl,
+        op: VendOp,
+    ) -> Result<Option<TemporaryCredentials>, StorageError> {
         let credential = credential_for_url(&self.metastore, location.as_str()).await?;
         let under_location = credential.is_some();
         let ctx = CredentialContext::new(location.clone(), op.privileges(), credential);
-        let credentials = match self.vendor.vend(&ctx).await {
-            Ok(credentials) => Some(credentials),
+        match self.vendor.vend(&ctx).await {
+            Ok(credentials) => Ok(Some(credentials)),
             // Neither an external location nor a bucket configuration: the
             // environment's credentials.
-            Err(e) if !under_location && e.code() == ErrorCode::FailedPrecondition => None,
-            Err(e) => return Err(e.into()),
-        };
-        let store = build_store(location, credentials.as_ref(), self.vendor.s3_store())?;
-        Ok((store, path))
+            Err(e) if !under_location && e.code() == ErrorCode::FailedPrecondition => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
@@ -92,56 +102,76 @@ fn build_store(
 ) -> Result<Arc<dyn ObjectStore>, StorageError> {
     let url = location.as_str();
     Ok(match location.scheme() {
-        UriScheme::S3 => {
-            let mut builder = AmazonS3Builder::from_env()
-                .with_url(url)
-                .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
-            if let Some(store) = s3_store {
-                builder = builder
-                    .with_endpoint(&store.endpoint)
-                    .with_region(&store.region)
-                    .with_allow_http(true);
-            }
-            if let Some(aws) = credentials.and_then(|c| c.aws_temp_credentials.as_ref()) {
-                if let Some(key) = &aws.access_key_id {
-                    builder = builder.with_access_key_id(key);
-                }
-                if let Some(secret) = &aws.secret_access_key {
-                    builder = builder.with_secret_access_key(secret);
-                }
-                if let Some(token) = &aws.session_token {
-                    builder = builder.with_token(token);
-                }
-            }
-            Arc::new(builder.build()?)
-        }
-        UriScheme::Gs => {
-            let mut builder = GoogleCloudStorageBuilder::from_env()
-                .with_url(url)
-                .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
-            let token = credentials
-                .and_then(|c| c.gcp_oauth_token.as_ref())
-                .and_then(|t| t.oauth_token.clone());
-            if let Some(bearer) = token {
-                let provider = StaticCredentialProvider::new(GcpCredential { bearer });
-                builder = builder.with_credentials(Arc::new(provider));
-            }
-            Arc::new(builder.build()?)
-        }
-        UriScheme::Abfs | UriScheme::Abfss => {
-            let mut builder = MicrosoftAzureBuilder::from_env()
-                .with_url(url)
-                .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
-            let sas = credentials
-                .and_then(|c| c.azure_user_delegation_sas.as_ref())
-                .and_then(|s| s.sas_token.clone());
-            if let Some(sas) = sas {
-                builder = builder.with_config(AzureConfigKey::SasKey, sas);
-            }
-            Arc::new(builder.build()?)
-        }
+        UriScheme::S3 => Arc::new(s3_builder(url, credentials, s3_store).build()?),
+        UriScheme::Gs => Arc::new(gcs_builder(url, credentials).build()?),
+        UriScheme::Abfs | UriScheme::Abfss => Arc::new(azure_builder(url, credentials).build()?),
         UriScheme::File => Arc::new(LocalFileSystem::new()),
     })
+}
+
+/// A store for the S3 `url`, with the vended `credentials` if any, in the
+/// S3-compatible `s3_store` if any.
+pub(crate) fn s3_builder(
+    url: &str,
+    credentials: Option<&TemporaryCredentials>,
+    s3_store: Option<&S3Store>,
+) -> AmazonS3Builder {
+    let mut builder = AmazonS3Builder::from_env()
+        .with_url(url)
+        .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
+    if let Some(store) = s3_store {
+        builder = builder
+            .with_endpoint(&store.endpoint)
+            .with_region(&store.region)
+            .with_allow_http(true);
+    }
+    if let Some(aws) = credentials.and_then(|c| c.aws_temp_credentials.as_ref()) {
+        if let Some(key) = &aws.access_key_id {
+            builder = builder.with_access_key_id(key);
+        }
+        if let Some(secret) = &aws.secret_access_key {
+            builder = builder.with_secret_access_key(secret);
+        }
+        if let Some(token) = &aws.session_token {
+            builder = builder.with_token(token);
+        }
+    }
+    builder
+}
+
+/// A store for the GCS `url`, with the vended `credentials` if any.
+pub(crate) fn gcs_builder(
+    url: &str,
+    credentials: Option<&TemporaryCredentials>,
+) -> GoogleCloudStorageBuilder {
+    let mut builder = GoogleCloudStorageBuilder::from_env()
+        .with_url(url)
+        .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
+    let token = credentials
+        .and_then(|c| c.gcp_oauth_token.as_ref())
+        .and_then(|t| t.oauth_token.clone());
+    if let Some(bearer) = token {
+        let provider = StaticCredentialProvider::new(GcpCredential { bearer });
+        builder = builder.with_credentials(Arc::new(provider));
+    }
+    builder
+}
+
+/// A store for the ADLS `url`, with the vended `credentials` if any.
+pub(crate) fn azure_builder(
+    url: &str,
+    credentials: Option<&TemporaryCredentials>,
+) -> MicrosoftAzureBuilder {
+    let mut builder = MicrosoftAzureBuilder::from_env()
+        .with_url(url)
+        .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
+    let sas = credentials
+        .and_then(|c| c.azure_user_delegation_sas.as_ref())
+        .and_then(|s| s.sas_token.clone());
+    if let Some(sas) = sas {
+        builder = builder.with_config(AzureConfigKey::SasKey, sas);
+    }
+    builder
 }
 
 /// Whether two objects hold the same bytes. Both are read in step, so

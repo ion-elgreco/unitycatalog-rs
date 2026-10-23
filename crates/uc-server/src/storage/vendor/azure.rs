@@ -47,7 +47,7 @@ pub struct AzureVendor {
 /// Upstream `ADLSLocationUtils.ADLSLocationParts`.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct LocationParts {
-    container: Option<String>,
+    pub(crate) container: Option<String>,
     /// `account.dfs.core.windows.net`.
     pub(crate) account: String,
     /// `account`.
