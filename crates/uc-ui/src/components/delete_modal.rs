@@ -1,12 +1,13 @@
-//! "Delete …" in a detail page's menu, as upstream's `Delete*Modal`: a
-//! question, then the call. After it, a toast, the list that lost the
-//! object loads again, and the UI goes to the parent page.
+//! "Delete" in a detail page's actions, as the console's
+//! `OwnerDeleteAction`: a dialog that asks for the object's name, then the
+//! call. After it, a toast, the list that lost the object loads again, and
+//! the UI goes to the parent page.
 //!
 //! The server deletes a catalog, schema or model only when it holds
-//! nothing, unless the call sets `force`; upstream's UI never sets it. Here
+//! nothing, unless the call sets `force`; the console never sets it. Here
 //! an admin (see [`crate::auth::Session::is_admin`]) gets a box that sets
 //! it, in two steps: with the box on, the dialog counts what goes with the
-//! object, and Delete asks again, in a second dialog over the first.
+//! object, and the delete asks again, in a second dialog over the first.
 
 use std::future::Future;
 
@@ -26,13 +27,8 @@ pub fn DeleteModal<F, Fut>(
     open: RwSignal<bool>,
     /// What is deleted, such as "catalog".
     noun: &'static str,
-    /// The question, before the name: upstream's text, such as "Are you
-    /// sure you want to delete the catalog".
-    question: &'static str,
-    /// The name in the question.
+    /// The name to type, as the console asks for it: the object's own.
     name: String,
-    /// The subject of the toast, such as "main catalog".
-    label: String,
     /// Delete the object; with `force`, also what it holds.
     delete: F,
     /// The object, which the UI forgets.
@@ -57,6 +53,8 @@ where
 {
     let busy = RwSignal::new(false);
     let forced = RwSignal::new(false);
+    // The name as typed: the delete waits for the whole of it.
+    let typed = RwSignal::new(String::new());
     // What goes with the object: counted when the box goes on. A newer
     // count wins.
     let counted: RwSignal<Option<Load<Contents>>> = RwSignal::new(None);
@@ -68,6 +66,7 @@ where
     let auth = use_auth();
     let navigate = use_navigate();
     let holder = StoredValue::new(holder);
+    let expected = StoredValue::new(name.clone());
     let can_force =
         move || holder.with_value(Option::is_some) && auth.session.with(|s| s.is_admin());
     let close = move || {
@@ -75,6 +74,7 @@ where
         confirming.set(false);
         forced.set(false);
         counted.set(None);
+        typed.set(String::new());
     };
     let count = move || {
         if counted.get_untracked().is_some() {
@@ -99,7 +99,6 @@ where
     };
     let run = move |force: bool| {
         let delete = delete.clone();
-        let label = label.clone();
         let key = key.clone();
         let list = list.clone();
         let then = then.clone();
@@ -112,7 +111,7 @@ where
         spawn_local(async move {
             match delete(force).await {
                 Ok(()) => {
-                    notify.success(format!("{label} successfully deleted"));
+                    notify.success(format!("{noun} deleted"));
                     if let Some(list) = list {
                         cache.changed(list);
                     }
@@ -141,6 +140,7 @@ where
         }
     };
     let counting = move || matches!(counted.get(), Some(Load::Loading));
+    let named = move || typed.with(|typed| expected.with_value(|name| typed == name));
     // The second step, by what the count found.
     let summary = {
         let name = name.clone();
@@ -157,15 +157,17 @@ where
             format!("This deletes {what} {name}{held}. {data}")
         }
     };
+    let prompt = format!("Enter {name} to confirm");
     view! {
         <Modal
             open
-            title=format!("Delete {noun}")
-            ok_text="Delete"
+            title=format!("Delete {noun}?")
+            ok_text="Delete permanently"
+            busy_text="Deleting…"
             danger=true
             busy=Signal::derive(move || busy.get() && !confirming.get())
             disabled=Signal::derive(move || {
-                (blocked.get().is_some() && !forced.get()) || (forced.get() && counting())
+                (blocked.get().is_some() && !forced.get()) || (forced.get() && counting()) || !named()
             })
             on_cancel=move || close()
             on_ok
@@ -173,17 +175,27 @@ where
             {
                 let name = name.clone();
                 move || match (blocked.get(), forced.get()) {
-                    (Some(reason), false) => view! { <span>{reason}</span> }.into_any(),
+                    (Some(reason), false) => view! { <p class="uc-muted">{reason}</p> }.into_any(),
                     _ => {
                         view! {
-                            <span>{question}</span>
-                            <span class="uc-strong">{format!(" {name}")}</span>
-                            <span>"? This operation cannot be undone."</span>
+                            <p class="uc-muted">
+                                "This cannot be undone. Enter "
+                                <strong>{name.clone()}</strong>
+                                " to confirm."
+                            </p>
                         }
                             .into_any()
                     }
                 }
             }
+            <input
+                class="uc-input"
+                type="text"
+                aria-label=prompt.clone()
+                autocomplete="off"
+                prop:value=move || typed.get()
+                on:input=move |e| typed.set(event_target_value(&e))
+            />
             {move || {
                 can_force()
                     .then(|| {
@@ -212,13 +224,14 @@ where
             open=confirming
             title="Are you sure?"
             ok_text="Delete everything"
+            busy_text="Deleting…"
             danger=true
             busy
             on_cancel=move || confirming.set(false)
             on_ok=move || run(true)
         >
             <p>{summary.clone()}</p>
-            <p class="uc-strong">"This operation cannot be undone."</p>
+            <p class="uc-strong">"This cannot be undone."</p>
         </Modal>
     }
 }

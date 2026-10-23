@@ -1,5 +1,6 @@
-//! A row in a list of objects, as the console's lists show them: the icon,
-//! the name and the comment, as a link to the object's page.
+//! A row in a list of objects, as the console's lists show them: the icon
+//! and the name, with the comment after a dash where the list has one, as
+//! a link to the object's page.
 
 use leptos::prelude::*;
 
@@ -16,7 +17,7 @@ pub fn ObjectRow(
             <span class="uc-row__name">{name}</span>
             {comment
                 .filter(|c| !c.is_empty())
-                .map(|c| view! { <span class="uc-row__comment">{c}</span> })}
+                .map(|c| view! { <span class="uc-row__comment">{format!("— {c}")}</span> })}
         </a>
     }
 }

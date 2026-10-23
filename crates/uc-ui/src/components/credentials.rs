@@ -119,8 +119,7 @@ pub fn CredentialsCard(kind: Vendable, #[prop(into)] id: Signal<Option<String>>)
         >
             <p class="uc-muted">
                 {format!(
-                    "Vend temporary credentials scoped to this {}'s storage location. \
-                     They work until they expire; the server logs who asked.",
+                    "Vend temporary credentials scoped to this {}'s storage location.",
                     kind.noun(),
                 )}
             </p>

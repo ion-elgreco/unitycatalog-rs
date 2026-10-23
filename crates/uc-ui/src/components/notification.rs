@@ -1,16 +1,16 @@
-//! Toasts, as the console's `sonner`: bottom right, an icon, a close
-//! button, 4.5 s. Their timers stop while the pointer is on them.
+//! Toasts, as the console's `sonner`: bottom right, an icon, 4 s. Their
+//! timers stop while the pointer is on them.
 
 use std::time::Duration;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use super::icons::{CircleCheck, CircleX, X};
+use super::icons::{CircleCheck, CircleX};
 use crate::api;
 
 /// How long a toast shows.
-const DURATION: Duration = Duration::from_millis(4500);
+const DURATION: Duration = Duration::from_millis(4000);
 const TICK: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,8 +23,6 @@ enum Level {
 struct Toast {
     id: u64,
     message: String,
-    /// A second line.
-    description: Option<String>,
     level: Level,
 }
 
@@ -40,16 +38,11 @@ pub struct Notify {
 
 impl Notify {
     pub fn success(&self, message: impl Into<String>) {
-        self.show(message.into(), None, Level::Success);
+        self.show(message.into(), Level::Success);
     }
 
     pub fn error(&self, message: impl Into<String>) {
-        self.show(message.into(), None, Level::Error);
-    }
-
-    /// An error with a second line.
-    pub fn error_with(&self, message: impl Into<String>, description: impl Into<String>) {
-        self.show(message.into(), Some(description.into()), Level::Error);
+        self.show(message.into(), Level::Error);
     }
 
     /// A failed call: the server's message, else `action`'s failure.
@@ -57,17 +50,11 @@ impl Notify {
         self.error(api::failure(e, action));
     }
 
-    fn show(&self, message: String, description: Option<String>, level: Level) {
+    fn show(&self, message: String, level: Level) {
         self.next_id.update_value(|id| *id += 1);
         let id = self.next_id.get_value();
-        self.toasts.update(|toasts| {
-            toasts.push(Toast {
-                id,
-                message,
-                description,
-                level,
-            })
-        });
+        self.toasts
+            .update(|toasts| toasts.push(Toast { id, message, level }));
         let notify = *self;
         spawn_local(async move {
             let mut shown = Duration::ZERO;
@@ -121,7 +108,6 @@ pub fn Notifications() -> impl IntoView {
                 each=move || notify.toasts.get()
                 key=|t| t.id
                 children=move |t| {
-                    let id = t.id;
                     let icon = match t.level {
                         Level::Success => view! {
                             <span class="uc-toast__icon uc-toast__icon--success">
@@ -140,17 +126,6 @@ pub fn Notifications() -> impl IntoView {
                         <div class="uc-toast" role="alert">
                             {icon}
                             <div class="uc-toast__message">{t.message}</div>
-                            <button
-                                type="button"
-                                class="uc-toast__close"
-                                aria-label="Close"
-                                on:click=move |_| notify.close(id)
-                            >
-                                <X/>
-                            </button>
-                            {t
-                                .description
-                                .map(|text| view! { <div class="uc-toast__description">{text}</div> })}
                         </div>
                     }
                 }

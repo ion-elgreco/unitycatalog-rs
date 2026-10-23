@@ -3,14 +3,8 @@
 
 use leptos::prelude::*;
 
-/// The label of a field; `required` marks it with a star.
-fn field_label(id: &'static str, text: &'static str, required: bool) -> impl IntoView {
-    view! {
-        <label class="uc-label" for=id>
-            {required.then(|| view! { <span class="req">"*"</span> })}
-            {text}
-        </label>
-    }
+fn field_label(id: &'static str, text: &'static str) -> impl IntoView {
+    view! { <label class="uc-label" for=id>{text}</label> }
 }
 
 /// One line of text.
@@ -25,7 +19,7 @@ pub fn TextField(
 ) -> impl IntoView {
     view! {
         <div class="uc-field">
-            {field_label(id, label, required)}
+            {field_label(id, label)}
             <input
                 id=id
                 class="uc-input"
@@ -56,10 +50,11 @@ pub fn TextArea(
     };
     view! {
         <div class="uc-field">
-            {field_label(id, label, required)}
+            {field_label(id, label)}
             <textarea
                 id=id
                 class=class
+                required=required
                 spellcheck=code.then_some("false")
                 prop:value=move || value.get()
                 on:input=move |e| value.set(event_target_value(&e))
@@ -95,7 +90,7 @@ where
     // itself would come before its options exist.
     view! {
         <div class=class>
-            {field_label(id, label, false)}
+            {field_label(id, label)}
             <select
                 id=id
                 class="uc-select"

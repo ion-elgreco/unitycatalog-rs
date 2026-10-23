@@ -13,7 +13,7 @@ use leptos::text_prop::TextProp;
 use wasm_bindgen::JsCast;
 use web_sys::{Element, HtmlElement};
 
-use super::icons::{LoaderCircle, X};
+use super::icons::X;
 
 /// What takes the focus in a dialog, for Tab.
 const FOCUSABLE: &str = "button:not([disabled]), input:not([disabled]), \
@@ -33,10 +33,13 @@ pub fn Modal(
     #[prop(into)]
     title: TextProp,
     ok_text: &'static str,
+    /// What OK says while the call runs.
+    #[prop(default = "Saving…")]
+    busy_text: &'static str,
     /// A red title and a red OK button, for deletes.
     #[prop(optional)]
     danger: bool,
-    /// A call runs: OK spins and waits for it.
+    /// A call runs: OK says `busy_text` and waits for it.
     #[prop(into, optional)]
     busy: Signal<bool>,
     /// OK is off.
@@ -53,6 +56,7 @@ pub fn Modal(
             <Dialog
                 title=title.clone()
                 ok_text
+                busy_text
                 danger
                 busy
                 disabled
@@ -69,6 +73,7 @@ pub fn Modal(
 fn Dialog(
     title: TextProp,
     ok_text: &'static str,
+    busy_text: &'static str,
     danger: bool,
     busy: Signal<bool>,
     disabled: Signal<bool>,
@@ -167,10 +172,7 @@ fn Dialog(
                         class=ok_class
                         disabled=move || disabled.get() || busy.get()
                     >
-                        <Show when=move || busy.get()>
-                            <LoaderCircle class="uc-spin"/>
-                        </Show>
-                        <span>{ok_text}</span>
+                        {move || if busy.get() { busy_text } else { ok_text }}
                     </button>
                 </div>
             </form>

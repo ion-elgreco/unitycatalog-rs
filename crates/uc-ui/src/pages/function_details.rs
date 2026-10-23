@@ -64,6 +64,7 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
     });
     let refresh = Callback::new(move |_| cache.changed(Key::Function(name.get_value())));
 
+    let parameters_title = move || format!("Input parameters ({})", parameters.with(Vec::len));
     let parameter_rows = move || {
         let parameters = parameters.get();
         if parameters.is_empty() {
@@ -124,10 +125,12 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
                             <Card title="Description">
                                 <Description comment/>
                             </Card>
-                            <Card title="Input parameters">{parameter_rows}</Card>
-                            <Card title="Routine definition">
-                                <CodeBlock text=definition/>
-                            </Card>
+                            <Card title=parameters_title>{parameter_rows}</Card>
+                            <Show when=move || definition.with(|d| !d.is_empty())>
+                                <Card title="Routine definition">
+                                    <CodeBlock text=definition/>
+                                </Card>
+                            </Show>
                         }
                     }
                     details=move || {
@@ -142,9 +145,7 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
         <DeleteModal
             open=delete_open
             noun="function"
-            question="Are you sure you want to delete the function"
             name=function.clone()
-            label=format!("{function} function")
             delete=move |_| {
                 let full_name = name.get_value();
                 async move { api::client().delete_function(&full_name).await }
@@ -158,7 +159,6 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
 
 fn function_rows(f: &FunctionInfo) -> Vec<MetaRow> {
     vec![
-        MetaRow::new("Name", or_dash(f.name.clone())),
         MetaRow::new("Owner", or_dash(f.owner.clone())),
         MetaRow::new(
             "Return type",
@@ -168,23 +168,9 @@ fn function_rows(f: &FunctionInfo) -> Vec<MetaRow> {
                     .or_else(|| f.data_type.as_ref().map(wire_name)),
             ),
         ),
-        MetaRow::new(
-            "Routine body",
-            or_dash(f.routine_body.as_ref().map(wire_name)),
-        ),
-        MetaRow::new("External language", or_dash(f.external_language.clone())),
-        MetaRow::new(
-            "SQL data access",
-            or_dash(f.sql_data_access.as_ref().map(wire_name)),
-        ),
-        MetaRow::new(
-            "Deterministic",
-            or_dash(f.is_deterministic.map(|d| d.to_string())),
-        ),
         MetaRow::new("Created at", format_timestamp(f.created_at)),
-        MetaRow::new("Created by", or_dash(f.created_by.clone())),
         MetaRow::new("Updated at", format_timestamp(f.updated_at)),
-        MetaRow::new("Updated by", or_dash(f.updated_by.clone())),
         MetaRow::mono("Function ID", or_dash(f.function_id.clone())),
+        MetaRow::new("Comment", or_dash(f.comment.clone())),
     ]
 }

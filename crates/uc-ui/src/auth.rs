@@ -6,8 +6,8 @@
 //! through the auth proxy in front of it.
 //!
 //! A session can end while the page is open, so the UI asks again when the
-//! window gets the focus, as upstream does, and when a call fails with 401
-//! or 403 ([`check_again`]).
+//! window gets the focus, and when a call fails with 401 or 403
+//! ([`check_again`]).
 //!
 //! `GET /auth/mode` says how the browser signs in, and where "Log out"
 //! goes: the login page and the profile menu show only what works. The UI

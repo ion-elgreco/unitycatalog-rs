@@ -8,8 +8,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 
-use super::field::{TextArea, TextField};
-use super::icons::Pencil;
+use super::field::TextField;
 use crate::api;
 use crate::components::{Modal, use_notify};
 
@@ -23,8 +22,6 @@ pub struct Changes {
 pub fn EditMetadata<F, Fut>(
     #[prop(into)] name: Signal<String>,
     #[prop(into)] comment: Signal<String>,
-    /// What is edited, such as "catalog".
-    noun: &'static str,
     /// Save the changes; the page to go to after a rename.
     save: F,
 ) -> impl IntoView
@@ -56,8 +53,8 @@ where
                 (text != comment.get_untracked()).then_some(text)
             },
         };
+        // Nothing to save: the dialog stays, as the console's.
         if changes.new_name.is_none() && changes.comment.is_none() {
-            open.set(false);
             return;
         }
         let save = save.clone();
@@ -66,7 +63,7 @@ where
         spawn_local(async move {
             match save(changes).await {
                 Ok(page) => {
-                    notify.success(format!("Updated the {noun}"));
+                    notify.success("Edit metadata complete");
                     if busy.try_get_untracked().is_some() {
                         open.set(false);
                         if let Some(page) = page {
@@ -74,14 +71,13 @@ where
                         }
                     }
                 }
-                Err(e) => notify.failed(&e, &format!("Failed to update {noun}")),
+                Err(e) => notify.failed(&e, "Edit metadata failed"),
             }
             busy.set(false);
         });
     };
     view! {
         <button type="button" class="uc-btn uc-btn--outline uc-btn--sm" on:click=edit>
-            <Pencil/>
             "Edit"
         </button>
         <Modal
@@ -93,7 +89,7 @@ where
             on_ok
         >
             <TextField id="uc-edit-name" label="Name" value=new_name required=true/>
-            <TextArea id="uc-edit-comment" label="Comment" value=new_comment/>
+            <TextField id="uc-edit-comment" label="Comment" value=new_comment/>
         </Modal>
     }
 }

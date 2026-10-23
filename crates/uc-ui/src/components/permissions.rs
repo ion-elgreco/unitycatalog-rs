@@ -1,7 +1,7 @@
 //! The Permissions tab's card, as upstream's console shows it: the
 //! signed-in user's privileges on the object, every grant on it, and, for
-//! its owner and the admins, the form that grants and the × that revokes.
-//! The server shows other users their own grants only.
+//! its owner and the admins, "Grant me …", the form that grants and the ×
+//! that revokes. The server shows other users their own grants only.
 
 use std::collections::BTreeSet;
 
@@ -54,6 +54,22 @@ fn choices(kind: SecurableType) -> &'static [Privilege] {
     }
 }
 
+/// "Grant me …": the button's text, and the privileges that use an object
+/// of `kind`, as the console offers them to its owner.
+fn self_grant(kind: SecurableType) -> Option<(&'static str, &'static [Privilege])> {
+    use Privilege::*;
+    Some(match kind {
+        SecurableType::Catalog => ("Grant me USE CATALOG", &[UseCatalog]),
+        SecurableType::Schema => ("Grant me USE SCHEMA", &[UseSchema]),
+        SecurableType::Table => ("Grant me read/write", &[Select, Modify]),
+        SecurableType::Volume => ("Grant me READ VOLUME", &[ReadVolume]),
+        SecurableType::Function | SecurableType::RegisteredModel => {
+            ("Grant me EXECUTE", &[Execute])
+        }
+        _ => return None,
+    })
+}
+
 #[component]
 pub fn PermissionsCard(
     kind: SecurableType,
@@ -94,18 +110,25 @@ pub fn PermissionsCard(
     // Grant or revoke, then show the grants the server answers with.
     let change = Callback::new({
         let full_name = full_name.clone();
-        move |(principal, privilege, grant): (String, Privilege, bool)| {
+        move |(principal, privileges, grant): (String, Vec<Privilege>, bool)| {
             let full_name = full_name.clone();
             let key = key.clone();
+            let what = privileges
+                .iter()
+                .map(wire_name)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let (add, remove) = match grant {
+                true => (privileges, Vec::new()),
+                false => (Vec::new(), privileges),
+            };
             busy.set(true);
             spawn_local(async move {
                 let answer =
-                    api::change_permission(kind, &full_name, principal.clone(), privilege, grant)
-                        .await;
+                    api::change_permissions(kind, &full_name, principal.clone(), add, remove).await;
                 match answer {
                     Ok(list) => {
                         cache.set(key, list.privilege_assignments);
-                        let what = wire_name(&privilege);
                         notify.success(match grant {
                             true => format!("Granted {what} to {principal}"),
                             false => format!("Revoked {what} from {principal}"),
@@ -122,6 +145,24 @@ pub fn PermissionsCard(
                 }
                 busy.set(false);
             });
+        }
+    });
+    let grant_me = self_grant(kind).map(|(label, privileges)| {
+        view! {
+            <Show when=move || manages.get() && me.with(Option::is_some)>
+                <button
+                    type="button"
+                    class="uc-btn uc-btn--outline uc-btn--sm"
+                    disabled=move || busy.get()
+                    on:click=move |_| {
+                        if let Some(me) = me.get_untracked() {
+                            change.run((me, privileges.to_vec(), true));
+                        }
+                    }
+                >
+                    {label}
+                </button>
+            </Show>
         }
     });
 
@@ -179,6 +220,7 @@ pub fn PermissionsCard(
             icon=view! { <ShieldCheck/> }.into_any()
             title="Permissions"
             subtitle=format!("{} · {full_name}", kind.as_str())
+            actions=grant_me.into_any()
         >
             <div>
                 <h4 class="uc-section-label">"Your privileges"</h4>
@@ -204,7 +246,7 @@ pub fn PermissionsCard(
 fn GrantRow(
     assignment: PrivilegeAssignment,
     manages: Memo<bool>,
-    change: Callback<(String, Privilege, bool)>,
+    change: Callback<(String, Vec<Privilege>, bool)>,
 ) -> impl IntoView {
     let principal = assignment.principal;
     let chips = assignment
@@ -227,7 +269,9 @@ fn GrantRow(
                                     class="uc-badge__x"
                                     title=label.clone()
                                     aria-label=label
-                                    on:click=move |_| change.run((principal.clone(), privilege, false))
+                                    on:click=move |_| {
+                                        change.run((principal.clone(), vec![privilege], false))
+                                    }
                                 >
                                     <X/>
                                 </button>
@@ -253,7 +297,7 @@ fn GrantRow(
 fn GrantForm(
     kind: SecurableType,
     busy: RwSignal<bool>,
-    change: Callback<(String, Privilege, bool)>,
+    change: Callback<(String, Vec<Privilege>, bool)>,
 ) -> impl IntoView {
     let choices = choices(kind);
     let principal = RwSignal::new(String::new());
@@ -264,7 +308,7 @@ fn GrantForm(
         if who.is_empty() {
             return;
         }
-        change.run((who, privilege.get_untracked(), true));
+        change.run((who, vec![privilege.get_untracked()], true));
         principal.set(String::new());
     };
     view! {

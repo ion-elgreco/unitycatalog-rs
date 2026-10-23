@@ -55,13 +55,13 @@ pub fn loaded_list<T>(
     }
 }
 
-/// How many items a loaded list has, for a badge: nothing until it loads.
-pub fn count<T: Send + Sync + 'static>(list: RwSignal<Load<Vec<T>>>) -> Signal<String> {
-    Signal::derive(move || {
-        list.with(|l| l.ready().map(Vec::len))
-            .map(|n| n.to_string())
-            .unwrap_or_default()
-    })
+/// A card's title with the count of a loaded list, as the console's:
+/// "Schemas (3)", and 0 until the list loads.
+pub fn counted<T: Send + Sync + 'static>(
+    label: &'static str,
+    list: RwSignal<Load<Vec<T>>>,
+) -> impl Fn() -> String + Copy {
+    move || format!("{label} ({})", list.with(|l| l.ready().map_or(0, Vec::len)))
 }
 
 /// The console's skeleton: a short bar and a block that pulse.

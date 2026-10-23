@@ -139,18 +139,14 @@ pub async fn permissions(kind: SecurableType, full_name: &str) -> Result<Vec<Pri
     Ok(list.privilege_assignments)
 }
 
-/// Grant or revoke one privilege: the grants afterwards.
-pub async fn change_permission(
+/// Grant and revoke privileges of one principal: the grants afterwards.
+pub async fn change_permissions(
     kind: SecurableType,
     full_name: &str,
     principal: String,
-    privilege: Privilege,
-    grant: bool,
+    add: Vec<Privilege>,
+    remove: Vec<Privilege>,
 ) -> Result<PermissionsList> {
-    let (add, remove) = match grant {
-        true => (vec![privilege], Vec::new()),
-        false => (Vec::new(), vec![privilege]),
-    };
     let request = UpdatePermissions {
         changes: vec![PermissionsChange {
             principal,

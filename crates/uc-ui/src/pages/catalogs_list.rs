@@ -38,6 +38,7 @@ pub fn CatalogsList() -> impl IntoView {
             <CreateModal
                 open=create_open
                 noun="catalog"
+                storage_root=true
                 create=|form: NewObject| async move {
                     let request = CreateCatalog {
                         name: form.name,
@@ -45,8 +46,8 @@ pub fn CatalogsList() -> impl IntoView {
                         properties: None,
                         storage_root: form.location,
                     };
-                    let catalog = api::client().create_catalog(&request).await?;
-                    Ok(catalog_href(&catalog.name.unwrap_or_default()))
+                    api::client().create_catalog(&request).await?;
+                    Ok(())
                 }
                 list=Key::Catalogs
             />
@@ -68,7 +69,7 @@ fn CatalogCard(catalog: CatalogInfo) -> impl IntoView {
             {catalog
                 .comment
                 .filter(|c| !c.is_empty())
-                .map(|comment| view! { <p class="uc-truncate">{comment}</p> })}
+                .map(|comment| view! { <p class="uc-card__comment">{comment}</p> })}
             <p class="uc-small">{format!("Updated {updated}")}</p>
         </a>
     }

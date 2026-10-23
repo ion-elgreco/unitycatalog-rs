@@ -436,6 +436,12 @@ pre,
 
 .uc-sidebar.is-closed { display: none; }
 
+.uc-sidebar__foot {
+  flex-shrink: 0;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+
 .uc-sidebar__head {
   display: flex;
   flex-shrink: 0;
@@ -672,13 +678,12 @@ pre,
   white-space: nowrap;
 }
 
-/* A type badge, such as MANAGED. */
-.uc-badge--upper {
+/* A type badge, such as MANAGED or Schema: as the page spells it. */
+.uc-badge--type {
   padding: 3px 10px;
   background: var(--secondary);
   color: var(--secondary-foreground);
   font-size: 13px;
-  text-transform: uppercase;
 }
 
 .uc-badge--primary {
@@ -904,10 +909,27 @@ pre,
   color: var(--muted-foreground);
 }
 
+/* The comment, on two lines at most. */
+.uc-card__comment {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* The catalog cards: one, two or three to a row, as the console's. */
 .uc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 16px;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .uc-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (min-width: 1024px) {
+  .uc-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
 .uc-empty {
@@ -1147,7 +1169,6 @@ pre,
   color: var(--foreground);
 }
 
-.uc-label .req { color: var(--destructive); margin-right: 2px; }
 
 .uc-input,
 .uc-select,
@@ -1454,7 +1475,7 @@ pre,
 
 .uc-toast {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 4px 12px;
   align-items: start;
   padding: 16px;
@@ -1472,25 +1493,6 @@ pre,
 .uc-toast__icon--success { color: var(--success); }
 .uc-toast__icon--error { color: var(--destructive); }
 .uc-toast__message { font-weight: 500; overflow-wrap: anywhere; }
-
-.uc-toast__description {
-  grid-column: 2;
-  color: var(--muted-foreground);
-  overflow-wrap: anywhere;
-}
-
-.uc-toast__close {
-  grid-column: 3;
-  grid-row: 1;
-  padding: 2px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted-foreground);
-}
-
-.uc-toast__close:hover { color: var(--foreground); }
-.uc-toast__close svg { width: 14px; height: 14px; }
 
 /* ---------- Loading ---------- */
 
@@ -1516,6 +1518,17 @@ pre,
 
 @keyframes uc-pulse {
   50% { opacity: 0.5; }
+}
+
+/* The page while the server says who is signed in: one bar, centered. */
+.uc-boot {
+  align-items: center;
+  padding-top: 25vh;
+}
+
+.uc-boot .uc-skeleton__bar {
+  width: 192px;
+  height: 32px;
 }
 
 /* ---------- Status icons ---------- */

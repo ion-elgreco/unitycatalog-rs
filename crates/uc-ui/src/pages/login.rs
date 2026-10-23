@@ -2,14 +2,14 @@
 //! one button, which sends the browser to `/auth/login`. The server signs
 //! in with its identity provider, then returns the browser to this page;
 //! after a failed sign-in, to `/login?error=<why>`, and the page says so.
-//! Where the browser cannot sign in, the page says why.
+//! Where the browser cannot sign in, the page says why. A signed-in user
+//! who opens the page goes to the catalogs.
 
 use leptos::prelude::*;
-use leptos_router::hooks::{use_location, use_query_map};
+use leptos_router::hooks::{use_location, use_navigate, use_query_map};
 
 use crate::auth::{SignIn, logout, logout_url, use_auth};
 use crate::components::Card;
-use crate::components::use_notify;
 
 /// The page to return to after the sign-in: this one, else `/`.
 fn current_path() -> String {
@@ -57,22 +57,33 @@ fn Frame(#[prop(into)] title: String, children: Children) -> impl IntoView {
 #[component]
 pub fn Login() -> impl IntoView {
     let auth = use_auth();
-    let notify = use_notify();
-    // A failed sign-in, once: then the URL loses its `?error=`.
-    let error = use_query_map().with_untracked(|query| query.get("error"));
-    if let Some(code) = error.filter(|_| use_location().pathname.get_untracked() == "/login") {
-        match why(&code) {
-            Some(why) => notify.error_with(
-                "Login failed. Please contact your system administrator.",
-                why,
-            ),
-            None => notify.error("Login failed. Please contact your system administrator."),
+    let navigate = use_navigate();
+    Effect::new(move |_| {
+        if auth.session.with(|session| session.user().is_some()) {
+            navigate("/", Default::default());
         }
-        if let Some(history) = web_sys::window().and_then(|w| w.history().ok()) {
-            let _ =
-                history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some("/login"));
-        }
+    });
+    // A failed sign-in, once: its reason, if the code names one. Then the
+    // URL loses its `?error=`.
+    let failed: Option<Option<&'static str>> = use_query_map()
+        .with_untracked(|query| query.get("error"))
+        .filter(|_| use_location().pathname.get_untracked() == "/login")
+        .map(|code| why(&code));
+    if failed.is_some()
+        && let Some(history) = web_sys::window().and_then(|w| w.history().ok())
+    {
+        let _ = history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some("/login"));
     }
+    let failure = move || {
+        failed.map(|reason| {
+            view! {
+                <p class="uc-error" role="alert">
+                    "Login failed. Contact your administrator."
+                    {reason.map(|why| view! { <br/>{why} })}
+                </p>
+            }
+        })
+    };
     let sign_in = move |_| {
         let rd = String::from(js_sys::encode_uri_component(&current_path()));
         if let Some(window) = web_sys::window() {
@@ -86,6 +97,7 @@ pub fn Login() -> impl IntoView {
             <button type="button" class="uc-btn uc-btn--block" on:click=sign_in>
                 "Sign in"
             </button>
+            {failure}
         }
         .into_any(),
         Some(SignIn::Forward) => view! {

@@ -66,7 +66,7 @@ to set up the sign-in.
 1. Click the logo to see the catalogs. Click a card to open the catalog.
 2. To make a catalog, click **Create catalog**. Give the name, a comment if
    you want one, and a storage root for its managed tables and volumes.
-   Then click **Create**: the catalog's page opens.
+   Then click **Create**: the catalog joins the list.
 
 ![Create catalog](assets/ui/catalog-create.png)
 
@@ -75,10 +75,11 @@ to set up the sign-in.
 
 ![A catalog](assets/ui/catalog.png)
 
-4. To delete the catalog, click **Delete**, then **Delete** again. The
-   server deletes only a catalog without schemas. An admin can tick **Also
-   delete its schemas, …**: the dialog then counts what goes with the
-   catalog, and **Delete** asks again, in a second dialog, before **Delete
+4. To delete the catalog, click **Delete**, type the catalog's name to
+   confirm, and click **Delete permanently**. The server deletes only a
+   catalog without schemas. An admin can tick **Also delete its schemas,
+   …**: the dialog then counts what goes with the catalog, and **Delete
+   permanently** asks again, in a second dialog, before **Delete
    everything**.
 
 ![Delete a catalog](assets/ui/catalog-delete.png)
@@ -96,14 +97,14 @@ to set up the sign-in.
 ![A schema](assets/ui/schema.png)
 
 3. **New** makes an object in the schema: an external table with one
-   column, a volume, a function in Python or SQL, or a registered model.
-   Pick the type at the top of the dialog.
+   column, a volume, a SQL function, or a registered model. Pick the type
+   at the top of the dialog.
 
 ![New object](assets/ui/object-create.png)
 
-4. To delete the schema, click **Delete**. The server deletes only an
-   empty schema; an admin can tick **Also delete its tables, …**, as for
-   catalogs.
+4. To delete the schema, click **Delete** and type its name to confirm.
+   The server deletes only an empty schema; an admin can tick **Also
+   delete its tables, …**, as for catalogs.
 
 ## Tables
 
@@ -111,7 +112,8 @@ A table's page shows its description and its columns: their types, whether
 they take nulls, and their comments. Click the pencil in a column's row to
 edit its comment, and **Edit** on the description to change it. The
 Details tab has the type, the format, the storage location, the properties
-and the JSON of the table. To delete the table, click **Delete**.
+and the JSON of the table. To delete the table, click **Delete** and type
+its name to confirm; every delete asks for the name.
 
 ![A table](assets/ui/table.png)
 
@@ -152,8 +154,8 @@ the function, click **Delete**.
 ![Create a registered model](assets/ui/model-create.png)
 
 3. A model's page shows its description and its versions, with their
-   status, source and time. **Create version** registers a version from a
-   source location, with a run id if you have one.
+   status and time. **Create version** registers a version from a source
+   location, with a run id if you have one.
 4. To delete the model, click **Delete**. Delete its versions first, or,
    as an admin, tick **Also delete its versions**, as for catalogs.
 
@@ -163,7 +165,7 @@ the function, click **Delete**.
 
 Click a version on the model's page. The page shows the version's
 description, with **Edit**, and its details: its status, source, run id,
-storage location, and when and by whom it was made and changed. A pending
+storage location, and when it was made and changed. A pending
 version has **Finalize**, which marks it ready once its files are in
 place. To delete the version, click **Delete**.
 
@@ -180,7 +182,9 @@ and to admins; other users see their own.
 The owner and the admins also get **Manage grants**: type a user's email,
 pick a privilege, and click **Grant**. The × after a privilege revokes it.
 The privileges on offer are the ones that the kind of object can hold,
-such as SELECT and MODIFY on a table. [Authorization](server/auth.md)
+such as SELECT and MODIFY on a table. **Grant me …**, at the top of the
+card, grants you the privileges that use the object: read/write on a
+table, EXECUTE on a function or model. [Authorization](server/auth.md)
 tells what each privilege allows.
 
 ## Access tokens

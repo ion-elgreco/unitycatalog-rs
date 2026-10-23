@@ -484,6 +484,7 @@ fn DeleteToken(
             open=Signal::derive(move || deleting.try_with(Option::is_some).unwrap_or(false))
             title="Delete access token"
             ok_text="Delete"
+            busy_text="Deleting…"
             danger=true
             busy
             on_cancel=move || deleting.set(None)

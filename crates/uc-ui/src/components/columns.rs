@@ -85,8 +85,7 @@ pub fn ColumnsCard(
                                 );
                                 let nullable = match column.nullable {
                                     Some(false) => "false",
-                                    Some(true) => "true",
-                                    None => "—",
+                                    _ => "true",
                                 };
                                 let name = column.name.unwrap_or_default();
                                 let title = format!("Edit the comment of {name}");

@@ -100,9 +100,7 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
         <DeleteModal
             open=delete_open
             noun="table"
-            question="Are you sure you want to delete the table"
-            name=full_name.clone()
-            label=format!("{table} table")
+            name=table.clone()
             delete=move |_| {
                 let full_name = name.get_value();
                 async move { api::client().delete_table(&full_name).await }
@@ -116,7 +114,6 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
 
 fn table_rows(t: &TableInfo) -> Vec<MetaRow> {
     vec![
-        MetaRow::new("Name", or_dash(t.name.clone())),
         MetaRow::new("Owner", or_dash(t.owner.clone())),
         MetaRow::new("Type", or_dash(t.table_type.as_ref().map(wire_name))),
         MetaRow::new(
@@ -124,10 +121,9 @@ fn table_rows(t: &TableInfo) -> Vec<MetaRow> {
             or_dash(t.data_source_format.as_ref().map(wire_name)),
         ),
         MetaRow::new("Created at", format_timestamp(t.created_at)),
-        MetaRow::new("Created by", or_dash(t.created_by.clone())),
         MetaRow::new("Updated at", format_timestamp(t.updated_at)),
-        MetaRow::new("Updated by", or_dash(t.updated_by.clone())),
         MetaRow::mono("Table ID", or_dash(t.table_id.clone())),
         MetaRow::mono("Storage location", or_dash(t.storage_location.clone())),
+        MetaRow::new("Comment", or_dash(t.comment.clone())),
     ]
 }

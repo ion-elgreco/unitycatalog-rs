@@ -9,7 +9,8 @@ use super::icons::{ChevronRight, Notebook, RefreshCw};
 use crate::util::{Route, catalog_href, schema_href};
 
 /// The path: "Catalog > catalog > schema > name". Each part but the last,
-/// which is the page shown, is a link.
+/// which is the page shown, is a link; "Catalog" alone, on the list of
+/// catalogs, keeps its link, as the console's.
 #[component]
 pub fn Crumbs(route: Route) -> impl IntoView {
     // Each part's label and page.
@@ -19,10 +20,11 @@ pub fn Crumbs(route: Route) -> impl IntoView {
         if let Some(schema) = &route.schema {
             parts.push((schema.clone(), schema_href(catalog, schema)));
             if let Some((kind, name)) = &route.object {
-                parts.push((name.clone(), kind.href(catalog, schema, name)));
-                if let Some(version) = &route.version {
-                    parts.push((format!("v{version}"), String::new()));
-                }
+                let label = match &route.version {
+                    Some(version) => format!("{name} · v{version}"),
+                    None => name.clone(),
+                };
+                parts.push((label, kind.href(catalog, schema, name)));
             }
         }
     }
@@ -42,15 +44,15 @@ pub fn Crumbs(route: Route) -> impl IntoView {
                 }
             });
             let icon = (i == 0).then(|| view! { <Notebook/> });
-            let item = if i < last {
-                view! { <li><a href=href>{icon}{label}</a></li> }.into_any()
-            } else {
+            let item = if i == last && last > 0 {
                 view! {
                     <li>
                         <span class="uc-crumbs__page" aria-current="page">{icon}{label}</span>
                     </li>
                 }
                 .into_any()
+            } else {
+                view! { <li><a href=href>{icon}{label}</a></li> }.into_any()
             };
             view! { {separator}{item} }
         })
@@ -84,7 +86,7 @@ pub fn EntityHeader(
                         badges
                             .get()
                             .into_iter()
-                            .map(|badge| view! { <span class="uc-badge uc-badge--upper">{badge}</span> })
+                            .map(|badge| view! { <span class="uc-badge uc-badge--type">{badge}</span> })
                             .collect_view()
                     }}
                     {on_refresh

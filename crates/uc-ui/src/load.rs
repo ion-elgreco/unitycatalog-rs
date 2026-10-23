@@ -11,8 +11,8 @@
 //!   ([`Cache::changed`], [`Cache::set`], [`Cache::forget`]): the views
 //!   that show them load them again at once.
 //! - A load that fails without an answer, or with 408, 429 or 5xx, is
-//!   tried 3 more times, after 1, 2 and 4 s, as react-query's default
-//!   retry. Other failures show at once: a 404 does not pass.
+//!   tried 3 more times, after 1, 2 and 4 s (the console does not retry).
+//!   Other failures show at once: a 404 does not pass.
 //! - One load runs per value, for all its views. While a value loads again,
 //!   and after a failed load, its views keep what they show.
 //!
@@ -91,7 +91,7 @@ pub enum Key {
 
 impl Key {
     /// What the UI says when the load fails and the server's answer has no
-    /// message: upstream's `errorMessage`.
+    /// message: the old console's `errorMessage` texts.
     fn failure(&self) -> &'static str {
         match self {
             Key::Catalogs => "Failed to fetch catalogs",

@@ -86,7 +86,7 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
             badges
             on_refresh=refresh
             actions=view! {
-                <EditMetadata name=volume.clone() comment noun="volume" save=save_metadata/>
+                <EditMetadata name=volume.clone() comment save=save_metadata/>
                 <DeleteButton open=delete_open when=manages/>
             }
                 .into_any()
@@ -111,9 +111,7 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
         <DeleteModal
             open=delete_open
             noun="volume"
-            question="Are you sure you want to delete the volume"
             name=volume.clone()
-            label=format!("{volume} volume")
             delete=move |_| {
                 let (_, _, full_name) = names.get_value();
                 async move { api::client().delete_volume(&full_name).await }
@@ -127,14 +125,12 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
 
 fn volume_rows(v: &VolumeInfo) -> Vec<MetaRow> {
     vec![
-        MetaRow::new("Name", or_dash(v.name.clone())),
         MetaRow::new("Owner", or_dash(v.owner.clone())),
         MetaRow::new("Type", or_dash(v.volume_type.as_ref().map(wire_name))),
         MetaRow::new("Created at", format_timestamp(v.created_at)),
-        MetaRow::new("Created by", or_dash(v.created_by.clone())),
         MetaRow::new("Updated at", format_timestamp(v.updated_at)),
-        MetaRow::new("Updated by", or_dash(v.updated_by.clone())),
         MetaRow::mono("Volume ID", or_dash(v.volume_id.clone())),
         MetaRow::mono("Storage location", or_dash(v.storage_location.clone())),
+        MetaRow::new("Comment", or_dash(v.comment.clone())),
     ]
 }

@@ -16,7 +16,7 @@ pub fn DetailsTab(
     #[prop(into)] json: Signal<String>,
 ) -> impl IntoView {
     view! {
-        <Card>
+        <Card title="Details">
             <MetaGrid rows/>
         </Card>
         {properties.map(|properties| view! { <PropertiesCard properties/> })}

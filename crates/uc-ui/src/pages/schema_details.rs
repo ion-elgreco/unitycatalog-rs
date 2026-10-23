@@ -100,10 +100,10 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
         <EntityHeader
             icon=schema_icon()
             name=schema.clone()
-            badges=vec!["SCHEMA".to_string()]
+            badges=vec!["Schema".to_string()]
             on_refresh=refresh
             actions=view! {
-                <EditMetadata name=schema.clone() comment noun="schema" save=save_metadata/>
+                <EditMetadata name=schema.clone() comment save=save_metadata/>
                 <button type="button" class="uc-btn uc-btn--sm" on:click=new_object>
                     <Plus/>
                     "New"
@@ -119,17 +119,14 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
                         let (catalog, schema, _) = names.get_value();
                         view! {
                             <DescriptionCard comment noun="schema" save=save_comment/>
-                            <Card
-                                title="Objects"
-                                actions=view! {
-                                    <KindPicker kind catalog=catalog.clone() schema=schema.clone()/>
-                                    <button type="button" class="uc-btn uc-btn--outline uc-btn--sm" on:click=new_object>
-                                        <Plus/>
-                                        "New"
-                                    </button>
-                                }
-                                    .into_any()
-                            >
+                            <Card actions=view! {
+                                <KindPicker kind catalog=catalog.clone() schema=schema.clone()/>
+                                <button type="button" class="uc-btn uc-btn--outline uc-btn--sm" on:click=new_object>
+                                    <Plus/>
+                                    "New"
+                                </button>
+                            }
+                                .into_any()>
                                 {move || {
                                     let (catalog, schema, _) = names.get_value();
                                     view! { <Entries kind=kind.get() catalog schema/> }
@@ -156,9 +153,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
         <DeleteModal
             open=delete_open
             noun="schema"
-            question="Are you sure you want to delete the schema"
             name=schema.clone()
-            label=format!("{schema} schema")
             delete=move |force| {
                 let (_, _, full_name) = names.get_value();
                 async move { api::client().delete_schema(&full_name, force).await }
@@ -222,8 +217,7 @@ fn Entries(kind: Kind, catalog: String, schema: String) -> impl IntoView {
         },
     );
     move || {
-        let empty = format!("No {}.", kind.label().to_lowercase());
-        loaded_list(entries.get(), empty, |list| {
+        loaded_list(entries.get(), "None.", |list| {
             let (catalog, schema) = names.get_value();
             view! {
                 <div class="uc-rows">
@@ -235,7 +229,7 @@ fn Entries(kind: Kind, catalog: String, schema: String) -> impl IntoView {
                                     icon=kind.icon()
                                     name=entry.name.clone()
                                     href=kind.href(&catalog, &schema, &entry.name)
-                                    comment=entry.comment
+                                    comment=None
                                 />
                             }
                         })
@@ -249,14 +243,12 @@ fn Entries(kind: Kind, catalog: String, schema: String) -> impl IntoView {
 
 fn schema_rows(s: &SchemaInfo) -> Vec<MetaRow> {
     vec![
-        MetaRow::new("Name", or_dash(s.name.clone())),
         MetaRow::new("Catalog", or_dash(s.catalog_name.clone())),
         MetaRow::new("Owner", or_dash(s.owner.clone())),
         MetaRow::new("Created at", format_timestamp(s.created_at)),
-        MetaRow::new("Created by", or_dash(s.created_by.clone())),
         MetaRow::new("Updated at", format_timestamp(s.updated_at)),
-        MetaRow::new("Updated by", or_dash(s.updated_by.clone())),
         MetaRow::mono("Schema ID", or_dash(s.schema_id.clone())),
         MetaRow::mono("Storage root", or_dash(s.storage_root.clone())),
+        MetaRow::new("Comment", or_dash(s.comment.clone())),
     ]
 }

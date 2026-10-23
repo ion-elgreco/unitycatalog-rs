@@ -1,11 +1,10 @@
 //! "New" on a schema's page, as the console's `CreateSchemaObjectAction`:
-//! an external table, a volume, a function or a registered model, from one
-//! dialog with a type picker. After the call, the UI goes to the object's
-//! page.
+//! an external table, a volume, a SQL function or a registered model, from
+//! one dialog with a type picker. After the call, a toast, and the list
+//! that gained the object loads again.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use leptos_router::hooks::use_navigate;
 use uc_api::{
     ColumnInfo, ColumnTypeName, CreateFunction, CreateFunctionRequest, CreateRegisteredModel,
     CreateTable, CreateVolumeRequestContent, DataSourceFormat, ParameterStyle, RoutineBody,
@@ -19,45 +18,43 @@ use crate::components::{Modal, use_notify};
 use crate::kind::Kind;
 use crate::load::{Key, use_cache};
 
-/// The column types the dialog offers: the scalar ones.
+/// The column types the dialog offers: the scalar ones, in the console's
+/// order.
 const SCALARS: [ColumnTypeName; 9] = [
-    ColumnTypeName::String,
+    ColumnTypeName::Boolean,
     ColumnTypeName::Int,
     ColumnTypeName::Long,
     ColumnTypeName::Double,
-    ColumnTypeName::Float,
-    ColumnTypeName::Boolean,
     ColumnTypeName::Date,
     ColumnTypeName::Timestamp,
+    ColumnTypeName::String,
     ColumnTypeName::Binary,
+    ColumnTypeName::Variant,
 ];
 
 const FORMATS: [DataSourceFormat; 7] = [
     DataSourceFormat::Delta,
-    DataSourceFormat::Parquet,
     DataSourceFormat::Csv,
     DataSourceFormat::Json,
     DataSourceFormat::Avro,
+    DataSourceFormat::Parquet,
     DataSourceFormat::Orc,
     DataSourceFormat::Text,
 ];
 
 const VOLUME_TYPES: [VolumeType; 2] = [VolumeType::Managed, VolumeType::External];
 
-/// A new function's language: Python, as an external routine, or SQL.
-const BODIES: [RoutineBody; 2] = [RoutineBody::External, RoutineBody::Sql];
-
 /// A scalar type's name in Delta's schema, for `type_json`.
 fn delta_type(t: ColumnTypeName) -> &'static str {
     match t {
+        ColumnTypeName::Boolean => "boolean",
         ColumnTypeName::Int => "integer",
         ColumnTypeName::Long => "long",
         ColumnTypeName::Double => "double",
-        ColumnTypeName::Float => "float",
-        ColumnTypeName::Boolean => "boolean",
         ColumnTypeName::Date => "date",
         ColumnTypeName::Timestamp => "timestamp",
         ColumnTypeName::Binary => "binary",
+        ColumnTypeName::Variant => "variant",
         _ => "string",
     }
 }
@@ -96,13 +93,11 @@ pub fn CreateObjectModal(
     let column_type = RwSignal::new(ColumnTypeName::String);
     let format = RwSignal::new(DataSourceFormat::Delta);
     let volume_type = RwSignal::new(VolumeType::Managed);
-    let body = RwSignal::new(RoutineBody::External);
     let return_type = RwSignal::new(ColumnTypeName::String);
     let definition = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let notify = use_notify();
     let cache = use_cache();
-    let navigate = use_navigate();
     let close = move || {
         open.set(false);
         name.set(String::new());
@@ -123,6 +118,11 @@ pub fn CreateObjectModal(
         }
         let text = comment.get_untracked();
         let comment = (!text.is_empty()).then_some(text);
+        let column_name = column_name.get_untracked().trim().to_string();
+        if kind == Kind::Tables && column_name.is_empty() {
+            notify.error("Column name is required");
+            return;
+        }
         let path = location.get_untracked().trim().to_string();
         if untrack(needs_location) && path.is_empty() {
             notify.error("Storage location is required");
@@ -130,28 +130,23 @@ pub fn CreateObjectModal(
         }
         let routine = definition.get_untracked();
         if kind == Kind::Functions && routine.trim().is_empty() {
-            notify.error("Definition is required");
+            notify.error("Routine definition is required");
             return;
         }
         let catalog = catalog.clone();
         let schema = schema.clone();
-        let page = kind.href(&catalog, &schema, &new_name);
         let list = Key::Entries(catalog.clone(), schema.clone(), kind);
-        let navigate = navigate.clone();
         busy.set(true);
         spawn_local(async move {
             let client = api::client();
             let answer = match kind {
                 Kind::Tables => {
                     let request = CreateTable {
-                        name: new_name.clone(),
+                        name: new_name,
                         catalog_name: catalog,
                         schema_name: schema,
                         table_type: TableType::External,
-                        columns: vec![column(
-                            column_name.get_untracked().trim(),
-                            column_type.get_untracked(),
-                        )],
+                        columns: vec![column(&column_name, column_type.get_untracked())],
                         data_source_format: Some(format.get_untracked()),
                         storage_location: Some(path),
                         comment,
@@ -166,7 +161,7 @@ pub fn CreateObjectModal(
                     let request = CreateVolumeRequestContent {
                         catalog_name: catalog,
                         schema_name: schema,
-                        name: new_name.clone(),
+                        name: new_name,
                         volume_type,
                         comment,
                         storage_location: (volume_type == VolumeType::External).then_some(path),
@@ -174,7 +169,7 @@ pub fn CreateObjectModal(
                     client.create_volume(&request).await.map(|_| ())
                 }
                 Kind::Functions => {
-                    let body = body.get_untracked();
+                    // A SQL function, as the console makes it.
                     let return_type = return_type.get_untracked();
                     let request = CreateFunctionRequest {
                         function_info: CreateFunction {
@@ -185,29 +180,25 @@ pub fn CreateObjectModal(
                             data_type: Some(return_type),
                             full_data_type: Some(wire_name(&return_type)),
                             return_params: None,
-                            routine_body: body,
+                            routine_body: RoutineBody::Sql,
                             routine_definition: Some(routine),
                             routine_dependencies: None,
                             parameter_style: ParameterStyle::S,
                             is_deterministic: Some(true),
-                            sql_data_access: Some(match body {
-                                RoutineBody::External => SqlDataAccess::NoSql,
-                                RoutineBody::Sql => SqlDataAccess::ContainsSql,
-                            }),
+                            sql_data_access: Some(SqlDataAccess::NoSql),
                             is_null_call: Some(false),
                             security_type: SecurityType::Definer,
-                            specific_name: Some(new_name.clone()),
+                            specific_name: Some(new_name),
                             comment,
                             properties: None,
-                            external_language: (body == RoutineBody::External)
-                                .then(|| "python".to_string()),
+                            external_language: None,
                         },
                     };
                     client.create_function(&request).await.map(|_| ())
                 }
                 Kind::Models => {
                     let request = CreateRegisteredModel {
-                        name: new_name.clone(),
+                        name: new_name,
                         catalog_name: catalog,
                         schema_name: schema,
                         comment,
@@ -217,14 +208,13 @@ pub fn CreateObjectModal(
             };
             match answer {
                 Ok(()) => {
-                    notify.success(format!("Created {} {new_name}", kind.noun()));
+                    notify.success(format!("Create {} complete", kind.noun()));
                     cache.changed(list);
                     if busy.try_get_untracked().is_some() {
                         close();
-                        navigate(&page, Default::default());
                     }
                 }
-                Err(e) => notify.failed(&e, &format!("Failed to create {}", kind.noun())),
+                Err(e) => notify.failed(&e, &format!("Create {} failed", kind.noun())),
             }
             busy.set(false);
         });
@@ -249,16 +239,14 @@ pub fn CreateObjectModal(
             />
             <TextField id="uc-new-name" label="Name" value=name required=true/>
             <Show when=move || kind.get() == Kind::Tables>
-                <div class="uc-form-row">
-                    <TextField id="uc-new-column" label="Column name" value=column_name/>
-                    <Select
-                        id="uc-new-column-type"
-                        label="Column type"
-                        choices=&SCALARS
-                        value=column_type
-                        name=wire_name
-                    />
-                </div>
+                <TextField id="uc-new-column" label="Column name" value=column_name required=true/>
+                <Select
+                    id="uc-new-column-type"
+                    label="Column type"
+                    choices=&SCALARS
+                    value=column_type
+                    name=wire_name
+                />
                 <Select
                     id="uc-new-format"
                     label="Data source format"
@@ -293,38 +281,22 @@ pub fn CreateObjectModal(
                 />
             </Show>
             <Show when=move || kind.get() == Kind::Functions>
-                <div class="uc-form-row">
-                    <Select
-                        id="uc-new-language"
-                        label="Language"
-                        choices=&BODIES
-                        value=body
-                        name=wire_name
-                        text=|body: &RoutineBody| {
-                            match body {
-                                RoutineBody::External => "Python",
-                                RoutineBody::Sql => "SQL",
-                            }
-                                .to_string()
-                        }
-                    />
-                    <Select
-                        id="uc-new-return-type"
-                        label="Return type"
-                        choices=&SCALARS
-                        value=return_type
-                        name=wire_name
-                    />
-                </div>
                 <TextArea
                     id="uc-new-definition"
-                    label="Definition"
+                    label="Routine definition"
                     value=definition
                     required=true
                     code=true
                 />
+                <Select
+                    id="uc-new-return-type"
+                    label="Return type"
+                    choices=&SCALARS
+                    value=return_type
+                    name=wire_name
+                />
             </Show>
-            <TextArea id="uc-new-comment" label="Comment" value=comment/>
+            <TextField id="uc-new-comment" label="Comment" value=comment/>
         </Modal>
     }
 }

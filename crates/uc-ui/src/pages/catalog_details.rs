@@ -11,8 +11,8 @@ use crate::components::edit_modal::Changes;
 use crate::components::icons::Plus;
 use crate::components::{
     Card, CreateModal, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata,
-    EntityHeader, Loaded, MetaRow, NewObject, ObjectRow, PermissionsCard, Tabs, count, loaded_list,
-    properties,
+    EntityHeader, Loaded, MetaRow, NewObject, ObjectRow, PermissionsCard, Tabs, counted,
+    loaded_list, properties,
 };
 use crate::contents::Holder;
 use crate::kind::{catalog_icon, schema_icon};
@@ -108,10 +108,10 @@ fn CatalogPage(catalog: String) -> impl IntoView {
         <EntityHeader
             icon=catalog_icon()
             name=catalog.clone()
-            badges=vec!["CATALOG".to_string()]
+            badges=vec!["Catalog".to_string()]
             on_refresh=refresh
             actions=view! {
-                <EditMetadata name=catalog.clone() comment noun="catalog" save=save_metadata/>
+                <EditMetadata name=catalog.clone() comment save=save_metadata/>
                 <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>
                     <Plus/>
                     "Create schema"
@@ -126,12 +126,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
                     overview=move || {
                         view! {
                             <DescriptionCard comment noun="catalog" save=save_comment/>
-                            <Card
-                                title="Schemas"
-                                actions=view! { <span class="uc-badge">{count(schemas)}</span> }.into_any()
-                            >
-                                {schema_rows}
-                            </Card>
+                            <Card title=counted("Schemas", schemas)>{schema_rows}</Card>
                         }
                     }
                     details=move || {
@@ -152,9 +147,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
         <DeleteModal
             open=delete_open
             noun="catalog"
-            question="Are you sure you want to delete the catalog"
             name=catalog.clone()
-            label=format!("{catalog} catalog")
             delete=move |force| {
                 let catalog = name.get_value();
                 async move { api::client().delete_catalog(&catalog, force).await }
@@ -172,13 +165,13 @@ fn CatalogPage(catalog: String) -> impl IntoView {
                 async move {
                     let request = CreateSchema {
                         name: form.name,
-                        catalog_name: catalog.clone(),
+                        catalog_name: catalog,
                         comment: form.comment,
                         properties: None,
                         storage_root: form.location,
                     };
-                    let schema = api::client().create_schema(&request).await?;
-                    Ok(schema_href(&catalog, &schema.name.unwrap_or_default()))
+                    api::client().create_schema(&request).await?;
+                    Ok(())
                 }
             }
             list=Key::Schemas(catalog.clone())
@@ -188,13 +181,11 @@ fn CatalogPage(catalog: String) -> impl IntoView {
 
 fn catalog_rows(c: &CatalogInfo) -> Vec<MetaRow> {
     vec![
-        MetaRow::new("Name", or_dash(c.name.clone())),
         MetaRow::new("Owner", or_dash(c.owner.clone())),
         MetaRow::new("Created at", format_timestamp(c.created_at)),
-        MetaRow::new("Created by", or_dash(c.created_by.clone())),
         MetaRow::new("Updated at", format_timestamp(c.updated_at)),
-        MetaRow::new("Updated by", or_dash(c.updated_by.clone())),
         MetaRow::mono("Catalog ID", or_dash(c.id.clone())),
         MetaRow::mono("Storage root", or_dash(c.storage_root.clone())),
+        MetaRow::new("Comment", or_dash(c.comment.clone())),
     ]
 }

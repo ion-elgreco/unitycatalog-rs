@@ -9,7 +9,6 @@ use uc_common::{three_part_full_name, wire_name};
 use super::model_details::is_pending;
 use crate::api;
 use crate::auth::use_manages;
-use crate::components::icons::CircleCheck;
 use crate::components::{
     Card, DeleteButton, DeleteModal, DescriptionCard, EntityHeader, LoadError, Loaded, MetaGrid,
     MetaRow, RawJsonCard, use_notify,
@@ -30,11 +29,12 @@ pub fn ModelVersionDetails() -> impl IntoView {
 #[component]
 fn VersionPage(catalog: String, schema: String, model: String, version: String) -> impl IntoView {
     let icon = Kind::Models.icon();
-    let Ok(number) = version.parse::<i64>() else {
+    // A version is a positive number, as the console takes it.
+    let Some(number) = version.parse::<i64>().ok().filter(|n| *n > 0) else {
         return view! {
             <EntityHeader icon name=format!("{model} · v{version}")/>
             <div class="uc-page">
-                <LoadError message=format!("\"{version}\" is not a version number.")/>
+                <LoadError message=format!("Invalid model version: {version}")/>
             </div>
         }
         .into_any();
@@ -94,7 +94,6 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
                 .await
             {
                 Ok(updated) => {
-                    notify.success(format!("Finalized version {number}"));
                     cache.set(Key::Version(full_name.clone(), number), updated);
                     cache.changed(Key::Versions(full_name));
                 }
@@ -116,7 +115,6 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
                 disabled=move || finalizing.get()
                 on:click=finalize
             >
-                <CircleCheck/>
                 "Finalize"
             </button>
         </Show>
@@ -135,7 +133,7 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
         <div class="uc-page">
             <Loaded state=info>
                 <DescriptionCard comment noun="model version" save=save_comment/>
-                <Card title="Version details">
+                <Card title="Details">
                     <MetaGrid rows=field(info, version_rows)/>
                 </Card>
                 <RawJsonCard json=field(info, pretty_json)/>
@@ -144,9 +142,7 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
         <DeleteModal
             open=delete_open
             noun="model version"
-            question="Are you sure you want to delete model version"
-            name=number.to_string()
-            label=format!("Model version {number}")
+            name=version.clone()
             delete=move |_| {
                 let (_, _, _, full_name) = names.get_value();
                 async move { api::client().delete_model_version(&full_name, number).await }
@@ -168,9 +164,7 @@ fn version_rows(v: &ModelVersionInfo) -> Vec<MetaRow> {
         MetaRow::mono("Run ID", or_dash(v.run_id.clone())),
         MetaRow::mono("Storage location", or_dash(v.storage_location.clone())),
         MetaRow::new("Created at", format_timestamp(v.created_at)),
-        MetaRow::new("Created by", or_dash(v.created_by.clone())),
         MetaRow::new("Updated at", format_timestamp(v.updated_at)),
-        MetaRow::new("Updated by", or_dash(v.updated_by.clone())),
-        MetaRow::mono("Version ID", or_dash(v.id.clone())),
+        MetaRow::new("Comment", or_dash(v.comment.clone())),
     ]
 }

@@ -4,7 +4,6 @@
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use leptos_router::hooks::use_navigate;
 use uc_api::{
     CreateModelVersion, ModelVersionInfo, ModelVersionStatus, RegisteredModelInfo,
     UpdateRegisteredModel,
@@ -14,11 +13,10 @@ use uc_common::{SecurableType, three_part_full_name, wire_name};
 use crate::api;
 use crate::auth::use_manages;
 use crate::components::edit_modal::Changes;
-use crate::components::icons::{CircleCheck, CircleMinus, CircleX, Plus};
+use crate::components::icons::Plus;
 use crate::components::{
     Card, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata, EntityHeader,
-    Loaded, MetaRow, Modal, PermissionsCard, Tabs, TextArea, TextField, count, loaded_list,
-    use_notify,
+    Loaded, MetaRow, Modal, PermissionsCard, Tabs, TextField, counted, loaded_list, use_notify,
 };
 use crate::contents::Holder;
 use crate::kind::Kind;
@@ -115,7 +113,6 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
                             <tr>
                                 <th>"Version"</th>
                                 <th>"Status"</th>
-                                <th>"Source"</th>
                                 <th>"Created"</th>
                             </tr>
                         </thead>
@@ -131,8 +128,7 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
                                                     {format!("v{number}")}
                                                 </a>
                                             </td>
-                                            <td>{status(v.status.as_ref())}</td>
-                                            <td class="uc-mono">{or_dash(v.source)}</td>
+                                            <td class="uc-muted">{or_dash(v.status.as_ref().map(wire_name))}</td>
                                             <td class="uc-muted">{format_timestamp(v.created_at)}</td>
                                         </tr>
                                     }
@@ -150,10 +146,10 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
         <EntityHeader
             icon=Kind::Models.icon()
             name=full_name.clone()
-            badges=vec!["MODEL".to_string()]
+            badges=vec!["Model".to_string()]
             on_refresh=refresh
             actions=view! {
-                <EditMetadata name=model.clone() comment noun="model" save=save_metadata/>
+                <EditMetadata name=model.clone() comment save=save_metadata/>
                 <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>
                     <Plus/>
                     "Create version"
@@ -168,12 +164,7 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
                     overview=move || {
                         view! {
                             <DescriptionCard comment noun="model" save=save_comment/>
-                            <Card
-                                title="Versions"
-                                actions=view! { <span class="uc-badge">{count(versions)}</span> }.into_any()
-                            >
-                                {version_rows}
-                            </Card>
+                            <Card title=counted("Versions", versions)>{version_rows}</Card>
                         }
                     }
                     details=move || {
@@ -188,10 +179,8 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
         </div>
         <DeleteModal
             open=delete_open
-            noun="model"
-            question="Are you sure you want to delete the model"
+            noun="registered model"
             name=model.clone()
-            label=format!("{model} model")
             delete=move |force| {
                 let (_, _, _, full_name) = names.get_value();
                 async move { api::client().delete_registered_model(&full_name, force).await }
@@ -213,33 +202,6 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
     }
 }
 
-/// A version's status: an icon in green, gray or red, and its name.
-fn status(status: Option<&ModelVersionStatus>) -> AnyView {
-    let (class, icon) = match status {
-        Some(ModelVersionStatus::Ready) => (
-            "uc-inline uc-status--ready",
-            view! { <CircleCheck/> }.into_any(),
-        ),
-        Some(ModelVersionStatus::PendingRegistration) => (
-            "uc-inline uc-status--pending",
-            view! { <CircleMinus/> }.into_any(),
-        ),
-        Some(ModelVersionStatus::FailedRegistration) => (
-            "uc-inline uc-status--failed",
-            view! { <CircleX/> }.into_any(),
-        ),
-        _ => ("uc-inline uc-muted", ().into_any()),
-    };
-    let text = status.map(wire_name).unwrap_or_else(|| "UNKNOWN".into());
-    view! {
-        <span class=class>
-            {icon}
-            <span>{text}</span>
-        </span>
-    }
-    .into_any()
-}
-
 /// "Create version": the source, a run id and a comment.
 #[component]
 fn CreateVersion(
@@ -255,7 +217,6 @@ fn CreateVersion(
     let busy = RwSignal::new(false);
     let notify = use_notify();
     let cache = use_cache();
-    let navigate = use_navigate();
     let close = move || {
         open.set(false);
         source.set(String::new());
@@ -279,25 +240,19 @@ fn CreateVersion(
             run_id: (!run.is_empty()).then_some(run),
             comment: (!text.is_empty()).then_some(text),
         };
-        let navigate = navigate.clone();
         busy.set(true);
         spawn_local(async move {
             match api::client().create_model_version(&request).await {
-                Ok(version) => {
-                    let number = version.version.unwrap_or_default();
-                    notify.success(format!("Created version {number}"));
+                Ok(_) => {
+                    notify.success("Create model version complete");
                     cache.changed(Key::Versions(three_part_full_name(
                         &catalog, &schema, &model,
                     )));
                     if busy.try_get_untracked().is_some() {
                         close();
-                        navigate(
-                            &version_href(&catalog, &schema, &model, number),
-                            Default::default(),
-                        );
                     }
                 }
-                Err(e) => notify.failed(&e, "Failed to create model version"),
+                Err(e) => notify.failed(&e, "Create model version failed"),
             }
             busy.set(false);
         });
@@ -319,21 +274,19 @@ fn CreateVersion(
                 placeholder="s3://bucket/model"
             />
             <TextField id="uc-version-run" label="Run ID" value=run_id/>
-            <TextArea id="uc-version-comment" label="Comment" value=comment/>
+            <TextField id="uc-version-comment" label="Comment" value=comment/>
         </Modal>
     }
 }
 
 fn model_rows(m: &RegisteredModelInfo) -> Vec<MetaRow> {
     vec![
-        MetaRow::new("Name", or_dash(m.name.clone())),
         MetaRow::new("Owner", or_dash(m.owner.clone())),
         MetaRow::new("Created at", format_timestamp(m.created_at)),
-        MetaRow::new("Created by", or_dash(m.created_by.clone())),
         MetaRow::new("Updated at", format_timestamp(m.updated_at)),
-        MetaRow::new("Updated by", or_dash(m.updated_by.clone())),
         MetaRow::mono("Model ID", or_dash(m.id.clone())),
         MetaRow::mono("Storage location", or_dash(m.storage_location.clone())),
+        MetaRow::new("Comment", or_dash(m.comment.clone())),
     ]
 }
 

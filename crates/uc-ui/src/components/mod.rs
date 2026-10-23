@@ -33,7 +33,7 @@ pub use dropdown::Dropdown;
 pub use edit_modal::EditMetadata;
 pub use entity_header::{Crumbs, EntityHeader};
 pub use field::{Select, TextArea, TextField};
-pub use loaded::{LoadError, Loaded, LoadingBlock, Stage, count, loaded_list};
+pub use loaded::{LoadError, Loaded, LoadingBlock, Stage, counted, loaded_list};
 pub use meta::{DetailsTab, MetaGrid, MetaRow, RawJsonCard, properties};
 pub use modal::Modal;
 pub use notification::{Notifications, Notify, provide_notifications, use_notify};

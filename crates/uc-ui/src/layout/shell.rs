@@ -39,7 +39,13 @@ pub fn Shell() -> impl IntoView {
         })
     });
     move || match screen.get() {
-        Screen::Blank => ().into_any(),
+        // The console's skeleton while the server says who is signed in.
+        Screen::Blank => view! {
+            <div class="uc-boot uc-skeleton" role="status" aria-label="Loading">
+                <div class="uc-skeleton__bar"></div>
+            </div>
+        }
+        .into_any(),
         Screen::Login => view! { <Login/> }.into_any(),
         Screen::Denied(message) => view! { <Denied message/> }.into_any(),
         Screen::App => view! { <Layout/> }.into_any(),
@@ -50,6 +56,7 @@ pub fn Shell() -> impl IntoView {
 fn Layout() -> impl IntoView {
     provide_route();
     let auth = use_auth();
+    let logout_url = logout_url(auth);
     let signed_in = move || auth.session.with(|session| session.user().is_some());
     // The server signs users in: the sidebar says who.
     let auth_enabled = move || {
@@ -129,6 +136,26 @@ fn Layout() -> impl IntoView {
                         <div class="uc-sidebar__tree">
                             <CatalogTree/>
                         </div>
+                        <Show when=signed_in>
+                            {move || {
+                                logout_url
+                                    .get()
+                                    .map(|url| {
+                                        view! {
+                                            <div class="uc-sidebar__foot">
+                                                <button
+                                                    type="button"
+                                                    class="uc-btn uc-btn--outline uc-btn--block"
+                                                    on:click=move |_| logout(&url)
+                                                >
+                                                    <LogOut/>
+                                                    "Log out"
+                                                </button>
+                                            </div>
+                                        }
+                                    })
+                            }}
+                        </Show>
                     </aside>
                     <main class="uc-main">
                         <Outlet/>
