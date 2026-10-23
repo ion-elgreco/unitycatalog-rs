@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use uc_api::{
     ColumnInfo, CreateStagingTable, CreateTable, DataSourceFormat, DependencyList,
-    StagingTableInfo, TableInfo, TableType,
+    StagingTableInfo, TableInfo, TableType, UpdateTable,
 };
 use uc_common::{
     Error, ErrorCode, ManagedResource, NormalizedUrl, Pagination, Result, SecurablePropertiesMap,
@@ -419,6 +419,48 @@ impl TableOps for SqlMetastore {
         staging.map(|s| s.staging_location).ok_or_else(|| {
             Error::table_not_found(format!("Staging table not found with id: {staging_id}"))
         })
+    }
+
+    async fn update(
+        &self,
+        full_name: &str,
+        req: UpdateTable,
+        updated_by: Option<&str>,
+    ) -> Result<TableInfo> {
+        let (schema, mut row) = self.resolve_table(full_name).await?;
+        // Nothing to change returns the table untouched.
+        if req.comment.is_none() && req.columns.is_empty() {
+            return row.into_info(&schema);
+        }
+        if let Some(c) = req.comment {
+            row.comment = Some(c);
+        }
+        if !req.columns.is_empty() {
+            let mut columns = row.columns.take().unwrap_or_default();
+            for change in req.columns {
+                let Some(column) = columns
+                    .iter_mut()
+                    .find(|c| c.name.as_deref() == Some(change.name.as_str()))
+                else {
+                    return Err(Error::not_found(format!(
+                        "Column not found: {}.{}",
+                        full_name, change.name
+                    )));
+                };
+                column.comment = Some(change.comment);
+            }
+            row.columns = Some(columns);
+        }
+        crate::sql::touch_audit(&mut row.updated_at, &mut row.updated_by, updated_by);
+        let written = update(self.db.as_ref(), &TBL, &row)
+            .await
+            .map_err(db_err("update table"))?;
+        if written == 0 {
+            return Err(Error::table_not_found(format!(
+                "Table not found: {full_name}"
+            )));
+        }
+        row.into_info(&schema)
     }
 
     async fn delete(&self, full_name: &str) -> Result<()> {

@@ -31,7 +31,7 @@ use uc_api::{
     PatInfo, PermissionsList, RegisteredModelInfo, RestoreResponse, SchemaInfo, ScimGroup,
     ScimUser, StagingTableInfo, TableInfo, TemporaryCredentials, UpdateCatalog,
     UpdateCredentialRequest, UpdateExternalLocation, UpdateModelVersion, UpdatePermissions,
-    UpdateRegisteredModel, UpdateSchema, UpdateVolumeRequestContent, VolumeInfo,
+    UpdateRegisteredModel, UpdateSchema, UpdateTable, UpdateVolumeRequestContent, VolumeInfo,
 };
 use uc_common::{ErrorCode, ErrorResponse, SecurableType};
 
@@ -334,6 +334,12 @@ impl Client {
         page: &Page,
     ) -> Result<ListTablesResponse> {
         self.get("tables", &in_schema(catalog, schema, page)).await
+    }
+    /// New comments for a table and its columns. This server's addition:
+    /// upstream's API has no table update.
+    pub async fn update_table(&self, full_name: &str, req: &UpdateTable) -> Result<TableInfo> {
+        let path = path_segments(["tables", full_name]);
+        self.call(Method::PATCH, &path, &[], Some(req)).await
     }
     pub async fn delete_table(&self, full_name: &str) -> Result<()> {
         self.delete(&path_segments(["tables", full_name]), &[])

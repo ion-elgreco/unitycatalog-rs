@@ -152,6 +152,25 @@ pub struct TableInfo {
     pub view_dependencies: Option<DependencyList>,
 }
 
+/// `PATCH /tables/{full_name}`: a new comment for the table, and new
+/// comments for its columns. Upstream's API has no table update; the web
+/// UI edits comments with this.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct UpdateTable {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+    /// Columns that get a new comment; the others keep theirs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub columns: Vec<UpdateColumn>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct UpdateColumn {
+    pub name: String,
+    /// Empty clears the comment.
+    pub comment: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CreateTable {
     pub name: String,
