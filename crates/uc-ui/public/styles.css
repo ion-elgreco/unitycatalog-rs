@@ -248,6 +248,7 @@ pre,
 /* ---------- Helpers ---------- */
 
 .uc-stack { display: flex; flex-direction: column; gap: 16px; }
+.uc-self-start { align-self: flex-start; }
 .uc-stack--sm { gap: 8px; }
 .uc-inline { display: flex; align-items: center; gap: 8px; }
 .uc-inline--wrap { flex-wrap: wrap; }
@@ -1161,6 +1162,15 @@ pre,
 }
 
 .uc-form-row .uc-field { flex: 1 1 220px; }
+.uc-form-row .uc-field--fixed { flex: 0 0 auto; }
+
+/* A column of a new table: its name, its type and the button that removes it. */
+.uc-column-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: end;
+}
 
 .uc-label {
   font-size: 15px;

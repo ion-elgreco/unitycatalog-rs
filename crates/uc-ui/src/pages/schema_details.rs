@@ -99,7 +99,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
     view! {
         <EntityHeader
             icon=schema_icon()
-            name=schema.clone()
+            name=full_name.clone()
             badges=vec!["Schema".to_string()]
             on_refresh=refresh
             actions=view! {

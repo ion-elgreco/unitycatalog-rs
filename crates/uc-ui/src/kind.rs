@@ -68,7 +68,7 @@ impl Kind {
     /// Its name in the "New" dialog's picker.
     pub fn new_label(self) -> &'static str {
         match self {
-            Kind::Tables => "External table",
+            Kind::Tables => "Table",
             Kind::Volumes => "Volume",
             Kind::Functions => "Function",
             Kind::Models => "Registered model",

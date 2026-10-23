@@ -1,6 +1,7 @@
 //! "New" on a schema's page, as the console's `CreateSchemaObjectAction`:
-//! an external table, a volume, a SQL function or a registered model, from
-//! one dialog with a type picker. After the call, a toast, and the list
+//! a table, a volume, a SQL function or a registered model, from one
+//! dialog with a type picker. Beyond the console's, a table can be managed
+//! and have any number of columns. After the call, a toast, and the list
 //! that gained the object loads again.
 
 use leptos::prelude::*;
@@ -13,6 +14,7 @@ use uc_api::{
 use uc_common::wire_name;
 
 use super::field::{Select, TextArea, TextField};
+use super::icons::{Plus, X};
 use crate::api;
 use crate::components::{Modal, use_notify};
 use crate::kind::Kind;
@@ -42,7 +44,19 @@ const FORMATS: [DataSourceFormat; 7] = [
     DataSourceFormat::Text,
 ];
 
+/// Managed, at a location the server picks under the storage root, or
+/// external, at a location of yours.
+const TABLE_TYPES: [TableType; 2] = [TableType::Managed, TableType::External];
+
 const VOLUME_TYPES: [VolumeType; 2] = [VolumeType::Managed, VolumeType::External];
+
+/// A column of the new table, as the form holds it.
+#[derive(Clone, Copy)]
+struct NewColumn {
+    id: u64,
+    name: RwSignal<String>,
+    kind: RwSignal<ColumnTypeName>,
+}
 
 /// A scalar type's name in Delta's schema, for `type_json`.
 fn delta_type(t: ColumnTypeName) -> &'static str {
@@ -59,8 +73,8 @@ fn delta_type(t: ColumnTypeName) -> &'static str {
     }
 }
 
-/// A column of a scalar type, as the API wants it.
-fn column(name: &str, t: ColumnTypeName) -> ColumnInfo {
+/// A column of a scalar type at `position`, as the API wants it.
+fn column(name: &str, t: ColumnTypeName, position: i32) -> ColumnInfo {
     let type_json = serde_json::json!({
         "name": name,
         "type": delta_type(t),
@@ -72,7 +86,7 @@ fn column(name: &str, t: ColumnTypeName) -> ColumnInfo {
         type_text: Some(wire_name(&t).to_lowercase()),
         type_json: Some(type_json.to_string()),
         type_name: Some(t),
-        position: Some(0),
+        position: Some(position),
         nullable: Some(true),
         ..Default::default()
     }
@@ -89,24 +103,42 @@ pub fn CreateObjectModal(
     let name = RwSignal::new(String::new());
     let comment = RwSignal::new(String::new());
     let location = RwSignal::new(String::new());
-    let column_name = RwSignal::new("value".to_string());
-    let column_type = RwSignal::new(ColumnTypeName::String);
+    let table_type = RwSignal::new(TableType::Managed);
     let format = RwSignal::new(DataSourceFormat::Delta);
+    let columns: RwSignal<Vec<NewColumn>> = RwSignal::new(Vec::new());
     let volume_type = RwSignal::new(VolumeType::Managed);
     let return_type = RwSignal::new(ColumnTypeName::String);
     let definition = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let notify = use_notify();
     let cache = use_cache();
+    // A column row's signals belong to the dialog, not to the click that
+    // adds the row.
+    let owner = StoredValue::new(Owner::current().expect("a component has an owner"));
+    let next_column = StoredValue::new(0u64);
+    let new_column = move |name: &str| {
+        next_column.update_value(|n| *n += 1);
+        let id = next_column.get_value();
+        owner.with_value(|owner| {
+            owner.with(|| NewColumn {
+                id,
+                name: RwSignal::new(name.to_string()),
+                kind: RwSignal::new(ColumnTypeName::String),
+            })
+        })
+    };
+    let reset_columns = move || columns.set(vec![new_column("value")]);
+    reset_columns();
     let close = move || {
         open.set(false);
         name.set(String::new());
         comment.set(String::new());
         location.set(String::new());
         definition.set(String::new());
+        reset_columns();
     };
     let needs_location = move || {
-        kind.get() == Kind::Tables
+        (kind.get() == Kind::Tables && table_type.get() == TableType::External)
             || (kind.get() == Kind::Volumes && volume_type.get() == VolumeType::External)
     };
     let on_ok = move || {
@@ -118,9 +150,21 @@ pub fn CreateObjectModal(
         }
         let text = comment.get_untracked();
         let comment = (!text.is_empty()).then_some(text);
-        let column_name = column_name.get_untracked().trim().to_string();
-        if kind == Kind::Tables && column_name.is_empty() {
-            notify.error("Column name is required");
+        let columns: Vec<ColumnInfo> = columns.with_untracked(|columns| {
+            columns
+                .iter()
+                .enumerate()
+                .map(|(i, c)| {
+                    column(
+                        c.name.get_untracked().trim(),
+                        c.kind.get_untracked(),
+                        i as i32,
+                    )
+                })
+                .collect()
+        });
+        if kind == Kind::Tables && columns.iter().any(|c| c.name.as_deref() == Some("")) {
+            notify.error("Every column needs a name");
             return;
         }
         let path = location.get_untracked().trim().to_string();
@@ -141,14 +185,15 @@ pub fn CreateObjectModal(
             let client = api::client();
             let answer = match kind {
                 Kind::Tables => {
+                    let table_type = table_type.get_untracked();
                     let request = CreateTable {
                         name: new_name,
                         catalog_name: catalog,
                         schema_name: schema,
-                        table_type: TableType::External,
-                        columns: vec![column(&column_name, column_type.get_untracked())],
+                        table_type,
+                        columns,
                         data_source_format: Some(format.get_untracked()),
-                        storage_location: Some(path),
+                        storage_location: (table_type == TableType::External).then_some(path),
                         comment,
                         properties: None,
                         view_definition: None,
@@ -239,13 +284,19 @@ pub fn CreateObjectModal(
             />
             <TextField id="uc-new-name" label="Name" value=name required=true/>
             <Show when=move || kind.get() == Kind::Tables>
-                <TextField id="uc-new-column" label="Column name" value=column_name required=true/>
                 <Select
-                    id="uc-new-column-type"
-                    label="Column type"
-                    choices=&SCALARS
-                    value=column_type
+                    id="uc-new-table-type"
+                    label="Table type"
+                    choices=&TABLE_TYPES
+                    value=table_type
                     name=wire_name
+                    text=|t: &TableType| {
+                        match t {
+                            TableType::External => "External",
+                            _ => "Managed",
+                        }
+                            .to_string()
+                    }
                 />
                 <Select
                     id="uc-new-format"
@@ -254,6 +305,53 @@ pub fn CreateObjectModal(
                     value=format
                     name=wire_name
                 />
+                <div class="uc-field">
+                    <span class="uc-label">"Columns"</span>
+                    <For
+                        each=move || columns.get()
+                        key=|c| c.id
+                        children=move |c| {
+                            view! {
+                                <div class="uc-column-row">
+                                    <TextField
+                                        id=format!("uc-new-column-{}", c.id)
+                                        label="Name"
+                                        value=c.name
+                                        required=true
+                                    />
+                                    <Select
+                                        id=format!("uc-new-column-type-{}", c.id)
+                                        label="Type"
+                                        choices=&SCALARS
+                                        value=c.kind
+                                        name=wire_name
+                                        fixed=true
+                                    />
+                                    <button
+                                        type="button"
+                                        class="uc-btn uc-btn--ghost uc-btn--icon uc-btn--sm"
+                                        title="Remove column"
+                                        aria-label="Remove column"
+                                        disabled=move || columns.with(|columns| columns.len() == 1)
+                                        on:click=move |_| {
+                                            columns.update(|columns| columns.retain(|other| other.id != c.id))
+                                        }
+                                    >
+                                        <X/>
+                                    </button>
+                                </div>
+                            }
+                        }
+                    />
+                    <button
+                        type="button"
+                        class="uc-btn uc-btn--outline uc-btn--sm uc-self-start"
+                        on:click=move |_| columns.update(|columns| columns.push(new_column("")))
+                    >
+                        <Plus/>
+                        "Add column"
+                    </button>
+                </div>
             </Show>
             <Show when=move || kind.get() == Kind::Volumes>
                 <Select

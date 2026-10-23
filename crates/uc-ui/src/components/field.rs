@@ -3,23 +3,24 @@
 
 use leptos::prelude::*;
 
-fn field_label(id: &'static str, text: &'static str) -> impl IntoView {
+fn field_label(id: String, text: &'static str) -> impl IntoView {
     view! { <label class="uc-label" for=id>{text}</label> }
 }
 
 /// One line of text.
 #[component]
 pub fn TextField(
-    id: &'static str,
+    #[prop(into)] id: String,
     label: &'static str,
     value: RwSignal<String>,
     #[prop(optional)] required: bool,
     #[prop(optional)] placeholder: Option<&'static str>,
     #[prop(optional)] autocomplete: Option<&'static str>,
 ) -> impl IntoView {
+    let for_id = id.clone();
     view! {
         <div class="uc-field">
-            {field_label(id, label)}
+            {field_label(for_id, label)}
             <input
                 id=id
                 class="uc-input"
@@ -37,7 +38,7 @@ pub fn TextField(
 /// Several lines of text; `code` for a definition, in the code font.
 #[component]
 pub fn TextArea(
-    id: &'static str,
+    #[prop(into)] id: String,
     label: &'static str,
     value: RwSignal<String>,
     #[prop(optional)] required: bool,
@@ -48,9 +49,10 @@ pub fn TextArea(
     } else {
         "uc-textarea"
     };
+    let for_id = id.clone();
     view! {
         <div class="uc-field">
-            {field_label(id, label)}
+            {field_label(for_id, label)}
             <textarea
                 id=id
                 class=class
@@ -67,7 +69,7 @@ pub fn TextArea(
 /// and `text`, else `name`, what it shows.
 #[component]
 pub fn Select<T>(
-    id: &'static str,
+    #[prop(into)] id: String,
     label: &'static str,
     choices: &'static [T],
     value: RwSignal<T>,
@@ -86,11 +88,12 @@ where
     } else {
         "uc-field"
     };
+    let for_id = id.clone();
     // The choice is marked on its option: a `value` set on the `<select>`
     // itself would come before its options exist.
     view! {
         <div class=class>
-            {field_label(id, label)}
+            {field_label(for_id, label)}
             <select
                 id=id
                 class="uc-select"

@@ -14,6 +14,49 @@ use crate::components::{Modal, use_notify};
 use crate::load::{Key, Load, use_cache};
 use crate::util::or_dash;
 
+/// A nested type over several lines, as the console shows it: each `<`
+/// and `,` ends a line, and what follows is indented by its depth.
+fn pretty_type(text: &str) -> String {
+    if !text.contains('<') {
+        return text.to_string();
+    }
+    let mut out = String::new();
+    let mut depth = 0usize;
+    // A space after a break is the source's, not the layout's.
+    let mut at_line_start = false;
+    let line_break = |out: &mut String, depth: usize| {
+        out.push('\n');
+        out.push_str(&"  ".repeat(depth));
+    };
+    for c in text.chars() {
+        match c {
+            '<' => {
+                depth += 1;
+                out.push('<');
+                line_break(&mut out, depth);
+                at_line_start = true;
+            }
+            '>' => {
+                depth = depth.saturating_sub(1);
+                line_break(&mut out, depth);
+                out.push('>');
+                at_line_start = false;
+            }
+            ',' => {
+                out.push(',');
+                line_break(&mut out, depth);
+                at_line_start = true;
+            }
+            ' ' if at_line_start => {}
+            c => {
+                out.push(c);
+                at_line_start = false;
+            }
+        }
+    }
+    out
+}
+
 #[component]
 pub fn ColumnsCard(
     info: RwSignal<Load<TableInfo>>,
@@ -80,9 +123,9 @@ pub fn ColumnsCard(
                             .enumerate()
                             .map(|(i, column)| {
                                 let position = column.position.map_or(i.to_string(), |p| p.to_string());
-                                let type_text = or_dash(
+                                let type_text = pretty_type(&or_dash(
                                     column.type_text.or_else(|| column.type_name.as_ref().map(wire_name)),
-                                );
+                                ));
                                 let nullable = match column.nullable {
                                     Some(false) => "false",
                                     _ => "true",
@@ -95,7 +138,7 @@ pub fn ColumnsCard(
                                     <tr>
                                         <td class="uc-muted">{position}</td>
                                         <td class="uc-strong">{name}</td>
-                                        <td class="uc-mono">{type_text}</td>
+                                        <td class="uc-mono uc-prewrap">{type_text}</td>
                                         <td class="uc-muted">{nullable}</td>
                                         <td class="uc-muted">{or_dash(column.comment)}</td>
                                         <td class="uc-right">

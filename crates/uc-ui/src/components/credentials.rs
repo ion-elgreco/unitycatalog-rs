@@ -11,7 +11,7 @@ use uc_api::{
 };
 
 use super::card::Card;
-use super::icons::{Copy, Eye, EyeOff, KeyRound, LoaderCircle};
+use super::icons::{Copy, Eye, EyeOff, LoaderCircle};
 use crate::api;
 use crate::components::use_notify;
 use crate::util::{copy_text, format_timestamp};
@@ -109,7 +109,6 @@ pub fn CredentialsCard(kind: Vendable, #[prop(into)] id: Signal<Option<String>>)
     };
     view! {
         <Card
-            icon=view! { <KeyRound/> }.into_any()
             title="Credentials"
             actions=view! {
                 {button(false, "Vend READ creds", "uc-btn")}

@@ -315,14 +315,14 @@ fn GrantForm(
         <form class="uc-form-row" on:submit=submit>
             <TextField
                 id="uc-grant-principal"
-                label="Principal (email)"
+                label="principal (email)"
                 value=principal
                 placeholder="ada@example.com"
                 autocomplete="off"
             />
             <Select
                 id="uc-grant-privilege"
-                label="Privilege"
+                label="privilege"
                 choices
                 value=privilege
                 name=wire_name

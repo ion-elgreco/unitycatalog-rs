@@ -96,9 +96,11 @@ to set up the sign-in.
 
 ![A schema](assets/ui/schema.png)
 
-3. **New** makes an object in the schema: an external table with one
-   column, a volume, a SQL function, or a registered model. Pick the type
-   at the top of the dialog.
+3. **New** makes an object in the schema: a table, a volume, a SQL
+   function, or a registered model. Pick the type at the top of the dialog.
+   A managed table goes under the storage root of its schema, catalog or
+   server; an external table needs a storage location. **Add column** adds
+   columns to the table, each with a name and a scalar type.
 
 ![New object](assets/ui/object-create.png)
 
