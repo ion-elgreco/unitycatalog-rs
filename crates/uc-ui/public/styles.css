@@ -26,6 +26,8 @@
   --muted: #f7f8fa;
   --muted-foreground: #5b636d;
   --placeholder: #707780;
+  /* The select's chevron, in the muted text color. */
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b636d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   --accent: #eff1f2;
   --accent-foreground: #202328;
   --selected: #e2f3fe;
@@ -78,6 +80,8 @@
   --muted: #15181c;
   --muted-foreground: #9aa3ad;
   --placeholder: #7f8893;
+  /* The select's chevron, in the muted text color. */
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa3ad' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   --accent: #262c34;
   --accent-foreground: #e6e8eb;
   --selected: rgb(79 134 232 / 0.18);
@@ -120,6 +124,8 @@
     --muted: #15181c;
     --muted-foreground: #9aa3ad;
     --placeholder: #7f8893;
+    /* The select's chevron, in the muted text color. */
+    --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa3ad' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     --accent: #262c34;
     --accent-foreground: #e6e8eb;
     --selected: rgb(79 134 232 / 0.18);
@@ -1261,9 +1267,15 @@ pre,
 .uc-select:disabled,
 .uc-textarea:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* The chevron is drawn, as upstream's: the browser's arrow sits on the
+   edge and differs by platform. */
 .uc-select {
-  appearance: auto;
-  padding-right: 8px;
+  appearance: none;
+  padding-right: 36px;
+  background-image: var(--chevron);
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px 16px;
 }
 
 .uc-select option { color: initial; background: initial; }
