@@ -261,6 +261,7 @@ pre,
 .uc-danger { color: var(--destructive); }
 .uc-success { color: var(--success); }
 .uc-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uc-nowrap { white-space: nowrap; }
 .uc-prewrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 .uc-break { overflow-wrap: anywhere; }
 .uc-hidden { display: none !important; }
@@ -467,6 +468,45 @@ pre,
   overflow: auto;
   padding: 8px 10px 12px;
 }
+
+/* "Manage", under the tree: the links to the pages outside the catalogs. */
+.uc-sidebar__nav {
+  flex-shrink: 0;
+  padding: 10px 10px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.uc-sidebar__nav .uc-sidebar__title {
+  display: block;
+  padding: 2px 6px 8px;
+}
+
+.uc-sidebar__nav ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.uc-sidebar__link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.uc-sidebar__link:hover,
+.uc-sidebar__link.is-active {
+  background: var(--muted);
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.uc-sidebar__link.is-active { font-weight: 500; }
+.uc-sidebar__link svg { width: 16px; height: 16px; }
 
 .uc-main {
   display: flex;
@@ -938,6 +978,12 @@ pre,
   color: var(--muted-foreground);
 }
 
+/* The hint under an empty list, for the first-time user. */
+.uc-empty__hint {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
 .uc-error {
   padding: 10px 14px;
   border-radius: var(--radius-sm);
@@ -1164,10 +1210,23 @@ pre,
 .uc-form-row .uc-field { flex: 1 1 220px; }
 .uc-form-row .uc-field--fixed { flex: 0 0 auto; }
 
+/* A filter row, such as the audit log's: narrower fields, so that they
+   fit on one line. */
+.uc-form-row--filter .uc-field { flex: 1 1 160px; }
+
 /* A column of a new table: its name, its type and the button that removes it. */
 .uc-column-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: end;
+}
+
+/* A property of the Edit dialog: its key, its value and the button that
+   removes it. */
+.uc-property-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 12px;
   align-items: end;
 }

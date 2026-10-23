@@ -1,5 +1,6 @@
 //! A catalog's page, as the console's `CatalogDetails`: its description and
-//! schemas, its details, its grants; "Edit", "Create schema" and "Delete".
+//! schemas, its details, its grants; "Edit" (its name, comment and
+//! properties), "Create schema" and "Delete".
 
 use leptos::prelude::*;
 use uc_api::{CatalogInfo, CreateSchema, UpdateCatalog};
@@ -10,7 +11,7 @@ use crate::auth::use_manages;
 use crate::components::edit_modal::Changes;
 use crate::components::icons::Plus;
 use crate::components::{
-    Card, CreateModal, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata,
+    Card, CreateModal, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata, Empty,
     EntityHeader, Loaded, MetaRow, NewObject, ObjectRow, PermissionsCard, Tabs, counted,
     loaded_list, properties,
 };
@@ -49,13 +50,14 @@ fn CatalogPage(catalog: String) -> impl IntoView {
     let comment = field(info, |c: &CatalogInfo| {
         c.comment.clone().unwrap_or_default()
     });
+    let props = field(info, |c: &CatalogInfo| properties(c.properties.as_ref()));
 
     let save_metadata = move |changes: Changes| {
         let catalog = name.get_value();
         async move {
             let request = UpdateCatalog {
                 comment: changes.comment,
-                properties: None,
+                properties: changes.properties,
                 new_name: changes.new_name.clone(),
             };
             let updated = api::client().update_catalog(&catalog, &request).await?;
@@ -71,6 +73,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
         let saving = save_metadata(Changes {
             new_name: None,
             comment: Some(comment),
+            properties: None,
         });
         async move { saving.await.map(|_| ()) }
     };
@@ -80,7 +83,11 @@ fn CatalogPage(catalog: String) -> impl IntoView {
     });
 
     let schema_rows = move || {
-        loaded_list(schemas.get(), "No schemas.", |list| {
+        let empty = Empty::new(
+            "No schemas.",
+            "A schema groups the tables, volumes, functions and models of a catalog. Click Create schema to make one.",
+        );
+        loaded_list(schemas.get(), empty, |list| {
             let catalog = name.get_value();
             view! {
                 <div class="uc-rows">
@@ -111,7 +118,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
             badges=vec!["Catalog".to_string()]
             on_refresh=refresh
             actions=view! {
-                <EditMetadata name=catalog.clone() comment save=save_metadata/>
+                <EditMetadata name=catalog.clone() comment properties=props save=save_metadata/>
                 <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>
                     <Plus/>
                     "Create schema"
@@ -133,7 +140,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
                         view! {
                             <DetailsTab
                                 rows=field(info, catalog_rows)
-                                properties=field(info, |c: &CatalogInfo| properties(c.properties.as_ref()))
+                                properties=props
                                 json=field(info, pretty_json)
                             />
                         }

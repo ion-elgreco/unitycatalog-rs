@@ -87,6 +87,14 @@ pub enum Key {
     Permissions(SecurableType, String),
     /// The signed-in user's access tokens.
     Tokens,
+    Credentials,
+    Credential(String),
+    ExternalLocations,
+    ExternalLocation(String),
+    Users,
+    Groups,
+    /// A group, by its id.
+    Group(String),
 }
 
 impl Key {
@@ -110,6 +118,13 @@ impl Key {
             Key::Version(..) => "Failed to fetch model version",
             Key::Permissions(..) => "Failed to fetch permissions",
             Key::Tokens => "Failed to list access tokens",
+            Key::Credentials => "Failed to list credentials",
+            Key::Credential(_) => "Failed to fetch credential",
+            Key::ExternalLocations => "Failed to list external locations",
+            Key::ExternalLocation(_) => "Failed to fetch external location",
+            Key::Users => "Failed to list users",
+            Key::Groups => "Failed to list groups",
+            Key::Group(_) => "Failed to fetch group",
         }
     }
 }

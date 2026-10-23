@@ -6,7 +6,7 @@ use uc_api::{CatalogInfo, CreateCatalog};
 
 use crate::api;
 use crate::components::icons::Plus;
-use crate::components::{CreateModal, NewObject, loaded_list};
+use crate::components::{CreateModal, Empty, NewObject, loaded_list};
 use crate::kind::catalog_icon;
 use crate::load::{Key, use_load};
 use crate::util::{catalog_href, format_timestamp};
@@ -16,7 +16,11 @@ pub fn CatalogsList() -> impl IntoView {
     let catalogs = use_load(Key::Catalogs, api::catalogs);
     let create_open = RwSignal::new(false);
     let cards = move || {
-        loaded_list(catalogs.get(), "No catalogs yet.", |list| {
+        let empty = Empty::new(
+            "No catalogs yet.",
+            "A catalog is the top of the hierarchy: it holds schemas, which hold tables, volumes, functions and models. Click Create catalog to make the first one.",
+        );
+        loaded_list(catalogs.get(), empty, |list| {
             view! {
                 <div class="uc-grid">
                     {list.into_iter().map(|c| view! { <CatalogCard catalog=c/> }).collect_view()}

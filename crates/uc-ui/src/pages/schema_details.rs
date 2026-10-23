@@ -1,7 +1,7 @@
 //! A schema's page, as the console's `SchemaDetails`: its description, its
 //! tables, volumes, functions or models behind a picker, its details, its
-//! grants; "Edit", "New" and "Delete". The picker is the URL's `?tab=`, so
-//! that the tree's groups open it.
+//! grants; "Edit" (its name, comment and properties), "New" and "Delete".
+//! The picker is the URL's `?tab=`, so that the tree's groups open it.
 
 use leptos::prelude::*;
 use leptos_router::NavigateOptions;
@@ -15,7 +15,8 @@ use crate::components::edit_modal::Changes;
 use crate::components::icons::Plus;
 use crate::components::{
     Card, CreateObjectModal, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata,
-    EntityHeader, Loaded, MetaRow, ObjectRow, PermissionsCard, Tabs, loaded_list, properties,
+    Empty, EntityHeader, Loaded, MetaRow, ObjectRow, PermissionsCard, Tabs, loaded_list,
+    properties,
 };
 use crate::contents::Holder;
 use crate::kind::{Kind, schema_icon};
@@ -55,13 +56,14 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
     let owner = field(info, |s: &SchemaInfo| s.owner.clone());
     let manages = use_manages(owner);
     let comment = field(info, |s: &SchemaInfo| s.comment.clone().unwrap_or_default());
+    let props = field(info, |s: &SchemaInfo| properties(s.properties.as_ref()));
 
     let save_metadata = move |changes: Changes| {
         let (catalog, _, full_name) = names.get_value();
         async move {
             let request = UpdateSchema {
                 comment: changes.comment,
-                properties: None,
+                properties: changes.properties,
                 new_name: changes.new_name.clone(),
             };
             let updated = api::client().update_schema(&full_name, &request).await?;
@@ -83,6 +85,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
         let saving = save_metadata(Changes {
             new_name: None,
             comment: Some(comment),
+            properties: None,
         });
         async move { saving.await.map(|_| ()) }
     };
@@ -103,7 +106,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
             badges=vec!["Schema".to_string()]
             on_refresh=refresh
             actions=view! {
-                <EditMetadata name=schema.clone() comment save=save_metadata/>
+                <EditMetadata name=schema.clone() comment properties=props save=save_metadata/>
                 <button type="button" class="uc-btn uc-btn--sm" on:click=new_object>
                     <Plus/>
                     "New"
@@ -138,7 +141,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
                         view! {
                             <DetailsTab
                                 rows=field(info, schema_rows)
-                                properties=field(info, |s: &SchemaInfo| properties(s.properties.as_ref()))
+                                properties=props
                                 json=field(info, pretty_json)
                             />
                         }
@@ -217,7 +220,11 @@ fn Entries(kind: Kind, catalog: String, schema: String) -> impl IntoView {
         },
     );
     move || {
-        loaded_list(entries.get(), "None.", |list| {
+        let empty = Empty::new(
+            format!("No {}.", kind.label().to_lowercase()),
+            kind.empty_hint(),
+        );
+        loaded_list(entries.get(), empty, |list| {
             let (catalog, schema) = names.get_value();
             view! {
                 <div class="uc-rows">

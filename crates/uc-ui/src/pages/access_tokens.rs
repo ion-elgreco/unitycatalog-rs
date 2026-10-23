@@ -16,7 +16,7 @@ use uc_common::EpochMillis;
 use crate::api;
 use crate::auth::use_auth;
 use crate::components::icons::{Check, CircleCheck, Copy, Plus, Trash2, X};
-use crate::components::{Modal, TextField, use_notify};
+use crate::components::{Empty, Modal, TextField, use_notify};
 use crate::layout::{Column, ListLayout};
 use crate::load::{Key, use_cache, use_load};
 use crate::util::{copy_text, format_timestamp};
@@ -130,7 +130,11 @@ fn TokenList() -> impl IntoView {
                 " header."
             </p>
             <NewToken created/>
-            <ListLayout data=tokens columns empty="No tokens."/>
+            <ListLayout
+                data=tokens
+                columns
+                empty=Empty::new("No tokens.", "Click Create token to make one for a script or a tool.")
+            />
             <CreateToken open=create_open created/>
             <DeleteToken deleting created/>
         </div>

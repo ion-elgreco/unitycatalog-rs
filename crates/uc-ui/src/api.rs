@@ -9,11 +9,11 @@ use std::cmp::Reverse;
 use std::future::Future;
 
 use uc_api::{
-    CatalogInfo, FunctionInfo, ModelVersionInfo, PatInfo, PermissionsChange, PermissionsList,
-    Privilege, PrivilegeAssignment, RegisteredModelInfo, SchemaInfo, TableInfo, UpdatePermissions,
-    VolumeInfo,
+    CatalogInfo, CredentialInfo, ExternalLocationInfo, FunctionInfo, ModelVersionInfo, PatInfo,
+    PermissionsChange, PermissionsList, Privilege, PrivilegeAssignment, RegisteredModelInfo,
+    SchemaInfo, ScimGroup, ScimUser, TableInfo, UpdatePermissions, VolumeInfo,
 };
-use uc_client::{API_BASE, Client, Page};
+use uc_client::{API_BASE, Client, Page, ScimPage};
 use uc_common::{PageToken, SecurableType};
 
 pub use uc_client::{Error, Result};
@@ -155,6 +155,84 @@ pub async fn change_permissions(
         }],
     };
     client().update_permissions(kind, full_name, &request).await
+}
+
+pub async fn credentials() -> Result<Vec<CredentialInfo>> {
+    let client = &client();
+    all(move |page| async move {
+        let list = client.list_credentials(&page).await?;
+        Ok((list.credentials, list.next_page_token))
+    })
+    .await
+}
+
+pub async fn external_locations() -> Result<Vec<ExternalLocationInfo>> {
+    let client = &client();
+    all(move |page| async move {
+        let list = client.list_external_locations(&page).await?;
+        Ok((list.external_locations, list.next_page_token))
+    })
+    .await
+}
+
+/// Every user, by SCIM's pages of `start_index` and `count`.
+pub async fn users() -> Result<Vec<ScimUser>> {
+    let client = &client();
+    scim_all(move |page| async move {
+        let list = client.list_users(&page).await?;
+        Ok(list.resources)
+    })
+    .await
+}
+
+pub async fn groups() -> Result<Vec<ScimGroup>> {
+    let client = &client();
+    scim_all(move |page| async move {
+        let list = client.list_groups(&page).await?;
+        Ok(list.resources)
+    })
+    .await
+}
+
+/// The group named `name`, from the list: the server has no call by
+/// name. A 404, as the server would answer, for none.
+pub async fn group(name: &str) -> Result<ScimGroup> {
+    groups()
+        .await?
+        .into_iter()
+        .find(|group| group.display_name == name)
+        .ok_or_else(|| Error::Status {
+            status: 404,
+            body: serde_json::json!({ "message": format!("Group '{name}' not found") }).to_string(),
+        })
+}
+
+/// The rows of a SCIM page.
+const SCIM_PAGE: i32 = 100;
+
+/// Every resource of a SCIM list: `page` gets the page at an index, and
+/// the list ends with a page that is short.
+async fn scim_all<T, F, Fut>(page: F) -> Result<Vec<T>>
+where
+    F: Fn(ScimPage) -> Fut,
+    Fut: Future<Output = Result<Vec<T>>>,
+{
+    let mut items = Vec::new();
+    let mut start = 1;
+    loop {
+        let batch = page(ScimPage {
+            filter: None,
+            start_index: Some(start),
+            count: Some(SCIM_PAGE),
+        })
+        .await?;
+        let n = batch.len();
+        items.extend(batch);
+        if n < SCIM_PAGE as usize {
+            return Ok(items);
+        }
+        start += n as i32;
+    }
 }
 
 /// The signed-in user's access tokens, the newest first.

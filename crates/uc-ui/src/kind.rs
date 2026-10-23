@@ -75,6 +75,25 @@ impl Kind {
         }
     }
 
+    /// The hint under an empty list of this kind: what the objects are,
+    /// and how to make one.
+    pub fn empty_hint(self) -> &'static str {
+        match self {
+            Kind::Tables => {
+                "A table is data in Delta, Parquet or another format, with its columns. Click New to register one: managed under the storage root, or external at a location of yours."
+            }
+            Kind::Volumes => {
+                "A volume is a folder of files that are not a table, such as images or exports. Click New to register one."
+            }
+            Kind::Functions => {
+                "A function is a routine that engines call in their queries. Click New to register a SQL function."
+            }
+            Kind::Models => {
+                "A registered model holds the versions of a machine learning model. Click New to register one; its versions come from MLflow or the API."
+            }
+        }
+    }
+
     /// The class that colors the kind's icon.
     fn color(self) -> &'static str {
         match self {

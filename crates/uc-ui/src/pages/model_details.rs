@@ -15,8 +15,9 @@ use crate::auth::use_manages;
 use crate::components::edit_modal::Changes;
 use crate::components::icons::Plus;
 use crate::components::{
-    Card, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata, EntityHeader,
-    Loaded, MetaRow, Modal, PermissionsCard, Tabs, TextField, counted, loaded_list, use_notify,
+    Card, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata, Empty,
+    EntityHeader, Loaded, MetaRow, Modal, PermissionsCard, Tabs, TextField, counted, loaded_list,
+    use_notify,
 };
 use crate::contents::Holder;
 use crate::kind::Kind;
@@ -94,6 +95,7 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
         let saving = save_metadata(Changes {
             new_name: None,
             comment: Some(comment),
+            properties: None,
         });
         async move { saving.await.map(|_| ()) }
     };
@@ -104,7 +106,11 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
     });
 
     let version_rows = move || {
-        loaded_list(versions.get(), "No versions.", |list| {
+        let empty = Empty::new(
+            "No versions.",
+            "A version is one trained model, with its files at a source location. Click Create version to register one.",
+        );
+        loaded_list(versions.get(), empty, |list| {
             let (catalog, schema, model, _) = names.get_value();
             view! {
                 <div class="uc-table-wrap">

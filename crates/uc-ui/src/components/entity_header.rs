@@ -8,28 +8,37 @@ use leptos::prelude::*;
 use super::icons::{ChevronRight, Notebook, RefreshCw};
 use crate::util::{Route, catalog_href, schema_href};
 
-/// The path: "Catalog > catalog > schema > name". Each part but the last,
-/// which is the page shown, is a link; "Catalog" alone, on the list of
-/// catalogs, keeps its link, as the console's.
+/// The path: "Catalog > catalog > schema > name", or, outside the
+/// catalogs, "Credentials > name". Each part but the last, which is the
+/// page shown, is a link; a first part alone, such as "Catalog" on the list
+/// of catalogs, keeps its link, as the console's.
 #[component]
 pub fn Crumbs(route: Route) -> impl IntoView {
     // Each part's label and page.
-    let mut parts: Vec<(String, String)> = vec![("Catalog".into(), "/".into())];
-    if let Some(catalog) = &route.catalog {
-        parts.push((catalog.clone(), catalog_href(catalog)));
-        if let Some(schema) = &route.schema {
-            parts.push((schema.clone(), schema_href(catalog, schema)));
-            if let Some((kind, name)) = &route.object {
-                let label = match &route.version {
-                    Some(version) => format!("{name} · v{version}"),
-                    None => name.clone(),
-                };
-                parts.push((label, kind.href(catalog, schema, name)));
+    let mut parts: Vec<(String, String)> = Vec::new();
+    match route.section {
+        Some(section) => {
+            parts.push((section.title().into(), section.href().into()));
+            if let Some(item) = &route.item {
+                parts.push((item.clone(), section.item_href(item)));
             }
         }
-    }
-    if let Some(page) = route.page {
-        parts.push((page.into(), String::new()));
+        None => {
+            parts.push(("Catalog".into(), "/".into()));
+            if let Some(catalog) = &route.catalog {
+                parts.push((catalog.clone(), catalog_href(catalog)));
+                if let Some(schema) = &route.schema {
+                    parts.push((schema.clone(), schema_href(catalog, schema)));
+                    if let Some((kind, name)) = &route.object {
+                        let label = match &route.version {
+                            Some(version) => format!("{name} · v{version}"),
+                            None => name.clone(),
+                        };
+                        parts.push((label, kind.href(catalog, schema, name)));
+                    }
+                }
+            }
+        }
     }
     let last = parts.len() - 1;
     let items = parts
@@ -43,7 +52,10 @@ pub fn Crumbs(route: Route) -> impl IntoView {
                     </li>
                 }
             });
-            let icon = (i == 0).then(|| view! { <Notebook/> });
+            let icon = (i == 0).then(|| match route.section {
+                Some(section) => section.icon(),
+                None => view! { <Notebook/> }.into_any(),
+            });
             let item = if i == last && last > 0 {
                 view! {
                     <li>

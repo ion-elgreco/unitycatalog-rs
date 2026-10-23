@@ -24,8 +24,8 @@ use uc_api::{
     PermissionsChange, Privilege, RoutineBody, ScimEmail, ScimGroup, ScimUser, SecurityType,
     SqlDataAccess, TableDependency, TableOperation, TableType, UpdateCatalog,
     UpdateCredentialRequest, UpdateExternalLocation, UpdateModelVersion, UpdatePermissions,
-    UpdateRegisteredModel, UpdateSchema, UpdateVolumeRequestContent, VolumeOperation, VolumeType,
-    schema_uri,
+    UpdateRegisteredModel, UpdateSchema, UpdateTable, UpdateVolumeRequestContent, VolumeOperation,
+    VolumeType, schema_uri,
 };
 use uc_client::{
     API_BASE, AuditFilter, CONTROL_BASE, Client, Contents, Error, Method, Page, Result, ScimPage,
@@ -333,6 +333,17 @@ async fn tables_and_views() {
     assert_eq!(table.table_id, Some(table_id));
     let fetched = uc.get_table("c.s.t", false, false).await.unwrap();
     assert_eq!(as_json(&fetched), as_json(&table));
+    let edited = uc
+        .update_table(
+            "c.s.t",
+            &UpdateTable {
+                comment: Some("people".into()),
+                columns: Vec::new(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(edited.comment.as_deref(), Some("people"));
 
     let dependencies = DependencyList {
         dependencies: Some(vec![Dependency {
@@ -1105,6 +1116,12 @@ async fn scim_users_and_groups() {
     let created = uc.create_group(&group).await.unwrap();
     let id = created.id.clone().unwrap();
     assert_eq!(uc.get_group(&id).await.unwrap().display_name, "admins");
+    let renamed = ScimGroup {
+        display_name: "owners".into(),
+        ..created.clone()
+    };
+    let updated = uc.update_group(&id, &renamed).await.unwrap();
+    assert_eq!(updated.display_name, "owners");
     let groups = uc.list_groups(&ScimPage::default()).await.unwrap();
     assert_eq!(groups.resources.len(), 1);
     uc.delete_group(&id).await.unwrap();

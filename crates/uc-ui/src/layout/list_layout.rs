@@ -5,7 +5,7 @@ use leptos::prelude::*;
 use std::sync::Arc;
 
 use crate::components::icons::{ChevronLeft, ChevronRight, Search};
-use crate::components::{LoadError, LoadingBlock, Stage};
+use crate::components::{Empty, EmptyState, LoadError, LoadingBlock, Stage};
 use crate::load::Load;
 
 /// One column of the table.
@@ -32,8 +32,8 @@ pub fn ListLayout<T>(
     #[prop(into)] data: Signal<Load<Vec<T>>>,
     columns: Vec<Column<T>>,
     /// What the table says when it has no rows.
-    #[prop(default = "No data.")]
-    empty: &'static str,
+    #[prop(into, default = Empty::from("No data."))]
+    empty: Empty,
 ) -> impl IntoView
 where
     T: Clone + Send + Sync + 'static,
@@ -72,6 +72,7 @@ where
 
     let table = move || {
         let columns = columns.clone();
+        let empty = empty.clone();
         let header = columns
             .iter()
             .map(|c| view! { <th style=format!("width:{}", c.width)>{c.title}</th> })
@@ -92,7 +93,9 @@ where
             if rows.is_empty() {
                 return view! {
                     <tr>
-                        <td colspan="99" class="uc-empty">{empty}</td>
+                        <td colspan="99">
+                            <EmptyState empty=empty.clone()/>
+                        </td>
                     </tr>
                 }
                 .into_any();

@@ -71,6 +71,7 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
         let saving = save_metadata(Changes {
             new_name: None,
             comment: Some(comment),
+            properties: None,
         });
         async move { saving.await.map(|_| ()) }
     };

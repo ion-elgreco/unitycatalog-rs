@@ -296,3 +296,39 @@ pub fn EyeOff(#[prop(optional)] class: Option<&'static str>) -> impl IntoView {
         class,
     )
 }
+
+/// `cloud`.
+#[component]
+pub fn Cloud(#[prop(optional)] class: Option<&'static str>) -> impl IntoView {
+    icon(
+        r#"<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>"#,
+        class,
+    )
+}
+
+/// `users`.
+#[component]
+pub fn Users(#[prop(optional)] class: Option<&'static str>) -> impl IntoView {
+    icon(
+        r#"<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/>"#,
+        class,
+    )
+}
+
+/// `users-round`.
+#[component]
+pub fn UsersRound(#[prop(optional)] class: Option<&'static str>) -> impl IntoView {
+    icon(
+        r#"<path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/>"#,
+        class,
+    )
+}
+
+/// `scroll-text`.
+#[component]
+pub fn ScrollText(#[prop(optional)] class: Option<&'static str>) -> impl IntoView {
+    icon(
+        r#"<path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/>"#,
+        class,
+    )
+}

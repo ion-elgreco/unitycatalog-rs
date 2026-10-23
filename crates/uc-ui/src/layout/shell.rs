@@ -2,8 +2,8 @@
 //! button that hides the sidebar, the logo, the theme switcher, a link to
 //! the API docs and the account menu when a user is signed in. Below it,
 //! on the gray page: the path of the page shown, then the catalog tree in
-//! a card on the left and the page on the right. Signed out, the login
-//! screen takes its place.
+//! a card on the left, with the "Manage" links under it, and the page on
+//! the right. Signed out, the login screen takes its place.
 
 use leptos::prelude::*;
 use leptos_router::components::Outlet;
@@ -15,7 +15,7 @@ use crate::components::icons::{
 use crate::components::{CatalogTree, Crumbs, Dropdown};
 use crate::pages::{Denied, Login};
 use crate::theme::{ColorMode, use_theme};
-use crate::util::{provide_route, use_route};
+use crate::util::{Section, provide_route, use_route};
 
 /// What the shell shows. A new answer of the same kind, such as the
 /// check when the window gets the focus, keeps the page as it is.
@@ -136,6 +136,7 @@ fn Layout() -> impl IntoView {
                         <div class="uc-sidebar__tree">
                             <CatalogTree/>
                         </div>
+                        <ManageNav/>
                         <Show when=signed_in>
                             {move || {
                                 logout_url
@@ -163,6 +164,53 @@ fn Layout() -> impl IntoView {
                 </div>
             </div>
         </div>
+    }
+}
+
+/// "Manage", under the tree: the credentials, the external locations and,
+/// for admins, the users, the groups and the audit log. The audit log
+/// takes a signed-in admin, so it hides without a user.
+#[component]
+fn ManageNav() -> impl IntoView {
+    let auth = use_auth();
+    let route = use_route();
+    let admin = Memo::new(move |_| auth.session.with(|s| s.is_admin()));
+    let signed_in_admin = Memo::new(move |_| {
+        auth.session
+            .with(|s| s.user().is_some_and(|user| user.is_admin()))
+    });
+    let shows = move |section: Section| match section {
+        Section::Audit => signed_in_admin.get(),
+        section if section.admin_only() => admin.get(),
+        _ => true,
+    };
+    view! {
+        <nav class="uc-sidebar__nav" aria-label="Manage">
+            <span class="uc-sidebar__title">"Manage"</span>
+            <ul>
+                {Section::MANAGE
+                    .into_iter()
+                    .map(|section| {
+                        let active = move || route.with(|r| r.in_section(section));
+                        view! {
+                            <Show when=move || shows(section)>
+                                <li>
+                                    <a
+                                        class="uc-sidebar__link"
+                                        class:is-active=active
+                                        aria-current=move || active().then_some("page")
+                                        href=section.href()
+                                    >
+                                        {section.icon()}
+                                        {section.title()}
+                                    </a>
+                                </li>
+                            </Show>
+                        }
+                    })
+                    .collect_view()}
+            </ul>
+        </nav>
     }
 }
 

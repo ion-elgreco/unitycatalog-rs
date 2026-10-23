@@ -2765,6 +2765,7 @@ impl Client {
             method,
             path_prefix,
             max_results,
+            ..uc_client::AuditFilter::default()
         };
         let response = py
             .detach(|| rt().block_on(self.inner.list_audit_events(&filter)))
@@ -2787,6 +2788,7 @@ impl Client {
             method,
             path_prefix,
             max_results,
+            ..uc_client::AuditFilter::default()
         };
         let client = self.inner.clone();
         PyFuture::new(py, async move {

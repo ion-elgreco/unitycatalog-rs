@@ -1,13 +1,15 @@
-//! The Credentials card of a table or volume, as upstream's console: a
-//! button vends temporary credentials for the object's storage location,
-//! and the card shows them, with their expiry. Secrets stay hidden until
-//! shown, and each value has a copy button.
+//! The Credentials card of a table, a volume or an external location, as
+//! upstream's console has it for tables and volumes: a button vends
+//! temporary credentials for the object's storage location, and the card
+//! shows them, with their expiry. Secrets stay hidden until shown, and
+//! each value has a copy button.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use uc_api::{
-    GenerateTemporaryTableCredential, GenerateTemporaryVolumeCredential, TableOperation,
-    TemporaryCredentials, VolumeOperation,
+    GenerateTemporaryPathCredential, GenerateTemporaryTableCredential,
+    GenerateTemporaryVolumeCredential, PathOperation, TableOperation, TemporaryCredentials,
+    VolumeOperation,
 };
 
 use super::card::Card;
@@ -21,6 +23,8 @@ use crate::util::{copy_text, format_timestamp};
 pub enum Vendable {
     Table,
     Volume,
+    /// An external location: the credentials are for its URL.
+    Path,
 }
 
 impl Vendable {
@@ -28,13 +32,30 @@ impl Vendable {
         match self {
             Vendable::Table => "table",
             Vendable::Volume => "volume",
+            Vendable::Path => "external location",
+        }
+    }
+
+    /// What the credentials are scoped to, in the card's text.
+    fn scope(self) -> &'static str {
+        match self {
+            Vendable::Table | Vendable::Volume => "storage location",
+            Vendable::Path => "URL",
+        }
+    }
+
+    /// What the call needs: the object's id, or the location's URL.
+    fn needs(self) -> &'static str {
+        match self {
+            Vendable::Table | Vendable::Volume => "id",
+            Vendable::Path => "URL",
         }
     }
 
     /// The text of the button that vends read-write credentials.
     fn write_label(self) -> &'static str {
         match self {
-            Vendable::Table => "Vend READ WRITE creds",
+            Vendable::Table | Vendable::Path => "Vend READ WRITE creds",
             Vendable::Volume => "Vend WRITE creds",
         }
     }
@@ -42,6 +63,16 @@ impl Vendable {
     async fn vend(self, id: String, write: bool) -> api::Result<TemporaryCredentials> {
         let client = api::client();
         match self {
+            Vendable::Path => {
+                let request = GenerateTemporaryPathCredential {
+                    url: id,
+                    operation: match write {
+                        true => PathOperation::PathReadWrite,
+                        false => PathOperation::PathRead,
+                    },
+                };
+                client.generate_temporary_path_credentials(&request).await
+            }
             Vendable::Table => {
                 let request = GenerateTemporaryTableCredential {
                     table_id: id,
@@ -74,7 +105,7 @@ pub fn CredentialsCard(kind: Vendable, #[prop(into)] id: Signal<Option<String>>)
     let busy: RwSignal<Option<bool>> = RwSignal::new(None);
     let vend = move |write: bool| {
         let Some(id) = id.get_untracked() else {
-            notify.error(format!("The {} has no id.", kind.noun()));
+            notify.error(format!("The {} has no {}.", kind.noun(), kind.needs()));
             return;
         };
         busy.set(Some(write));
@@ -118,8 +149,9 @@ pub fn CredentialsCard(kind: Vendable, #[prop(into)] id: Signal<Option<String>>)
         >
             <p class="uc-muted">
                 {format!(
-                    "Vend temporary credentials scoped to this {}'s storage location.",
+                    "Vend temporary credentials scoped to this {}'s {}.",
                     kind.noun(),
+                    kind.scope(),
                 )}
             </p>
             {move || {

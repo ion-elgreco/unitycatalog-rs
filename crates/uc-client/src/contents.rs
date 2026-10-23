@@ -1,6 +1,6 @@
-//! What a catalog, schema or registered model holds: what a delete with
-//! `force` removes along with it, as the server cascades it. The web UI and
-//! the TUI count it before they ask to delete it all.
+//! What a catalog, schema, registered model or credential holds: what a
+//! delete with `force` removes along with it, as the server cascades it.
+//! The web UI and the TUI count it before they ask to delete it all.
 
 use std::future::Future;
 
@@ -18,6 +18,8 @@ pub struct Contents {
     pub functions: usize,
     pub models: usize,
     pub versions: usize,
+    /// The external locations bound to a credential.
+    pub external_locations: usize,
 }
 
 impl Contents {
@@ -29,6 +31,7 @@ impl Contents {
             functions: self.functions + other.functions,
             models: self.models + other.models,
             versions: self.versions + other.versions,
+            external_locations: self.external_locations + other.external_locations,
         }
     }
 
@@ -42,6 +45,11 @@ impl Contents {
             (self.functions, "function", "functions"),
             (self.models, "registered model", "registered models"),
             (self.versions, "model version", "model versions"),
+            (
+                self.external_locations,
+                "external location",
+                "external locations",
+            ),
         ]
         .into_iter()
         .filter(|(count, ..)| *count > 0)
@@ -128,6 +136,23 @@ impl Client {
         .await?;
         Ok(Contents {
             versions: versions.len(),
+            ..Contents::default()
+        })
+    }
+
+    /// What the credential `name` holds: the external locations bound to
+    /// it, among the ones the caller may see.
+    pub async fn credential_contents(&self, name: &str) -> Result<Contents> {
+        let locations = all(|page| async move {
+            let list = self.list_external_locations(&page).await?;
+            Ok((list.external_locations, list.next_page_token))
+        })
+        .await?;
+        Ok(Contents {
+            external_locations: locations
+                .iter()
+                .filter(|l| l.credential_name.as_deref() == Some(name))
+                .count(),
             ..Contents::default()
         })
     }

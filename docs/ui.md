@@ -4,8 +4,9 @@ The web UI shows the catalogs of a server, and creates, edits and deletes
 them and what they hold. It is a Leptos port of upstream's new console: a
 dark header, the catalog tree on the left, and a page with Overview,
 Details and Permissions tabs. It adds grants, temporary credentials,
-column comments and a page for your access tokens. `uc-server` serves it
-at `/`, on the API's origin.
+column comments, a page for your access tokens, and the pages under
+"Manage": credentials, external locations, users, groups and the audit
+log. `uc-server` serves it at `/`, on the API's origin.
 
 ![The catalogs, and the tree](assets/ui/catalogs.png)
 
@@ -45,6 +46,9 @@ to set up the sign-in.
   page. The page that shows is selected in the tree, and its nodes are
   open. The arrow keys move between the names; the right arrow opens a
   node, and the left arrow closes it.
+- "Manage", under the tree: the credentials and the external locations,
+  and, for admins, the users, the groups and the audit log. The audit log
+  shows only to a signed-in admin.
 - Each page has a path at the top, such as "Catalog > unity > default".
   Click a part of it to go back up. Beside the name are its type badges
   and a button that loads the object again. The page's actions are at the
@@ -70,8 +74,10 @@ to set up the sign-in.
 
 ![Create catalog](assets/ui/catalog-create.png)
 
-3. A catalog's page lists its schemas. **Edit** changes its name and its
-   comment.
+3. A catalog's page lists its schemas. **Edit** changes its name, its
+   comment and its properties: **Add property** adds a key and a value,
+   and the × after a property removes it. The server replaces all the
+   properties with the dialog's.
 
 ![A catalog](assets/ui/catalog.png)
 
@@ -104,9 +110,14 @@ to set up the sign-in.
 
 ![New object](assets/ui/object-create.png)
 
-4. To delete the schema, click **Delete** and type its name to confirm.
+4. **Edit** changes the schema's name, its comment and its properties, as
+   for a catalog.
+5. To delete the schema, click **Delete** and type its name to confirm.
    The server deletes only an empty schema; an admin can tick **Also
    delete its tables, …**, as for catalogs.
+
+An empty list says what the objects are and how to make one, for a first
+visit: "No tables." has a line about tables and **New** under it.
 
 ## Tables
 
@@ -216,6 +227,65 @@ sign-in. It sends the token in the header `Authorization: Bearer <token>`;
 Tokens belong to a signed-in user: without a sign-in, the page has no
 tokens. The [terminal UI](cli/index.md#the-terminal-ui) has the same on its
 Tokens tab.
+
+## Credentials and external locations
+
+A storage credential holds the cloud identity that the server uses to
+reach storage: an AWS IAM role that it assumes. An external location is a
+URL in cloud storage, bound to the credential that reaches it. External
+tables and volumes, and the storage roots of catalogs and schemas, are
+under external locations. [Cloud storage](server/cloud-storage.md) tells how the
+server uses them.
+
+1. Click **Credentials** under "Manage". The list shows the credentials
+   that you may see: all of them to an admin, else your own and the ones
+   you may bind external locations to. **Create credential** asks for a
+   name, the role's ARN and a comment.
+2. A credential's page lists the external locations bound to it. **Edit**
+   changes its name, its role and its comment. The Permissions tab has its
+   grants: CREATE EXTERNAL LOCATION lets a user bind locations to it.
+3. To delete a credential, click **Delete** and type its name. The server
+   deletes only a credential without external locations; an admin can tick
+   **Also delete the external locations bound to it**.
+4. Click **External locations** under "Manage". **Create external
+   location** asks for a name, the URL, the credential and a comment.
+5. An external location's page shows its URL and its credential. **Edit**
+   changes them, with the name and the comment. The Permissions tab
+   starts with **Credentials**, which vends temporary credentials for the
+   URL, as for a table, and has the grants: READ FILES, WRITE FILES,
+   CREATE EXTERNAL TABLE, CREATE EXTERNAL VOLUME and CREATE MANAGED
+   STORAGE.
+
+![An external location](assets/ui/external-location.png)
+
+## Users and groups
+
+Admins see **Users** and **Groups** under "Manage". A user's email is the
+principal of their grants and tokens; a group names users together, and a
+grant to the group is a grant to each member.
+
+1. The Users page lists every user, with their state. Users come from the
+   identity provider at their first sign-in; **Create user** adds one by
+   email, with a name if you want one.
+2. **Delete** in a user's row deactivates the user and removes all their
+   grants: they can no longer sign in, and their tokens stop working. The
+   row stays, as inactive.
+3. The Groups page lists the groups with their member counts. **Create
+   group** asks for a name. Click a group to open it.
+4. A group's page lists its members. Pick a user and click **Add member**;
+   the × after a member removes them. **Delete** deletes the group.
+
+![A group](assets/ui/group.png)
+
+## Audit log
+
+A signed-in admin sees **Audit log** under "Manage": the calls that
+changed the catalog, the newest first, with who made each one, its method
+and path, and the server's status. Filter by principal, method, the start
+of the path, and a time span, then click **Apply**. **Load more** gets the
+next page. `uc admin audit` lists the same events.
+
+![The audit log](assets/ui/audit.png)
 
 ## Upstream's React UI
 

@@ -1,5 +1,6 @@
 //! The root component: the router, the toasts and the shell. The routes
-//! are the console's (`web/src/routes`), with the access tokens page added.
+//! are the console's (`web/src/routes`), with the access tokens page and
+//! the pages under "Manage" added.
 
 use leptos::prelude::*;
 use leptos_router::components::{ParentRoute, Route, Router, Routes};
@@ -10,8 +11,9 @@ use crate::components::{Notifications, provide_notifications};
 use crate::layout::Shell;
 use crate::load::provide_cache;
 use crate::pages::{
-    AccessTokens, CatalogDetails, CatalogsList, FunctionDetails, Login, ModelDetails,
-    ModelVersionDetails, SchemaDetails, TableDetails, VolumeDetails,
+    AccessTokens, AuditLog, CatalogDetails, CatalogsList, CredentialDetails, Credentials,
+    ExternalLocationDetails, ExternalLocations, FunctionDetails, GroupDetails, Groups, Login,
+    ModelDetails, ModelVersionDetails, SchemaDetails, TableDetails, Users, VolumeDetails,
 };
 use crate::theme::provide_theme;
 
@@ -37,6 +39,14 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("catalog/:catalog/:schema/model/:model") view=ModelDetails/>
                     <Route path=path!("catalog/:catalog/:schema/model/:model/version/:version") view=ModelVersionDetails/>
                     <Route path=path!("settings/tokens") view=AccessTokens/>
+                    <Route path=path!("credentials") view=Credentials/>
+                    <Route path=path!("credentials/:name") view=CredentialDetails/>
+                    <Route path=path!("external-locations") view=ExternalLocations/>
+                    <Route path=path!("external-locations/:name") view=ExternalLocationDetails/>
+                    <Route path=path!("users") view=Users/>
+                    <Route path=path!("groups") view=Groups/>
+                    <Route path=path!("groups/:name") view=GroupDetails/>
+                    <Route path=path!("audit") view=AuditLog/>
                 </ParentRoute>
             </Routes>
         </Router>

@@ -4,4 +4,6 @@ pub mod route;
 
 pub use clipboard::copy_text;
 pub use format::{format_timestamp, or_dash, pretty_json};
-pub use route::{Route, catalog_href, provide_route, route_params, schema_href, use_route};
+pub use route::{
+    Route, Section, catalog_href, provide_route, route_params, schema_href, use_route,
+};

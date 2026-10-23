@@ -213,7 +213,13 @@ pub struct AuditFilter {
     /// An HTTP method, such as `DELETE`.
     pub method: Option<String>,
     pub path_prefix: Option<String>,
+    /// The first time, in epoch milliseconds.
+    pub since: Option<i64>,
+    /// The last time, in epoch milliseconds.
+    pub until: Option<i64>,
     pub max_results: Option<i32>,
+    /// The token of the page after the last one.
+    pub page_token: Option<String>,
 }
 
 impl AuditFilter {
@@ -222,7 +228,10 @@ impl AuditFilter {
             ("principal", self.principal.clone()),
             ("method", self.method.clone()),
             ("path_prefix", self.path_prefix.clone()),
+            ("since", self.since.map(|t| t.to_string())),
+            ("until", self.until.map(|t| t.to_string())),
             ("max_results", self.max_results.map(|m| m.to_string())),
+            ("page_token", self.page_token.clone()),
         ]
         .into_iter()
         .filter_map(|(key, value)| value.map(|v| (key, v)))
@@ -624,6 +633,11 @@ impl Client {
     }
     pub async fn list_groups(&self, page: &ScimPage) -> Result<ListScimGroupsResponse> {
         self.get(&scim(["Groups"]), &page.query()).await
+    }
+    /// Replace the group `id`, as SCIM's PUT: its name and its members.
+    pub async fn update_group(&self, id: &str, group: &ScimGroup) -> Result<ScimGroup> {
+        self.call(Method::PUT, &scim(["Groups", id]), &[], Some(group))
+            .await
     }
     pub async fn delete_group(&self, id: &str) -> Result<()> {
         self.delete(&scim(["Groups", id]), &[]).await

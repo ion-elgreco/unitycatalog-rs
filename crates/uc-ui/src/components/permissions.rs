@@ -50,7 +50,15 @@ fn choices(kind: SecurableType) -> &'static [Privilege] {
         SecurableType::Table => &[Select, Modify],
         SecurableType::Volume => &[ReadVolume],
         SecurableType::Function | SecurableType::RegisteredModel => &[Execute],
-        _ => Privilege::ALL,
+        SecurableType::Credential => &[CreateExternalLocation],
+        SecurableType::ExternalLocation => &[
+            ReadFiles,
+            WriteFiles,
+            CreateExternalTable,
+            CreateExternalVolume,
+            CreateManagedStorage,
+        ],
+        SecurableType::Metastore => Privilege::ALL,
     }
 }
 

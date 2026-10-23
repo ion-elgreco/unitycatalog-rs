@@ -71,6 +71,7 @@ pub async fn run(c: &Context<'_>, op: AdminOp) -> Result<String> {
                 method,
                 path_prefix,
                 max_results,
+                ..AuditFilter::default()
             };
             let events = c
                 .client

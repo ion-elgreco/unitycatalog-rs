@@ -3,6 +3,7 @@
 
 use leptos::prelude::*;
 
+use super::empty::{Empty, EmptyState};
 use crate::load::Load;
 
 /// How far a load is, without its value.
@@ -42,15 +43,13 @@ where
 /// `empty` for none, else `rows` of the items.
 pub fn loaded_list<T>(
     load: Load<Vec<T>>,
-    empty: impl Into<String>,
+    empty: impl Into<Empty>,
     rows: impl FnOnce(Vec<T>) -> AnyView,
 ) -> AnyView {
     match load {
         Load::Loading => view! { <LoadingBlock/> }.into_any(),
         Load::Failed(message) => view! { <LoadError message/> }.into_any(),
-        Load::Ready(list) if list.is_empty() => {
-            view! { <p class="uc-empty">{empty.into()}</p> }.into_any()
-        }
+        Load::Ready(list) if list.is_empty() => view! { <EmptyState empty/> }.into_any(),
         Load::Ready(list) => rows(list),
     }
 }
