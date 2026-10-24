@@ -434,13 +434,20 @@ impl Client {
     /// # Arguments
     ///
     /// * `catalog` - Name of the catalog.
-    pub fn get_delta_config(&self, catalog: impl Into<String>) -> GetDeltaConfigBuilder {
+    /// * `protocol_versions` - The highest protocol versions that the client supports per major version, comma-separated,
+    /// such as `1.0` or `1.1,2.3`. The server answers with the highest version that both support.
+    pub fn get_delta_config(
+        &self,
+        catalog: impl Into<String>,
+        protocol_versions: impl Into<String>,
+    ) -> GetDeltaConfigBuilder {
         GetDeltaConfigBuilder::new(
             crate::codegen::delta_api::DeltaApiClient::new(
                 self.client.clone(),
                 self.base_url.clone(),
             ),
             catalog,
+            protocol_versions,
         )
     }
 

@@ -153,18 +153,14 @@ fn api_commit(version: i64) -> DeltaApiCommit {
 async fn config() {
     let uc = client().await;
     let _storage = catalog_and_schema(&uc).await;
-    let config = uc
-        .get_delta_config("c")
-        .with_protocol_versions("1.0".to_string())
-        .await
-        .unwrap();
+    let config = uc.get_delta_config("c", "1.0").await.unwrap();
     assert_eq!(config.protocol_version, "1.0");
     assert_eq!(config.endpoints.len(), 12);
     let load = "GET /v1/catalogs/c/schemas/{schema}/tables/{table}";
     assert!(config.endpoints.contains(&load.to_string()));
     // Errors have the body of the Delta API: `{"error": {"type", ...}}`.
     let error = rejected(
-        uc.get_delta_config("nope").await,
+        uc.get_delta_config("nope", "1.0").await,
         404,
         "NoSuchCatalogException",
     );

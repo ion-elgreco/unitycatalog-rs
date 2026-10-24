@@ -3529,15 +3529,16 @@ pub struct GetDeltaConfigRequest {
     )]
     pub catalog: ::buffa::alloc::string::String,
     /// The highest protocol versions that the client supports per major version, comma-separated,
-    /// such as `1.1,2.3`. The server accepts it and ignores it: `1.0` is the only version.
+    /// such as `1.0` or `1.1,2.3`. The server answers with the highest version that both support.
     ///
     /// Field 2: `protocol_versions`
     #[serde(
         rename = "protocol-versions",
         alias = "protocol_versions",
-        skip_serializing_if = "::core::option::Option::is_none"
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
-    pub protocol_versions: ::core::option::Option<::buffa::alloc::string::String>,
+    pub protocol_versions: ::buffa::alloc::string::String,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -3559,19 +3560,6 @@ impl GetDeltaConfigRequest {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str =
         "type.googleapis.com/unitycatalog.delta.v1.GetDeltaConfigRequest";
-}
-
-impl GetDeltaConfigRequest {
-    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
-    #[inline]
-    ///Sets [`Self::protocol_versions`] to `Some(value)`, consuming and returning `self`.
-    pub fn with_protocol_versions(
-        mut self,
-        value: impl Into<::buffa::alloc::string::String>,
-    ) -> Self {
-        self.protocol_versions = Some(value.into());
-        self
-    }
 }
 
 impl ::buffa::DefaultInstance for GetDeltaConfigRequest {
@@ -3604,8 +3592,8 @@ impl ::buffa::Message for GetDeltaConfigRequest {
         if !self.catalog.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.catalog) as u32;
         }
-        if let Some(ref v) = self.protocol_versions {
-            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        if !self.protocol_versions.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.protocol_versions) as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
@@ -3619,10 +3607,10 @@ impl ::buffa::Message for GetDeltaConfigRequest {
                 .encode(buf);
             ::buffa::types::encode_string(&self.catalog, buf);
         }
-        if let Some(ref v) = self.protocol_versions {
+        if !self.protocol_versions.is_empty() {
             ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
-            ::buffa::types::encode_string(v, buf);
+            ::buffa::types::encode_string(&self.protocol_versions, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -3657,11 +3645,7 @@ impl ::buffa::Message for GetDeltaConfigRequest {
                         actual: tag.wire_type() as u8,
                     });
                 }
-                ::buffa::types::merge_string(
-                    self.protocol_versions
-                        .get_or_insert_with(::buffa::alloc::string::String::new),
-                    buf,
-                )?;
+                ::buffa::types::merge_string(&mut self.protocol_versions, buf)?;
             }
             _ => {
                 self.__buffa_unknown_fields
@@ -3673,7 +3657,7 @@ impl ::buffa::Message for GetDeltaConfigRequest {
 
     fn clear(&mut self) {
         self.catalog.clear();
-        self.protocol_versions = ::core::option::Option::None;
+        self.protocol_versions.clear();
         self.__buffa_unknown_fields.clear();
     }
 }

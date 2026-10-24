@@ -34,10 +34,8 @@ impl DeltaApiClient {
             .join("api/2.1/unity-catalog/delta/v1/config")?;
         url.query_pairs_mut()
             .append_pair("catalog", &request.catalog);
-        if let Some(ref value) = request.protocol_versions {
-            url.query_pairs_mut()
-                .append_pair("protocol-versions", &value.to_string());
-        }
+        url.query_pairs_mut()
+            .append_pair("protocol-versions", &request.protocol_versions);
         let response = self.client.get(url).send().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);

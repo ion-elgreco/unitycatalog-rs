@@ -561,7 +561,7 @@ def test_delta_commits(uc: Calls, schema: tuple[str, str]) -> None:
 
 def test_delta_api(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
-    config = uc.get_delta_config(catalog)
+    config = uc.get_delta_config(catalog, "1.0")
     assert config.protocol_version == "1.0" and config.endpoints
     staging = uc.create_delta_staging_table(catalog, schema_name, "staged")
     assert staging.table_type == "MANAGED"

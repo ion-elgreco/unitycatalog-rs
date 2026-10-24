@@ -20,19 +20,17 @@ pub struct GetDeltaConfigBuilder {
 impl GetDeltaConfigBuilder {
     /// Create a new builder instance.
     /// Obtain via the corresponding method on `DeltaApiClient`.
-    pub(crate) fn new(client: DeltaApiClient, catalog: impl Into<String>) -> Self {
+    pub(crate) fn new(
+        client: DeltaApiClient,
+        catalog: impl Into<String>,
+        protocol_versions: impl Into<String>,
+    ) -> Self {
         let request = GetDeltaConfigRequest {
             catalog: catalog.into(),
+            protocol_versions: protocol_versions.into(),
             ..Default::default()
         };
         Self { client, request }
-    }
-
-    /// The highest protocol versions that the client supports per major version, comma-separated,
-    /// such as `1.1,2.3`. The server accepts it and ignores it: `1.0` is the only version.
-    pub fn with_protocol_versions(mut self, protocol_versions: impl Into<Option<String>>) -> Self {
-        self.request.protocol_versions = protocol_versions.into();
-        self
     }
 }
 

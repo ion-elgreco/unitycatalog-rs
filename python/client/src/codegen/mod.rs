@@ -762,22 +762,19 @@ impl PyClient {
     /// Args:
     ///     catalog: Name of the catalog.
     ///     protocol_versions: The highest protocol versions that the client supports per major version,
-    ///                        comma-separated, such as `1.1,2.3`. The server accepts it and ignores it:
-    ///                        `1.0` is the only version.
+    ///                        comma-separated, such as `1.0` or `1.1,2.3`. The server answers with the
+    ///                        highest version that both support.
     ///
     /// Returns:
     ///     The configuration of the Delta API for a catalog.
-    #[pyo3(signature = (catalog, *, protocol_versions = None))]
+    #[pyo3(signature = (catalog, protocol_versions))]
     pub fn get_delta_config(
         &self,
         py: Python,
         catalog: String,
-        protocol_versions: Option<String>,
+        protocol_versions: String,
     ) -> PyUnityCatalogResult<PyDeltaCatalogConfig> {
-        let request = self
-            .client
-            .get_delta_config(catalog)
-            .with_protocol_versions(protocol_versions);
+        let request = self.client.get_delta_config(catalog, protocol_versions);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -787,17 +784,14 @@ impl PyClient {
     }
 
     /// Like `get_delta_config`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (catalog, *, protocol_versions = None))]
+    #[pyo3(signature = (catalog, protocol_versions))]
     pub fn get_delta_config_async<'py>(
         &self,
         py: Python<'py>,
         catalog: String,
-        protocol_versions: Option<String>,
+        protocol_versions: String,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyDeltaCatalogConfig>> {
-        let request = self
-            .client
-            .get_delta_config(catalog)
-            .with_protocol_versions(protocol_versions);
+        let request = self.client.get_delta_config(catalog, protocol_versions);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

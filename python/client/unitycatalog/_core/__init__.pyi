@@ -368,10 +368,7 @@ class Client:
         Like `create_credential`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
     def get_delta_config(
-        self,
-        catalog: builtins.str,
-        *,
-        protocol_versions: typing.Optional[builtins.str] = None,
+        self, catalog: builtins.str, protocol_versions: builtins.str
     ) -> delta.DeltaCatalogConfig:
         r"""
         Get the configuration of the Delta API for a catalog: the endpoints that the server supports and the
@@ -380,17 +377,14 @@ class Client:
         Args:
             catalog: Name of the catalog.
             protocol_versions: The highest protocol versions that the client supports per major version,
-                               comma-separated, such as `1.1,2.3`. The server accepts it and ignores it:
-                               `1.0` is the only version.
+                               comma-separated, such as `1.0` or `1.1,2.3`. The server answers with the
+                               highest version that both support.
 
         Returns:
             The configuration of the Delta API for a catalog.
         """
     def get_delta_config_async(
-        self,
-        catalog: builtins.str,
-        *,
-        protocol_versions: typing.Optional[builtins.str] = None,
+        self, catalog: builtins.str, protocol_versions: builtins.str
     ) -> asyncio.Future[delta.DeltaCatalogConfig]:
         r"""
         Like `get_delta_config`, but returns an `asyncio.Future` of the result. Call it in a running event loop.

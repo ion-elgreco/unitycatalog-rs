@@ -182,8 +182,11 @@ message GetDeltaConfigRequest {
   // Name of the catalog.
   string catalog = 1 [(google.api.field_behavior) = REQUIRED];
   // The highest protocol versions that the client supports per major version, comma-separated,
-  // such as `1.1,2.3`. The server accepts it and ignores it: `1.0` is the only version.
-  optional string protocol_versions = 2 [json_name = "protocol-versions"];
+  // such as `1.0` or `1.1,2.3`. The server answers with the highest version that both support.
+  string protocol_versions = 2 [
+    json_name = "protocol-versions",
+    (google.api.field_behavior) = REQUIRED
+  ];
 }
 
 // Delta protocol versions and features.
