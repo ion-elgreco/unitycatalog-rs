@@ -46,12 +46,12 @@ pub fn SchemaBrowser() -> impl IntoView {
 /// The names of a loaded list.
 fn names<T: Send + Sync + 'static>(
     list: RwSignal<Load<Vec<T>>>,
-    name: fn(&T) -> Option<String>,
+    name: fn(&T) -> String,
 ) -> Memo<Load<Vec<String>>> {
     Memo::new(move |_| {
         list.with(|list| match list {
             Load::Loading => Load::Loading,
-            Load::Ready(items) => Load::Ready(items.iter().filter_map(name).collect()),
+            Load::Ready(items) => Load::Ready(items.iter().map(name).collect()),
             Load::Failed(message) => Load::Failed(message.clone()),
         })
     })
@@ -156,7 +156,7 @@ fn EntryNodes(catalog: String, schema: String, kind: Kind) -> impl IntoView {
     });
     view! {
         <Names
-            names=names(entries, |e| Some(e.name.clone()))
+            names=names(entries, |e| e.name.clone())
             empty=format!("No {}", kind.label().to_lowercase())
             node=Callback::new(move |name: String| {
                 let href = kind.href(&catalog, &schema, &name);

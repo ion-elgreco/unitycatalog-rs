@@ -1,0 +1,922 @@
+syntax = "proto3";
+
+package unitycatalog.iceberg.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "olai/trestle/v1/annotations.proto";
+
+// The client configuration of a catalog.
+message IcebergConfigResponse {
+  // Properties that a client uses unless its own configuration sets them. Always empty.
+  map<string, string> defaults = 1;
+  // Properties that replace the client's own configuration: `prefix`, the path prefix of the
+  // routes of the catalog (`catalogs/<catalog>`).
+  map<string, string> overrides = 2;
+  // The routes that the server serves, such as `GET /v1/{prefix}/namespaces`. The write routes
+  // are in the list only when Iceberg writes are on.
+  repeated string endpoints = 3;
+}
+
+message GetIcebergConfigRequest {
+  // Name of the catalog: the Iceberg warehouse.
+  string warehouse = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message ListIcebergNamespacesRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Parent namespace. Namespaces are not nested: a parent that exists has no children, a parent
+  // that does not exist is not found. An empty value is no parent.
+  optional string parent = 2;
+  // Opaque token of the page to return: the `next-page-token` of the page before. An empty token
+  // asks for the first page. Without a token the answer is the whole listing.
+  optional string page_token = 3 [json_name = "pageToken"];
+  // The maximum number of namespaces in a page, at least 1; a larger value than 100 counts as
+  // 100. Read only with a page token.
+  optional int32 page_size = 4 [json_name = "pageSize"];
+}
+
+// A page of namespaces.
+message IcebergListNamespacesResponse {
+  // The namespaces, each as the list of its levels: one level, the schema name.
+  repeated google.protobuf.ListValue namespaces = 1;
+  // Opaque token of the next page. Absent on the last page and when no page was asked for.
+  optional string next_page_token = 2 [json_name = "next-page-token"];
+}
+
+message IcebergCreateNamespaceRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // The levels of the namespace. Exactly one level: the name of the schema to create.
+  repeated string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+  // Properties of the namespace.
+  map<string, string> properties = 3;
+}
+
+// A namespace and its properties.
+message IcebergNamespaceResponse {
+  // The levels of the namespace: one level, the schema name.
+  repeated string namespace = 1;
+  // Properties of the namespace.
+  map<string, string> properties = 2;
+}
+
+message LoadIcebergNamespaceRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the namespace: a schema of the catalog. Namespaces have one level; the server does
+  // not split the value at the unit separator (`%1F`) that Iceberg puts between levels.
+  string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+message IcebergNamespaceExistsRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the namespace: a schema of the catalog. Namespaces have one level; the server does
+  // not split the value at the unit separator (`%1F`) that Iceberg puts between levels.
+  string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+message DropIcebergNamespaceRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the namespace: a schema of the catalog. Namespaces have one level; the server does
+  // not split the value at the unit separator (`%1F`) that Iceberg puts between levels.
+  string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+message IcebergUpdateNamespacePropertiesRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the namespace: a schema of the catalog. Namespaces have one level; the server does
+  // not split the value at the unit separator (`%1F`) that Iceberg puts between levels.
+  string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+  // Keys of the properties to remove. A key cannot be both removed and set.
+  repeated string removals = 3;
+  // Properties to set.
+  map<string, string> updates = 4;
+}
+
+// The changes of a namespace properties update.
+message IcebergUpdateNamespacePropertiesResponse {
+  // Keys that were set.
+  repeated string updated = 1;
+  // Keys that were removed.
+  repeated string removed = 2;
+  // Keys to remove that the namespace did not have.
+  repeated string missing = 3;
+}
+
+// A table by its namespace and name.
+message IcebergTableIdentifier {
+  // The levels of the namespace: one level, the schema name.
+  repeated string namespace = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Name of the table.
+  string name = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+message ListIcebergTablesRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the namespace: a schema of the catalog. Namespaces have one level; the server does
+  // not split the value at the unit separator (`%1F`) that Iceberg puts between levels.
+  string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+  // Opaque token of the page to return: the `next-page-token` of the page before. An empty token
+  // asks for the first page. Without a token the answer is the whole listing.
+  optional string page_token = 3 [json_name = "pageToken"];
+  // The maximum number of tables in a page, at least 1; a larger value than 100 counts as 100.
+  // Read only with a page token.
+  optional int32 page_size = 4 [json_name = "pageSize"];
+}
+
+// A page of tables: the tables of a namespace that have Iceberg metadata.
+message IcebergListTablesResponse {
+  // The tables.
+  repeated IcebergTableIdentifier identifiers = 1;
+  // Opaque token of the next page. Absent on the last page and when no page was asked for.
+  optional string next_page_token = 2 [json_name = "next-page-token"];
+}
+
+// An Iceberg table schema: a struct type with an id.
+message IcebergSchema {
+  // The type of the schema (JSON `type`): always `struct`.
+  string schema_type = 1 [
+    json_name = "type",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  // Id of the schema. In requests, the server assigns the ids.
+  int32 schema_id = 2 [
+    json_name = "schema-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Ids of the fields that identify a row.
+  repeated int32 identifier_field_ids = 3 [json_name = "identifier-field-ids"];
+  // The fields of the schema.
+  repeated IcebergStructField fields = 4 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+}
+
+// A field of a struct type, such as a column of a schema.
+message IcebergStructField {
+  // Id of the field, unique in the table schema.
+  int32 id = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Name of the field.
+  string name = 2 [(google.api.field_behavior) = REQUIRED];
+  // Whether the field cannot be null.
+  bool required = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // The Iceberg type of the field (JSON `type`): a string for a primitive type (`long`,
+  // `decimal(10,2)`, `fixed[16]`), an object for a `struct`, `list` or `map` type.
+  google.protobuf.Value field_type = 4 [
+    json_name = "type",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  // Description of the field.
+  optional string doc = 5;
+  // Value of the field in the rows written before the field was added, in Iceberg's JSON form
+  // for single values.
+  google.protobuf.Value initial_default = 6 [json_name = "initial-default"];
+  // Value of the field when a writer does not give one, in Iceberg's JSON form for single
+  // values.
+  google.protobuf.Value write_default = 7 [json_name = "write-default"];
+}
+
+// How a table is partitioned.
+message IcebergPartitionSpec {
+  // Id of the spec. In requests, the server assigns it.
+  int32 spec_id = 1 [
+    json_name = "spec-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // The partition fields. None for an unpartitioned table.
+  repeated IcebergPartitionField fields = 2 [(olai.trestle.v1.emit_unpopulated) = true];
+}
+
+// A partition field: a transform of a source column.
+message IcebergPartitionField {
+  // Id of the source column.
+  int32 source_id = 1 [
+    json_name = "source-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Id of the partition field. In requests, 0 lets the server assign it.
+  int32 field_id = 2 [json_name = "field-id"];
+  // Name of the partition field.
+  string name = 3;
+  // The transform: `identity`, `year`, `month`, `day`, `hour`, `void`, `bucket[N]` or
+  // `truncate[W]`.
+  string transform = 4;
+}
+
+// How the data files of a table are sorted.
+message IcebergSortOrder {
+  // Id of the sort order. 0 is the unsorted order.
+  int64 order_id = 1 [
+    json_name = "order-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // The sort fields, in order. None for the unsorted order.
+  repeated IcebergSortField fields = 2 [(olai.trestle.v1.emit_unpopulated) = true];
+}
+
+// A sort field: a transform of a source column and a direction.
+message IcebergSortField {
+  // Id of the source column.
+  int32 source_id = 1 [
+    json_name = "source-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // The transform, as in a partition field, such as `identity`.
+  string transform = 2;
+  // The direction: `asc` or `desc`.
+  string direction = 3;
+  // Where nulls go: `nulls-first` or `nulls-last`.
+  string null_order = 4 [json_name = "null-order"];
+}
+
+// A snapshot: the state of a table at a point in time.
+message IcebergSnapshot {
+  // Id of the snapshot.
+  int64 snapshot_id = 1 [
+    json_name = "snapshot-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Id of the parent snapshot. Absent for a snapshot without a parent.
+  optional int64 parent_snapshot_id = 2 [json_name = "parent-snapshot-id"];
+  // Sequence number of the snapshot. Absent (0) in format version 1.
+  int64 sequence_number = 3 [
+    json_name = "sequence-number",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Time at which the snapshot was made, in epoch milliseconds.
+  int64 timestamp_ms = 4 [
+    json_name = "timestamp-ms",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Location of the manifest list of the snapshot.
+  string manifest_list = 5 [json_name = "manifest-list"];
+  // Summary of the changes: `operation` (`append`, `replace`, `overwrite` or `delete`) and other
+  // properties. Requests must include `operation`.
+  map<string, string> summary = 6;
+  // Id of the current schema when the snapshot was made.
+  optional int32 schema_id = 7 [json_name = "schema-id"];
+  // First row id of the rows the snapshot adds. Format version 3 only.
+  optional int64 first_row_id = 8 [json_name = "first-row-id"];
+  // Number of rows the snapshot adds. Format version 3 only.
+  optional int64 added_rows = 9 [json_name = "added-rows"];
+  // Id of the encryption key of the manifest list. Format version 3 only.
+  optional string key_id = 10 [json_name = "key-id"];
+}
+
+// A named reference to a snapshot: a branch or a tag.
+//
+// `type` is `branch` (with `min-snapshots-to-keep`, `max-snapshot-age-ms` and `max-ref-age-ms`)
+// or `tag` (with `max-ref-age-ms`).
+message IcebergSnapshotReference {
+  // Id of the snapshot that the reference points at.
+  int64 snapshot_id = 1 [json_name = "snapshot-id"];
+  // The kind of reference: `branch` or `tag`.
+  string type = 2;
+  // Branch only: the minimum number of snapshots to keep when snapshots expire.
+  optional int32 min_snapshots_to_keep = 3 [json_name = "min-snapshots-to-keep"];
+  // Branch only: the maximum age of the snapshots to keep, in milliseconds.
+  optional int64 max_snapshot_age_ms = 4 [json_name = "max-snapshot-age-ms"];
+  // The maximum age of the reference, in milliseconds. The main branch never expires.
+  optional int64 max_ref_age_ms = 5 [json_name = "max-ref-age-ms"];
+}
+
+// An entry of the snapshot log: when a snapshot became current.
+message IcebergSnapshotLogEntry {
+  // Id of the snapshot.
+  int64 snapshot_id = 1 [
+    json_name = "snapshot-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Time at which the snapshot became current, in epoch milliseconds.
+  int64 timestamp_ms = 2 [
+    json_name = "timestamp-ms",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+}
+
+// An entry of the metadata log: a previous metadata file.
+message IcebergMetadataLogEntry {
+  // Location of the metadata file.
+  string metadata_file = 1 [json_name = "metadata-file"];
+  // Time at which the metadata file was written, in epoch milliseconds.
+  int64 timestamp_ms = 2 [
+    json_name = "timestamp-ms",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+}
+
+// A Puffin file of table statistics for a snapshot.
+message IcebergStatisticsFile {
+  // Id of the snapshot that the statistics describe.
+  int64 snapshot_id = 1 [
+    json_name = "snapshot-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Location of the statistics file.
+  string statistics_path = 2 [json_name = "statistics-path"];
+  // Size of the file, in bytes.
+  int64 file_size_in_bytes = 3 [
+    json_name = "file-size-in-bytes",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Size of the file footer, in bytes.
+  int64 file_footer_size_in_bytes = 4 [
+    json_name = "file-footer-size-in-bytes",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Base64-encoded key metadata of an encrypted file.
+  optional string key_metadata = 5 [json_name = "key-metadata"];
+  // The blobs of the file.
+  repeated IcebergBlobMetadata blob_metadata = 6 [
+    json_name = "blob-metadata",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+}
+
+// A blob of a statistics file.
+message IcebergBlobMetadata {
+  // The type of the blob (JSON `type`), such as `apache-datasketches-theta-v1`.
+  string blob_type = 1 [json_name = "type"];
+  // Id of the snapshot that the blob was computed from.
+  int64 snapshot_id = 2 [
+    json_name = "snapshot-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Sequence number of the snapshot that the blob was computed from.
+  int64 sequence_number = 3 [
+    json_name = "sequence-number",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Ids of the fields that the blob was computed from.
+  repeated int32 fields = 4 [(olai.trestle.v1.emit_unpopulated) = true];
+  // Properties of the blob.
+  map<string, string> properties = 5;
+}
+
+// A file of partition statistics for a snapshot.
+message IcebergPartitionStatisticsFile {
+  // Id of the snapshot that the statistics describe.
+  int64 snapshot_id = 1 [
+    json_name = "snapshot-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Location of the statistics file.
+  string statistics_path = 2 [json_name = "statistics-path"];
+  // Size of the file, in bytes.
+  int64 file_size_in_bytes = 3 [
+    json_name = "file-size-in-bytes",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+}
+
+// An encryption key of a table, itself encrypted.
+message IcebergEncryptedKey {
+  // Id of the key.
+  string key_id = 1 [json_name = "key-id"];
+  // The encrypted key metadata, Base64-encoded.
+  string encrypted_key_metadata = 2 [json_name = "encrypted-key-metadata"];
+  // Id of the key that encrypted this key.
+  optional string encrypted_by_id = 3 [json_name = "encrypted-by-id"];
+  // Properties of the key.
+  map<string, string> properties = 4;
+}
+
+// Iceberg table metadata, in format version 1, 2 or 3.
+message IcebergTableMetadata {
+  // The format version: 1, 2 or 3.
+  int32 format_version = 1 [
+    json_name = "format-version",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // UUID of the table.
+  string table_uuid = 2 [
+    json_name = "table-uuid",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Base location of the table.
+  string location = 3 [(olai.trestle.v1.emit_unpopulated) = true];
+  // The highest sequence number of the table. Absent (0) in format version 1.
+  int64 last_sequence_number = 4 [
+    json_name = "last-sequence-number",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Time at which the table was last changed, in epoch milliseconds.
+  int64 last_updated_ms = 5 [
+    json_name = "last-updated-ms",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // The highest field id of the table.
+  int32 last_column_id = 6 [
+    json_name = "last-column-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Format version 1 only: the current schema.
+  IcebergSchema schema = 7;
+  // The schemas of the table.
+  repeated IcebergSchema schemas = 8 [(olai.trestle.v1.emit_unpopulated) = true];
+  // Id of the current schema.
+  int32 current_schema_id = 9 [
+    json_name = "current-schema-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Format version 1 only: the fields of the default partition spec.
+  repeated IcebergPartitionField partition_spec = 10 [json_name = "partition-spec"];
+  // The partition specs of the table.
+  repeated IcebergPartitionSpec partition_specs = 11 [
+    json_name = "partition-specs",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Id of the default partition spec.
+  int32 default_spec_id = 12 [
+    json_name = "default-spec-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // The highest partition field id of the table.
+  int32 last_partition_id = 13 [
+    json_name = "last-partition-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Properties of the table.
+  map<string, string> properties = 14;
+  // Id of the current snapshot. Absent when the table has no snapshot.
+  optional int64 current_snapshot_id = 15 [json_name = "current-snapshot-id"];
+  // The snapshots of the table. With `snapshots=refs`, only those that a reference points at.
+  repeated IcebergSnapshot snapshots = 16;
+  // When each snapshot became current.
+  repeated IcebergSnapshotLogEntry snapshot_log = 17 [json_name = "snapshot-log"];
+  // The previous metadata files.
+  repeated IcebergMetadataLogEntry metadata_log = 18 [json_name = "metadata-log"];
+  // The sort orders of the table.
+  repeated IcebergSortOrder sort_orders = 19 [
+    json_name = "sort-orders",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Id of the default sort order.
+  int64 default_sort_order_id = 20 [
+    json_name = "default-sort-order-id",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // The branches and tags of the table, by name. Absent in format version 1.
+  map<string, IcebergSnapshotReference> refs = 21;
+  // The table statistics files.
+  repeated IcebergStatisticsFile statistics = 22;
+  // The partition statistics files.
+  repeated IcebergPartitionStatisticsFile partition_statistics = 23 [json_name = "partition-statistics"];
+  // The next row id to assign. Format version 3 only.
+  optional int64 next_row_id = 24 [json_name = "next-row-id"];
+  // The encryption keys of the table. Format version 3 only.
+  repeated IcebergEncryptedKey encryption_keys = 25 [json_name = "encryption-keys"];
+}
+
+message IcebergCreateTableRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the namespace: a schema of the catalog. Namespaces have one level; the server does
+  // not split the value at the unit separator (`%1F`) that Iceberg puts between levels.
+  string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string name = 3 [(google.api.field_behavior) = REQUIRED];
+  // Location of the table. With a location the table is EXTERNAL; without one it is MANAGED, at
+  // a location that the server picks.
+  optional string location = 4;
+  // Schema of the table. The server assigns fresh ids.
+  IcebergSchema schema = 5 [(google.api.field_behavior) = REQUIRED];
+  // Partition spec of the table. Unpartitioned when absent.
+  IcebergPartitionSpec partition_spec = 6 [json_name = "partition-spec"];
+  // Sort order of the table. Unsorted when absent.
+  IcebergSortOrder write_order = 7 [json_name = "write-order"];
+  // Return the metadata of the table without creating it. A commit with an `assert-create`
+  // requirement creates it.
+  optional bool stage_create = 8 [json_name = "stage-create"];
+  // Properties of the table. `format-version` picks the format version (2 by default) and is
+  // not kept.
+  map<string, string> properties = 9;
+}
+
+// The metadata of a table, with the properties a client needs to read and write its files.
+message IcebergLoadTableResponse {
+  // Location of the current metadata file of the table. Absent for a staged create.
+  optional string metadata_location = 1 [json_name = "metadata-location"];
+  // The table metadata.
+  IcebergTableMetadata metadata = 2;
+  // FileIO properties for the location of the table: vended credentials under Iceberg's
+  // property names, and the endpoint that renews them. Empty for a local table.
+  map<string, string> config = 3;
+  // Weak tag of the metadata version and the snapshots mode, from the `ETag` header. Only a
+  // table load sends it.
+  optional string etag = 4 [(olai.trestle.v1.response_header) = "ETag"];
+}
+
+message LoadIcebergTableRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the namespace: a schema of the catalog. Namespaces have one level; the server does
+  // not split the value at the unit separator (`%1F`) that Iceberg puts between levels.
+  string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+  // The snapshots to return: `all` (the default) or `refs`, the snapshots that a branch or tag
+  // points at.
+  optional string snapshots = 4;
+}
+
+message IcebergTableExistsRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the namespace: a schema of the catalog. Namespaces have one level; the server does
+  // not split the value at the unit separator (`%1F`) that Iceberg puts between levels.
+  string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A condition that a table must meet for a commit to apply.
+//
+// `type` (`requirement_type`) picks the condition and its field:
+// - `assert-create`: the table does not exist (no field). The commit creates a staged table.
+// - `assert-table-uuid`: `uuid`.
+// - `assert-ref-snapshot-id`: `ref` (`ref_name`) and `snapshot-id`; without `snapshot-id` the
+//   reference must not exist.
+// - `assert-last-assigned-field-id`: `last-assigned-field-id`.
+// - `assert-current-schema-id`: `current-schema-id`.
+// - `assert-last-assigned-partition-id`: `last-assigned-partition-id`.
+// - `assert-default-spec-id`: `default-spec-id`.
+// - `assert-default-sort-order-id`: `default-sort-order-id`.
+message IcebergTableRequirement {
+  // The kind of condition (JSON `type`), such as `assert-current-schema-id`.
+  string requirement_type = 1 [json_name = "type"];
+  // `assert-table-uuid`: the UUID of the table.
+  optional string uuid = 2;
+  // `assert-ref-snapshot-id`: name of the branch or tag (JSON `ref`).
+  optional string ref_name = 3 [json_name = "ref"];
+  // `assert-ref-snapshot-id`: the snapshot that the reference points at.
+  optional int64 snapshot_id = 4 [json_name = "snapshot-id"];
+  // `assert-last-assigned-field-id`: the highest field id of the table.
+  optional int32 last_assigned_field_id = 5 [json_name = "last-assigned-field-id"];
+  // `assert-current-schema-id`: id of the current schema.
+  optional int32 current_schema_id = 6 [json_name = "current-schema-id"];
+  // `assert-last-assigned-partition-id`: the highest partition field id of the table.
+  optional int32 last_assigned_partition_id = 7 [json_name = "last-assigned-partition-id"];
+  // `assert-default-spec-id`: id of the default partition spec.
+  optional int32 default_spec_id = 8 [json_name = "default-spec-id"];
+  // `assert-default-sort-order-id`: id of the default sort order.
+  optional int64 default_sort_order_id = 9 [json_name = "default-sort-order-id"];
+}
+
+// A change to the metadata of a table.
+//
+// `action` picks the change and its fields:
+// - `upgrade-format-version`: `format-version`.
+// - `assign-uuid`: `uuid`.
+// - `add-schema`: `schema`.
+// - `set-current-schema`: `schema-id` (-1 for the schema added last).
+// - `add-spec`: `spec`.
+// - `set-default-spec`: `spec-id` (-1 for the spec added last).
+// - `add-sort-order`: `sort-order`.
+// - `set-default-sort-order`: `sort-order-id` (-1 for the sort order added last).
+// - `add-snapshot`: `snapshot`.
+// - `set-snapshot-ref`: `ref-name`, `snapshot-id`, `type` (`ref_type`) and the retention fields
+//   of a `branch` (`min-snapshots-to-keep`, `max-snapshot-age-ms`, `max-ref-age-ms`) or a `tag`
+//   (`max-ref-age-ms`).
+// - `remove-snapshots`: `snapshot-ids`.
+// - `remove-snapshot-ref`: `ref-name`.
+// - `set-location`: `location`.
+// - `set-properties`: `updates`.
+// - `remove-properties`: `removals`.
+// - `remove-partition-specs`: `spec-ids`.
+// - `set-statistics`: `statistics`, and optionally `snapshot-id` (that of the statistics).
+// - `remove-statistics`: `snapshot-id`.
+// - `set-partition-statistics`: `partition-statistics`.
+// - `remove-partition-statistics`: `snapshot-id`.
+// - `remove-schemas`: `schema-ids`.
+// - `add-encryption-key`: `encryption-key`.
+// - `remove-encryption-key`: `key-id`.
+// The lists and the map are always sent, empty for the other actions; the server ignores the
+// keys that an action does not read.
+message IcebergTableUpdate {
+  // The kind of change, such as `add-snapshot`.
+  string action = 1;
+  // `upgrade-format-version`: the format version to upgrade to.
+  optional int32 format_version = 2 [json_name = "format-version"];
+  // `assign-uuid`: the new UUID of the table.
+  optional string uuid = 3;
+  // `add-schema`: the schema to add.
+  IcebergSchema schema = 4;
+  // `set-current-schema`: id of the schema to make current, or -1 for the schema added last.
+  optional int32 schema_id = 5 [json_name = "schema-id"];
+  // `add-spec`: the partition spec to add.
+  IcebergPartitionSpec spec = 6;
+  // `set-default-spec`: id of the spec to make the default, or -1 for the spec added last.
+  optional int32 spec_id = 7 [json_name = "spec-id"];
+  // `add-sort-order`: the sort order to add.
+  IcebergSortOrder sort_order = 8 [json_name = "sort-order"];
+  // `set-default-sort-order`: id of the sort order to make the default, or -1 for the sort order
+  // added last.
+  optional int64 sort_order_id = 9 [json_name = "sort-order-id"];
+  // `add-snapshot`: the snapshot to add.
+  IcebergSnapshot snapshot = 10;
+  // `set-snapshot-ref` and `remove-snapshot-ref`: name of the branch or tag.
+  optional string ref_name = 11 [json_name = "ref-name"];
+  // `set-snapshot-ref`: the snapshot that the reference points at. `set-statistics`,
+  // `remove-statistics` and `remove-partition-statistics`: the snapshot of the statistics.
+  optional int64 snapshot_id = 12 [json_name = "snapshot-id"];
+  // `set-snapshot-ref`: the kind of reference (JSON `type`), `branch` or `tag`.
+  optional string ref_type = 13 [json_name = "type"];
+  // `set-snapshot-ref`, branch only: the minimum number of snapshots to keep when snapshots
+  // expire.
+  optional int32 min_snapshots_to_keep = 14 [json_name = "min-snapshots-to-keep"];
+  // `set-snapshot-ref`, branch only: the maximum age of the snapshots to keep, in milliseconds.
+  optional int64 max_snapshot_age_ms = 15 [json_name = "max-snapshot-age-ms"];
+  // `set-snapshot-ref`: the maximum age of the reference, in milliseconds.
+  optional int64 max_ref_age_ms = 16 [json_name = "max-ref-age-ms"];
+  // `remove-snapshots`: ids of the snapshots to remove.
+  repeated int64 snapshot_ids = 17 [
+    json_name = "snapshot-ids",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // `set-location`: the new base location of the table.
+  optional string location = 18;
+  // `set-properties`: the properties to set.
+  map<string, string> updates = 19 [(olai.trestle.v1.emit_unpopulated) = true];
+  // `remove-properties`: keys of the properties to remove.
+  repeated string removals = 20 [(olai.trestle.v1.emit_unpopulated) = true];
+  // `remove-partition-specs`: ids of the partition specs to remove.
+  repeated int32 spec_ids = 21 [
+    json_name = "spec-ids",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // `set-statistics`: the statistics file to set.
+  IcebergStatisticsFile statistics = 22;
+  // `set-partition-statistics`: the partition statistics file to set.
+  IcebergPartitionStatisticsFile partition_statistics = 23 [json_name = "partition-statistics"];
+  // `remove-schemas`: ids of the schemas to remove.
+  repeated int32 schema_ids = 24 [
+    json_name = "schema-ids",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // `add-encryption-key`: the encryption key to add.
+  IcebergEncryptedKey encryption_key = 25 [json_name = "encryption-key"];
+  // `remove-encryption-key`: id of the encryption key to remove.
+  optional string key_id = 26 [json_name = "key-id"];
+}
+
+message IcebergCommitTableRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the namespace: a schema of the catalog. Namespaces have one level; the server does
+  // not split the value at the unit separator (`%1F`) that Iceberg puts between levels.
+  string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+  // The table. The server does not read it: the path names the table.
+  IcebergTableIdentifier identifier = 4;
+  // Conditions that the table must meet for the commit to apply. With `assert-create`, the
+  // commit creates a staged table.
+  repeated IcebergTableRequirement requirements = 5;
+  // Changes to the metadata, applied in order.
+  repeated IcebergTableUpdate updates = 6;
+}
+
+message DropIcebergTableRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the namespace: a schema of the catalog. Namespaces have one level; the server does
+  // not split the value at the unit separator (`%1F`) that Iceberg puts between levels.
+  string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+  // Whether to delete the data too. Checked, but without effect: the files of a MANAGED table
+  // are always removed, those of an EXTERNAL table never.
+  optional bool purge_requested = 4 [json_name = "purgeRequested"];
+}
+
+message LoadIcebergTableCredentialsRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the namespace: a schema of the catalog. Namespaces have one level; the server does
+  // not split the value at the unit separator (`%1F`) that Iceberg puts between levels.
+  string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Credentials for the files below a location prefix.
+message IcebergStorageCredential {
+  // The location prefix that the credentials are for.
+  string prefix = 1;
+  // FileIO properties: the credentials under Iceberg's property names.
+  map<string, string> config = 2;
+}
+
+// Fresh credentials for the files of a table.
+message IcebergLoadCredentialsResponse {
+  // The credentials. Empty for a local table.
+  repeated IcebergStorageCredential storage_credentials = 1 [json_name = "storage-credentials"];
+}
+
+// A scan or commit report. The server checks it and does not keep it.
+//
+// `report-type` picks the report and its fields:
+// - `scan-report`: `table-name`, `snapshot-id`, `filter`, `schema-id`, `projected-field-ids`,
+//   `projected-field-names` and `metrics` are required; `metadata` is optional.
+// - `commit-report`: `table-name`, `snapshot-id`, `sequence-number`, `operation` and `metrics`
+//   are required; `metadata` is optional.
+// Reports of other types are accepted without a check.
+message ReportIcebergMetricsRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the namespace: a schema of the catalog. Namespaces have one level; the server does
+  // not split the value at the unit separator (`%1F`) that Iceberg puts between levels.
+  string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+  // The type of report: `scan-report` or `commit-report`.
+  string report_type = 4 [
+    json_name = "report-type",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  // Full name of the table.
+  optional string table_name = 5 [json_name = "table-name"];
+  // Id of the snapshot that was scanned or committed.
+  optional int64 snapshot_id = 6 [json_name = "snapshot-id"];
+  // `scan-report`: the filter of the scan, an Iceberg expression (`true`, `false`, or an
+  // expression object).
+  google.protobuf.Value filter = 7;
+  // `scan-report`: id of the schema of the scan.
+  optional int32 schema_id = 8 [json_name = "schema-id"];
+  // `scan-report`: ids of the projected fields. Always sent.
+  repeated int32 projected_field_ids = 9 [
+    json_name = "projected-field-ids",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // `scan-report`: names of the projected fields. Always sent.
+  repeated string projected_field_names = 10 [
+    json_name = "projected-field-names",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // `commit-report`: sequence number of the commit.
+  optional int64 sequence_number = 11 [json_name = "sequence-number"];
+  // `commit-report`: the operation of the commit, such as `append`.
+  optional string operation = 12;
+  // The metrics, by name: counters (`unit`, `value`) and timers (`time-unit`, `count`,
+  // `total-duration`).
+  google.protobuf.Struct metrics = 13;
+  // Other properties of the report.
+  map<string, string> metadata = 14;
+}
+
+message LoadIcebergViewRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the namespace: a schema of the catalog. Namespaces have one level; the server does
+  // not split the value at the unit separator (`%1F`) that Iceberg puts between levels.
+  string namespace = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the view.
+  string view = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+message IcebergRenameTableRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // The table to rename.
+  IcebergTableIdentifier source = 2 [(google.api.field_behavior) = REQUIRED];
+  // The new name of the table, in the same namespace.
+  IcebergTableIdentifier destination = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The Iceberg REST catalog: the schemas of a catalog as Iceberg namespaces, and its native
+// Iceberg and UniForm tables. Iceberg clients take the `catalogs/<catalog>` prefix from the
+// config. Errors have the Iceberg body: `{"error": {"message", "type", "code"}}`.
+service IcebergService {
+  // Get the client configuration of a catalog.
+  rpc GetIcebergConfig(GetIcebergConfigRequest) returns (IcebergConfigResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/iceberg/v1/config"};
+  }
+
+  // List the namespaces of a catalog: its schemas that the caller can read.
+  rpc ListIcebergNamespaces(ListIcebergNamespacesRequest) returns (IcebergListNamespacesResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces"};
+  }
+
+  // Create a namespace: a schema of the catalog.
+  rpc CreateIcebergNamespace(IcebergCreateNamespaceRequest) returns (IcebergNamespaceResponse) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces"
+      body: "*"
+    };
+  }
+
+  // Get a namespace and its properties.
+  rpc LoadIcebergNamespace(LoadIcebergNamespaceRequest) returns (IcebergNamespaceResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}"};
+  }
+
+  // Check that a namespace exists. A namespace that does not exist is a not-found error.
+  rpc IcebergNamespaceExists(IcebergNamespaceExistsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      custom: {
+        kind: "HEAD"
+        path: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}"
+      }
+    };
+  }
+
+  // Drop a namespace. It must be empty.
+  rpc DropIcebergNamespace(DropIcebergNamespaceRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}"};
+  }
+
+  // Set and remove properties of a namespace.
+  rpc UpdateIcebergNamespaceProperties(IcebergUpdateNamespacePropertiesRequest) returns (IcebergUpdateNamespacePropertiesResponse) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/properties"
+      body: "*"
+    };
+  }
+
+  // List the tables of a namespace that have Iceberg metadata and that the caller can read.
+  rpc ListIcebergTables(ListIcebergTablesRequest) returns (IcebergListTablesResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables"};
+  }
+
+  // Create a native Iceberg table, or stage its creation.
+  rpc CreateIcebergTable(IcebergCreateTableRequest) returns (IcebergLoadTableResponse) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables"
+      body: "*"
+    };
+  }
+
+  // Get the metadata of a table, with credentials for its files.
+  rpc LoadIcebergTable(LoadIcebergTableRequest) returns (IcebergLoadTableResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}"};
+  }
+
+  // Check that a table exists. A table that does not exist is a not-found error.
+  rpc IcebergTableExists(IcebergTableExistsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      custom: {
+        kind: "HEAD"
+        path: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}"
+      }
+    };
+  }
+
+  // Commit changes to a native Iceberg table, or create a staged table.
+  rpc CommitIcebergTable(IcebergCommitTableRequest) returns (IcebergLoadTableResponse) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}"
+      body: "*"
+    };
+  }
+
+  // Drop a native Iceberg table. UniForm tables are dropped through the Unity Catalog API.
+  rpc DropIcebergTable(DropIcebergTableRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}"};
+  }
+
+  // Get fresh credentials for the files of a table.
+  rpc LoadIcebergTableCredentials(LoadIcebergTableCredentialsRequest) returns (IcebergLoadCredentialsResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/credentials"};
+  }
+
+  // Send a scan or commit report of a table. The server checks it and does not keep it.
+  rpc ReportIcebergMetrics(ReportIcebergMetricsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/metrics"
+      body: "*"
+    };
+  }
+
+  // Get a view. Views are not served: the answer is always a not-found error.
+  rpc LoadIcebergView(LoadIcebergViewRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/views/{view}"};
+  }
+
+  // Rename a native Iceberg table, in its namespace. A move to another namespace is not
+  // supported.
+  rpc RenameIcebergTable(IcebergRenameTableRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/iceberg/v1/catalogs/{catalog}/tables/rename"
+      body: "*"
+    };
+  }
+}

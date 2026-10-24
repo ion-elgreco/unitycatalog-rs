@@ -14,9 +14,16 @@ uc_server := justfile_directory() / "target" / (if profile == "dev" { "debug" } 
 # The image that `just docker` builds.
 image := "unitycatalog-rs:dev"
 
+# The upstream Java server that `just test-upstream` runs: its latest release.
+upstream_image := "unitycatalog/unitycatalog:v0.7.0"
+
 # mike, which publishes a version of the docs site: zensical's fork of it
 # (squidfunk/mike), at a fixed commit.
 mike := "git+https://github.com/squidfunk/mike.git@2d4ad799442f4592db8ad53b179bfb33db8c69ac"
+
+# The plugins of the Python client's reference in the docs site: mkdocstrings
+# reads the package and its stubs, api-autonav writes a page per module.
+docs_plugins := "--with mkdocstrings-python --with mkdocs-api-autonav"
 
 _default:
     just --list
@@ -122,6 +129,18 @@ test:
     cargo build -p uc-server --profile {{ profile }}
     cd python/client && UC_TEST_SERVER_BIN='{{ uc_server }}' PYTHONWARNINGS='error:The global interpreter lock (GIL) has been enabled:RuntimeWarning' uv run --no-sync pytest tests
 
+# Run the Python client's tests that are marked `upstream` against the upstream Java server, in Docker (upstream_image); needs the client in .venv (just develop-client)
+test-upstream:
+    #!/usr/bin/env bash
+    # The image starts the server with authorization off: the tests need no
+    # token.
+    set -euo pipefail
+    id=$(docker run -d -p 127.0.0.1:18183:8080 {{ upstream_image }})
+    trap 'status=$?; [ $status -eq 0 ] || docker logs "$id"; docker rm -f -v "$id" > /dev/null; exit $status' EXIT
+    url=http://127.0.0.1:18183
+    curl -fs --retry 60 --retry-all-errors --retry-delay 1 "$url/api/2.1/unity-catalog/catalogs" > /dev/null
+    cd python/client && UC_TEST_SERVER_URL="$url" uv run --no-sync pytest tests
+
 # Build the wheels of the four Python packages, and run `uc dev`, `uc web` and the client from them, as `pip install 'unitycatalog-rs[all]'` installs them
 test-packages: wasm-dev
     #!/usr/bin/env bash
@@ -205,6 +224,10 @@ pre-commit-check:
     cd python/client && uv run --no-sync ruff format --check --diff .
     cd python/client && uv run --no-sync mypy .
 
+# Generate the Rust client (crates/uc-client) and the Python bindings (python/client) from the protos in proto/; needs protoc
+generate:
+    cargo run -q --profile {{ profile }} -p uc-codegen
+
 # Write the stubs of the Python client (python/client/unitycatalog/_core) from the Rust code, and format them with ruff
 generate-stubs:
     #!/usr/bin/env bash
@@ -226,13 +249,13 @@ generate-stubs:
 
 # Build the docs site (docs/, mkdocs.yml) into site/ with zensical; a warning, such as a broken link, fails the build
 docs-build:
-    uvx zensical build --strict
+    uvx {{ docs_plugins }} zensical build --strict
 
 # Serve the docs site on http://localhost:8000, and build it again after each change
 docs-serve:
-    uvx zensical serve
+    uvx {{ docs_plugins }} zensical serve
 
 # Publish the docs as `version`, and as `latest`, which the site's root opens: mike commits them to the gh-pages branch; push="" only commits
 docs-deploy version push="--push":
-    uvx --from "{{ mike }}" --with zensical mike deploy {{ push }} --update-aliases {{ version }} latest
-    uvx --from "{{ mike }}" --with zensical mike set-default {{ push }} latest
+    uvx --from "{{ mike }}" --with zensical {{ docs_plugins }} mike deploy {{ push }} --update-aliases {{ version }} latest
+    uvx --from "{{ mike }}" --with zensical {{ docs_plugins }} mike set-default {{ push }} latest

@@ -11,16 +11,16 @@ from pathlib import Path
 import pytest
 from _helpers import unique
 
-from unitycatalog import Client, ColumnInfo, StagingTableInfo, TableInfo
-from unitycatalog.types import ColumnTypeName
+from unitycatalog import Client, ColumnTypeName
+from unitycatalog.tables import ColumnInfo, StagingTableInfo, TableInfo
 
 pl = pytest.importorskip("polars")
 deltalake = pytest.importorskip("deltalake")
 
 # The types of a Delta schema, as the type name and text of a column.
 TYPES: dict[str, tuple[ColumnTypeName, str]] = {
-    "long": ("LONG", "bigint"),
-    "double": ("DOUBLE", "double"),
+    "long": (ColumnTypeName.LONG, "bigint"),
+    "double": (ColumnTypeName.DOUBLE, "double"),
 }
 
 
@@ -29,9 +29,9 @@ def column(position: int, field: dict[str, typing.Any]) -> ColumnInfo:
     type_name, type_text = TYPES[field["type"]]
     return ColumnInfo(
         field["name"],
+        json.dumps(field),
         type_name=type_name,
         type_text=type_text,
-        type_json=json.dumps(field),
         position=position,
         nullable=field["nullable"],
     )
@@ -104,9 +104,9 @@ def test_polars_creates_writes_and_reads_an_external_table(
         data_source_format="DELTA",
         storage_root=location,
     )
-    table = Client(server.url).get_table(f"{catalog}.{schema_name}.people")
+    table = Client(server.address).table(f"{catalog}.{schema_name}.people").get()
     assert (table.table_type, table.storage_location) == ("EXTERNAL", location)
-    assert [(c.name, c.type_name) for c in table.columns or []] == [
+    assert [(c.name, c.type_name) for c in table.columns] == [
         ("id", "LONG"),
         ("name", "STRING"),
     ]
@@ -124,7 +124,7 @@ def test_deltalake_creates_a_managed_table_that_polars_appends_to(
     server, schema: tuple[str, str]
 ) -> None:
     catalog, schema_name = schema
-    client = Client(server.url)
+    client = Client(server.address)
     staging = client.create_staging_table("orders", catalog, schema_name)
     january = pl.DataFrame({"order_id": [1, 2], "amount": [9.5, 3.25]})
     deltalake.write_deltalake(staging.staging_location, january)
@@ -147,7 +147,7 @@ def test_deltalake_creates_a_managed_table_that_polars_appends_to(
     strict=False,
 )
 def test_deltalake_writes_and_reads_a_table_on_s3_by_name(s3: str, s3_server) -> None:
-    client = Client(s3_server.url)
+    client = Client(s3_server.address)
     catalog = unique("catalog")
     client.create_catalog(catalog, storage_root=f"s3://uc-test/{catalog}")
     client.create_schema("default", catalog)

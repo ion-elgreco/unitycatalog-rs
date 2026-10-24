@@ -58,17 +58,18 @@ use ratatui::{
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-use uc_api::{
-    CreateCatalog, CreateCredentialRequest, CreateExternalLocation, CreatePat,
-    CreateRegisteredModel, CreateSchema, CreateVolumeRequestContent, CredentialPurpose, ScimEmail,
-    ScimUser, VolumeType, schema_uri,
-};
-use uc_client::{API_BASE, Client, Contents, Page, ScimPage};
-use uc_common::ErrorCode;
+use uc_client::error::Error as ClientError;
+use uc_client::models::credentials::v1::{AwsIamRoleRequest, CredentialPurpose};
+use uc_client::models::scim::v1::ScimEmail;
+use uc_client::models::volumes::v1::VolumeType;
+use uc_client::{Client, Contents};
 use uc_common::settings::Settings;
+use uc_common::{API_BASE, ErrorCode};
 
 use crate::args::Global;
+use crate::commands::call_error;
 use crate::config::{self, TokenSource};
+use crate::output::models::{self, Model, with_empty};
 use crate::sign_in::{self, SignIns};
 
 // Layout breakpoints for [`App::render`]. Below `MIN_*`, the screen only
@@ -90,7 +91,6 @@ const BLINK: Duration = Duration::from_millis(500);
 pub async fn run(global: &Global, settings: &Settings) -> anyhow::Result<()> {
     let origin = config::origin(&config::server(settings, global.server.as_deref()))?;
     let server_url = format!("{origin}{API_BASE}/");
-    let mut client = Client::new(&server_url)?;
     let sign_ins = SignIns::of_user();
     let token = config::token(
         settings,
@@ -98,9 +98,7 @@ pub async fn run(global: &Global, settings: &Settings) -> anyhow::Result<()> {
         &origin,
         sign_ins.as_ref(),
     );
-    if let Some((token, _)) = &token {
-        client = client.with_bearer(token.clone());
-    }
+    let client = config::client(&server_url, token.as_ref().map(|(token, _)| token.as_str()))?;
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -340,13 +338,18 @@ struct Failure {
     needs_sign_in: bool,
 }
 
-impl From<uc_client::Error> for Failure {
-    fn from(e: uc_client::Error) -> Self {
+impl From<ClientError> for Failure {
+    fn from(e: ClientError) -> Self {
         Self {
             needs_sign_in: e.status() == Some(401),
-            text: e.to_string(),
+            text: message(&e),
         }
     }
+}
+
+/// What failed in a call, as the TUI shows it ([`call_error`]).
+fn message(e: &ClientError) -> String {
+    call_error(e).message().to_string()
 }
 
 impl From<String> for Failure {
@@ -788,7 +791,7 @@ impl App {
                     self.status_msg = Some("server URL must not be empty".to_string());
                     return;
                 }
-                match Client::new(&value) {
+                match config::client(&value, None) {
                     Ok(c) => {
                         // A given token stays with its server; the fetch
                         // sends the sign-in to the new one, if any.
@@ -893,13 +896,10 @@ impl App {
         if token.as_deref() == self.token.as_ref().map(|(token, _)| token.as_str()) {
             return;
         }
-        let Ok(client) = Client::new(&self.server_url) else {
+        let Ok(client) = config::client(&self.server_url, token.as_deref()) else {
             return;
         };
-        self.client = Arc::new(match &token {
-            Some(token) => client.with_bearer(token.clone()),
-            None => client,
-        });
+        self.client = Arc::new(client);
         self.token = token.map(|token| (token, TokenSource::SignIn));
     }
 
@@ -1583,188 +1583,151 @@ async fn fetch_rows(
 ) -> Result<Vec<Row>, Failure> {
     match tab {
         Tab::Catalogs => {
-            let resp = client.list_catalogs(&Page::default()).await?;
+            let resp = client.list_catalogs().await?;
             Ok(resp
                 .catalogs
                 .into_iter()
-                .map(|c| {
-                    let name = c.name.clone().unwrap_or_default();
-                    Row {
-                        label: name.clone(),
-                        delete_id: (!name.is_empty()).then_some(name),
-                        detail: to_value(&c),
-                    }
+                .map(|c| Row {
+                    label: c.name.clone(),
+                    delete_id: named(&c.name),
+                    detail: detail(&models::CATALOG, &c),
                 })
                 .collect())
         }
         Tab::Schemas => {
             let cat = cat.ok_or("select a catalog first (Catalogs tab + Enter)")?;
-            let resp = client.list_schemas(cat, &Page::default()).await?;
+            let resp = client.list_schemas(cat).await?;
             Ok(resp
                 .schemas
                 .into_iter()
-                .map(|s| {
-                    let full = s.full_name.clone();
-                    Row {
-                        label: full.clone().or(s.name.clone()).unwrap_or_default(),
-                        delete_id: full,
-                        detail: to_value(&s),
-                    }
+                .map(|s| Row {
+                    label: label(&s.full_name, &s.name),
+                    delete_id: named(&s.full_name),
+                    detail: detail(&models::SCHEMA, &s),
                 })
                 .collect())
         }
         Tab::Tables => {
             let (c, s) = scope_or_err(cat, sch)?;
-            let resp = client.list_tables(c, s, &Page::default()).await?;
+            let resp = client.list_tables(c, s).await?;
             Ok(resp
                 .tables
                 .into_iter()
                 .map(|t| {
                     let full = three_part_name(
-                        t.catalog_name.as_deref(),
-                        t.schema_name.as_deref(),
-                        t.name.as_deref(),
+                        nonempty(&t.catalog_name),
+                        nonempty(&t.schema_name),
+                        nonempty(&t.name),
                     );
                     let delete_id = (full != "(unnamed)").then(|| full.clone());
                     Row {
                         label: full,
                         delete_id,
-                        detail: to_value(&t),
+                        detail: detail(&models::TABLE, &t),
                     }
                 })
                 .collect())
         }
         Tab::Volumes => {
             let (c, s) = scope_or_err(cat, sch)?;
-            let resp = client.list_volumes(c, s, &Page::default()).await?;
+            let resp = client.list_volumes(c, s).await?;
             Ok(resp
                 .volumes
                 .into_iter()
-                .map(|v| {
-                    let full = v.full_name.clone();
-                    Row {
-                        label: full.clone().or(v.name.clone()).unwrap_or_default(),
-                        delete_id: full,
-                        detail: to_value(&v),
-                    }
+                .map(|v| Row {
+                    label: label(&v.full_name, &v.name),
+                    delete_id: named(&v.full_name),
+                    detail: to_value(&v),
                 })
                 .collect())
         }
         Tab::Functions => {
             let (c, s) = scope_or_err(cat, sch)?;
-            let resp = client.list_functions(c, s, &Page::default()).await?;
+            let resp = client.list_functions(c, s).await?;
             Ok(resp
                 .functions
                 .into_iter()
-                .map(|fnc| {
-                    let full = fnc.full_name.clone();
-                    Row {
-                        label: full.clone().or(fnc.name.clone()).unwrap_or_default(),
-                        delete_id: full,
-                        detail: to_value(&fnc),
-                    }
+                .map(|fnc| Row {
+                    label: label(&fnc.full_name, &fnc.name),
+                    delete_id: named(&fnc.full_name),
+                    detail: to_value(&fnc),
                 })
                 .collect())
         }
         Tab::Models => {
-            let resp = client
-                .list_registered_models(None, None, &Page::default())
-                .await?;
+            let resp = client.list_registered_models().await?;
             Ok(resp
                 .registered_models
                 .into_iter()
-                .map(|m| {
-                    let full = m.full_name.clone();
-                    Row {
-                        label: full.clone().or(m.name.clone()).unwrap_or_default(),
-                        delete_id: full,
-                        detail: to_value(&m),
-                    }
+                .map(|m| Row {
+                    label: label(&m.full_name, &m.name),
+                    delete_id: named(&m.full_name),
+                    detail: to_value(&m),
                 })
                 .collect())
         }
         Tab::Credentials => {
-            let resp = client.list_credentials(&Page::default()).await?;
+            let resp = client.list_credentials().await?;
             Ok(resp
                 .credentials
                 .into_iter()
-                .map(|c| {
-                    let name = c.name.clone();
-                    Row {
-                        label: name.clone().unwrap_or_else(|| "(unnamed)".into()),
-                        delete_id: name,
-                        detail: to_value(&c),
-                    }
+                .map(|c| Row {
+                    label: nonempty(&c.name).unwrap_or("(unnamed)").to_string(),
+                    delete_id: named(&c.name),
+                    detail: to_value(&c),
                 })
                 .collect())
         }
         Tab::ExternalLocations => {
-            let resp = client.list_external_locations(&Page::default()).await?;
+            let resp = client.list_external_locations().await?;
             Ok(resp
                 .external_locations
                 .into_iter()
-                .map(|el| {
-                    let name = el.name.clone();
-                    Row {
-                        label: format!(
-                            "{}  →  {}",
-                            name.clone().unwrap_or_default(),
-                            el.url.clone().unwrap_or_default()
-                        ),
-                        delete_id: name,
-                        detail: to_value(&el),
-                    }
+                .map(|el| Row {
+                    label: format!("{}  →  {}", el.name, el.url),
+                    delete_id: named(&el.name),
+                    detail: to_value(&el),
                 })
                 .collect())
         }
         Tab::Namespaces => {
             // Iceberg REST namespaces of the current catalog.
             let cat = cat.ok_or("select a catalog first (Catalogs tab + Enter)")?;
-            let resp = client
-                .list_iceberg_namespaces(cat, &Page::default())
-                .await?;
+            let resp = client.list_iceberg_namespaces(cat).await?;
             Ok(resp
                 .namespaces
                 .into_iter()
-                .map(|ns| Row {
-                    label: format!("{cat}.{}", ns.join(".")),
-                    delete_id: None,
-                    detail: to_value(&ns),
+                .map(|ns| {
+                    let levels: Vec<&str> = ns.values.iter().filter_map(|v| v.as_str()).collect();
+                    Row {
+                        label: format!("{cat}.{}", levels.join(".")),
+                        delete_id: None,
+                        detail: to_value(&ns),
+                    }
                 })
                 .collect())
         }
         Tab::ScimUsers => {
-            let resp = client.list_users(&ScimPage::default()).await?;
+            let resp = client.list_users().await?;
             Ok(resp
                 .resources
                 .into_iter()
-                .map(|u| {
-                    let id = u.id.clone();
-                    Row {
-                        label: format!("{}  ({})", u.user_name, id.as_deref().unwrap_or("")),
-                        delete_id: id,
-                        detail: to_value(&u),
-                    }
+                .map(|u| Row {
+                    label: format!("{}  ({})", u.user_name, u.id),
+                    delete_id: named(&u.id),
+                    detail: to_value(&u),
                 })
                 .collect())
         }
         Tab::Tokens => {
-            let resp = client.list_pats(&Page::default()).await?;
+            let resp = client.list_tokens().await?;
             Ok(resp
                 .tokens
                 .into_iter()
-                .map(|p| {
-                    let id = p.id.clone();
-                    Row {
-                        label: format!(
-                            "{}  {}  ({})",
-                            p.name.clone().unwrap_or_default(),
-                            expiry_label(p.expires_at),
-                            id.as_deref().unwrap_or_default()
-                        ),
-                        delete_id: id,
-                        detail: to_value(&p),
-                    }
+                .map(|p| Row {
+                    label: format!("{}  {}  ({})", p.name, expiry_label(p.expires_at), p.id),
+                    delete_id: named(&p.id),
+                    detail: to_value(&p),
                 })
                 .collect())
         }
@@ -1783,15 +1746,21 @@ async fn delete_row(
 ) -> Result<MutationOutcome, Failure> {
     let kind = tab.title();
     let res = match tab {
-        Tab::Catalogs => client.delete_catalog(id, force).await,
-        Tab::Schemas => client.delete_schema(id, force).await,
-        Tab::Tables => client.delete_table(id).await,
-        Tab::Volumes => client.delete_volume(id).await,
-        Tab::Functions => client.delete_function(id).await,
-        Tab::Models => client.delete_registered_model(id, force).await,
-        Tab::Credentials => client.delete_credential(id, false).await,
-        Tab::ExternalLocations => client.delete_external_location(id, false).await,
-        Tab::Tokens => client.revoke_pat(id).await,
+        Tab::Catalogs => client.catalog(id).delete().with_force(force).await,
+        Tab::Schemas => client.schema(id).delete().with_force(force).await,
+        Tab::Tables => client.table(id).delete().await,
+        Tab::Volumes => client.volume(id).delete().await,
+        Tab::Functions => client.function(id).delete().await,
+        Tab::Models => client.registered_model(id).delete().with_force(force).await,
+        Tab::Credentials => client.credential(id).delete().with_force(false).await,
+        Tab::ExternalLocations => {
+            client
+                .external_location(id)
+                .delete()
+                .with_force(false)
+                .await
+        }
+        Tab::Tokens => client.token(id).delete().await,
         Tab::ScimUsers => client.delete_user(id).await,
         Tab::Namespaces => return Err("drop_namespace not supported from TUI".into()),
     };
@@ -1805,12 +1774,15 @@ async fn delete_row(
         Err(e)
             if !force
                 && tab.holder().is_some()
-                && matches!(e.code(), ErrorCode::FailedPrecondition | ErrorCode::Aborted) =>
+                && matches!(
+                    call_error(&e).code(),
+                    ErrorCode::FailedPrecondition | ErrorCode::Aborted
+                ) =>
         {
             Ok(MutationOutcome::NotEmpty {
                 id: id.to_string(),
-                reason: e.to_string(),
-                contents: contents(client, tab, id).await.map_err(|e| e.to_string()),
+                reason: message(&e),
+                contents: contents(client, tab, id).await.map_err(|e| message(&e)),
             })
         }
         Err(e) => Err(e.into()),
@@ -1818,7 +1790,7 @@ async fn delete_row(
 }
 
 /// What the catalog, schema or model `id` on `tab` holds.
-async fn contents(client: &Client, tab: Tab, id: &str) -> uc_client::Result<Contents> {
+async fn contents(client: &Client, tab: Tab, id: &str) -> uc_client::error::Result<Contents> {
     match tab {
         Tab::Catalogs => client.catalog_contents(id).await,
         Tab::Schemas => {
@@ -1875,8 +1847,32 @@ fn three_part_name(cat: Option<&str>, sch: Option<&str>, name: Option<&str>) -> 
     }
 }
 
+/// The text of a name; none when the server left it out.
+fn nonempty(text: &str) -> Option<&str> {
+    Some(text).filter(|text| !text.is_empty())
+}
+
+/// [`nonempty`], owned.
+fn named(text: &str) -> Option<String> {
+    nonempty(text).map(str::to_string)
+}
+
+/// The label of a row: its full name, else its name.
+fn label(full_name: &str, name: &str) -> String {
+    nonempty(full_name)
+        .or(nonempty(name))
+        .unwrap_or_default()
+        .to_string()
+}
+
 fn to_value<T: serde::Serialize>(v: &T) -> serde_json::Value {
     serde_json::to_value(v).unwrap_or(serde_json::Value::Null)
+}
+
+/// An object of `model`'s type as the detail pane shows it: as the server
+/// sends it, with its empty maps and lists ([`with_empty`]).
+fn detail<T: serde::Serialize>(model: &Model, v: &T) -> serde_json::Value {
+    with_empty(model, to_value(v))
 }
 
 // A create takes one line of input: a name, or a few fields between
@@ -2032,35 +2028,14 @@ async fn create_row(
     match tab {
         Tab::Catalogs => {
             let (name, comment) = name_comment(raw)?;
-            let info = client
-                .create_catalog(&CreateCatalog {
-                    name,
-                    comment,
-                    properties: None,
-                    storage_root: None,
-                })
-                .await?;
-            msg(format!(
-                "created catalog '{}'",
-                info.name.unwrap_or_default()
-            ))
+            let info = client.create_catalog(name).with_comment(comment).await?;
+            msg(format!("created catalog '{}'", info.name))
         }
         Tab::Schemas => {
             let c = cat.ok_or("no current catalog scope")?;
             let (name, comment) = name_comment(raw)?;
-            let info = client
-                .create_schema(&CreateSchema {
-                    name,
-                    catalog_name: c.to_string(),
-                    comment,
-                    properties: None,
-                    storage_root: None,
-                })
-                .await?;
-            msg(format!(
-                "created schema '{}'",
-                info.full_name.unwrap_or_default()
-            ))
+            let info = client.create_schema(name, c).with_comment(comment).await?;
+            msg(format!("created schema '{}'", info.full_name))
         }
         Tab::Volumes => {
             let (c, s) = match (cat, sch) {
@@ -2080,21 +2055,15 @@ async fn create_row(
             };
             let storage_location = parts.get(2).cloned();
             let info = client
-                .create_volume(&CreateVolumeRequestContent {
-                    catalog_name: c.to_string(),
-                    schema_name: s.to_string(),
-                    name,
-                    volume_type: vt,
-                    storage_location,
-                    comment: None,
-                })
+                .create_volume(c, s, name, vt)
+                .with_storage_location(storage_location)
                 .await?;
             msg(format!(
                 "created volume '{}'",
                 three_part_name(
-                    info.catalog_name.as_deref(),
-                    info.schema_name.as_deref(),
-                    info.name.as_deref()
+                    nonempty(&info.catalog_name),
+                    nonempty(&info.schema_name),
+                    nonempty(&info.name)
                 )
             ))
         }
@@ -2105,20 +2074,12 @@ async fn create_row(
             };
             let (name, comment) = name_comment(raw)?;
             let info = client
-                .create_registered_model(&CreateRegisteredModel {
-                    name,
-                    catalog_name: c.to_string(),
-                    schema_name: s.to_string(),
-                    comment,
-                })
+                .create_registered_model(name, c, s)
+                .with_comment(comment)
                 .await?;
-            msg(format!(
-                "created model '{}'",
-                info.full_name.unwrap_or_default()
-            ))
+            msg(format!("created model '{}'", info.full_name))
         }
         Tab::Credentials => {
-            use uc_api::AwsIamRoleRequest;
             let parts = split_create_input(raw, 3);
             let name = parts.first().ok_or("name required")?.clone();
             let purpose = match parts.get(1).map(String::as_str) {
@@ -2132,21 +2093,17 @@ async fn create_row(
                     .into());
                 }
             };
-            let aws_iam_role = parts.get(2).map(|r| AwsIamRoleRequest {
-                role_arn: r.clone(),
-            });
+            // The API takes a role: without one in the input, its ARN is
+            // empty.
+            let role = AwsIamRoleRequest {
+                role_arn: parts.get(2).cloned().unwrap_or_default(),
+                ..Default::default()
+            };
             let info = client
-                .create_credential(&CreateCredentialRequest {
-                    name,
-                    purpose,
-                    aws_iam_role,
-                    comment: None,
-                })
+                .create_credential(name, role)
+                .with_purpose(purpose)
                 .await?;
-            msg(format!(
-                "created credential '{}'",
-                info.name.unwrap_or_default()
-            ))
+            msg(format!("created credential '{}'", info.name))
         }
         Tab::ExternalLocations => {
             let parts = split_create_input(raw, 3);
@@ -2154,17 +2111,9 @@ async fn create_row(
                 return Err("expected `<name> <url> <credential_name>`".into());
             }
             let info = client
-                .create_external_location(&CreateExternalLocation {
-                    name: parts[0].clone(),
-                    url: parts[1].clone(),
-                    credential_name: parts[2].clone(),
-                    comment: None,
-                })
+                .create_external_location(&parts[0], &parts[1], &parts[2])
                 .await?;
-            msg(format!(
-                "created external_location '{}'",
-                info.name.unwrap_or_default()
-            ))
+            msg(format!("created external_location '{}'", info.name))
         }
         Tab::Tokens => {
             // `<name> <expiry>`: the name may hold spaces, and the expiry
@@ -2175,16 +2124,19 @@ async fn create_row(
                 .ok_or("expected `<name> <expiry>`")?;
             let name = name.trim().to_string();
             let expires_at = token_expiry(expiry, Local::now())?;
-            let info = client.create_pat(&CreatePat { name, expires_at }).await?;
-            // This is the only time the value shows: `list_pats` does not
-            // return it. A modal shows it, not the status line, which stays
-            // on the screen.
+            let info = client
+                .create_token(name)
+                .with_expires_at(expires_at)
+                .await?;
+            // This is the only time the value shows: the list of tokens
+            // does not return it. A modal shows it, not the status line,
+            // which stays on the screen.
             let secret = info
                 .token_value
                 .clone()
                 .unwrap_or_else(|| "(no token returned)".into());
             Ok(MutationOutcome::Secret {
-                title: format!("PAT '{}' created", info.name.clone().unwrap_or_default()),
+                title: format!("PAT '{}' created", info.name),
                 secret,
                 hint: "This token is shown ONCE. Copy it now — press Enter or Esc to dismiss."
                     .into(),
@@ -2194,19 +2146,18 @@ async fn create_row(
             let parts = split_create_input(raw, 2);
             let user_name = parts.first().ok_or("userName required")?.clone();
             let display_name = parts.get(1).cloned();
-            let user = ScimUser {
-                schemas: vec![schema_uri::USER.to_string()],
-                user_name: user_name.clone(),
-                display_name,
-                emails: Some(vec![ScimEmail {
-                    value: user_name.clone(),
-                    primary: Some(true),
-                    r#type: None,
-                }]),
+            // The server names the user by its primary email.
+            let email = ScimEmail {
+                value: user_name.clone(),
+                primary: Some(true),
                 ..Default::default()
             };
-            let resp = client.create_user(&user).await?;
-            let id = resp.id.as_deref().unwrap_or("?");
+            let resp = client
+                .create_user()
+                .with_display_name(display_name)
+                .with_emails([email])
+                .await?;
+            let id = nonempty(&resp.id).unwrap_or("?");
             msg(format!("created SCIM user '{user_name}' (id {id})"))
         }
         Tab::Tables | Tab::Functions | Tab::Namespaces => {
@@ -2227,6 +2178,8 @@ mod tests {
     use ratatui::backend::TestBackend;
     use serde_json::json;
 
+    use uc_client::error::ApiError;
+    use uc_client::models::tables::v1::{DataSourceFormat, TableType};
     use uc_metastore::{MetastoreConfig, SqlMetastore};
     use uc_server::authn::security::{ADMIN, SecurityContext};
     use uc_server::{AppState, build_app};
@@ -2260,20 +2213,36 @@ mod tests {
         format!("http://{addr}")
     }
 
-    /// An API request, from its JSON.
-    fn from_json<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> T {
-        serde_json::from_value(value).unwrap()
-    }
-
     /// The API client of `origin`, signed in as the admin.
     fn client(origin: &str) -> Client {
-        Client::new(format!("{origin}{API_BASE}/"))
-            .unwrap()
-            .with_bearer(
-                security()
-                    .create_access_token(ADMIN, std::time::Duration::from_secs(3600))
-                    .unwrap(),
-            )
+        let token = security()
+            .create_access_token(ADMIN, std::time::Duration::from_secs(3600))
+            .unwrap();
+        config::client(&format!("{origin}{API_BASE}/"), Some(&token)).unwrap()
+    }
+
+    /// The table `c.s.t`.
+    async fn external_table(api: &Client) {
+        api.create_table("t", "c", "s", TableType::External)
+            .with_data_source_format(DataSourceFormat::Delta)
+            .with_storage_location("s3://lake/t".to_string())
+            .await
+            .unwrap();
+    }
+
+    /// The function `c.s.f`.
+    async fn python_function(api: &Client) {
+        let function = serde_json::from_value(json!({
+            "name": "f", "catalog_name": "c", "schema_name": "s",
+            "input_params": { "parameters": [] }, "data_type": "INT",
+            "full_data_type": "INT", "routine_body": "EXTERNAL",
+            "routine_definition": "return 1", "parameter_style": "S",
+            "is_deterministic": true, "sql_data_access": "NO_SQL",
+            "is_null_call": true, "security_type": "DEFINER",
+            "specific_name": "f", "external_language": "python",
+        }))
+        .unwrap();
+        api.create_function(function).await.unwrap();
     }
 
     fn app(origin: &str) -> App {
@@ -2361,14 +2330,10 @@ mod tests {
 
     /// The catalog `c`, with a storage root for managed models.
     async fn managed_catalog(api: &Client, dir: &std::path::Path) {
-        api.create_catalog(&CreateCatalog {
-            name: "c".into(),
-            comment: None,
-            properties: None,
-            storage_root: Some(format!("file://{}/root", dir.display())),
-        })
-        .await
-        .unwrap();
+        api.create_catalog("c")
+            .with_storage_root(format!("file://{}/root", dir.display()))
+            .await
+            .unwrap();
     }
 
     /// A folder for an external volume, outside managed storage.
@@ -2567,24 +2532,8 @@ mod tests {
         ] {
             create_row(&api, tab, input, cat, sch).await.unwrap();
         }
-        api.create_table(&from_json(json!({
-            "name": "t", "catalog_name": "c", "schema_name": "s",
-            "table_type": "EXTERNAL", "data_source_format": "DELTA",
-            "storage_location": "s3://lake/t",
-        })))
-        .await
-        .unwrap();
-        api.create_function(&from_json(json!({ "function_info": {
-                "name": "f", "catalog_name": "c", "schema_name": "s",
-                "input_params": { "parameters": [] }, "data_type": "INT",
-                "full_data_type": "INT", "routine_body": "EXTERNAL",
-                "routine_definition": "return 1", "parameter_style": "S",
-                "is_deterministic": true, "sql_data_access": "NO_SQL",
-                "is_null_call": true, "security_type": "DEFINER",
-                "specific_name": "f", "external_language": "python",
-            } })))
-        .await
-        .unwrap();
+        external_table(&api).await;
+        python_function(&api).await;
 
         let mut app = app(&origin);
         app.refresh_current();
@@ -2920,24 +2869,8 @@ mod tests {
         assert_eq!(labels(&app), ["c", "made"]);
 
         let api = client(&origin);
-        api.create_table(&from_json(json!({
-            "name": "t", "catalog_name": "c", "schema_name": "s",
-            "table_type": "EXTERNAL", "data_source_format": "DELTA",
-            "storage_location": "s3://lake/t",
-        })))
-        .await
-        .unwrap();
-        api.create_function(&from_json(json!({ "function_info": {
-                "name": "f", "catalog_name": "c", "schema_name": "s",
-                "input_params": { "parameters": [] }, "data_type": "INT",
-                "full_data_type": "INT", "routine_body": "EXTERNAL",
-                "routine_definition": "return 1", "parameter_style": "S",
-                "is_deterministic": true, "sql_data_access": "NO_SQL",
-                "is_null_call": true, "security_type": "DEFINER",
-                "specific_name": "f", "external_language": "python",
-            } })))
-        .await
-        .unwrap();
+        external_table(&api).await;
+        python_function(&api).await;
         for (tab, name) in [
             (Tab::Tables, "c.s.t"),
             (Tab::Volumes, "c.s.v"),
@@ -2962,19 +2895,9 @@ mod tests {
     async fn a_catalog_goes_with_all_it_holds_after_two_more_questions() {
         let origin = server().await;
         let api = client(&origin);
-        api.create_catalog(&from_json(json!({ "name": "c" })))
-            .await
-            .unwrap();
-        api.create_schema(&from_json(json!({ "name": "s", "catalog_name": "c" })))
-            .await
-            .unwrap();
-        api.create_table(&from_json(json!({
-            "name": "t", "catalog_name": "c", "schema_name": "s",
-            "table_type": "EXTERNAL", "data_source_format": "DELTA",
-            "storage_location": "s3://lake/t",
-        })))
-        .await
-        .unwrap();
+        api.create_catalog("c").await.unwrap();
+        api.create_schema("s", "c").await.unwrap();
+        external_table(&api).await;
         let mut app = app(&origin);
         app.refresh_current();
         settle(&mut app).await;
@@ -3019,7 +2942,7 @@ mod tests {
         assert!(!failed(&app));
         settle(&mut app).await;
         assert!(app.pane().rows.is_empty());
-        assert!(api.list_schemas("c", &Page::default()).await.is_err());
+        assert!(api.list_schemas("c").await.is_err());
     }
 
     #[tokio::test]
@@ -3231,12 +3154,8 @@ mod tests {
 
     /// The server's 401.
     fn unauthenticated() -> Failure {
-        uc_client::Error::Status {
-            status: 401,
-            body: json!({ "error_code": "UNAUTHENTICATED", "message": "No authorization found." })
-                .to_string(),
-        }
-        .into()
+        let body = json!({ "error_code": "UNAUTHENTICATED", "message": "No authorization found." });
+        ClientError::Api(ApiError::from_body(401, body.to_string().as_bytes())).into()
     }
 
     #[tokio::test]

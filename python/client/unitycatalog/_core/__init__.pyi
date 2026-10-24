@@ -7,37 +7,57 @@ The extension module of the client: `Client`, written in Rust.
 import asyncio
 import builtins
 import typing
-from unitycatalog import types
+from unitycatalog import _enums
 from . import admin
 from . import audit
+from . import auth
 from . import catalogs
 from . import credentials
+from . import delta
 from . import external_locations
 from . import functions
-from . import iceberg_rest
+from . import health
+from . import iceberg
 from . import metastore
 from . import models
 from . import permissions
+from . import recipients
 from . import schemas
 from . import scim
+from . import shares
+from . import sharing
 from . import tables
 from . import tokens
 from . import volumes
 
 __all__ = [
+    "BadRequestError",
     "Client",
+    "ConflictError",
+    "NotFoundError",
+    "PermissionDeniedError",
+    "RateLimitError",
+    "ServerError",
+    "UnauthenticatedError",
+    "UnityCatalogError",
     "admin",
     "audit",
+    "auth",
     "catalogs",
     "credentials",
+    "delta",
     "external_locations",
     "functions",
-    "iceberg_rest",
+    "health",
+    "iceberg",
     "metastore",
     "models",
     "permissions",
+    "recipients",
     "schemas",
     "scim",
+    "shares",
+    "sharing",
     "tables",
     "tokens",
     "volumes",
@@ -46,30 +66,219 @@ __all__ = [
 __version__: builtins.str
 
 @typing.final
+class BadRequestError(UnityCatalogError):
+    r"""
+    The server answered `400 Bad Request`: the request is not valid.
+    """
+    def __new__(
+        cls,
+        message: builtins.str,
+        code: typing.Optional[builtins.str] = None,
+        status: typing.Optional[builtins.int] = None,
+        details: typing.Optional[list] = None,
+    ) -> BadRequestError: ...
+
+@typing.final
 class Client:
     r"""
-    A client of a Unity Catalog server.
-
-    Each method comes twice: `name` waits for the response, and
-    `name_async` returns an `asyncio.Future` of it; call it in a running
-    event loop. An error raises `unitycatalog.UcError`.
-
-    The list methods return the first page of results.
+    A client of the API at one base URL.
     """
-    def __new__(cls, base: builtins.str) -> Client:
+    def __new__(
+        cls, base_url: builtins.str, token: typing.Optional[builtins.str] = None
+    ) -> Client:
         r"""
-        Make a client.
+        A client of the API at `base_url`. `token`, when set, goes in every
+        request as the bearer token.
+        """
+    def get_backup(self) -> admin.BackupResponse:
+        r"""
+        Get a snapshot of the whole catalog, in one answer.
+
+        Returns:
+            A snapshot of the whole catalog: the rows of each table of the store. The audit log is not
+            in
+            it.
+        """
+    def get_backup_async(self) -> asyncio.Future[admin.BackupResponse]:
+        r"""
+        Like `get_backup`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def restore_backup(
+        self, version: builtins.int, tables: typing.Any
+    ) -> admin.RestoreResponse:
+        r"""
+        Replace the whole catalog with a snapshot, in one transaction: every table of the store is emptied,
+        then filled with the rows of the snapshot.
 
         Args:
-            base: The base URL of the API, such as
-                `"http://localhost:8080/api/2.1/unity-catalog/"`.
+            version: Version of the snapshot format. A restore takes only version 1.
+            tables: The rows of each table, by table name. A row is a JSON object of its columns, as the
+                    table of the store has them.
+
+        Returns:
+            What a restore imported.
         """
-    def with_bearer(self, token: builtins.str) -> Client:
+    def restore_backup_async(
+        self, version: builtins.int, tables: typing.Any
+    ) -> asyncio.Future[admin.RestoreResponse]:
         r"""
-        A copy of the client that sends `token` as its bearer token: a
-        personal access token, or an access token of the server.
+        Like `restore_backup`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def __repr__(self) -> builtins.str: ...
+    def list_audit_events(
+        self,
+        *,
+        principal: typing.Optional[builtins.str] = None,
+        method: typing.Optional[builtins.str] = None,
+        path_prefix: typing.Optional[builtins.str] = None,
+        since: typing.Optional[builtins.int] = None,
+        until: typing.Optional[builtins.int] = None,
+        max_results: typing.Optional[builtins.int] = None,
+        page_token: typing.Optional[builtins.str] = None,
+    ) -> audit.ListAuditEventsResponse:
+        r"""
+        List the audit events, newest first.
+
+        Args:
+            principal: Return only the events of this principal.
+            method: Return only the events of this HTTP method, such as `DELETE`.
+            path_prefix: Return only the events whose path starts with this prefix.
+            since: Return only the events at or after this time, in epoch milliseconds.
+            until: Return only the events at or before this time, in epoch milliseconds.
+            max_results: The maximum number of events to return.
+            page_token: Opaque token of the page to return: the `next_page_token` of the page before.
+
+        Returns:
+            The requested resource
+        """
+    def list_audit_events_async(
+        self,
+        *,
+        principal: typing.Optional[builtins.str] = None,
+        method: typing.Optional[builtins.str] = None,
+        path_prefix: typing.Optional[builtins.str] = None,
+        since: typing.Optional[builtins.int] = None,
+        until: typing.Optional[builtins.int] = None,
+        max_results: typing.Optional[builtins.int] = None,
+        page_token: typing.Optional[builtins.str] = None,
+    ) -> asyncio.Future[audit.ListAuditEventsResponse]:
+        r"""
+        Like `list_audit_events`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def exchange_token(
+        self,
+        grant_type: builtins.str,
+        requested_token_type: builtins.str,
+        subject_token: builtins.str,
+        subject_token_type: builtins.str,
+        *,
+        scope: typing.Optional[builtins.str] = None,
+        actor_token: typing.Optional[builtins.str] = None,
+        actor_token_type: typing.Optional[builtins.str] = None,
+    ) -> auth.OAuthTokenExchangeInfo:
+        r"""
+        Exchange a token of an identity provider for a Unity Catalog access token (OAuth 2.0 token exchange,
+        RFC 8693). It needs no sign-in.
+
+        Args:
+            grant_type: The grant type: `urn:ietf:params:oauth:grant-type:token-exchange`.
+            requested_token_type: The type of the token to issue: `urn:ietf:params:oauth:token-
+                                  type:access_token`.
+            subject_token: The token of the identity provider that names the user, such as an ID token.
+            subject_token_type: The type of `subject_token`, such as `urn:ietf:params:oauth:token-
+                                type:id_token`.
+            scope: The scope of the token exchange.
+            actor_token: The token of the acting party. Not supported.
+            actor_token_type: The type of `actor_token`. Not supported: the server refuses a request with
+                              it.
+
+        Returns:
+            An OAuth 2.0 token exchange response (RFC 8693): a Unity Catalog access token.
+        """
+    def exchange_token_async(
+        self,
+        grant_type: builtins.str,
+        requested_token_type: builtins.str,
+        subject_token: builtins.str,
+        subject_token_type: builtins.str,
+        *,
+        scope: typing.Optional[builtins.str] = None,
+        actor_token: typing.Optional[builtins.str] = None,
+        actor_token_type: typing.Optional[builtins.str] = None,
+    ) -> asyncio.Future[auth.OAuthTokenExchangeInfo]:
+        r"""
+        Like `exchange_token`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def request_access_token(
+        self,
+        grant_type: builtins.str,
+        client_secret: builtins.str,
+        *,
+        client_id: typing.Optional[builtins.str] = None,
+        scope: typing.Optional[builtins.str] = None,
+    ) -> auth.TokenResponse:
+        r"""
+        Get an access token for a personal access token: the OAuth 2.0 `client_credentials` grant (RFC 6749,
+        section 4.4). It needs no sign-in.
+
+        Args:
+            grant_type: The grant type: `client_credentials`.
+            client_secret: The personal access token.
+            client_id: The `id` of the personal access token. When given, it must name the token of
+                       `client_secret`, and `expires_in` is the time until that token expires.
+            scope: The scope of the request. The answer repeats it.
+
+        Returns:
+            An OAuth 2.0 token response (RFC 6749, section 5.1). The access token is the personal access
+            token itself.
+        """
+    def request_access_token_async(
+        self,
+        grant_type: builtins.str,
+        client_secret: builtins.str,
+        *,
+        client_id: typing.Optional[builtins.str] = None,
+        scope: typing.Optional[builtins.str] = None,
+    ) -> asyncio.Future[auth.TokenResponse]:
+        r"""
+        Like `request_access_token`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def logout(self) -> None:
+        r"""
+        Sign out: expire the `UC_TOKEN` cookie of the request, if any.
+        """
+    def logout_async(self) -> asyncio.Future[None]:
+        r"""
+        Like `logout`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_auth_mode(self) -> auth.AuthMode:
+        r"""
+        Get how the web UI signs in. It needs no sign-in.
+
+        Returns:
+            How the web UI signs in, and where its "Log out" goes.
+        """
+    def get_auth_mode_async(self) -> asyncio.Future[auth.AuthMode]:
+        r"""
+        Like `get_auth_mode`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_catalogs(
+        self, *, max_results: typing.Optional[builtins.int] = None
+    ) -> builtins.list[catalogs.CatalogInfo]:
+        r"""
+        List the catalogs that the caller can see.
+
+        Args:
+            max_results: The maximum number of catalogs to return.
+
+        Returns:
+            The catalogs.
+        """
+    def list_catalogs_async(
+        self, *, max_results: typing.Optional[builtins.int] = None
+    ) -> asyncio.Future[builtins.list[catalogs.CatalogInfo]]:
+        r"""
+        Like `list_catalogs`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
     def create_catalog(
         self,
         name: builtins.str,
@@ -82,11 +291,13 @@ class Client:
         Create a catalog.
 
         Args:
-            name: The name.
-            comment: A description.
-            properties: Key-value properties.
-            storage_root: The root URL of the managed storage of the catalog,
-                such as `"s3://bucket/root"`.
+            name: Name of the catalog.
+            comment: User-provided free-form text description.
+            properties: Key-value properties of the catalog.
+            storage_root: Storage root URL for the managed storage of the catalog.
+
+        Returns:
+            A catalog: the first layer of the three-level namespace. It holds schemas.
         """
     def create_catalog_async(
         self,
@@ -97,75 +308,1280 @@ class Client:
         storage_root: typing.Optional[builtins.str] = None,
     ) -> asyncio.Future[catalogs.CatalogInfo]:
         r"""
-        Like `create_catalog`, but returns an `asyncio.Future`.
+        Like `create_catalog`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def get_catalog(self, name: builtins.str) -> catalogs.CatalogInfo:
+    def list_credentials(
+        self,
+        *,
+        max_results: typing.Optional[builtins.int] = None,
+        purpose: typing.Optional[_enums.CredentialPurpose | str] = None,
+    ) -> builtins.list[credentials.CredentialInfo]:
         r"""
-        Get a catalog.
+        List the credentials that the caller can see.
 
         Args:
-            name: The name.
+            max_results: The maximum number of credentials to return.
+            purpose: Return only the credentials with this purpose.
+
+        Returns:
+            The credentials.
         """
-    def get_catalog_async(
-        self, name: builtins.str
-    ) -> asyncio.Future[catalogs.CatalogInfo]:
-        r"""
-        Like `get_catalog`, but returns an `asyncio.Future`.
-        """
-    def list_catalogs(self) -> builtins.list[catalogs.CatalogInfo]:
-        r"""
-        List the catalogs.
-        """
-    def list_catalogs_async(
+    def list_credentials_async(
         self,
-    ) -> asyncio.Future[builtins.list[catalogs.CatalogInfo]]:
+        *,
+        max_results: typing.Optional[builtins.int] = None,
+        purpose: typing.Optional[_enums.CredentialPurpose | str] = None,
+    ) -> asyncio.Future[builtins.list[credentials.CredentialInfo]]:
         r"""
-        Like `list_catalogs`, but returns an `asyncio.Future`.
+        Like `list_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def update_catalog(
+    def create_credential(
         self,
         name: builtins.str,
+        aws_iam_role: credentials.AwsIamRoleRequest,
         *,
         comment: typing.Optional[builtins.str] = None,
-        properties: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
-        new_name: typing.Optional[builtins.str] = None,
-    ) -> catalogs.CatalogInfo:
+        purpose: typing.Optional[_enums.CredentialPurpose | str] = None,
+    ) -> credentials.CredentialInfo:
         r"""
-        Update a catalog. Only the arguments that are set change.
+        Create a credential.
 
         Args:
-            name: The name.
-            comment: A new description.
-            properties: Key-value properties, to replace the current ones.
-            new_name: A new name.
+            name: Name of the credential.
+            aws_iam_role: The AWS IAM role of the credential: an AWS IAM role is the only kind of
+                          credential.
+            comment: User-provided free-form text description.
+            purpose: What the credential is used for.
+
+        Returns:
+            A credential that gives access to storage or to external services.
         """
-    def update_catalog_async(
+    def create_credential_async(
         self,
         name: builtins.str,
+        aws_iam_role: credentials.AwsIamRoleRequest,
         *,
         comment: typing.Optional[builtins.str] = None,
-        properties: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
-        new_name: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[catalogs.CatalogInfo]:
+        purpose: typing.Optional[_enums.CredentialPurpose | str] = None,
+    ) -> asyncio.Future[credentials.CredentialInfo]:
         r"""
-        Like `update_catalog`, but returns an `asyncio.Future`.
+        Like `create_credential`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def delete_catalog(
-        self, name: builtins.str, *, force: builtins.bool = False
+    def get_delta_config(
+        self, catalog: builtins.str, protocol_versions: builtins.str
+    ) -> delta.DeltaCatalogConfig:
+        r"""
+        Get the configuration of the Delta API for a catalog: the endpoints that the server supports and the
+        protocol version.
+
+        Args:
+            catalog: Name of the catalog.
+            protocol_versions: The highest protocol versions that the client supports per major version,
+                               comma-separated, such as `1.0` or `1.1,2.3`. The server answers with the
+                               highest version that both support.
+
+        Returns:
+            The configuration of the Delta API for a catalog.
+        """
+    def get_delta_config_async(
+        self, catalog: builtins.str, protocol_versions: builtins.str
+    ) -> asyncio.Future[delta.DeltaCatalogConfig]:
+        r"""
+        Like `get_delta_config`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_delta_staging_table(
+        self, catalog: builtins.str, schema: builtins.str, name: builtins.str
+    ) -> delta.DeltaStagingTableResponse:
+        r"""
+        Create a staging table: reserve a table id and a storage location for a new MANAGED table, with
+        credentials to write its first commit.
+
+        Args:
+            name: Name of the table.
+
+        Returns:
+            A staging table: the table id and storage location that the server reserves for a new
+            MANAGED
+            table, and what the first commit must contain.
+        """
+    def create_delta_staging_table_async(
+        self, catalog: builtins.str, schema: builtins.str, name: builtins.str
+    ) -> asyncio.Future[delta.DeltaStagingTableResponse]:
+        r"""
+        Like `create_delta_staging_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_delta_table(
+        self,
+        catalog: builtins.str,
+        schema: builtins.str,
+        name: builtins.str,
+        location: builtins.str,
+        table_type: _enums.DeltaTableType | str,
+        columns: delta.DeltaStructType,
+        protocol: delta.DeltaProtocol,
+        last_commit_timestamp_ms: builtins.int,
+        *,
+        comment: typing.Optional[builtins.str] = None,
+        partition_columns: typing.Optional[typing.Sequence[builtins.str]] = None,
+        properties: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
+        domain_metadata: typing.Optional[delta.DeltaDomainMetadataUpdates] = None,
+        uniform: typing.Optional[delta.DeltaUniformMetadata] = None,
+    ) -> delta.DeltaLoadTableResponse:
+        r"""
+        Create a table. A MANAGED table takes over the staging table at its location.
+
+        Args:
+            name: Name of the table.
+            location: Storage location of the table. For a MANAGED table, the location of its staging table.
+            table_type: Type of the table.
+            columns: The columns of the table. They must hold at least one field.
+            protocol: The Delta protocol of the table.
+            last_commit_timestamp_ms: Timestamp of version 0, the commit that the client wrote before the
+                                      call, in epoch milliseconds.
+            comment: User-provided free-form text description.
+            partition_columns: Names of the partition columns.
+            properties: The Delta table properties.
+            domain_metadata: The domain metadata of the table.
+            uniform: UniForm conversion metadata. With it, the table is UniForm-enabled; the client writes
+                     the Iceberg metadata file before the call.
+
+        Returns:
+            A Delta table: its metadata and, for a MANAGED table, its commits that are not backfilled
+            yet.
+        """
+    def create_delta_table_async(
+        self,
+        catalog: builtins.str,
+        schema: builtins.str,
+        name: builtins.str,
+        location: builtins.str,
+        table_type: _enums.DeltaTableType | str,
+        columns: delta.DeltaStructType,
+        protocol: delta.DeltaProtocol,
+        last_commit_timestamp_ms: builtins.int,
+        *,
+        comment: typing.Optional[builtins.str] = None,
+        partition_columns: typing.Optional[typing.Sequence[builtins.str]] = None,
+        properties: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
+        domain_metadata: typing.Optional[delta.DeltaDomainMetadataUpdates] = None,
+        uniform: typing.Optional[delta.DeltaUniformMetadata] = None,
+    ) -> asyncio.Future[delta.DeltaLoadTableResponse]:
+        r"""
+        Like `create_delta_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def load_delta_table(
+        self, catalog: builtins.str, schema: builtins.str, table: builtins.str
+    ) -> delta.DeltaLoadTableResponse:
+        r"""
+        Load a table: its metadata and, for a MANAGED table, its commits that are not backfilled yet. It
+        holds no credentials.
+
+        Returns:
+            A Delta table: its metadata and, for a MANAGED table, its commits that are not backfilled
+            yet.
+        """
+    def load_delta_table_async(
+        self, catalog: builtins.str, schema: builtins.str, table: builtins.str
+    ) -> asyncio.Future[delta.DeltaLoadTableResponse]:
+        r"""
+        Like `load_delta_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def update_delta_table(
+        self,
+        catalog: builtins.str,
+        schema: builtins.str,
+        table: builtins.str,
+        requirements: typing.Sequence[delta.DeltaTableRequirement],
+        updates: typing.Sequence[delta.DeltaTableUpdate],
+    ) -> delta.DeltaLoadTableResponse:
+        r"""
+        Update a table or commit to it, then load it. A replay of an accepted `add-commit` is a no-op. A
+        version or requirement conflict is status 409; too many commits that are not backfilled is status
+        429.
+
+        Args:
+            requirements: Preconditions of the update. An `assert-table-uuid` requirement is always
+                          required; at most one of each type.
+            updates: The updates to apply. At least one; at most one of each action.
+
+        Returns:
+            A Delta table: its metadata and, for a MANAGED table, its commits that are not backfilled
+            yet.
+        """
+    def update_delta_table_async(
+        self,
+        catalog: builtins.str,
+        schema: builtins.str,
+        table: builtins.str,
+        requirements: typing.Sequence[delta.DeltaTableRequirement],
+        updates: typing.Sequence[delta.DeltaTableUpdate],
+    ) -> asyncio.Future[delta.DeltaLoadTableResponse]:
+        r"""
+        Like `update_delta_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def delta_table_exists(
+        self, catalog: builtins.str, schema: builtins.str, table: builtins.str
+    ) -> builtins.bool:
+        r"""
+        Check that a table exists. A missing table is status 404.
+        """
+    def delta_table_exists_async(
+        self, catalog: builtins.str, schema: builtins.str, table: builtins.str
+    ) -> asyncio.Future[builtins.bool]:
+        r"""
+        Like `delta_table_exists`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def delete_delta_table(
+        self, catalog: builtins.str, schema: builtins.str, table: builtins.str
     ) -> None:
         r"""
-        Delete a catalog.
-
-        Args:
-            name: The name.
-            force: Also delete its schemas and their contents. Without it, a
-                catalog that has schemas is not deleted.
+        Delete a table.
         """
-    def delete_catalog_async(
-        self, name: builtins.str, *, force: builtins.bool = False
+    def delete_delta_table_async(
+        self, catalog: builtins.str, schema: builtins.str, table: builtins.str
     ) -> asyncio.Future[None]:
         r"""
-        Like `delete_catalog`, but returns an `asyncio.Future`.
+        Like `delete_delta_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def rename_delta_table(
+        self,
+        catalog: builtins.str,
+        schema: builtins.str,
+        table: builtins.str,
+        new_name: builtins.str,
+    ) -> None:
+        r"""
+        Rename a table in its schema.
+
+        Args:
+            new_name: New name of the table, in the same schema.
+        """
+    def rename_delta_table_async(
+        self,
+        catalog: builtins.str,
+        schema: builtins.str,
+        table: builtins.str,
+        new_name: builtins.str,
+    ) -> asyncio.Future[None]:
+        r"""
+        Like `rename_delta_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def report_delta_table_metrics(
+        self,
+        catalog: builtins.str,
+        schema: builtins.str,
+        table: builtins.str,
+        table_id: builtins.str,
+        *,
+        report: typing.Optional[delta.DeltaMetricsReport] = None,
+    ) -> None:
+        r"""
+        Report the metrics of a commit. The server checks the table id and does not store the metrics.
+
+        Args:
+            table_id: Unique identifier of the table. It must be the id of the table in the path.
+            report: The metrics. The server accepts them and does not store them.
+        """
+    def report_delta_table_metrics_async(
+        self,
+        catalog: builtins.str,
+        schema: builtins.str,
+        table: builtins.str,
+        table_id: builtins.str,
+        *,
+        report: typing.Optional[delta.DeltaMetricsReport] = None,
+    ) -> asyncio.Future[None]:
+        r"""
+        Like `report_delta_table_metrics`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_delta_table_credentials(
+        self,
+        catalog: builtins.str,
+        schema: builtins.str,
+        table: builtins.str,
+        operation: _enums.DeltaCredentialOperation | str,
+    ) -> delta.DeltaCredentialsResponse:
+        r"""
+        Get temporary credentials for the data of a table.
+
+        Args:
+            operation: The access level of the credentials.
+
+        Returns:
+            Temporary credentials for the data of a table.
+        """
+    def get_delta_table_credentials_async(
+        self,
+        catalog: builtins.str,
+        schema: builtins.str,
+        table: builtins.str,
+        operation: _enums.DeltaCredentialOperation | str,
+    ) -> asyncio.Future[delta.DeltaCredentialsResponse]:
+        r"""
+        Like `get_delta_table_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_delta_staging_table_credentials(
+        self, table_id: builtins.str
+    ) -> delta.DeltaCredentialsResponse:
+        r"""
+        Get temporary credentials for the data of a staging table. They are always `READ_WRITE`, for the
+        first commit. Only the owner of the staging table gets them.
+
+        Returns:
+            Temporary credentials for the data of a table.
+        """
+    def get_delta_staging_table_credentials_async(
+        self, table_id: builtins.str
+    ) -> asyncio.Future[delta.DeltaCredentialsResponse]:
+        r"""
+        Like `get_delta_staging_table_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def commit_delta(
+        self,
+        table_id: builtins.str,
+        table_uri: builtins.str,
+        *,
+        commit_info: typing.Optional[delta.DeltaCommitInfo] = None,
+        latest_backfilled_version: typing.Optional[builtins.int] = None,
+        metadata: typing.Optional[delta.DeltaMetadata] = None,
+        uniform: typing.Optional[delta.DeltaUniform] = None,
+    ) -> None:
+        r"""
+        Ratify a staged commit, report backfilled commits, or both. Another commit at the same version is a
+        conflict (status 409).
+
+        Args:
+            table_id: Unique identifier of the table to commit to.
+            table_uri: Storage location of the table. It must be the location of the table.
+            commit_info: The commit file to ratify.
+            latest_backfilled_version: The commits up to this version are backfilled into `_delta_log`, so
+                                       the server stops tracking them.
+            metadata: A metadata change to apply with the commit. Not with a backfill report alone.
+            uniform: UniForm metadata to commit with the commit.
+        """
+    def commit_delta_async(
+        self,
+        table_id: builtins.str,
+        table_uri: builtins.str,
+        *,
+        commit_info: typing.Optional[delta.DeltaCommitInfo] = None,
+        latest_backfilled_version: typing.Optional[builtins.int] = None,
+        metadata: typing.Optional[delta.DeltaMetadata] = None,
+        uniform: typing.Optional[delta.DeltaUniform] = None,
+    ) -> asyncio.Future[None]:
+        r"""
+        Like `commit_delta`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_delta_commits(
+        self,
+        table_id: builtins.str,
+        start_version: builtins.int,
+        *,
+        table_uri: typing.Optional[builtins.str] = None,
+        end_version: typing.Optional[builtins.int] = None,
+    ) -> delta.DeltaGetCommitsResponse:
+        r"""
+        Get the commits of a table that are not backfilled yet. The server takes the request as the JSON
+        body of a `GET`.
+
+        Args:
+            table_id: Unique identifier of the table.
+            start_version: First version to return (inclusive). It must be 0 or more.
+            table_uri: Storage location of the table.
+            end_version: Last version to return (inclusive). It does not change `latest_table_version`.
+
+        Returns:
+            The commits that the server tracks for a table.
+        """
+    def get_delta_commits_async(
+        self,
+        table_id: builtins.str,
+        start_version: builtins.int,
+        *,
+        table_uri: typing.Optional[builtins.str] = None,
+        end_version: typing.Optional[builtins.int] = None,
+    ) -> asyncio.Future[delta.DeltaGetCommitsResponse]:
+        r"""
+        Like `get_delta_commits`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_external_locations(
+        self, *, max_results: typing.Optional[builtins.int] = None
+    ) -> builtins.list[external_locations.ExternalLocationInfo]:
+        r"""
+        List the external locations that the caller can see.
+
+        Args:
+            max_results: The maximum number of external locations to return.
+
+        Returns:
+            The external locations.
+        """
+    def list_external_locations_async(
+        self, *, max_results: typing.Optional[builtins.int] = None
+    ) -> asyncio.Future[builtins.list[external_locations.ExternalLocationInfo]]:
+        r"""
+        Like `list_external_locations`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_external_location(
+        self,
+        name: builtins.str,
+        url: builtins.str,
+        credential_name: builtins.str,
+        *,
+        comment: typing.Optional[builtins.str] = None,
+    ) -> external_locations.ExternalLocationInfo:
+        r"""
+        Create an external location.
+
+        Args:
+            name: Name of the external location.
+            url: URL of the storage path, such as `s3://bucket/path`.
+            credential_name: Name of the credential that gives access to the path.
+            comment: User-provided free-form text description.
+
+        Returns:
+            An external location: a storage path and the credential that gives access to it.
+        """
+    def create_external_location_async(
+        self,
+        name: builtins.str,
+        url: builtins.str,
+        credential_name: builtins.str,
+        *,
+        comment: typing.Optional[builtins.str] = None,
+    ) -> asyncio.Future[external_locations.ExternalLocationInfo]:
+        r"""
+        Like `create_external_location`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_functions(
+        self,
+        catalog_name: builtins.str,
+        schema_name: builtins.str,
+        *,
+        max_results: typing.Optional[builtins.int] = None,
+    ) -> builtins.list[functions.FunctionInfo]:
+        r"""
+        List the functions of a schema that the caller can see.
+
+        Args:
+            catalog_name: Name of the parent catalog.
+            schema_name: Name of the parent schema.
+            max_results: The maximum number of functions to return.
+
+        Returns:
+            The functions.
+        """
+    def list_functions_async(
+        self,
+        catalog_name: builtins.str,
+        schema_name: builtins.str,
+        *,
+        max_results: typing.Optional[builtins.int] = None,
+    ) -> asyncio.Future[builtins.list[functions.FunctionInfo]]:
+        r"""
+        Like `list_functions`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_function(
+        self, function_info: functions.CreateFunction
+    ) -> functions.FunctionInfo:
+        r"""
+        Create a function.
+
+        Args:
+            function_info: The function to create.
+
+        Returns:
+            A function: a user-defined function in the third layer of the three-level namespace, below
+            a schema.
+        """
+    def create_function_async(
+        self, function_info: functions.CreateFunction
+    ) -> asyncio.Future[functions.FunctionInfo]:
+        r"""
+        Like `create_function`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_health(self) -> health.HealthResponse:
+        r"""
+        Check that the server answers. The database is not asked.
+
+        Returns:
+            The state of the server.
+        """
+    def get_health_async(self) -> asyncio.Future[health.HealthResponse]:
+        r"""
+        Like `get_health`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_version(self) -> health.VersionResponse:
+        r"""
+        Get the version of the server.
+
+        Returns:
+            The server and its versions.
+        """
+    def get_version_async(self) -> asyncio.Future[health.VersionResponse]:
+        r"""
+        Like `get_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_iceberg_config(
+        self, warehouse: builtins.str
+    ) -> iceberg.IcebergConfigResponse:
+        r"""
+        Get the client configuration of a catalog.
+
+        Args:
+            warehouse: Name of the catalog: the Iceberg warehouse.
+
+        Returns:
+            The client configuration of a catalog.
+        """
+    def get_iceberg_config_async(
+        self, warehouse: builtins.str
+    ) -> asyncio.Future[iceberg.IcebergConfigResponse]:
+        r"""
+        Like `get_iceberg_config`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_iceberg_namespaces(
+        self,
+        catalog: builtins.str,
+        *,
+        parent: typing.Optional[builtins.str] = None,
+        page_token: typing.Optional[builtins.str] = None,
+        page_size: typing.Optional[builtins.int] = None,
+    ) -> iceberg.IcebergListNamespacesResponse:
+        r"""
+        List the namespaces of a catalog: its schemas that the caller can read.
+
+        Args:
+            parent: Parent namespace. Namespaces are not nested: a parent that exists has no children, a
+                    parent that does not exist is not found. An empty value is no parent.
+            page_token: Opaque token of the page to return: the `next-page-token` of the page before.
+                        An empty token asks for the first page. Without a token the answer is the whole
+                        listing.
+            page_size: The maximum number of namespaces in a page, at least 1; a larger value than 100
+                       counts as 100. Read only with a page token.
+
+        Returns:
+            A page of namespaces.
+        """
+    def list_iceberg_namespaces_async(
+        self,
+        catalog: builtins.str,
+        *,
+        parent: typing.Optional[builtins.str] = None,
+        page_token: typing.Optional[builtins.str] = None,
+        page_size: typing.Optional[builtins.int] = None,
+    ) -> asyncio.Future[iceberg.IcebergListNamespacesResponse]:
+        r"""
+        Like `list_iceberg_namespaces`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_iceberg_namespace(
+        self,
+        catalog: builtins.str,
+        namespace: typing.Sequence[builtins.str],
+        *,
+        properties: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
+    ) -> iceberg.IcebergNamespaceResponse:
+        r"""
+        Create a namespace: a schema of the catalog.
+
+        Args:
+            namespace: The levels of the namespace. Exactly one level: the name of the schema to create.
+            properties: Properties of the namespace.
+
+        Returns:
+            A namespace and its properties.
+        """
+    def create_iceberg_namespace_async(
+        self,
+        catalog: builtins.str,
+        namespace: typing.Sequence[builtins.str],
+        *,
+        properties: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
+    ) -> asyncio.Future[iceberg.IcebergNamespaceResponse]:
+        r"""
+        Like `create_iceberg_namespace`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def load_iceberg_namespace(
+        self, catalog: builtins.str, namespace: builtins.str
+    ) -> iceberg.IcebergNamespaceResponse:
+        r"""
+        Get a namespace and its properties.
+
+        Returns:
+            A namespace and its properties.
+        """
+    def load_iceberg_namespace_async(
+        self, catalog: builtins.str, namespace: builtins.str
+    ) -> asyncio.Future[iceberg.IcebergNamespaceResponse]:
+        r"""
+        Like `load_iceberg_namespace`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def iceberg_namespace_exists(
+        self, catalog: builtins.str, namespace: builtins.str
+    ) -> builtins.bool:
+        r"""
+        Check that a namespace exists. A namespace that does not exist is a not-found error.
+        """
+    def iceberg_namespace_exists_async(
+        self, catalog: builtins.str, namespace: builtins.str
+    ) -> asyncio.Future[builtins.bool]:
+        r"""
+        Like `iceberg_namespace_exists`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def drop_iceberg_namespace(
+        self, catalog: builtins.str, namespace: builtins.str
+    ) -> None:
+        r"""
+        Drop a namespace. It must be empty.
+        """
+    def drop_iceberg_namespace_async(
+        self, catalog: builtins.str, namespace: builtins.str
+    ) -> asyncio.Future[None]:
+        r"""
+        Like `drop_iceberg_namespace`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def update_iceberg_namespace_properties(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        *,
+        removals: typing.Optional[typing.Sequence[builtins.str]] = None,
+        updates: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
+    ) -> iceberg.IcebergUpdateNamespacePropertiesResponse:
+        r"""
+        Set and remove properties of a namespace.
+
+        Args:
+            removals: Keys of the properties to remove. A key cannot be both removed and set.
+            updates: Properties to set.
+
+        Returns:
+            The changes of a namespace properties update.
+        """
+    def update_iceberg_namespace_properties_async(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        *,
+        removals: typing.Optional[typing.Sequence[builtins.str]] = None,
+        updates: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
+    ) -> asyncio.Future[iceberg.IcebergUpdateNamespacePropertiesResponse]:
+        r"""
+        Like `update_iceberg_namespace_properties`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_iceberg_tables(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        *,
+        page_token: typing.Optional[builtins.str] = None,
+        page_size: typing.Optional[builtins.int] = None,
+    ) -> iceberg.IcebergListTablesResponse:
+        r"""
+        List the tables of a namespace that have Iceberg metadata and that the caller can read.
+
+        Args:
+            page_token: Opaque token of the page to return: the `next-page-token` of the page before.
+                        An empty token asks for the first page. Without a token the answer is the whole
+                        listing.
+            page_size: The maximum number of tables in a page, at least 1; a larger value than 100 counts as
+                       100. Read only with a page token.
+
+        Returns:
+            A page of tables: the tables of a namespace that have Iceberg metadata.
+        """
+    def list_iceberg_tables_async(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        *,
+        page_token: typing.Optional[builtins.str] = None,
+        page_size: typing.Optional[builtins.int] = None,
+    ) -> asyncio.Future[iceberg.IcebergListTablesResponse]:
+        r"""
+        Like `list_iceberg_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_iceberg_table(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        name: builtins.str,
+        schema: iceberg.IcebergSchema,
+        *,
+        location: typing.Optional[builtins.str] = None,
+        partition_spec: typing.Optional[iceberg.IcebergPartitionSpec] = None,
+        write_order: typing.Optional[iceberg.IcebergSortOrder] = None,
+        stage_create: typing.Optional[builtins.bool] = None,
+        properties: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
+    ) -> iceberg.IcebergLoadTableResponse:
+        r"""
+        Create a native Iceberg table, or stage its creation.
+
+        Args:
+            name: Name of the table.
+            schema: Schema of the table. The server assigns fresh ids.
+            location: Location of the table. With a location the table is EXTERNAL; without one it is
+                      MANAGED, at a location that the server picks.
+            partition_spec: Partition spec of the table. Unpartitioned when absent.
+            write_order: Sort order of the table. Unsorted when absent.
+            stage_create: Return the metadata of the table without creating it. A commit with an `assert-
+                          create` requirement creates it.
+            properties: Properties of the table. `format-version` picks the format version (2 by default)
+                        and is not kept.
+
+        Returns:
+            The metadata of a table, with the properties a client needs to read and write its files.
+        """
+    def create_iceberg_table_async(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        name: builtins.str,
+        schema: iceberg.IcebergSchema,
+        *,
+        location: typing.Optional[builtins.str] = None,
+        partition_spec: typing.Optional[iceberg.IcebergPartitionSpec] = None,
+        write_order: typing.Optional[iceberg.IcebergSortOrder] = None,
+        stage_create: typing.Optional[builtins.bool] = None,
+        properties: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
+    ) -> asyncio.Future[iceberg.IcebergLoadTableResponse]:
+        r"""
+        Like `create_iceberg_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def load_iceberg_table(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        table: builtins.str,
+        *,
+        snapshots: typing.Optional[builtins.str] = None,
+    ) -> iceberg.IcebergLoadTableResponse:
+        r"""
+        Get the metadata of a table, with credentials for its files.
+
+        Args:
+            snapshots: The snapshots to return: `all` (the default) or `refs`, the snapshots that a branch
+                       or tag points at.
+
+        Returns:
+            The metadata of a table, with the properties a client needs to read and write its files.
+        """
+    def load_iceberg_table_async(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        table: builtins.str,
+        *,
+        snapshots: typing.Optional[builtins.str] = None,
+    ) -> asyncio.Future[iceberg.IcebergLoadTableResponse]:
+        r"""
+        Like `load_iceberg_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def iceberg_table_exists(
+        self, catalog: builtins.str, namespace: builtins.str, table: builtins.str
+    ) -> builtins.bool:
+        r"""
+        Check that a table exists. A table that does not exist is a not-found error.
+        """
+    def iceberg_table_exists_async(
+        self, catalog: builtins.str, namespace: builtins.str, table: builtins.str
+    ) -> asyncio.Future[builtins.bool]:
+        r"""
+        Like `iceberg_table_exists`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def commit_iceberg_table(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        table: builtins.str,
+        *,
+        identifier: typing.Optional[iceberg.IcebergTableIdentifier] = None,
+        requirements: typing.Optional[
+            typing.Sequence[iceberg.IcebergTableRequirement]
+        ] = None,
+        updates: typing.Optional[typing.Sequence[iceberg.IcebergTableUpdate]] = None,
+    ) -> iceberg.IcebergLoadTableResponse:
+        r"""
+        Commit changes to a native Iceberg table, or create a staged table.
+
+        Args:
+            identifier: The table. The server does not read it: the path names the table.
+            requirements: Conditions that the table must meet for the commit to apply. With `assert-create`,
+                          the commit creates a staged table.
+            updates: Changes to the metadata, applied in order.
+
+        Returns:
+            The metadata of a table, with the properties a client needs to read and write its files.
+        """
+    def commit_iceberg_table_async(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        table: builtins.str,
+        *,
+        identifier: typing.Optional[iceberg.IcebergTableIdentifier] = None,
+        requirements: typing.Optional[
+            typing.Sequence[iceberg.IcebergTableRequirement]
+        ] = None,
+        updates: typing.Optional[typing.Sequence[iceberg.IcebergTableUpdate]] = None,
+    ) -> asyncio.Future[iceberg.IcebergLoadTableResponse]:
+        r"""
+        Like `commit_iceberg_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def drop_iceberg_table(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        table: builtins.str,
+        *,
+        purge_requested: typing.Optional[builtins.bool] = None,
+    ) -> None:
+        r"""
+        Drop a native Iceberg table. UniForm tables are dropped through the Unity Catalog API.
+
+        Args:
+            purge_requested: Whether to delete the data too. Checked, but without effect: the files of a
+                             MANAGED table are always removed, those of an EXTERNAL table never.
+        """
+    def drop_iceberg_table_async(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        table: builtins.str,
+        *,
+        purge_requested: typing.Optional[builtins.bool] = None,
+    ) -> asyncio.Future[None]:
+        r"""
+        Like `drop_iceberg_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def load_iceberg_table_credentials(
+        self, catalog: builtins.str, namespace: builtins.str, table: builtins.str
+    ) -> iceberg.IcebergLoadCredentialsResponse:
+        r"""
+        Get fresh credentials for the files of a table.
+
+        Returns:
+            Fresh credentials for the files of a table.
+        """
+    def load_iceberg_table_credentials_async(
+        self, catalog: builtins.str, namespace: builtins.str, table: builtins.str
+    ) -> asyncio.Future[iceberg.IcebergLoadCredentialsResponse]:
+        r"""
+        Like `load_iceberg_table_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def report_iceberg_metrics(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        table: builtins.str,
+        report_type: builtins.str,
+        *,
+        table_name: typing.Optional[builtins.str] = None,
+        snapshot_id: typing.Optional[builtins.int] = None,
+        filter: typing.Optional[typing.Any] = None,
+        schema_id: typing.Optional[builtins.int] = None,
+        projected_field_ids: typing.Optional[typing.Sequence[builtins.int]] = None,
+        projected_field_names: typing.Optional[typing.Sequence[builtins.str]] = None,
+        sequence_number: typing.Optional[builtins.int] = None,
+        operation: typing.Optional[builtins.str] = None,
+        metrics: typing.Optional[typing.Any] = None,
+        metadata: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
+    ) -> None:
+        r"""
+        Send a scan or commit report of a table. The server checks it and does not keep it.
+
+        Args:
+            report_type: The type of report: `scan-report` or `commit-report`.
+            table_name: Full name of the table.
+            snapshot_id: Id of the snapshot that was scanned or committed.
+            filter: `scan-report`: the filter of the scan, an Iceberg expression (`true`, `false`, or an
+                    expression object).
+            schema_id: `scan-report`: id of the schema of the scan.
+            projected_field_ids: `scan-report`: ids of the projected fields. Always sent.
+            projected_field_names: `scan-report`: names of the projected fields. Always sent.
+            sequence_number: `commit-report`: sequence number of the commit.
+            operation: `commit-report`: the operation of the commit, such as `append`.
+            metrics: The metrics, by name: counters (`unit`, `value`) and timers (`time-unit`, `count`,
+                     `total- duration`).
+            metadata: Other properties of the report.
+        """
+    def report_iceberg_metrics_async(
+        self,
+        catalog: builtins.str,
+        namespace: builtins.str,
+        table: builtins.str,
+        report_type: builtins.str,
+        *,
+        table_name: typing.Optional[builtins.str] = None,
+        snapshot_id: typing.Optional[builtins.int] = None,
+        filter: typing.Optional[typing.Any] = None,
+        schema_id: typing.Optional[builtins.int] = None,
+        projected_field_ids: typing.Optional[typing.Sequence[builtins.int]] = None,
+        projected_field_names: typing.Optional[typing.Sequence[builtins.str]] = None,
+        sequence_number: typing.Optional[builtins.int] = None,
+        operation: typing.Optional[builtins.str] = None,
+        metrics: typing.Optional[typing.Any] = None,
+        metadata: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
+    ) -> asyncio.Future[None]:
+        r"""
+        Like `report_iceberg_metrics`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def load_iceberg_view(
+        self, catalog: builtins.str, namespace: builtins.str, view: builtins.str
+    ) -> None:
+        r"""
+        Get a view. Views are not served: the answer is always a not-found error.
+        """
+    def load_iceberg_view_async(
+        self, catalog: builtins.str, namespace: builtins.str, view: builtins.str
+    ) -> asyncio.Future[None]:
+        r"""
+        Like `load_iceberg_view`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def rename_iceberg_table(
+        self,
+        catalog: builtins.str,
+        source: iceberg.IcebergTableIdentifier,
+        destination: iceberg.IcebergTableIdentifier,
+    ) -> None:
+        r"""
+        Rename a native Iceberg table, in its namespace. A move to another namespace is not supported.
+
+        Args:
+            source: The table to rename.
+            destination: The new name of the table, in the same namespace.
+        """
+    def rename_iceberg_table_async(
+        self,
+        catalog: builtins.str,
+        source: iceberg.IcebergTableIdentifier,
+        destination: iceberg.IcebergTableIdentifier,
+    ) -> asyncio.Future[None]:
+        r"""
+        Like `rename_iceberg_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_metastore_summary(self) -> metastore.GetMetastoreSummaryResponse:
+        r"""
+        Get a summary of the metastore.
+
+        Returns:
+            A summary of the metastore of the server.
+        """
+    def get_metastore_summary_async(
+        self,
+    ) -> asyncio.Future[metastore.GetMetastoreSummaryResponse]:
+        r"""
+        Like `get_metastore_summary`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_model_versions(
+        self,
+        full_name: builtins.str,
+        *,
+        max_results: typing.Optional[builtins.int] = None,
+    ) -> builtins.list[models.ModelVersionInfo]:
+        r"""
+        List the versions of a registered model.
+
+        Args:
+            max_results: The maximum number of model versions to return.
+
+        Returns:
+            The model versions.
+        """
+    def list_model_versions_async(
+        self,
+        full_name: builtins.str,
+        *,
+        max_results: typing.Optional[builtins.int] = None,
+    ) -> asyncio.Future[builtins.list[models.ModelVersionInfo]]:
+        r"""
+        Like `list_model_versions`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_model_version(
+        self,
+        model_name: builtins.str,
+        catalog_name: builtins.str,
+        schema_name: builtins.str,
+        source: builtins.str,
+        *,
+        run_id: typing.Optional[builtins.str] = None,
+        comment: typing.Optional[builtins.str] = None,
+    ) -> models.ModelVersionInfo:
+        r"""
+        Create a model version with the status PENDING_REGISTRATION. The server gives it the next version
+        number and a storage location.
+
+        Args:
+            model_name: Name of the parent registered model, relative to its schema.
+            catalog_name: Name of the parent catalog.
+            schema_name: Name of the parent schema.
+            source: URI of the source files the model version is created from, such as an MLflow run
+                    artifact path.
+            run_id: ID of the run of the ML package that made the model.
+            comment: User-provided free-form text description.
+
+        Returns:
+            A version of a registered model. The server gives each new version the next number.
+        """
+    def create_model_version_async(
+        self,
+        model_name: builtins.str,
+        catalog_name: builtins.str,
+        schema_name: builtins.str,
+        source: builtins.str,
+        *,
+        run_id: typing.Optional[builtins.str] = None,
+        comment: typing.Optional[builtins.str] = None,
+    ) -> asyncio.Future[models.ModelVersionInfo]:
+        r"""
+        Like `create_model_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_model_version(
+        self, full_name: builtins.str, version: builtins.int
+    ) -> models.ModelVersionInfo:
+        r"""
+        Get a model version.
+
+        Returns:
+            A version of a registered model. The server gives each new version the next number.
+        """
+    def get_model_version_async(
+        self, full_name: builtins.str, version: builtins.int
+    ) -> asyncio.Future[models.ModelVersionInfo]:
+        r"""
+        Like `get_model_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def update_model_version(
+        self, full_name: builtins.str, version: builtins.int, comment: builtins.str
+    ) -> models.ModelVersionInfo:
+        r"""
+        Change a model version.
+
+        Args:
+            comment: User-provided free-form text description. The comment is the only field that can
+                     change; an empty one clears it.
+
+        Returns:
+            A version of a registered model. The server gives each new version the next number.
+        """
+    def update_model_version_async(
+        self, full_name: builtins.str, version: builtins.int, comment: builtins.str
+    ) -> asyncio.Future[models.ModelVersionInfo]:
+        r"""
+        Like `update_model_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def delete_model_version(
+        self, full_name: builtins.str, version: builtins.int
+    ) -> None:
+        r"""
+        Delete a model version.
+        """
+    def delete_model_version_async(
+        self, full_name: builtins.str, version: builtins.int
+    ) -> asyncio.Future[None]:
+        r"""
+        Like `delete_model_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def finalize_model_version(
+        self, full_name: builtins.str, version: builtins.int
+    ) -> models.ModelVersionInfo:
+        r"""
+        Finalize a model version: its status changes from PENDING_REGISTRATION to READY after the client
+        wrote all its files.
+
+        Returns:
+            A version of a registered model. The server gives each new version the next number.
+        """
+    def finalize_model_version_async(
+        self, full_name: builtins.str, version: builtins.int
+    ) -> asyncio.Future[models.ModelVersionInfo]:
+        r"""
+        Like `finalize_model_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_permissions(
+        self,
+        securable_type: builtins.str,
+        full_name: builtins.str,
+        *,
+        principal: typing.Optional[builtins.str] = None,
+    ) -> permissions.PermissionsList:
+        r"""
+        Get the privileges on a securable.
+
+        Args:
+            principal: Return only the privileges of this principal.
+
+        Returns:
+            The privileges on a securable, per principal.
+        """
+    def get_permissions_async(
+        self,
+        securable_type: builtins.str,
+        full_name: builtins.str,
+        *,
+        principal: typing.Optional[builtins.str] = None,
+    ) -> asyncio.Future[permissions.PermissionsList]:
+        r"""
+        Like `get_permissions`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def update_permissions(
+        self,
+        securable_type: builtins.str,
+        full_name: builtins.str,
+        changes: typing.Sequence[permissions.PermissionsChange],
+    ) -> permissions.PermissionsList:
+        r"""
+        Grant and revoke privileges on a securable. The response lists the privileges of the principals of
+        the request.
+
+        Args:
+            changes: The changes to make, one per principal.
+
+        Returns:
+            The privileges on a securable, per principal.
+        """
+    def update_permissions_async(
+        self,
+        securable_type: builtins.str,
+        full_name: builtins.str,
+        changes: typing.Sequence[permissions.PermissionsChange],
+    ) -> asyncio.Future[permissions.PermissionsList]:
+        r"""
+        Like `update_permissions`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_recipients(
+        self, *, max_results: typing.Optional[builtins.int] = None
+    ) -> builtins.list[recipients.RecipientInfo]:
+        r"""
+        List the recipients.
+
+        Args:
+            max_results: The maximum number of recipients to return.
+
+        Returns:
+            The recipients.
+        """
+    def list_recipients_async(
+        self, *, max_results: typing.Optional[builtins.int] = None
+    ) -> asyncio.Future[builtins.list[recipients.RecipientInfo]]:
+        r"""
+        Like `list_recipients`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_recipient(
+        self,
+        name: builtins.str,
+        *,
+        authentication_type: typing.Optional[_enums.AuthenticationType | str] = None,
+        comment: typing.Optional[builtins.str] = None,
+    ) -> recipients.RecipientInfo:
+        r"""
+        Create a recipient. The response holds its bearer token, which no later response shows.
+
+        Args:
+            name: Name of the recipient.
+            authentication_type: How the recipient signs in. Default: `TOKEN`.
+            comment: User-provided free-form text description.
+
+        Returns:
+            A Delta Sharing recipient: an organization or user outside Unity Catalog that reads shares
+            with
+            a bearer token. The server keeps a hash of the token only.
+        """
+    def create_recipient_async(
+        self,
+        name: builtins.str,
+        *,
+        authentication_type: typing.Optional[_enums.AuthenticationType | str] = None,
+        comment: typing.Optional[builtins.str] = None,
+    ) -> asyncio.Future[recipients.RecipientInfo]:
+        r"""
+        Like `create_recipient`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_registered_models(
+        self,
+        *,
+        catalog_name: typing.Optional[builtins.str] = None,
+        schema_name: typing.Optional[builtins.str] = None,
+        max_results: typing.Optional[builtins.int] = None,
+    ) -> builtins.list[models.RegisteredModelInfo]:
+        r"""
+        List the registered models that the caller can see, of a catalog or schema when given.
+
+        Args:
+            catalog_name: Name of the catalog whose registered models to return.
+            schema_name: Name of the schema whose registered models to return.
+            max_results: The maximum number of registered models to return.
+
+        Returns:
+            The registered models.
+        """
+    def list_registered_models_async(
+        self,
+        *,
+        catalog_name: typing.Optional[builtins.str] = None,
+        schema_name: typing.Optional[builtins.str] = None,
+        max_results: typing.Optional[builtins.int] = None,
+    ) -> asyncio.Future[builtins.list[models.RegisteredModelInfo]]:
+        r"""
+        Like `list_registered_models`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_registered_model(
+        self,
+        name: builtins.str,
+        catalog_name: builtins.str,
+        schema_name: builtins.str,
+        *,
+        comment: typing.Optional[builtins.str] = None,
+    ) -> models.RegisteredModelInfo:
+        r"""
+        Create a registered model.
+
+        Args:
+            name: Name of the registered model, relative to its schema.
+            catalog_name: Name of the parent catalog.
+            schema_name: Name of the parent schema.
+            comment: User-provided free-form text description.
+
+        Returns:
+            A registered model: a securable in the three-level namespace (catalog.schema.model) that
+            holds
+            model versions.
+        """
+    def create_registered_model_async(
+        self,
+        name: builtins.str,
+        catalog_name: builtins.str,
+        schema_name: builtins.str,
+        *,
+        comment: typing.Optional[builtins.str] = None,
+    ) -> asyncio.Future[models.RegisteredModelInfo]:
+        r"""
+        Like `create_registered_model`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_schemas(
+        self,
+        catalog_name: builtins.str,
+        *,
+        max_results: typing.Optional[builtins.int] = None,
+    ) -> builtins.list[schemas.SchemaInfo]:
+        r"""
+        List the schemas of a catalog that the caller can see.
+
+        Args:
+            catalog_name: Name of the parent catalog.
+            max_results: The maximum number of schemas to return.
+
+        Returns:
+            The schemas.
+        """
+    def list_schemas_async(
+        self,
+        catalog_name: builtins.str,
+        *,
+        max_results: typing.Optional[builtins.int] = None,
+    ) -> asyncio.Future[builtins.list[schemas.SchemaInfo]]:
+        r"""
+        Like `list_schemas`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
     def create_schema(
         self,
@@ -180,11 +1596,15 @@ class Client:
         Create a schema.
 
         Args:
-            name: The name, in the catalog.
-            catalog_name: The name of the catalog.
-            comment: A description.
-            properties: Key-value properties.
-            storage_root: The root URL of the managed storage of the schema.
+            name: Name of the schema, relative to the parent catalog.
+            catalog_name: Name of the parent catalog.
+            comment: User-provided free-form text description.
+            properties: Key-value properties of the schema.
+            storage_root: Storage root URL for the managed storage of the schema.
+
+        Returns:
+            A schema: the second layer of the three-level namespace. It holds tables, volumes, functions
+            and models.
         """
     def create_schema_async(
         self,
@@ -196,198 +1616,788 @@ class Client:
         storage_root: typing.Optional[builtins.str] = None,
     ) -> asyncio.Future[schemas.SchemaInfo]:
         r"""
-        Like `create_schema`, but returns an `asyncio.Future`.
+        Like `create_schema`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def get_schema(self, full_name: builtins.str) -> schemas.SchemaInfo:
-        r"""
-        Get a schema.
-
-        Args:
-            full_name: The full name: `catalog.schema`.
-        """
-    def get_schema_async(
-        self, full_name: builtins.str
-    ) -> asyncio.Future[schemas.SchemaInfo]:
-        r"""
-        Like `get_schema`, but returns an `asyncio.Future`.
-        """
-    def list_schemas(
-        self, catalog_name: builtins.str
-    ) -> builtins.list[schemas.SchemaInfo]:
-        r"""
-        List the schemas of a catalog.
-
-        Args:
-            catalog_name: The name of the catalog.
-        """
-    def list_schemas_async(
-        self, catalog_name: builtins.str
-    ) -> asyncio.Future[builtins.list[schemas.SchemaInfo]]:
-        r"""
-        Like `list_schemas`, but returns an `asyncio.Future`.
-        """
-    def update_schema(
+    def list_users(
         self,
-        full_name: builtins.str,
         *,
-        comment: typing.Optional[builtins.str] = None,
-        properties: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
-        new_name: typing.Optional[builtins.str] = None,
-    ) -> schemas.SchemaInfo:
+        filter: typing.Optional[builtins.str] = None,
+        start_index: typing.Optional[builtins.int] = None,
+        count: typing.Optional[builtins.int] = None,
+    ) -> scim.ListScimUsersResponse:
         r"""
-        Update a schema. Only the arguments that are set change.
+        List the users. Only the metastore admin can.
 
         Args:
-            full_name: The full name: `catalog.schema`.
-            comment: A new description.
-            properties: Key-value properties, to replace the current ones.
-            new_name: A new name, in the catalog.
+            filter: SCIM filter (RFC 7644, section 3.4.2.2), such as `userName eq "a@example.com"`.
+            start_index: Index of the first user to return, from 1.
+            count: The maximum number of users to return. The default is 50.
+
+        Returns:
+            A page of SCIM users.
         """
-    def update_schema_async(
+    def list_users_async(
         self,
-        full_name: builtins.str,
         *,
-        comment: typing.Optional[builtins.str] = None,
-        properties: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
-        new_name: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[schemas.SchemaInfo]:
+        filter: typing.Optional[builtins.str] = None,
+        start_index: typing.Optional[builtins.int] = None,
+        count: typing.Optional[builtins.int] = None,
+    ) -> asyncio.Future[scim.ListScimUsersResponse]:
         r"""
-        Like `update_schema`, but returns an `asyncio.Future`.
+        Like `list_users`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def delete_schema(
-        self, full_name: builtins.str, *, force: builtins.bool = False
+    def create_user(
+        self,
+        *,
+        external_id: typing.Optional[builtins.str] = None,
+        display_name: typing.Optional[builtins.str] = None,
+        active: typing.Optional[builtins.bool] = None,
+        emails: typing.Optional[typing.Sequence[scim.ScimEmail]] = None,
+        photos: typing.Optional[typing.Sequence[scim.ScimPhoto]] = None,
+    ) -> scim.ScimUser:
+        r"""
+        Create a user, named by its primary email. Only the metastore admin can.
+
+        Args:
+            external_id: The identity the user has at the client's identity provider. The token exchange
+                         resolves an OAuth client (`azp`, `client_id`) to the user by it.
+            display_name: Name of the user.
+            active: Whether the user can sign in. A new user is always enabled; absent in a replace request:
+                    unchanged.
+            emails: Email addresses of the user. A new user needs one with `primary` set; a replace request
+                    does not change the email.
+            photos: Pictures of the user. The server keeps the first; a replace request does not change it.
+
+        Returns:
+            A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+        """
+    def create_user_async(
+        self,
+        *,
+        external_id: typing.Optional[builtins.str] = None,
+        display_name: typing.Optional[builtins.str] = None,
+        active: typing.Optional[builtins.bool] = None,
+        emails: typing.Optional[typing.Sequence[scim.ScimEmail]] = None,
+        photos: typing.Optional[typing.Sequence[scim.ScimPhoto]] = None,
+    ) -> asyncio.Future[scim.ScimUser]:
+        r"""
+        Like `create_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_user(self, id: builtins.str) -> scim.ScimUser:
+        r"""
+        Get a user. Only the metastore admin can.
+
+        Returns:
+            A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+        """
+    def get_user_async(self, id: builtins.str) -> asyncio.Future[scim.ScimUser]:
+        r"""
+        Like `get_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def replace_user(
+        self,
+        id: builtins.str,
+        *,
+        external_id: typing.Optional[builtins.str] = None,
+        display_name: typing.Optional[builtins.str] = None,
+        active: typing.Optional[builtins.bool] = None,
+        emails: typing.Optional[typing.Sequence[scim.ScimEmail]] = None,
+        photos: typing.Optional[typing.Sequence[scim.ScimPhoto]] = None,
+    ) -> scim.ScimUser:
+        r"""
+        Replace a user: the name, state and external id change when given; the email and picture stay. Only
+        the metastore admin can.
+
+        Args:
+            external_id: The identity the user has at the client's identity provider. The token exchange
+                         resolves an OAuth client (`azp`, `client_id`) to the user by it.
+            display_name: Name of the user.
+            active: Whether the user can sign in. A new user is always enabled; absent in a replace request:
+                    unchanged.
+            emails: Email addresses of the user. A new user needs one with `primary` set; a replace request
+                    does not change the email.
+            photos: Pictures of the user. The server keeps the first; a replace request does not change it.
+
+        Returns:
+            A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+        """
+    def replace_user_async(
+        self,
+        id: builtins.str,
+        *,
+        external_id: typing.Optional[builtins.str] = None,
+        display_name: typing.Optional[builtins.str] = None,
+        active: typing.Optional[builtins.bool] = None,
+        emails: typing.Optional[typing.Sequence[scim.ScimEmail]] = None,
+        photos: typing.Optional[typing.Sequence[scim.ScimPhoto]] = None,
+    ) -> asyncio.Future[scim.ScimUser]:
+        r"""
+        Like `replace_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def patch_user(
+        self,
+        id: builtins.str,
+        operations: typing.Sequence[scim.ScimPatchOperation],
+        *,
+        schemas: typing.Optional[typing.Sequence[builtins.str]] = None,
     ) -> None:
         r"""
-        Delete a schema.
+        Enable or disable a user. The server takes the first `replace` whose `path` is `active` or absent;
+        without `path`, the first attribute of `value` is the state (`{"active": false}`). With no such
+        operation the server answers 501. Only the metastore admin can.
 
         Args:
-            full_name: The full name: `catalog.schema`.
-            force: Also delete its tables, volumes, functions and models.
-                Without it, a schema that has them is not deleted.
+            operations: The operations, in order.
+            schemas: SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:PatchOp`.
         """
-    def delete_schema_async(
-        self, full_name: builtins.str, *, force: builtins.bool = False
+    def patch_user_async(
+        self,
+        id: builtins.str,
+        operations: typing.Sequence[scim.ScimPatchOperation],
+        *,
+        schemas: typing.Optional[typing.Sequence[builtins.str]] = None,
     ) -> asyncio.Future[None]:
         r"""
-        Like `delete_schema`, but returns an `asyncio.Future`.
+        Like `patch_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def delete_user(self, id: builtins.str) -> None:
+        r"""
+        Disable a user and remove its grants. The user stays, disabled. Only the metastore admin can.
+        """
+    def delete_user_async(self, id: builtins.str) -> asyncio.Future[None]:
+        r"""
+        Like `delete_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_me(self) -> scim.ScimUser:
+        r"""
+        Get the signed-in user. The role `admin` names a caller that can do what the metastore admin does.
+
+        Returns:
+            A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+        """
+    def get_me_async(self) -> asyncio.Future[scim.ScimUser]:
+        r"""
+        Like `get_me`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_groups(
+        self,
+        *,
+        filter: typing.Optional[builtins.str] = None,
+        start_index: typing.Optional[builtins.int] = None,
+        count: typing.Optional[builtins.int] = None,
+    ) -> scim.ListScimGroupsResponse:
+        r"""
+        List the groups. Only the metastore admin can.
+
+        Args:
+            filter: SCIM filter (RFC 7644, section 3.4.2.2), such as `displayName eq "admins"`.
+            start_index: Index of the first group to return, from 1.
+            count: The maximum number of groups to return. The default is 50.
+
+        Returns:
+            A page of SCIM groups.
+        """
+    def list_groups_async(
+        self,
+        *,
+        filter: typing.Optional[builtins.str] = None,
+        start_index: typing.Optional[builtins.int] = None,
+        count: typing.Optional[builtins.int] = None,
+    ) -> asyncio.Future[scim.ListScimGroupsResponse]:
+        r"""
+        Like `list_groups`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_group(
+        self,
+        display_name: builtins.str,
+        *,
+        schemas: typing.Optional[typing.Sequence[builtins.str]] = None,
+        members: typing.Optional[typing.Sequence[scim.ScimGroupMember]] = None,
+    ) -> scim.ScimGroup:
+        r"""
+        Create a group. Only the metastore admin can.
+
+        Args:
+            display_name: Name of the group.
+            schemas: SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:Group`.
+                     Requests send the key even when empty; the server fills it in.
+            members: Members of the group.
+
+        Returns:
+            A SCIM 2.0 group of users.
+        """
+    def create_group_async(
+        self,
+        display_name: builtins.str,
+        *,
+        schemas: typing.Optional[typing.Sequence[builtins.str]] = None,
+        members: typing.Optional[typing.Sequence[scim.ScimGroupMember]] = None,
+    ) -> asyncio.Future[scim.ScimGroup]:
+        r"""
+        Like `create_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_group(self, id: builtins.str) -> scim.ScimGroup:
+        r"""
+        Get a group. Only the metastore admin can.
+
+        Returns:
+            A SCIM 2.0 group of users.
+        """
+    def get_group_async(self, id: builtins.str) -> asyncio.Future[scim.ScimGroup]:
+        r"""
+        Like `get_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def replace_group(
+        self,
+        id: builtins.str,
+        display_name: builtins.str,
+        *,
+        schemas: typing.Optional[typing.Sequence[builtins.str]] = None,
+        members: typing.Optional[typing.Sequence[scim.ScimGroupMember]] = None,
+    ) -> scim.ScimGroup:
+        r"""
+        Replace a group: its name and members. Only the metastore admin can.
+
+        Args:
+            display_name: Name of the group.
+            schemas: SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:Group`.
+                     Requests send the key even when empty; the server fills it in.
+            members: Members of the group.
+
+        Returns:
+            A SCIM 2.0 group of users.
+        """
+    def replace_group_async(
+        self,
+        id: builtins.str,
+        display_name: builtins.str,
+        *,
+        schemas: typing.Optional[typing.Sequence[builtins.str]] = None,
+        members: typing.Optional[typing.Sequence[scim.ScimGroupMember]] = None,
+    ) -> asyncio.Future[scim.ScimGroup]:
+        r"""
+        Like `replace_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def patch_group(
+        self,
+        id: builtins.str,
+        operations: typing.Sequence[scim.ScimPatchOperation],
+        *,
+        schemas: typing.Optional[typing.Sequence[builtins.str]] = None,
+    ) -> scim.ScimGroup:
+        r"""
+        Change a group: `add` to `members`, `remove` of `members` or `members[value eq "<id>"]`, `replace`
+        of `displayName`, or `replace` without `path` with a whole group. Other operations are ignored. Only
+        the metastore admin can.
+
+        Args:
+            operations: The operations, in order.
+            schemas: SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:PatchOp`.
+
+        Returns:
+            A SCIM 2.0 group of users.
+        """
+    def patch_group_async(
+        self,
+        id: builtins.str,
+        operations: typing.Sequence[scim.ScimPatchOperation],
+        *,
+        schemas: typing.Optional[typing.Sequence[builtins.str]] = None,
+    ) -> asyncio.Future[scim.ScimGroup]:
+        r"""
+        Like `patch_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def delete_group(self, id: builtins.str) -> None:
+        r"""
+        Delete a group. Only the metastore admin can.
+        """
+    def delete_group_async(self, id: builtins.str) -> asyncio.Future[None]:
+        r"""
+        Like `delete_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def scim_bulk(
+        self,
+        *,
+        schemas: typing.Optional[typing.Sequence[builtins.str]] = None,
+        fail_on_errors: typing.Optional[builtins.int] = None,
+        operations: typing.Optional[typing.Sequence[scim.ScimBulkOp]] = None,
+    ) -> scim.ScimBulkResponse:
+        r"""
+        Run operations on users and groups in one request. Each operation has its own status. Only the
+        metastore admin can.
+
+        Args:
+            schemas: SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:BulkRequest`.
+            fail_on_errors: Stop after this many operations failed. Absent: run every operation.
+            operations: The operations, in order. At most 100.
+
+        Returns:
+            The answer to a SCIM bulk request: one result per operation that ran, in order.
+        """
+    def scim_bulk_async(
+        self,
+        *,
+        schemas: typing.Optional[typing.Sequence[builtins.str]] = None,
+        fail_on_errors: typing.Optional[builtins.int] = None,
+        operations: typing.Optional[typing.Sequence[scim.ScimBulkOp]] = None,
+    ) -> asyncio.Future[scim.ScimBulkResponse]:
+        r"""
+        Like `scim_bulk`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_scim_schemas(self) -> scim.ListScimSchemasResponse:
+        r"""
+        List the SCIM schemas of the server: User and Group. Any signed-in caller can.
+
+        Returns:
+            The SCIM schemas of the server, User and Group, as a SCIM list (RFC 7644, section 4).
+        """
+    def list_scim_schemas_async(self) -> asyncio.Future[scim.ListScimSchemasResponse]:
+        r"""
+        Like `list_scim_schemas`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_scim_resource_types(self) -> scim.ListScimResourceTypesResponse:
+        r"""
+        List the SCIM resource types of the server: User and Group. Any signed-in caller can.
+
+        Returns:
+            The SCIM resource types of the server, User and Group, as a SCIM list (RFC 7644, section 4).
+        """
+    def list_scim_resource_types_async(
+        self,
+    ) -> asyncio.Future[scim.ListScimResourceTypesResponse]:
+        r"""
+        Like `list_scim_resource_types`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_service_provider_config(self) -> scim.ScimServiceProviderConfig:
+        r"""
+        Get the SCIM features that the server supports. Any signed-in caller can.
+
+        Returns:
+            The SCIM features that the server supports (RFC 7643, section 5).
+        """
+    def get_service_provider_config_async(
+        self,
+    ) -> asyncio.Future[scim.ScimServiceProviderConfig]:
+        r"""
+        Like `get_service_provider_config`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_shares(
+        self, *, max_results: typing.Optional[builtins.int] = None
+    ) -> builtins.list[shares.ShareInfo]:
+        r"""
+        List the shares.
+
+        Args:
+            max_results: The maximum number of shares to return.
+
+        Returns:
+            The shares.
+        """
+    def list_shares_async(
+        self, *, max_results: typing.Optional[builtins.int] = None
+    ) -> asyncio.Future[builtins.list[shares.ShareInfo]]:
+        r"""
+        Like `list_shares`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_share(
+        self, name: builtins.str, *, comment: typing.Optional[builtins.str] = None
+    ) -> shares.ShareInfo:
+        r"""
+        Create a share. It holds no tables: add them with `UpdateShare`.
+
+        Args:
+            name: Name of the share.
+            comment: User-provided free-form text description.
+
+        Returns:
+            A share: a named set of tables that Delta Sharing recipients can read.
+        """
+    def create_share_async(
+        self, name: builtins.str, *, comment: typing.Optional[builtins.str] = None
+    ) -> asyncio.Future[shares.ShareInfo]:
+        r"""
+        Like `create_share`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def sharing_list_shares(self) -> sharing.SharingListSharesResponse:
+        r"""
+        List the shares that the recipient can read.
+
+        Returns:
+            The requested resource
+        """
+    def sharing_list_shares_async(
+        self,
+    ) -> asyncio.Future[sharing.SharingListSharesResponse]:
+        r"""
+        Like `sharing_list_shares`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def sharing_list_schemas(
+        self, share: builtins.str
+    ) -> sharing.SharingListSchemasResponse:
+        r"""
+        List the schemas of a share.
+
+        Returns:
+            The requested resource
+        """
+    def sharing_list_schemas_async(
+        self, share: builtins.str
+    ) -> asyncio.Future[sharing.SharingListSchemasResponse]:
+        r"""
+        Like `sharing_list_schemas`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def sharing_list_tables(
+        self, share: builtins.str, schema: builtins.str
+    ) -> sharing.SharingListTablesResponse:
+        r"""
+        List the tables of a schema of a share.
+
+        Returns:
+            The requested resource
+        """
+    def sharing_list_tables_async(
+        self, share: builtins.str, schema: builtins.str
+    ) -> asyncio.Future[sharing.SharingListTablesResponse]:
+        r"""
+        Like `sharing_list_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def sharing_list_all_tables(
+        self, share: builtins.str
+    ) -> sharing.SharingListTablesResponse:
+        r"""
+        List the tables of all schemas of a share.
+
+        Returns:
+            The requested resource
+        """
+    def sharing_list_all_tables_async(
+        self, share: builtins.str
+    ) -> asyncio.Future[sharing.SharingListTablesResponse]:
+        r"""
+        Like `sharing_list_all_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def sharing_get_table_version(
+        self, share: builtins.str, schema: builtins.str, table: builtins.str
+    ) -> sharing.SharingGetTableVersionResponse:
+        r"""
+        Get the version of a table.
+
+        Returns:
+            The version of a table. The response has no body.
+        """
+    def sharing_get_table_version_async(
+        self, share: builtins.str, schema: builtins.str, table: builtins.str
+    ) -> asyncio.Future[sharing.SharingGetTableVersionResponse]:
+        r"""
+        Like `sharing_get_table_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def sharing_get_table_metadata(
+        self, share: builtins.str, schema: builtins.str, table: builtins.str
+    ) -> builtins.list[sharing.SharingTableLine]:
+        r"""
+        Get the protocol and the metadata of a table. The response also has the version of the table in the
+        `Delta-Table-Version` header (always 0).
+
+        Returns:
+            One line of the NDJSON answer of `SharingGetTableMetadata` and `SharingQueryTable`: an
+            object
+            with one key. The first line holds `protocol`, the second `metaData`.
+        """
+    def sharing_get_table_metadata_async(
+        self, share: builtins.str, schema: builtins.str, table: builtins.str
+    ) -> asyncio.Future[builtins.list[sharing.SharingTableLine]]:
+        r"""
+        Like `sharing_get_table_metadata`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def sharing_query_table(
+        self, share: builtins.str, schema: builtins.str, table: builtins.str
+    ) -> builtins.list[sharing.SharingTableLine]:
+        r"""
+        Read a table. The server does not read the Delta log: the answer is that of
+        `SharingGetTableMetadata`, with no data files. The server ignores the request body.
+
+        Returns:
+            One line of the NDJSON answer of `SharingGetTableMetadata` and `SharingQueryTable`: an
+            object
+            with one key. The first line holds `protocol`, the second `metaData`.
+        """
+    def sharing_query_table_async(
+        self, share: builtins.str, schema: builtins.str, table: builtins.str
+    ) -> asyncio.Future[builtins.list[sharing.SharingTableLine]]:
+        r"""
+        Like `sharing_query_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_staging_table(
+        self, name: builtins.str, catalog_name: builtins.str, schema_name: builtins.str
+    ) -> tables.StagingTableInfo:
+        r"""
+        Create a staging table: reserve a table id and a managed storage location for a MANAGED table.
+
+        Args:
+            name: Name of the table, relative to the parent schema.
+            catalog_name: Name of the parent catalog.
+            schema_name: Name of the parent schema.
+
+        Returns:
+            A staging table: a table id and managed storage location reserved for a MANAGED table that a
+            client is about to create.
+        """
+    def create_staging_table_async(
+        self, name: builtins.str, catalog_name: builtins.str, schema_name: builtins.str
+    ) -> asyncio.Future[tables.StagingTableInfo]:
+        r"""
+        Like `create_staging_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_tables(
+        self,
+        catalog_name: builtins.str,
+        schema_name: builtins.str,
+        *,
+        max_results: typing.Optional[builtins.int] = None,
+    ) -> builtins.list[tables.TableInfo]:
+        r"""
+        List the tables of a schema that the caller can see.
+
+        Args:
+            catalog_name: Name of the parent catalog.
+            schema_name: Name of the parent schema.
+            max_results: The maximum number of tables to return.
+
+        Returns:
+            The tables.
+        """
+    def list_tables_async(
+        self,
+        catalog_name: builtins.str,
+        schema_name: builtins.str,
+        *,
+        max_results: typing.Optional[builtins.int] = None,
+    ) -> asyncio.Future[builtins.list[tables.TableInfo]]:
+        r"""
+        Like `list_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
     def create_table(
         self,
         name: builtins.str,
         catalog_name: builtins.str,
         schema_name: builtins.str,
-        table_type: types.TableType,
+        table_type: _enums.TableType | str,
         *,
         columns: typing.Optional[typing.Sequence[tables.ColumnInfo]] = None,
-        data_source_format: typing.Optional[types.DataSourceFormat] = None,
+        data_source_format: typing.Optional[_enums.DataSourceFormat | str] = None,
         storage_location: typing.Optional[builtins.str] = None,
         comment: typing.Optional[builtins.str] = None,
         properties: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
         view_definition: typing.Optional[builtins.str] = None,
-        view_dependencies: typing.Optional[typing.Sequence[tables.Dependency]] = None,
+        view_dependencies: typing.Optional[tables.DependencyList] = None,
     ) -> tables.TableInfo:
         r"""
-        Create a table or a view.
-
-        A managed table needs a staging table first (`create_staging_table`):
-        give its `staging_location` as `storage_location`, and its `id` as
-        the property `io.unitycatalog.tableId`.
+        Create a table.
 
         Args:
-            name: The name, in the schema.
-            catalog_name: The name of the catalog.
-            schema_name: The name of the schema.
-            table_type: The kind of table.
-            columns: The columns.
-            data_source_format: The format of the data files, for a table.
-            storage_location: The URL of the data, for a table.
-            comment: A description.
-            properties: Key-value properties.
-            view_definition: The query of a view.
-            view_dependencies: The tables and functions that a view reads.
+            name: Name of the table, relative to the parent schema.
+            catalog_name: Name of the parent catalog.
+            schema_name: Name of the parent schema.
+            table_type: Type of the table.
+            columns: The columns of the table. Views and metric views need at least one.
+            data_source_format: File format of the data of the table. MANAGED tables are DELTA; ICEBERG
+                                tables come only from the Iceberg REST catalog.
+            storage_location: Storage location URL of the table. Required for EXTERNAL tables; for MANAGED
+                              tables, the `staging_location` of a staging table that the caller created.
+            comment: User-provided free-form text description.
+            properties: Key-value properties of the table.
+            view_definition: Definition of a view-like table: SQL for views, YAML for metric views.
+            view_dependencies: The tables and functions that a view-like table reads. Required for metric
+                               views.
+
+        Returns:
+            A table: data in the third layer of the three-level namespace, below a schema.
         """
     def create_table_async(
         self,
         name: builtins.str,
         catalog_name: builtins.str,
         schema_name: builtins.str,
-        table_type: types.TableType,
+        table_type: _enums.TableType | str,
         *,
         columns: typing.Optional[typing.Sequence[tables.ColumnInfo]] = None,
-        data_source_format: typing.Optional[types.DataSourceFormat] = None,
+        data_source_format: typing.Optional[_enums.DataSourceFormat | str] = None,
         storage_location: typing.Optional[builtins.str] = None,
         comment: typing.Optional[builtins.str] = None,
         properties: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
         view_definition: typing.Optional[builtins.str] = None,
-        view_dependencies: typing.Optional[typing.Sequence[tables.Dependency]] = None,
+        view_dependencies: typing.Optional[tables.DependencyList] = None,
     ) -> asyncio.Future[tables.TableInfo]:
         r"""
-        Like `create_table`, but returns an `asyncio.Future`.
+        Like `create_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def get_table(self, full_name: builtins.str) -> tables.TableInfo:
+    def generate_temporary_table_credentials(
+        self, table_id: builtins.str, operation: _enums.TableOperation | str
+    ) -> credentials.TemporaryCredentials:
         r"""
-        Get a table.
+        Generate temporary credentials for the storage of a table.
 
         Args:
-            full_name: The full name: `catalog.schema.table`.
+            table_id: Unique identifier of the table.
+            operation: The operation on the table.
+
+        Returns:
+            Temporary credentials for the cloud of a storage location. Empty for a local `file:`
+            location.
         """
-    def get_table_async(
-        self, full_name: builtins.str
-    ) -> asyncio.Future[tables.TableInfo]:
+    def generate_temporary_table_credentials_async(
+        self, table_id: builtins.str, operation: _enums.TableOperation | str
+    ) -> asyncio.Future[credentials.TemporaryCredentials]:
         r"""
-        Like `get_table`, but returns an `asyncio.Future`.
+        Like `generate_temporary_table_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def list_tables(
-        self, catalog_name: builtins.str, schema_name: builtins.str
-    ) -> builtins.list[tables.TableInfo]:
+    def generate_temporary_volume_credentials(
+        self, volume_id: builtins.str, operation: _enums.VolumeOperation | str
+    ) -> credentials.TemporaryCredentials:
         r"""
-        List the tables of a schema.
+        Generate temporary credentials for the storage of a volume.
 
         Args:
-            catalog_name: The name of the catalog.
-            schema_name: The name of the schema.
+            volume_id: Unique identifier of the volume.
+            operation: The operation on the volume.
+
+        Returns:
+            Temporary credentials for the cloud of a storage location. Empty for a local `file:`
+            location.
         """
-    def list_tables_async(
-        self, catalog_name: builtins.str, schema_name: builtins.str
-    ) -> asyncio.Future[builtins.list[tables.TableInfo]]:
+    def generate_temporary_volume_credentials_async(
+        self, volume_id: builtins.str, operation: _enums.VolumeOperation | str
+    ) -> asyncio.Future[credentials.TemporaryCredentials]:
         r"""
-        Like `list_tables`, but returns an `asyncio.Future`.
+        Like `generate_temporary_volume_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def delete_table(self, full_name: builtins.str) -> None:
+    def generate_temporary_path_credentials(
+        self, url: builtins.str, operation: _enums.PathOperation | str
+    ) -> credentials.TemporaryCredentials:
         r"""
-        Delete a table.
+        Generate temporary credentials for a storage path.
 
         Args:
-            full_name: The full name: `catalog.schema.table`.
+            url: URL of the storage path.
+            operation: The operation on the path.
+
+        Returns:
+            Temporary credentials for the cloud of a storage location. Empty for a local `file:`
+            location.
         """
-    def delete_table_async(self, full_name: builtins.str) -> asyncio.Future[None]:
+    def generate_temporary_path_credentials_async(
+        self, url: builtins.str, operation: _enums.PathOperation | str
+    ) -> asyncio.Future[credentials.TemporaryCredentials]:
         r"""
-        Like `delete_table`, but returns an `asyncio.Future`.
+        Like `generate_temporary_path_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def create_staging_table(
-        self, name: builtins.str, catalog_name: builtins.str, schema_name: builtins.str
-    ) -> tables.StagingTableInfo:
+    def generate_temporary_model_version_credentials(
+        self,
+        catalog_name: builtins.str,
+        schema_name: builtins.str,
+        model_name: builtins.str,
+        version: builtins.int,
+        operation: _enums.ModelVersionOperation | str,
+    ) -> credentials.TemporaryCredentials:
         r"""
-        Reserve the id and the location of a new managed table. Then create
-        the table with `create_table`.
+        Generate temporary credentials for the storage of a model version.
 
         Args:
-            name: The name of the table, in the schema.
-            catalog_name: The name of the catalog.
-            schema_name: The name of the schema.
+            catalog_name: Name of the parent catalog.
+            schema_name: Name of the parent schema.
+            model_name: Name of the registered model, relative to its schema.
+            version: Number of the model version.
+            operation: The operation on the model version.
+
+        Returns:
+            Temporary credentials for the cloud of a storage location. Empty for a local `file:`
+            location.
         """
-    def create_staging_table_async(
-        self, name: builtins.str, catalog_name: builtins.str, schema_name: builtins.str
-    ) -> asyncio.Future[tables.StagingTableInfo]:
+    def generate_temporary_model_version_credentials_async(
+        self,
+        catalog_name: builtins.str,
+        schema_name: builtins.str,
+        model_name: builtins.str,
+        version: builtins.int,
+        operation: _enums.ModelVersionOperation | str,
+    ) -> asyncio.Future[credentials.TemporaryCredentials]:
         r"""
-        Like `create_staging_table`, but returns an `asyncio.Future`.
+        Like `generate_temporary_model_version_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_tokens(
+        self, *, max_results: typing.Optional[builtins.int] = None
+    ) -> builtins.list[tokens.PatInfo]:
+        r"""
+        List the personal access tokens of the caller.
+
+        Args:
+            max_results: The maximum number of tokens to return.
+
+        Returns:
+            The tokens.
+        """
+    def list_tokens_async(
+        self, *, max_results: typing.Optional[builtins.int] = None
+    ) -> asyncio.Future[builtins.list[tokens.PatInfo]]:
+        r"""
+        Like `list_tokens`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_token(
+        self, name: builtins.str, *, expires_at: typing.Optional[builtins.int] = None
+    ) -> tokens.PatInfo:
+        r"""
+        Create a personal access token for the caller.
+
+        Args:
+            name: Name of the token.
+            expires_at: Time at which the token expires, in epoch milliseconds. Without it the token does
+                        not expire.
+
+        Returns:
+            A personal access token of a user. The server keeps a hash of the token only: the token
+            itself
+            is in the response of `CreateToken` and nowhere else.
+        """
+    def create_token_async(
+        self, name: builtins.str, *, expires_at: typing.Optional[builtins.int] = None
+    ) -> asyncio.Future[tokens.PatInfo]:
+        r"""
+        Like `create_token`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_volumes(
+        self,
+        catalog_name: builtins.str,
+        schema_name: builtins.str,
+        *,
+        max_results: typing.Optional[builtins.int] = None,
+    ) -> builtins.list[volumes.VolumeInfo]:
+        r"""
+        List the volumes of a schema that the caller can see.
+
+        Args:
+            catalog_name: Name of the parent catalog.
+            schema_name: Name of the parent schema.
+            max_results: The maximum number of volumes to return.
+
+        Returns:
+            The volumes.
+        """
+    def list_volumes_async(
+        self,
+        catalog_name: builtins.str,
+        schema_name: builtins.str,
+        *,
+        max_results: typing.Optional[builtins.int] = None,
+    ) -> asyncio.Future[builtins.list[volumes.VolumeInfo]]:
+        r"""
+        Like `list_volumes`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
     def create_volume(
         self,
-        name: builtins.str,
         catalog_name: builtins.str,
         schema_name: builtins.str,
-        volume_type: types.VolumeType,
+        name: builtins.str,
+        volume_type: _enums.VolumeType | str,
         *,
         comment: typing.Optional[builtins.str] = None,
         storage_location: typing.Optional[builtins.str] = None,
@@ -396,1207 +2406,214 @@ class Client:
         Create a volume.
 
         Args:
-            name: The name, in the schema.
-            catalog_name: The name of the catalog.
-            schema_name: The name of the schema.
-            volume_type: The kind of volume.
-            comment: A description.
-            storage_location: The URL of the files, for an `EXTERNAL` volume.
+            catalog_name: Name of the parent catalog.
+            schema_name: Name of the parent schema.
+            name: Name of the volume, relative to the parent schema.
+            volume_type: Type of the volume.
+            comment: User-provided free-form text description.
+            storage_location: Storage location URL of the volume. Required for EXTERNAL volumes; not allowed
+                              for MANAGED volumes.
+
+        Returns:
+            A volume: files in the third layer of the three-level namespace, below a schema.
         """
     def create_volume_async(
         self,
-        name: builtins.str,
         catalog_name: builtins.str,
         schema_name: builtins.str,
-        volume_type: types.VolumeType,
+        name: builtins.str,
+        volume_type: _enums.VolumeType | str,
         *,
         comment: typing.Optional[builtins.str] = None,
         storage_location: typing.Optional[builtins.str] = None,
     ) -> asyncio.Future[volumes.VolumeInfo]:
         r"""
-        Like `create_volume`, but returns an `asyncio.Future`.
+        Like `create_volume`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def get_volume(self, full_name: builtins.str) -> volumes.VolumeInfo:
+    def catalog(self, catalog_name: builtins.str) -> catalogs.CatalogClient:
         r"""
-        Get a volume.
+        The requests on one `CatalogInfo`. It sends no request itself.
+        """
+    def credential(self, credential_name: builtins.str) -> credentials.CredentialClient:
+        r"""
+        The requests on one `CredentialInfo`. It sends no request itself.
+        """
+    def external_location(
+        self, external_location_name: builtins.str
+    ) -> external_locations.ExternalLocationClient:
+        r"""
+        The requests on one `ExternalLocationInfo`. It sends no request itself.
+        """
+    def function(self, function_name: builtins.str) -> functions.FunctionClient:
+        r"""
+        The requests on one `FunctionInfo`. It sends no request itself.
+        """
+    def recipient(self, recipient_name: builtins.str) -> recipients.RecipientClient:
+        r"""
+        The requests on one `RecipientInfo`. It sends no request itself.
+        """
+    def registered_model(
+        self, registered_model_name: builtins.str
+    ) -> models.RegisteredModelClient:
+        r"""
+        The requests on one `RegisteredModelInfo`. It sends no request itself.
+        """
+    def schema(self, schema_name: builtins.str) -> schemas.SchemaClient:
+        r"""
+        The requests on one `SchemaInfo`. It sends no request itself.
+        """
+    def share(self, share_name: builtins.str) -> shares.ShareClient:
+        r"""
+        The requests on one `ShareInfo`. It sends no request itself.
+        """
+    def table(self, table_name: builtins.str) -> tables.TableClient:
+        r"""
+        The requests on one `TableInfo`. It sends no request itself.
+        """
+    def token(self, token_name: builtins.str) -> tokens.TokenClient:
+        r"""
+        The requests on one `PatInfo`. It sends no request itself.
+        """
+    def volume(self, volume_name: builtins.str) -> volumes.VolumeClient:
+        r"""
+        The requests on one `VolumeInfo`. It sends no request itself.
+        """
 
-        Args:
-            full_name: The full name: `catalog.schema.volume`.
-        """
-    def get_volume_async(
-        self, full_name: builtins.str
-    ) -> asyncio.Future[volumes.VolumeInfo]:
-        r"""
-        Like `get_volume`, but returns an `asyncio.Future`.
-        """
-    def list_volumes(
-        self, catalog_name: builtins.str, schema_name: builtins.str
-    ) -> builtins.list[volumes.VolumeInfo]:
-        r"""
-        List the volumes of a schema.
+@typing.final
+class ConflictError(UnityCatalogError):
+    r"""
+    The server answered `409 Conflict`: the resource exists or changed.
+    """
+    def __new__(
+        cls,
+        message: builtins.str,
+        code: typing.Optional[builtins.str] = None,
+        status: typing.Optional[builtins.int] = None,
+        details: typing.Optional[list] = None,
+    ) -> ConflictError: ...
 
-        Args:
-            catalog_name: The name of the catalog.
-            schema_name: The name of the schema.
-        """
-    def list_volumes_async(
-        self, catalog_name: builtins.str, schema_name: builtins.str
-    ) -> asyncio.Future[builtins.list[volumes.VolumeInfo]]:
+@typing.final
+class NotFoundError(UnityCatalogError):
+    r"""
+    The server answered `404 Not Found`: the resource does not exist.
+    """
+    def __new__(
+        cls,
+        message: builtins.str,
+        code: typing.Optional[builtins.str] = None,
+        status: typing.Optional[builtins.int] = None,
+        details: typing.Optional[list] = None,
+    ) -> NotFoundError: ...
+
+@typing.final
+class PermissionDeniedError(UnityCatalogError):
+    r"""
+    The server answered `403 Forbidden`: the caller may not do this.
+    """
+    def __new__(
+        cls,
+        message: builtins.str,
+        code: typing.Optional[builtins.str] = None,
+        status: typing.Optional[builtins.int] = None,
+        details: typing.Optional[list] = None,
+    ) -> PermissionDeniedError: ...
+
+@typing.final
+class RateLimitError(UnityCatalogError):
+    r"""
+    The server answered `429 Too Many Requests`.
+    """
+    def __new__(
+        cls,
+        message: builtins.str,
+        code: typing.Optional[builtins.str] = None,
+        status: typing.Optional[builtins.int] = None,
+        details: typing.Optional[list] = None,
+    ) -> RateLimitError: ...
+
+@typing.final
+class ServerError(UnityCatalogError):
+    r"""
+    The server answered with a `5xx` status: it failed to do the request.
+    """
+    def __new__(
+        cls,
+        message: builtins.str,
+        code: typing.Optional[builtins.str] = None,
+        status: typing.Optional[builtins.int] = None,
+        details: typing.Optional[list] = None,
+    ) -> ServerError: ...
+
+@typing.final
+class UnauthenticatedError(UnityCatalogError):
+    r"""
+    The server answered `401 Unauthorized`: the request has no valid credentials.
+    """
+    def __new__(
+        cls,
+        message: builtins.str,
+        code: typing.Optional[builtins.str] = None,
+        status: typing.Optional[builtins.int] = None,
+        details: typing.Optional[list] = None,
+    ) -> UnauthenticatedError: ...
+
+class UnityCatalogError(builtins.Exception):
+    r"""
+    An error answer of the server, or a request that got no answer. A subclass tells the
+    kind of HTTP error status.
+    """
+    @property
+    def message(self) -> builtins.str:
         r"""
-        Like `list_volumes`, but returns an `asyncio.Future`.
+        The error message.
         """
-    def update_volume(
+    @property
+    def code(self) -> typing.Optional[builtins.str]:
+        r"""
+        The error code of the answer, such as `NOT_FOUND`. `None` when the answer has
+        none, or when the request got no answer.
+        """
+    @property
+    def status(self) -> typing.Optional[builtins.int]:
+        r"""
+        The HTTP status of the answer. `None` when the request got no answer.
+        """
+    @property
+    def details(self) -> list[typing.Any]:
+        r"""
+        The details of the answer.
+        """
+    def __new__(
+        cls,
+        message: builtins.str,
+        code: typing.Optional[builtins.str] = None,
+        status: typing.Optional[builtins.int] = None,
+        details: typing.Optional[list] = None,
+    ) -> UnityCatalogError: ...
+    def __init__(
         self,
-        full_name: builtins.str,
-        *,
-        comment: typing.Optional[builtins.str] = None,
-        new_name: typing.Optional[builtins.str] = None,
-    ) -> volumes.VolumeInfo:
-        r"""
-        Update a volume. Only the arguments that are set change.
-
-        Args:
-            full_name: The full name: `catalog.schema.volume`.
-            comment: A new description.
-            new_name: A new name, in the schema.
-        """
-    def update_volume_async(
-        self,
-        full_name: builtins.str,
-        *,
-        comment: typing.Optional[builtins.str] = None,
-        new_name: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[volumes.VolumeInfo]:
-        r"""
-        Like `update_volume`, but returns an `asyncio.Future`.
-        """
-    def delete_volume(self, full_name: builtins.str) -> None:
-        r"""
-        Delete a volume.
-
-        Args:
-            full_name: The full name: `catalog.schema.volume`.
-        """
-    def delete_volume_async(self, full_name: builtins.str) -> asyncio.Future[None]:
-        r"""
-        Like `delete_volume`, but returns an `asyncio.Future`.
-        """
-    def create_function(
-        self,
-        name: builtins.str,
-        catalog_name: builtins.str,
-        schema_name: builtins.str,
-        routine_body: types.RoutineBody,
-        *,
-        input_params: typing.Optional[
-            typing.Sequence[functions.FunctionParameterInfo]
-        ] = None,
-        data_type: typing.Optional[types.ColumnTypeName] = None,
-        full_data_type: typing.Optional[builtins.str] = None,
-        return_params: typing.Optional[
-            typing.Sequence[functions.FunctionParameterInfo]
-        ] = None,
-        routine_definition: typing.Optional[builtins.str] = None,
-        routine_dependencies: typing.Optional[
-            typing.Sequence[tables.Dependency]
-        ] = None,
-        parameter_style: typing.Optional[types.ParameterStyle] = None,
-        is_deterministic: typing.Optional[builtins.bool] = None,
-        sql_data_access: typing.Optional[types.SqlDataAccess] = None,
-        is_null_call: typing.Optional[builtins.bool] = None,
-        security_type: typing.Optional[types.SecurityType] = None,
-        specific_name: typing.Optional[builtins.str] = None,
-        comment: typing.Optional[builtins.str] = None,
-        properties: typing.Optional[builtins.str] = None,
-        external_language: typing.Optional[builtins.str] = None,
-    ) -> functions.FunctionInfo:
-        r"""
-        Create a function.
-
-        Args:
-            name: The name, in the schema.
-            catalog_name: The name of the catalog.
-            schema_name: The name of the schema.
-            routine_body: The language of the body: `"SQL"`, or `"EXTERNAL"`
-                with `external_language`.
-            input_params: The parameters.
-            data_type: The type of the result.
-            full_data_type: The type of the result as SQL text.
-            return_params: The columns of the returned table, for a table
-                function.
-            routine_definition: The body.
-            routine_dependencies: The tables and functions that the body uses.
-            parameter_style: The parameter style; unset is `"S"`, the only one.
-            is_deterministic: Whether the function gives the same result for
-                the same arguments.
-            sql_data_access: How the function accesses SQL data.
-            is_null_call: Whether the function returns null when an argument
-                is null.
-            security_type: Whose rights the function runs with; unset is
-                `"DEFINER"`, the only one.
-            specific_name: The specific name of the function.
-            comment: A description.
-            properties: Key-value properties, as a JSON object in a string.
-            external_language: The language of an `EXTERNAL` body, such as
-                `"python"`.
-        """
-    def create_function_async(
-        self,
-        name: builtins.str,
-        catalog_name: builtins.str,
-        schema_name: builtins.str,
-        routine_body: types.RoutineBody,
-        *,
-        input_params: typing.Optional[
-            typing.Sequence[functions.FunctionParameterInfo]
-        ] = None,
-        data_type: typing.Optional[types.ColumnTypeName] = None,
-        full_data_type: typing.Optional[builtins.str] = None,
-        return_params: typing.Optional[
-            typing.Sequence[functions.FunctionParameterInfo]
-        ] = None,
-        routine_definition: typing.Optional[builtins.str] = None,
-        routine_dependencies: typing.Optional[
-            typing.Sequence[tables.Dependency]
-        ] = None,
-        parameter_style: typing.Optional[types.ParameterStyle] = None,
-        is_deterministic: typing.Optional[builtins.bool] = None,
-        sql_data_access: typing.Optional[types.SqlDataAccess] = None,
-        is_null_call: typing.Optional[builtins.bool] = None,
-        security_type: typing.Optional[types.SecurityType] = None,
-        specific_name: typing.Optional[builtins.str] = None,
-        comment: typing.Optional[builtins.str] = None,
-        properties: typing.Optional[builtins.str] = None,
-        external_language: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[functions.FunctionInfo]:
-        r"""
-        Like `create_function`, but returns an `asyncio.Future`.
-        """
-    def get_function(self, full_name: builtins.str) -> functions.FunctionInfo:
-        r"""
-        Get a function.
-
-        Args:
-            full_name: The full name: `catalog.schema.function`.
-        """
-    def get_function_async(
-        self, full_name: builtins.str
-    ) -> asyncio.Future[functions.FunctionInfo]:
-        r"""
-        Like `get_function`, but returns an `asyncio.Future`.
-        """
-    def list_functions(
-        self, catalog_name: builtins.str, schema_name: builtins.str
-    ) -> builtins.list[functions.FunctionInfo]:
-        r"""
-        List the functions of a schema.
-
-        Args:
-            catalog_name: The name of the catalog.
-            schema_name: The name of the schema.
-        """
-    def list_functions_async(
-        self, catalog_name: builtins.str, schema_name: builtins.str
-    ) -> asyncio.Future[builtins.list[functions.FunctionInfo]]:
-        r"""
-        Like `list_functions`, but returns an `asyncio.Future`.
-        """
-    def delete_function(self, full_name: builtins.str) -> None:
-        r"""
-        Delete a function.
-
-        Args:
-            full_name: The full name: `catalog.schema.function`.
-        """
-    def delete_function_async(self, full_name: builtins.str) -> asyncio.Future[None]:
-        r"""
-        Like `delete_function`, but returns an `asyncio.Future`.
-        """
-    def create_registered_model(
-        self,
-        name: builtins.str,
-        catalog_name: builtins.str,
-        schema_name: builtins.str,
-        *,
-        comment: typing.Optional[builtins.str] = None,
-    ) -> models.RegisteredModelInfo:
-        r"""
-        Create a registered model.
-
-        Args:
-            name: The name, in the schema.
-            catalog_name: The name of the catalog.
-            schema_name: The name of the schema.
-            comment: A description.
-        """
-    def create_registered_model_async(
-        self,
-        name: builtins.str,
-        catalog_name: builtins.str,
-        schema_name: builtins.str,
-        *,
-        comment: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[models.RegisteredModelInfo]:
-        r"""
-        Like `create_registered_model`, but returns an `asyncio.Future`.
-        """
-    def get_registered_model(
-        self, full_name: builtins.str
-    ) -> models.RegisteredModelInfo:
-        r"""
-        Get a registered model.
-
-        Args:
-            full_name: The full name: `catalog.schema.model`.
-        """
-    def get_registered_model_async(
-        self, full_name: builtins.str
-    ) -> asyncio.Future[models.RegisteredModelInfo]:
-        r"""
-        Like `get_registered_model`, but returns an `asyncio.Future`.
-        """
-    def list_registered_models(
-        self,
-        *,
-        catalog_name: typing.Optional[builtins.str] = None,
-        schema_name: typing.Optional[builtins.str] = None,
-    ) -> builtins.list[models.RegisteredModelInfo]:
-        r"""
-        List the registered models: all of them, or those of a catalog or
-        a schema.
-
-        Args:
-            catalog_name: Only the models of this catalog.
-            schema_name: Only the models of this schema, with `catalog_name`.
-        """
-    def list_registered_models_async(
-        self,
-        *,
-        catalog_name: typing.Optional[builtins.str] = None,
-        schema_name: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[builtins.list[models.RegisteredModelInfo]]:
-        r"""
-        Like `list_registered_models`, but returns an `asyncio.Future`.
-        """
-    def update_registered_model(
-        self,
-        full_name: builtins.str,
-        *,
-        comment: typing.Optional[builtins.str] = None,
-        new_name: typing.Optional[builtins.str] = None,
-    ) -> models.RegisteredModelInfo:
-        r"""
-        Update a registered model. Only the arguments that are set change.
-
-        Args:
-            full_name: The full name: `catalog.schema.model`.
-            comment: A new description.
-            new_name: A new name, in the schema.
-        """
-    def update_registered_model_async(
-        self,
-        full_name: builtins.str,
-        *,
-        comment: typing.Optional[builtins.str] = None,
-        new_name: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[models.RegisteredModelInfo]:
-        r"""
-        Like `update_registered_model`, but returns an `asyncio.Future`.
-        """
-    def delete_registered_model(
-        self, full_name: builtins.str, *, force: builtins.bool = False
+        message: builtins.str,
+        code: typing.Optional[builtins.str] = None,
+        status: typing.Optional[builtins.int] = None,
+        details: typing.Optional[list] = None,
     ) -> None:
         r"""
-        Delete a registered model.
-
-        Args:
-            full_name: The full name: `catalog.schema.model`.
-            force: Also delete its versions. Without it, a model that has
-                versions is not deleted.
+        The fields come from the constructor. `BaseException.__init__` takes no keyword
+        arguments, so this one sets `args` to the message, as that one would.
         """
-    def delete_registered_model_async(
-        self, full_name: builtins.str, *, force: builtins.bool = False
-    ) -> asyncio.Future[None]:
-        r"""
-        Like `delete_registered_model`, but returns an `asyncio.Future`.
-        """
-    def create_model_version(
+    def __str__(self) -> builtins.str: ...
+    def __repr__(self) -> builtins.str: ...
+    def __reduce__(
         self,
-        model_name: builtins.str,
-        catalog_name: builtins.str,
-        schema_name: builtins.str,
-        source: builtins.str,
-        *,
-        run_id: typing.Optional[builtins.str] = None,
-        comment: typing.Optional[builtins.str] = None,
-    ) -> models.ModelVersionInfo:
-        r"""
-        Create a version of a registered model.
-
-        Args:
-            model_name: The name of the registered model.
-            catalog_name: The name of the catalog.
-            schema_name: The name of the schema.
-            source: The URL that the model files come from.
-            run_id: The id of the run that made the model.
-            comment: A description.
-        """
-    def create_model_version_async(
-        self,
-        model_name: builtins.str,
-        catalog_name: builtins.str,
-        schema_name: builtins.str,
-        source: builtins.str,
-        *,
-        run_id: typing.Optional[builtins.str] = None,
-        comment: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[models.ModelVersionInfo]:
-        r"""
-        Like `create_model_version`, but returns an `asyncio.Future`.
-        """
-    def list_model_versions(
-        self, full_name: builtins.str
-    ) -> builtins.list[models.ModelVersionInfo]:
-        r"""
-        List the versions of a registered model.
-
-        Args:
-            full_name: The full name of the model: `catalog.schema.model`.
-        """
-    def list_model_versions_async(
-        self, full_name: builtins.str
-    ) -> asyncio.Future[builtins.list[models.ModelVersionInfo]]:
-        r"""
-        Like `list_model_versions`, but returns an `asyncio.Future`.
-        """
-    def get_model_version(
-        self, full_name: builtins.str, version: builtins.int
-    ) -> models.ModelVersionInfo:
-        r"""
-        Get a version of a registered model.
-
-        Args:
-            full_name: The full name of the model: `catalog.schema.model`.
-            version: The version number.
-        """
-    def get_model_version_async(
-        self, full_name: builtins.str, version: builtins.int
-    ) -> asyncio.Future[models.ModelVersionInfo]:
-        r"""
-        Like `get_model_version`, but returns an `asyncio.Future`.
-        """
-    def update_model_version(
-        self,
-        full_name: builtins.str,
-        version: builtins.int,
-        *,
-        comment: typing.Optional[builtins.str] = None,
-    ) -> models.ModelVersionInfo:
-        r"""
-        Update a version of a registered model. Only the arguments that are
-        set change.
-
-        Args:
-            full_name: The full name of the model: `catalog.schema.model`.
-            version: The version number.
-            comment: A new description.
-        """
-    def update_model_version_async(
-        self,
-        full_name: builtins.str,
-        version: builtins.int,
-        *,
-        comment: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[models.ModelVersionInfo]:
-        r"""
-        Like `update_model_version`, but returns an `asyncio.Future`.
-        """
-    def delete_model_version(
-        self, full_name: builtins.str, version: builtins.int
-    ) -> None:
-        r"""
-        Delete a version of a registered model.
-
-        Args:
-            full_name: The full name of the model: `catalog.schema.model`.
-            version: The version number.
-        """
-    def delete_model_version_async(
-        self, full_name: builtins.str, version: builtins.int
-    ) -> asyncio.Future[None]:
-        r"""
-        Like `delete_model_version`, but returns an `asyncio.Future`.
-        """
-    def finalize_model_version(
-        self, full_name: builtins.str, version: builtins.int
-    ) -> models.ModelVersionInfo:
-        r"""
-        Mark a version of a registered model `READY`, when its files are
-        written.
-
-        Args:
-            full_name: The full name of the model: `catalog.schema.model`.
-            version: The version number.
-        """
-    def finalize_model_version_async(
-        self, full_name: builtins.str, version: builtins.int
-    ) -> asyncio.Future[models.ModelVersionInfo]:
-        r"""
-        Like `finalize_model_version`, but returns an `asyncio.Future`.
-        """
-    def create_credential(
-        self,
-        name: builtins.str,
-        *,
-        purpose: typing.Optional[types.CredentialPurpose] = None,
-        aws_iam_role_arn: typing.Optional[builtins.str] = None,
-        comment: typing.Optional[builtins.str] = None,
-    ) -> credentials.CredentialInfo:
-        r"""
-        Create a credential.
-
-        Args:
-            name: The name.
-            purpose: What the credential is for.
-            aws_iam_role_arn: The ARN of an AWS IAM role, for the server to
-                assume.
-            comment: A description.
-        """
-    def create_credential_async(
-        self,
-        name: builtins.str,
-        *,
-        purpose: typing.Optional[types.CredentialPurpose] = None,
-        aws_iam_role_arn: typing.Optional[builtins.str] = None,
-        comment: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[credentials.CredentialInfo]:
-        r"""
-        Like `create_credential`, but returns an `asyncio.Future`.
-        """
-    def get_credential(self, name: builtins.str) -> credentials.CredentialInfo:
-        r"""
-        Get a credential.
-
-        Args:
-            name: The name.
-        """
-    def get_credential_async(
-        self, name: builtins.str
-    ) -> asyncio.Future[credentials.CredentialInfo]:
-        r"""
-        Like `get_credential`, but returns an `asyncio.Future`.
-        """
-    def list_credentials(self) -> builtins.list[credentials.CredentialInfo]:
-        r"""
-        List the credentials.
-        """
-    def list_credentials_async(
-        self,
-    ) -> asyncio.Future[builtins.list[credentials.CredentialInfo]]:
-        r"""
-        Like `list_credentials`, but returns an `asyncio.Future`.
-        """
-    def update_credential(
-        self,
-        name: builtins.str,
-        *,
-        comment: typing.Optional[builtins.str] = None,
-        aws_iam_role_arn: typing.Optional[builtins.str] = None,
-        new_name: typing.Optional[builtins.str] = None,
-    ) -> credentials.CredentialInfo:
-        r"""
-        Update a credential. Only the arguments that are set change.
-
-        Args:
-            name: The name.
-            comment: A new description.
-            aws_iam_role_arn: The ARN of a new AWS IAM role. The credential
-                gets a new external id too.
-            new_name: A new name.
-        """
-    def update_credential_async(
-        self,
-        name: builtins.str,
-        *,
-        comment: typing.Optional[builtins.str] = None,
-        aws_iam_role_arn: typing.Optional[builtins.str] = None,
-        new_name: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[credentials.CredentialInfo]:
-        r"""
-        Like `update_credential`, but returns an `asyncio.Future`.
-        """
-    def delete_credential(
-        self, name: builtins.str, *, force: builtins.bool = False
-    ) -> None:
-        r"""
-        Delete a credential.
-
-        Args:
-            name: The name.
-            force: Delete it also when external locations use it.
-        """
-    def delete_credential_async(
-        self, name: builtins.str, *, force: builtins.bool = False
-    ) -> asyncio.Future[None]:
-        r"""
-        Like `delete_credential`, but returns an `asyncio.Future`.
-        """
-    def generate_temporary_table_credentials(
-        self, table_id: builtins.str, operation: types.TableOperation
-    ) -> credentials.TemporaryCredentials:
-        r"""
-        Get temporary credentials for the storage of a table.
-
-        Args:
-            table_id: The id of the table.
-            operation: What the credentials are for: `"READ"`, or
-                `"READ_WRITE"`.
-        """
-    def generate_temporary_table_credentials_async(
-        self, table_id: builtins.str, operation: types.TableOperation
-    ) -> asyncio.Future[credentials.TemporaryCredentials]:
-        r"""
-        Like `generate_temporary_table_credentials`, but returns an
-        `asyncio.Future`.
-        """
-    def generate_temporary_volume_credentials(
-        self, volume_id: builtins.str, operation: types.VolumeOperation
-    ) -> credentials.TemporaryCredentials:
-        r"""
-        Get temporary credentials for the storage of a volume.
-
-        Args:
-            volume_id: The id of the volume.
-            operation: What the credentials are for: `"READ_VOLUME"`, or
-                `"WRITE_VOLUME"`.
-        """
-    def generate_temporary_volume_credentials_async(
-        self, volume_id: builtins.str, operation: types.VolumeOperation
-    ) -> asyncio.Future[credentials.TemporaryCredentials]:
-        r"""
-        Like `generate_temporary_volume_credentials`, but returns an
-        `asyncio.Future`.
-        """
-    def generate_temporary_path_credentials(
-        self, url: builtins.str, operation: types.PathOperation
-    ) -> credentials.TemporaryCredentials:
-        r"""
-        Get temporary credentials for a storage path.
-
-        Args:
-            url: The URL of the path, such as `"s3://bucket/prefix"`.
-            operation: What the credentials are for: `"PATH_READ"`,
-                `"PATH_READ_WRITE"`, or `"PATH_CREATE_TABLE"`.
-        """
-    def generate_temporary_path_credentials_async(
-        self, url: builtins.str, operation: types.PathOperation
-    ) -> asyncio.Future[credentials.TemporaryCredentials]:
-        r"""
-        Like `generate_temporary_path_credentials`, but returns an
-        `asyncio.Future`.
-        """
-    def create_external_location(
-        self,
-        name: builtins.str,
-        url: builtins.str,
-        credential_name: builtins.str,
-        *,
-        comment: typing.Optional[builtins.str] = None,
-    ) -> external_locations.ExternalLocationInfo:
-        r"""
-        Create an external location.
-
-        Args:
-            name: The name.
-            url: The URL of the path, such as `"s3://bucket/prefix"`.
-            credential_name: The name of the credential for the path.
-            comment: A description.
-        """
-    def create_external_location_async(
-        self,
-        name: builtins.str,
-        url: builtins.str,
-        credential_name: builtins.str,
-        *,
-        comment: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[external_locations.ExternalLocationInfo]:
-        r"""
-        Like `create_external_location`, but returns an `asyncio.Future`.
-        """
-    def get_external_location(
-        self, name: builtins.str
-    ) -> external_locations.ExternalLocationInfo:
-        r"""
-        Get an external location.
-
-        Args:
-            name: The name.
-        """
-    def get_external_location_async(
-        self, name: builtins.str
-    ) -> asyncio.Future[external_locations.ExternalLocationInfo]:
-        r"""
-        Like `get_external_location`, but returns an `asyncio.Future`.
-        """
-    def list_external_locations(
-        self,
-    ) -> builtins.list[external_locations.ExternalLocationInfo]:
-        r"""
-        List the external locations.
-        """
-    def list_external_locations_async(
-        self,
-    ) -> asyncio.Future[builtins.list[external_locations.ExternalLocationInfo]]:
-        r"""
-        Like `list_external_locations`, but returns an `asyncio.Future`.
-        """
-    def update_external_location(
-        self,
-        name: builtins.str,
-        *,
-        url: typing.Optional[builtins.str] = None,
-        new_name: typing.Optional[builtins.str] = None,
-        comment: typing.Optional[builtins.str] = None,
-        credential_name: typing.Optional[builtins.str] = None,
-    ) -> external_locations.ExternalLocationInfo:
-        r"""
-        Update an external location. Only the arguments that are set change.
-
-        Args:
-            name: The name.
-            url: A new URL.
-            new_name: A new name.
-            comment: A new description.
-            credential_name: The name of a new credential.
-        """
-    def update_external_location_async(
-        self,
-        name: builtins.str,
-        *,
-        url: typing.Optional[builtins.str] = None,
-        new_name: typing.Optional[builtins.str] = None,
-        comment: typing.Optional[builtins.str] = None,
-        credential_name: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[external_locations.ExternalLocationInfo]:
-        r"""
-        Like `update_external_location`, but returns an `asyncio.Future`.
-        """
-    def delete_external_location(
-        self, name: builtins.str, *, force: builtins.bool = False
-    ) -> None:
-        r"""
-        Delete an external location.
-
-        Args:
-            name: The name.
-            force: Delete it also when tables, volumes or models are in it.
-        """
-    def delete_external_location_async(
-        self, name: builtins.str, *, force: builtins.bool = False
-    ) -> asyncio.Future[None]:
-        r"""
-        Like `delete_external_location`, but returns an `asyncio.Future`.
-        """
-    def get_permissions(
-        self,
-        securable_type: types.SecurableType,
-        full_name: builtins.str,
-        *,
-        principal: typing.Optional[builtins.str] = None,
-    ) -> builtins.list[permissions.PrivilegeAssignment]:
-        r"""
-        Get the privileges that are granted on a securable.
-
-        Args:
-            securable_type: The kind of securable.
-            full_name: The full name of the securable.
-            principal: Only the privileges of this user or group.
-
-        Returns:
-            The privileges of each principal.
-        """
-    def get_permissions_async(
-        self,
-        securable_type: types.SecurableType,
-        full_name: builtins.str,
-        *,
-        principal: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[builtins.list[permissions.PrivilegeAssignment]]:
-        r"""
-        Like `get_permissions`, but returns an `asyncio.Future`.
-        """
-    def update_permissions(
-        self,
-        securable_type: types.SecurableType,
-        full_name: builtins.str,
-        changes: typing.Sequence[permissions.PermissionsChange],
-    ) -> builtins.list[permissions.PrivilegeAssignment]:
-        r"""
-        Grant and revoke privileges on a securable.
-
-        Args:
-            securable_type: The kind of securable.
-            full_name: The full name of the securable.
-            changes: The privileges to grant and to revoke, per principal.
-
-        Returns:
-            The privileges of each principal, after the changes.
-        """
-    def update_permissions_async(
-        self,
-        securable_type: types.SecurableType,
-        full_name: builtins.str,
-        changes: typing.Sequence[permissions.PermissionsChange],
-    ) -> asyncio.Future[builtins.list[permissions.PrivilegeAssignment]]:
-        r"""
-        Like `update_permissions`, but returns an `asyncio.Future`.
-        """
-    def metastore_summary(self) -> metastore.MetastoreSummary:
-        r"""
-        Get the summary of the metastore.
-        """
-    def metastore_summary_async(self) -> asyncio.Future[metastore.MetastoreSummary]:
-        r"""
-        Like `metastore_summary`, but returns an `asyncio.Future`.
-        """
-    def create_pat(
-        self, name: builtins.str, *, expires_at: typing.Optional[builtins.int] = None
-    ) -> tokens.PatInfo:
-        r"""
-        Create a personal access token for the caller. The result has the
-        token, `token_value`; no other method returns it.
-
-        Args:
-            name: The name.
-            expires_at: The expiry time, in epoch milliseconds. No expiry
-                when unset.
-        """
-    def create_pat_async(
-        self, name: builtins.str, *, expires_at: typing.Optional[builtins.int] = None
-    ) -> asyncio.Future[tokens.PatInfo]:
-        r"""
-        Like `create_pat`, but returns an `asyncio.Future`.
-        """
-    def list_pats(self) -> builtins.list[tokens.PatInfo]:
-        r"""
-        List the personal access tokens of the caller.
-        """
-    def list_pats_async(self) -> asyncio.Future[builtins.list[tokens.PatInfo]]:
-        r"""
-        Like `list_pats`, but returns an `asyncio.Future`.
-        """
-    def revoke_pat(self, id: builtins.str) -> None:
-        r"""
-        Revoke a personal access token.
-
-        Args:
-            id: The id of the token.
-        """
-    def revoke_pat_async(self, id: builtins.str) -> asyncio.Future[None]:
-        r"""
-        Like `revoke_pat`, but returns an `asyncio.Future`.
-        """
-    def create_user(
-        self,
-        email: builtins.str,
-        *,
-        display_name: typing.Optional[builtins.str] = None,
-        external_id: typing.Optional[builtins.str] = None,
-    ) -> scim.ScimUser:
-        r"""
-        Create a user. The email names the user, as principals name it.
-
-        Args:
-            email: The user's email: its name and its primary email.
-            display_name: The user's name.
-            external_id: The identity of the user at an identity provider,
-                such as the client id of an OAuth client.
-        """
-    def create_user_async(
-        self,
-        email: builtins.str,
-        *,
-        display_name: typing.Optional[builtins.str] = None,
-        external_id: typing.Optional[builtins.str] = None,
-    ) -> asyncio.Future[scim.ScimUser]:
-        r"""
-        Like `create_user`, but returns an `asyncio.Future`.
-        """
-    def get_user(self, id: builtins.str) -> scim.ScimUser:
-        r"""
-        Get a user.
-
-        Args:
-            id: The id of the user.
-        """
-    def get_user_async(self, id: builtins.str) -> asyncio.Future[scim.ScimUser]:
-        r"""
-        Like `get_user`, but returns an `asyncio.Future`.
-        """
-    def me(self) -> scim.ScimUser:
-        r"""
-        Get the signed-in user: the user of the client's token.
-        """
-    def me_async(self) -> asyncio.Future[scim.ScimUser]:
-        r"""
-        Like `me`, but returns an `asyncio.Future`.
-        """
-    def list_users(
-        self,
-        *,
-        filter: typing.Optional[builtins.str] = None,
-        start_index: typing.Optional[builtins.int] = None,
-        count: typing.Optional[builtins.int] = None,
-    ) -> builtins.list[scim.ScimUser]:
-        r"""
-        List the users.
-
-        Args:
-            filter: A SCIM filter, such as `'userName eq "ada@example.com"'`.
-            start_index: The position of the first user to return, from 1.
-            count: The number of users to return.
-        """
-    def list_users_async(
-        self,
-        *,
-        filter: typing.Optional[builtins.str] = None,
-        start_index: typing.Optional[builtins.int] = None,
-        count: typing.Optional[builtins.int] = None,
-    ) -> asyncio.Future[builtins.list[scim.ScimUser]]:
-        r"""
-        Like `list_users`, but returns an `asyncio.Future`.
-        """
-    def update_user(
-        self,
-        id: builtins.str,
-        *,
-        display_name: typing.Optional[builtins.str] = None,
-        external_id: typing.Optional[builtins.str] = None,
-        active: typing.Optional[builtins.bool] = None,
-    ) -> scim.ScimUser:
-        r"""
-        Update a user. Only the arguments that are set change; the email
-        does not change.
-
-        Args:
-            id: The id of the user.
-            display_name: A new name.
-            external_id: A new identity at an identity provider.
-            active: Enable or disable the user.
-        """
-    def update_user_async(
-        self,
-        id: builtins.str,
-        *,
-        display_name: typing.Optional[builtins.str] = None,
-        external_id: typing.Optional[builtins.str] = None,
-        active: typing.Optional[builtins.bool] = None,
-    ) -> asyncio.Future[scim.ScimUser]:
-        r"""
-        Like `update_user`, but returns an `asyncio.Future`.
-        """
-    def delete_user(self, id: builtins.str) -> None:
-        r"""
-        Delete a user. As in upstream, the user stays, disabled, and loses
-        its privileges.
-
-        Args:
-            id: The id of the user.
-        """
-    def delete_user_async(self, id: builtins.str) -> asyncio.Future[None]:
-        r"""
-        Like `delete_user`, but returns an `asyncio.Future`.
-        """
-    def create_group(self, display_name: builtins.str) -> scim.ScimGroup:
-        r"""
-        Create a group, without members.
-
-        Args:
-            display_name: The name of the group.
-        """
-    def create_group_async(
-        self, display_name: builtins.str
-    ) -> asyncio.Future[scim.ScimGroup]:
-        r"""
-        Like `create_group`, but returns an `asyncio.Future`.
-        """
-    def get_group(self, id: builtins.str) -> scim.ScimGroup:
-        r"""
-        Get a group.
-
-        Args:
-            id: The id of the group.
-        """
-    def get_group_async(self, id: builtins.str) -> asyncio.Future[scim.ScimGroup]:
-        r"""
-        Like `get_group`, but returns an `asyncio.Future`.
-        """
-    def list_groups(
-        self,
-        *,
-        filter: typing.Optional[builtins.str] = None,
-        start_index: typing.Optional[builtins.int] = None,
-        count: typing.Optional[builtins.int] = None,
-    ) -> builtins.list[scim.ScimGroup]:
-        r"""
-        List the groups.
-
-        Args:
-            filter: A SCIM filter, such as `'displayName eq "admins"'`.
-            start_index: The position of the first group to return, from 1.
-            count: The number of groups to return.
-        """
-    def list_groups_async(
-        self,
-        *,
-        filter: typing.Optional[builtins.str] = None,
-        start_index: typing.Optional[builtins.int] = None,
-        count: typing.Optional[builtins.int] = None,
-    ) -> asyncio.Future[builtins.list[scim.ScimGroup]]:
-        r"""
-        Like `list_groups`, but returns an `asyncio.Future`.
-        """
-    def delete_group(self, id: builtins.str) -> None:
-        r"""
-        Delete a group.
-
-        Args:
-            id: The id of the group.
-        """
-    def delete_group_async(self, id: builtins.str) -> asyncio.Future[None]:
-        r"""
-        Like `delete_group`, but returns an `asyncio.Future`.
-        """
-    def backup(self) -> builtins.dict[builtins.str, typing.Any]:
-        r"""
-        Get a snapshot of the whole catalog, for `restore`. It takes an
-        admin, signed in.
-
-        Returns:
-            The snapshot: `{"version": …, "tables": {…}}`, the rows of each
-            table of the store. It has credentials and token hashes: keep it
-            secret.
-        """
-    def backup_async(self) -> asyncio.Future[builtins.dict[builtins.str, typing.Any]]:
-        r"""
-        Like `backup`, but returns an `asyncio.Future`.
-        """
-    def restore(
-        self, snapshot: builtins.dict[builtins.str, typing.Any]
-    ) -> admin.RestoreResponse:
-        r"""
-        Replace the whole catalog with a snapshot of `backup`. It takes an
-        admin, signed in.
-
-        Args:
-            snapshot: The snapshot, as `backup` returns it.
-        """
-    def restore_async(
-        self, snapshot: builtins.dict[builtins.str, typing.Any]
-    ) -> asyncio.Future[admin.RestoreResponse]:
-        r"""
-        Like `restore`, but returns an `asyncio.Future`.
-        """
-    def list_audit_events(
-        self,
-        *,
-        principal: typing.Optional[builtins.str] = None,
-        method: typing.Optional[builtins.str] = None,
-        path_prefix: typing.Optional[builtins.str] = None,
-        max_results: typing.Optional[builtins.int] = None,
-    ) -> builtins.list[audit.AuditEvent]:
-        r"""
-        List the requests that changed the catalog, from the audit log. It
-        takes an admin, signed in.
-
-        Args:
-            principal: Only the requests of this user.
-            method: Only the requests of this HTTP method, such as
-                `"DELETE"`.
-            path_prefix: Only the requests with a path that starts with it.
-            max_results: The number of events to return.
-        """
-    def list_audit_events_async(
-        self,
-        *,
-        principal: typing.Optional[builtins.str] = None,
-        method: typing.Optional[builtins.str] = None,
-        path_prefix: typing.Optional[builtins.str] = None,
-        max_results: typing.Optional[builtins.int] = None,
-    ) -> asyncio.Future[builtins.list[audit.AuditEvent]]:
-        r"""
-        Like `list_audit_events`, but returns an `asyncio.Future`.
-        """
-    def iceberg_config(self, catalog: builtins.str) -> iceberg_rest.IcebergConfig:
-        r"""
-        Get the configuration of an Iceberg REST client for a catalog.
-
-        Args:
-            catalog: The name of the catalog: the Iceberg warehouse.
-        """
-    def iceberg_config_async(
-        self, catalog: builtins.str
-    ) -> asyncio.Future[iceberg_rest.IcebergConfig]:
-        r"""
-        Like `iceberg_config`, but returns an `asyncio.Future`.
-        """
-    def list_iceberg_namespaces(
-        self, catalog: builtins.str
-    ) -> builtins.list[builtins.list[builtins.str]]:
-        r"""
-        List the Iceberg namespaces of a catalog: its schemas.
-
-        Args:
-            catalog: The name of the catalog.
-
-        Returns:
-            The levels of each namespace, such as `[["default"]]`.
-        """
-    def list_iceberg_namespaces_async(
-        self, catalog: builtins.str
-    ) -> asyncio.Future[builtins.list[builtins.list[builtins.str]]]:
-        r"""
-        Like `list_iceberg_namespaces`, but returns an `asyncio.Future`.
-        """
-    def list_iceberg_tables(
-        self, catalog: builtins.str, namespace: builtins.str
-    ) -> builtins.list[iceberg_rest.IcebergTableIdentifier]:
-        r"""
-        List the Iceberg tables of a namespace: the tables of a schema that
-        have Iceberg metadata.
-
-        Args:
-            catalog: The name of the catalog.
-            namespace: The namespace: the name of the schema.
-        """
-    def list_iceberg_tables_async(
-        self, catalog: builtins.str, namespace: builtins.str
-    ) -> asyncio.Future[builtins.list[iceberg_rest.IcebergTableIdentifier]]:
-        r"""
-        Like `list_iceberg_tables`, but returns an `asyncio.Future`.
-        """
-    def load_iceberg_table(
-        self, catalog: builtins.str, namespace: builtins.str, table: builtins.str
-    ) -> builtins.dict[builtins.str, typing.Any]:
-        r"""
-        Load an Iceberg table.
-
-        Args:
-            catalog: The name of the catalog.
-            namespace: The namespace: the name of the schema.
-            table: The name of the table.
-
-        Returns:
-            The Iceberg REST response: `metadata-location`, the table
-            `metadata` and the client `config`.
-        """
-    def load_iceberg_table_async(
-        self, catalog: builtins.str, namespace: builtins.str, table: builtins.str
-    ) -> asyncio.Future[builtins.dict[builtins.str, typing.Any]]:
-        r"""
-        Like `load_iceberg_table`, but returns an `asyncio.Future`.
-        """
-    def get_delta_commits(
-        self,
-        table_id: builtins.str,
-        table_uri: builtins.str,
-        start_version: builtins.int,
-        *,
-        end_version: typing.Optional[builtins.int] = None,
-    ) -> builtins.dict[builtins.str, typing.Any]:
-        r"""
-        Get the commits that the server holds for a catalog-managed Delta
-        table: those not yet backfilled into `_delta_log`.
-
-        Args:
-            table_id: The id of the table.
-            table_uri: The storage location of the table.
-            start_version: The first version to return.
-            end_version: The last version to return; unset for the latest.
-
-        Returns:
-            `{"commits": [...], "latest_table_version": …}`: the commits,
-            newest first, and the latest version of the table.
-        """
-    def get_delta_commits_async(
-        self,
-        table_id: builtins.str,
-        table_uri: builtins.str,
-        start_version: builtins.int,
-        *,
-        end_version: typing.Optional[builtins.int] = None,
-    ) -> asyncio.Future[builtins.dict[builtins.str, typing.Any]]:
-        r"""
-        Like `get_delta_commits`, but returns an `asyncio.Future`.
-        """
-    def commit_delta(self, commit: builtins.dict[builtins.str, typing.Any]) -> None:
-        r"""
-        Ratify a staged commit of a catalog-managed Delta table, or report
-        a backfill. Another commit of the same version raises `UcError`.
-
-        Args:
-            commit: The commit, as the Delta commit coordinator API has it:
-                `table_id`, `table_uri`, and `commit_info` (`version`,
-                `timestamp`, `file_name`, `file_size`,
-                `file_modification_timestamp`) or `latest_backfilled_version`,
-                or both; `metadata` and `uniform` when they change.
-        """
-    def commit_delta_async(
-        self, commit: builtins.dict[builtins.str, typing.Any]
-    ) -> asyncio.Future[None]:
-        r"""
-        Like `commit_delta`, but returns an `asyncio.Future`.
-        """
-    def raw_json(
-        self,
-        method: builtins.str,
-        path: builtins.str,
-        *,
-        query: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
-        body: typing.Optional[typing.Any] = None,
-    ) -> typing.Any:
-        r"""
-        Call an endpoint of the server that has no method here.
-
-        Args:
-            method: The HTTP method, such as `"GET"`.
-            path: The path: relative to the base URL (`"catalogs"`), or from
-                the root of the server (`"/api/1.0/unity-control/scim2/Users"`).
-            query: The query parameters, such as `{"max_results": "10"}`.
-            body: The body, as a value that `json.dumps` takes.
-
-        Returns:
-            The JSON response, as `json.loads` gives it; `None` for an empty
-            one.
-        """
-    def raw_json_async(
-        self,
-        method: builtins.str,
-        path: builtins.str,
-        *,
-        query: typing.Optional[typing.Mapping[builtins.str, builtins.str]] = None,
-        body: typing.Optional[typing.Any] = None,
-    ) -> asyncio.Future[typing.Any]:
-        r"""
-        Like `raw_json`, but returns an `asyncio.Future`.
-        """
-    def post_form(
-        self, path: builtins.str, form: typing.Mapping[builtins.str, builtins.str]
-    ) -> typing.Any:
-        r"""
-        Post a form, as the OAuth token exchange
-        (`/api/1.0/unity-control/auth/tokens`) takes it.
-
-        Args:
-            path: The path, as `raw_json` takes it.
-            form: The fields of the form.
-
-        Returns:
-            The JSON response, as `json.loads` gives it.
-        """
-    def post_form_async(
-        self, path: builtins.str, form: typing.Mapping[builtins.str, builtins.str]
-    ) -> asyncio.Future[typing.Any]:
-        r"""
-        Like `post_form`, but returns an `asyncio.Future`.
+    ) -> tuple[
+        type,
+        tuple[
+            builtins.str,
+            typing.Optional[builtins.str],
+            typing.Optional[builtins.int],
+            list,
+        ],
+    ]:
+        r"""
+        The class and the arguments that make the exception again, for `pickle`.
         """

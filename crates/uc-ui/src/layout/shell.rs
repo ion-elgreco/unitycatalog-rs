@@ -111,7 +111,7 @@ fn ProfileMenu() -> impl IntoView {
         auth.session.with(|session| {
             session
                 .user()
-                .and_then(|user| user.emails.as_ref()?.first().map(|e| e.value.clone()))
+                .and_then(|user| user.emails.first().map(|e| e.value.clone()))
                 .unwrap_or_default()
         })
     };

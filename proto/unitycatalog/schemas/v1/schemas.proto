@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+package unitycatalog.schemas.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+
+// A schema: the second layer of the three-level namespace. It holds tables, volumes, functions
+// and models.
+message SchemaInfo {
+  option (google.api.resource) = {
+    type: "unitycatalog.io/Schema"
+    pattern: "schemas/{schema}"
+    plural: "schemas"
+    singular: "schema"
+  };
+
+  // Name of the schema, relative to the parent catalog.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // Name of the parent catalog.
+  string catalog_name = 2;
+  // User-provided free-form text description.
+  optional string comment = 3;
+  // Key-value properties of the schema.
+  map<string, string> properties = 4;
+  // Full name of the schema, in the form `<catalog>.<schema>`.
+  string full_name = 5;
+  // Username of the owner of the schema.
+  optional string owner = 6;
+  // Time at which the schema was created, in epoch milliseconds.
+  int64 created_at = 7;
+  // Username of the creator of the schema.
+  optional string created_by = 8;
+  // Time at which the schema was last changed, in epoch milliseconds.
+  int64 updated_at = 9;
+  // Username of the user who last changed the schema.
+  optional string updated_by = 10;
+  // Unique identifier of the schema.
+  string schema_id = 11;
+  // Storage root URL for the managed storage of the schema, such as `s3://bucket/ucroot`.
+  // Without it, managed tables and volumes of the schema go below the storage of the catalog.
+  optional string storage_root = 12;
+  // Storage location URL (full path) of the managed storage of the schema.
+  optional string storage_location = 13;
+}
+
+message CreateSchema {
+  // Name of the schema, relative to the parent catalog.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent catalog.
+  string catalog_name = 2 [(google.api.field_behavior) = REQUIRED];
+  // User-provided free-form text description.
+  optional string comment = 3;
+  // Key-value properties of the schema.
+  map<string, string> properties = 4;
+  // Storage root URL for the managed storage of the schema.
+  optional string storage_root = 5;
+}
+
+message ListSchemasRequest {
+  // Name of the parent catalog.
+  string catalog_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // The maximum number of schemas to return.
+  optional int32 max_results = 2;
+  // Opaque token of the page to return: the `next_page_token` of the page before.
+  optional string page_token = 3;
+}
+
+message ListSchemasResponse {
+  // The schemas.
+  repeated SchemaInfo schemas = 1;
+  // Opaque token of the next page. Absent on the last page.
+  optional string next_page_token = 2;
+}
+
+message GetSchemaRequest {
+  // Full name of the schema, in the form `<catalog>.<schema>`.
+  string full_name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message UpdateSchema {
+  // Full name of the schema, in the form `<catalog>.<schema>`.
+  string full_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // User-provided free-form text description.
+  optional string comment = 2;
+  // Key-value properties of the schema. They replace the properties of the schema.
+  map<string, string> properties = 3;
+  // New name of the schema, relative to the parent catalog.
+  optional string new_name = 4;
+}
+
+message DeleteSchemaRequest {
+  // Full name of the schema, in the form `<catalog>.<schema>`.
+  string full_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Delete the tables, volumes, functions and models of the schema too.
+  optional bool force = 2;
+}
+
+// Schemas: the second layer of the three-level namespace.
+service SchemasService {
+  // List the schemas of a catalog that the caller can see.
+  rpc ListSchemas(ListSchemasRequest) returns (ListSchemasResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/schemas"};
+  }
+
+  // Create a schema.
+  rpc CreateSchema(.unitycatalog.schemas.v1.CreateSchema) returns (SchemaInfo) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/schemas"
+      body: "*"
+    };
+  }
+
+  // Get a schema.
+  rpc GetSchema(GetSchemaRequest) returns (SchemaInfo) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/schemas/{full_name}"};
+  }
+
+  // Change a schema.
+  rpc UpdateSchema(.unitycatalog.schemas.v1.UpdateSchema) returns (SchemaInfo) {
+    option (google.api.http) = {
+      patch: "/api/2.1/unity-catalog/schemas/{full_name}"
+      body: "*"
+    };
+  }
+
+  // Delete a schema.
+  rpc DeleteSchema(DeleteSchemaRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.1/unity-catalog/schemas/{full_name}"};
+  }
+}

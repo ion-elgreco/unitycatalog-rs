@@ -2,7 +2,6 @@
 
 use clap::Subcommand;
 use clap::builder::BoolishValueParser;
-use uc_api::{CreateCatalog, UpdateCatalog};
 
 use super::options::{Paging, Properties, changes, help, properties};
 use super::{Context, Result, upstream};
@@ -62,15 +61,12 @@ pub async fn run(c: &Context<'_>, op: CatalogOp) -> Result<String> {
             properties,
             storage_root,
         } => {
-            let request = CreateCatalog {
-                name,
-                comment,
-                properties,
-                storage_root,
-            };
             let info = c
                 .client
-                .create_catalog(&request)
+                .create_catalog(name)
+                .with_comment(comment)
+                .with_properties(properties.unwrap_or_default())
+                .with_storage_root(storage_root)
                 .await
                 .map_err(upstream("createCatalog"))?;
             Ok(c.shaped(&models::CATALOG, &serde_json::to_value(&info)?))
@@ -78,7 +74,9 @@ pub async fn run(c: &Context<'_>, op: CatalogOp) -> Result<String> {
         CatalogOp::List { paging } => {
             let list = c
                 .client
-                .list_catalogs(&paging.into())
+                .list_catalogs()
+                .with_max_results(paging.max_results)
+                .with_page_token(paging.page_token)
                 .await
                 .map_err(upstream("listCatalogs"))?;
             Ok(c.shaped_list(&models::CATALOG, &serde_json::to_value(&list)?, "catalogs"))
@@ -86,7 +84,8 @@ pub async fn run(c: &Context<'_>, op: CatalogOp) -> Result<String> {
         CatalogOp::Get { name } => {
             let info = c
                 .client
-                .get_catalog(&name)
+                .catalog(name)
+                .get()
                 .await
                 .map_err(upstream("getCatalog"))?;
             Ok(c.shaped(&models::CATALOG, &serde_json::to_value(&info)?))
@@ -97,21 +96,22 @@ pub async fn run(c: &Context<'_>, op: CatalogOp) -> Result<String> {
             comment,
             properties,
         } => {
-            let request = UpdateCatalog {
-                new_name,
-                comment,
-                properties,
-            };
             let info = c
                 .client
-                .update_catalog(&name, &request)
+                .catalog(name)
+                .update()
+                .with_new_name(new_name)
+                .with_comment(comment)
+                .with_properties(properties.unwrap_or_default())
                 .await
                 .map_err(upstream("updateCatalog"))?;
             Ok(c.shaped(&models::CATALOG, &serde_json::to_value(&info)?))
         }
         CatalogOp::Delete { name, force } => {
             c.client
-                .delete_catalog(&name, force.unwrap_or(false))
+                .catalog(name)
+                .delete()
+                .with_force(force.unwrap_or(false))
                 .await
                 .map_err(upstream("deleteCatalog"))?;
             Ok("{}".into())

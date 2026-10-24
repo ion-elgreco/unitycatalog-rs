@@ -2,79 +2,109 @@
 
 import asyncio
 import time
-import typing
-from pathlib import Path
 
 import pytest
 from _helpers import Calls, unique
 
 from unitycatalog import (
+    BadRequestError,
     Client,
+    ConflictError,
+    DeltaMaintenanceOperation,
+    ModelVersionStatus,
+    NotFoundError,
+    ServerError,
+    UnauthenticatedError,
+    UnityCatalogError,
+)
+from unitycatalog.credentials import AwsIamRoleRequest
+from unitycatalog.delta import DeltaCommitInfo
+from unitycatalog.functions import (
+    CreateFunction,
+    FunctionParameterInfo,
+    FunctionParameterInfos,
+)
+from unitycatalog.iceberg import (
+    IcebergSchema,
+    IcebergStructField,
+    IcebergTableIdentifier,
+)
+from unitycatalog.permissions import PermissionsChange
+from unitycatalog.scim import (
+    ScimEmail,
+    ScimGroupMember,
+    ScimPatchOperation,
+    ScimUser,
+)
+from unitycatalog.shares import SharedDataObject
+from unitycatalog.tables import (
     ColumnInfo,
     Dependency,
-    FunctionParameterInfo,
-    PermissionsChange,
-    UcError,
+    DependencyList,
+    TableDependency,
 )
-from unitycatalog.types import ModelVersionStatus
 
 
-def test_catalogs(uc: Calls, tmp_path: Path) -> None:
+@pytest.mark.upstream
+def test_catalogs(uc: Calls, storage_root: str) -> None:
     name = unique("catalog")
     created = uc.create_catalog(
         name,
         comment="primary",
         properties={"team": "data"},
-        storage_root=tmp_path.as_uri(),
+        storage_root=storage_root,
     )
     assert (created.name, created.comment) == (name, "primary")
     assert created.properties == {"team": "data"}
     assert created.id and created.created_at and created.storage_location
-    assert uc.get_catalog(name) == created
+    assert uc.catalog(name).get() == created
     assert name in [c.name for c in uc.list_catalogs()]
+    assert len(uc.list_catalogs(max_results=1)) == 1
 
-    updated = uc.update_catalog(name, comment="edited", new_name=f"{name}_2")
+    updated = uc.catalog(name).update(comment="edited", new_name=f"{name}_2")
     assert (updated.name, updated.comment, updated.id) == (
         f"{name}_2",
         "edited",
         created.id,
     )
-    assert uc.delete_catalog(f"{name}_2") is None
-    with pytest.raises(UcError) as error:
-        uc.get_catalog(f"{name}_2")
-    assert error.value.code == "CATALOG_NOT_FOUND"
+    assert uc.catalog(f"{name}_2").delete() is None
+    with pytest.raises(NotFoundError) as error:
+        uc.catalog(f"{name}_2").get()
+    assert (error.value.code, error.value.status) == ("CATALOG_NOT_FOUND", 404)
 
 
+@pytest.mark.upstream
 def test_schemas(uc: Calls, catalog: str) -> None:
     created = uc.create_schema(
         "s", catalog, comment="raw data", properties={"layer": "bronze"}
     )
     assert (created.full_name, created.comment) == (f"{catalog}.s", "raw data")
     assert created.properties == {"layer": "bronze"}
-    assert uc.get_schema(f"{catalog}.s") == created
+    assert uc.schema(f"{catalog}.s").get() == created
     assert [s.name for s in uc.list_schemas(catalog)] == ["s"]
 
-    updated = uc.update_schema(f"{catalog}.s", comment="edited", new_name="s2")
+    updated = uc.schema(f"{catalog}.s").update(comment="edited", new_name="s2")
     assert (updated.full_name, updated.comment) == (f"{catalog}.s2", "edited")
-    uc.delete_schema(f"{catalog}.s2")
+    uc.schema(f"{catalog}.s2").delete()
     assert uc.list_schemas(catalog) == []
 
 
+@pytest.mark.upstream
 def test_tables_and_views(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     columns = [
         ColumnInfo(
             "id",
+            '{"name":"id","type":"long","nullable":false,"metadata":{}}',
             type_text="bigint",
-            type_json='{"name":"id","type":"long","nullable":false,"metadata":{}}',
             type_name="LONG",
             position=0,
             nullable=False,
         ),
         ColumnInfo(
             "email",
+            '{"name":"email","type":"string","nullable":true,"metadata":{}}',
             type_text="string",
-            type_json='{"name":"email","type":"string","nullable":true,"metadata":{}}',
             type_name="STRING",
             position=1,
             nullable=True,
@@ -97,8 +127,11 @@ def test_tables_and_views(uc: Calls, schema: tuple[str, str]) -> None:
     assert table.columns == columns
     assert table.table_id == staging.id
     full_name = f"{catalog}.{schema_name}.t"
-    assert uc.get_table(full_name) == table
+    assert uc.table(full_name).get() == table
 
+    dependencies = DependencyList(
+        dependencies=[Dependency(table=TableDependency(full_name))]
+    )
     view = uc.create_table(
         "v",
         catalog,
@@ -106,51 +139,59 @@ def test_tables_and_views(uc: Calls, schema: tuple[str, str]) -> None:
         "VIEW",
         columns=columns,
         view_definition="select * from t",
-        view_dependencies=[Dependency(table_full_name=full_name)],
+        view_dependencies=dependencies,
     )
     assert view.view_definition == "select * from t"
-    assert view.view_dependencies == [Dependency(table_full_name=full_name)]
+    assert view.view_dependencies == dependencies
     assert sorted(t.name for t in uc.list_tables(catalog, schema_name)) == ["t", "v"]
 
-    uc.delete_table(f"{catalog}.{schema_name}.v")
-    uc.delete_table(full_name)
+    uc.table(f"{catalog}.{schema_name}.v").delete()
+    uc.table(full_name).delete()
     assert uc.list_tables(catalog, schema_name) == []
 
 
+@pytest.mark.upstream
 def test_volumes(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
-    created = uc.create_volume("v", catalog, schema_name, "MANAGED", comment="scratch")
+    created = uc.create_volume(catalog, schema_name, "v", "MANAGED", comment="scratch")
     assert created.full_name == f"{catalog}.{schema_name}.v"
     assert (created.volume_type, created.comment) == ("MANAGED", "scratch")
     assert created.storage_location
-    assert uc.get_volume(created.full_name) == created
+    assert uc.volume(created.full_name).get() == created
     assert [v.name for v in uc.list_volumes(catalog, schema_name)] == ["v"]
 
-    updated = uc.update_volume(created.full_name, comment="edited", new_name="v2")
+    updated = uc.volume(created.full_name).update(comment="edited", new_name="v2")
     assert (updated.name, updated.comment) == ("v2", "edited")
-    uc.delete_volume(f"{catalog}.{schema_name}.v2")
+    uc.volume(f"{catalog}.{schema_name}.v2").delete()
     assert uc.list_volumes(catalog, schema_name) == []
 
 
+@pytest.mark.upstream
 def test_functions(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
-    parameters = [
-        FunctionParameterInfo("x", "long", "LONG", type_json='"long"', position=0)
-    ]
+    parameters = FunctionParameterInfos(
+        parameters=[
+            FunctionParameterInfo("x", "long", "LONG", type_json='"long"', position=0)
+        ]
+    )
     created = uc.create_function(
-        "inc",
-        catalog,
-        schema_name,
-        "SQL",
-        input_params=parameters,
-        data_type="LONG",
-        full_data_type="long",
-        routine_definition="x + 1",
-        is_deterministic=True,
-        sql_data_access="NO_SQL",
-        is_null_call=False,
-        specific_name="inc",
-        comment="adds one",
+        CreateFunction(
+            "inc",
+            catalog,
+            schema_name,
+            "SQL",
+            "S",
+            "DEFINER",
+            input_params=parameters,
+            data_type="LONG",
+            full_data_type="long",
+            routine_definition="x + 1",
+            is_deterministic=True,
+            sql_data_access="NO_SQL",
+            is_null_call=False,
+            specific_name="inc",
+            comment="adds one",
+        )
     )
     assert created.full_name == f"{catalog}.{schema_name}.inc"
     assert created.input_params == parameters
@@ -160,20 +201,21 @@ def test_functions(uc: Calls, schema: tuple[str, str]) -> None:
         "DEFINER",
     )
     assert (created.data_type, created.sql_data_access) == ("LONG", "NO_SQL")
-    assert uc.get_function(created.full_name) == created
+    assert uc.function(created.full_name).get() == created
     assert [f.name for f in uc.list_functions(catalog, schema_name)] == ["inc"]
 
-    uc.delete_function(created.full_name)
+    uc.function(created.full_name).delete()
     assert uc.list_functions(catalog, schema_name) == []
 
 
+@pytest.mark.upstream
 def test_registered_models_and_versions(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     full_name = f"{catalog}.{schema_name}.m"
     created = uc.create_registered_model("m", catalog, schema_name, comment="first")
     assert (created.full_name, created.comment) == (full_name, "first")
     assert created.storage_location
-    assert uc.get_registered_model(full_name) == created
+    assert uc.registered_model(full_name).get() == created
     assert full_name in [m.full_name for m in uc.list_registered_models()]
     in_schema = uc.list_registered_models(catalog_name=catalog, schema_name=schema_name)
     assert [m.full_name for m in in_schema] == [full_name]
@@ -182,52 +224,60 @@ def test_registered_models_and_versions(uc: Calls, schema: tuple[str, str]) -> N
         "m", catalog, schema_name, "s3://bucket/m/v1", run_id="run-1", comment="v1"
     )
     assert (version.version, version.run_id, version.comment) == (1, "run-1", "v1")
-    assert version.status in typing.get_args(ModelVersionStatus)
+    assert version.status in set(ModelVersionStatus)
     assert [v.id for v in uc.list_model_versions(full_name)] == [version.id]
 
-    updated = uc.update_registered_model(full_name, comment="edited", new_name="m2")
+    updated = uc.registered_model(full_name).update(comment="edited", new_name="m2")
     assert (updated.name, updated.comment) == ("m2", "edited")
-    with pytest.raises(UcError):
-        uc.delete_registered_model(f"{catalog}.{schema_name}.m2")
-    uc.delete_registered_model(f"{catalog}.{schema_name}.m2", force=True)
+    with pytest.raises(ConflictError):
+        uc.registered_model(f"{catalog}.{schema_name}.m2").delete()
+    uc.registered_model(f"{catalog}.{schema_name}.m2").delete(force=True)
     assert full_name not in [m.full_name for m in uc.list_registered_models()]
 
 
+@pytest.mark.upstream
 def test_model_versions(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     full_name = f"{catalog}.{schema_name}.m"
     uc.create_registered_model("m", catalog, schema_name)
     created = uc.create_model_version("m", catalog, schema_name, "s3://bucket/m/v1")
-    assert created.status == "PENDING_REGISTRATION"
+    assert created.status is ModelVersionStatus.PENDING_REGISTRATION
     assert uc.get_model_version(full_name, 1) == created
 
-    updated = uc.update_model_version(full_name, 1, comment="first")
+    updated = uc.update_model_version(full_name, 1, "first")
     assert (updated.id, updated.comment) == (created.id, "first")
     finalized = uc.finalize_model_version(full_name, 1)
     assert (finalized.status, finalized.comment) == ("READY", "first")
+    # Local storage has no credentials to give.
+    with pytest.raises(BadRequestError, match="file based storage location"):
+        uc.generate_temporary_model_version_credentials(
+            catalog, schema_name, "m", 1, "READ_MODEL_VERSION"
+        )
 
     assert uc.delete_model_version(full_name, 1) is None
     assert uc.list_model_versions(full_name) == []
-    with pytest.raises(UcError) as error:
+    with pytest.raises(NotFoundError) as error:
         uc.get_model_version(full_name, 1)
     assert error.value.code == "NOT_FOUND"
 
 
+@pytest.mark.upstream
 def test_credentials_and_external_locations(uc: Calls) -> None:
     credential_name = unique("credential")
     role = "arn:aws:iam::123456789012:role/uc"
     credential = uc.create_credential(
-        credential_name, purpose="STORAGE", aws_iam_role_arn=role, comment="prod"
+        credential_name, AwsIamRoleRequest(role), purpose="STORAGE", comment="prod"
     )
     assert (credential.purpose, credential.comment) == ("STORAGE", "prod")
     assert credential.aws_iam_role is not None
     assert credential.aws_iam_role.role_arn == role
     assert credential.aws_iam_role.external_id
-    assert uc.get_credential(credential_name) == credential
+    assert uc.credential(credential_name).get() == credential
     assert credential_name in [c.name for c in uc.list_credentials()]
+    assert credential_name in [c.name for c in uc.list_credentials(purpose="STORAGE")]
 
-    updated = uc.update_credential(
-        credential_name, comment="edited", aws_iam_role_arn=f"{role}2"
+    updated = uc.credential(credential_name).update(
+        comment="edited", aws_iam_role=AwsIamRoleRequest(f"{role}2")
     )
     assert updated.comment == "edited"
     assert updated.aws_iam_role is not None
@@ -241,21 +291,33 @@ def test_credentials_and_external_locations(uc: Calls) -> None:
     )
     assert (location.url, location.credential_name) == (url, credential_name)
     assert location.credential_id == credential.id
-    assert uc.get_external_location(location_name) == location
+    assert uc.external_location(location_name).get() == location
     assert location_name in [loc.name for loc in uc.list_external_locations()]
-    moved = uc.update_external_location(
-        location_name, comment="edited", new_name=f"{location_name}_2"
+    moved = uc.external_location(location_name).update(
+        comment="edited", new_name=f"{location_name}_2"
     )
     assert (moved.name, moved.comment) == (f"{location_name}_2", "edited")
 
-    with pytest.raises(UcError) as error:
-        uc.delete_credential(credential_name)
+    with pytest.raises(BadRequestError) as error:
+        uc.credential(credential_name).delete()
     assert error.value.code == "INVALID_ARGUMENT"
-    uc.delete_external_location(f"{location_name}_2")
-    uc.delete_credential(credential_name)
+    uc.external_location(f"{location_name}_2").delete()
+    uc.credential(credential_name).delete()
     assert credential_name not in [c.name for c in uc.list_credentials()]
 
 
+def test_list_credentials_by_purpose(uc: Calls) -> None:
+    # The upstream server takes `purpose`, but lists every credential.
+    name = unique("credential")
+    role = AwsIamRoleRequest("arn:aws:iam::123456789012:role/uc")
+    uc.create_credential(name, role, purpose="STORAGE")
+    assert name in [c.name for c in uc.list_credentials(purpose="STORAGE")]
+    services = uc.list_credentials(purpose="SERVICE_PRINCIPAL")
+    assert name not in [c.name for c in services]
+    uc.credential(name).delete()
+
+
+@pytest.mark.upstream
 def test_temporary_credentials(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     staging = uc.create_staging_table("t", catalog, schema_name)
@@ -276,7 +338,7 @@ def test_temporary_credentials(uc: Calls, schema: tuple[str, str]) -> None:
     assert credentials.azure_user_delegation_sas is None
     assert credentials.gcp_oauth_token is None
 
-    volume = uc.create_volume("v", catalog, schema_name, "MANAGED")
+    volume = uc.create_volume(catalog, schema_name, "v", "MANAGED")
     assert volume.volume_id
     credentials = uc.generate_temporary_volume_credentials(
         volume.volume_id, "WRITE_VOLUME"
@@ -291,21 +353,22 @@ def test_temporary_credentials(uc: Calls, schema: tuple[str, str]) -> None:
 
 
 def test_permissions(uc: Calls, catalog: str) -> None:
+    # The upstream server keeps no grants while authorization is off.
     user = f"{unique('user')}@example.com"
     other = f"{unique('user')}@example.com"
-    uc.create_user(user)
-    uc.create_user(other)
-    assert uc.get_permissions("catalog", catalog) == []
+    uc.create_user(emails=[ScimEmail(user, primary=True)])
+    uc.create_user(emails=[ScimEmail(other, primary=True)])
+    assert uc.get_permissions("catalog", catalog).privilege_assignments == []
 
     grant = PermissionsChange(user, add=["USE CATALOG", "CREATE SCHEMA"])
-    granted = uc.update_permissions("catalog", catalog, [grant])
-    assert [(a.principal, sorted(a.privileges)) for a in granted] == [
-        (user, ["CREATE SCHEMA", "USE CATALOG"])
-    ]
+    granted = uc.update_permissions("catalog", catalog, changes=[grant])
+    assert [
+        (a.principal, sorted(a.privileges)) for a in granted.privilege_assignments
+    ] == [(user, ["CREATE SCHEMA", "USE CATALOG"])]
     assert uc.get_permissions("catalog", catalog) == granted
     assert uc.get_permissions("catalog", catalog, principal=user) == granted
     uc.update_permissions(
-        "catalog", catalog, [PermissionsChange(other, add=["USE CATALOG"])]
+        "catalog", catalog, changes=[PermissionsChange(other, add=["USE CATALOG"])]
     )
     assert uc.get_permissions("catalog", catalog, principal=user) == granted
 
@@ -313,85 +376,151 @@ def test_permissions(uc: Calls, catalog: str) -> None:
         PermissionsChange(user, remove=["USE CATALOG", "CREATE SCHEMA"]),
         PermissionsChange(other, remove=["USE CATALOG"]),
     ]
-    assert uc.update_permissions("catalog", catalog, revoke) == []
+    revoked = uc.update_permissions("catalog", catalog, changes=revoke)
+    assert revoked.privilege_assignments == []
+    with pytest.raises(BadRequestError, match="unknown variant `bogus`"):
+        uc.get_permissions("bogus", catalog)
 
 
+@pytest.mark.upstream
 def test_metastore_summary(uc: Calls) -> None:
-    summary = uc.metastore_summary()
+    summary = uc.get_metastore_summary()
     assert summary.metastore_id
-    assert uc.metastore_summary() == summary
+    assert uc.get_metastore_summary() == summary
 
 
-def test_personal_access_tokens(admin: Calls, server) -> None:
-    created = admin.create_pat(unique("token"))
+def test_health_and_version(uc: Calls) -> None:
+    assert uc.get_health().status == "ok"
+    version = uc.get_version()
+    assert (version.server, version.api_version) == ("unitycatalog-rs", "2.1")
+
+
+def test_personal_access_tokens(admin: Calls, uc: Calls, server) -> None:
+    created = admin.create_token(unique("token"))
     assert created.token_value and created.token_prefix and created.owner
+    # The repr hides the secret; the attribute gives it.
     assert created.token_value not in repr(created)
-    signed_in = Client(server.url).with_bearer(created.token_value)
-    assert signed_in.list_pats()[0].id == created.id
+    assert "token_value='***'" in repr(created)
+    signed_in = Client(server.address, token=created.token_value)
+    assert signed_in.list_tokens()[0].id == created.id
 
-    listed = {p.id: p for p in admin.list_pats()}
+    listed = {p.id: p for p in admin.list_tokens()}
     assert listed[created.id].token_value is None
-    admin.revoke_pat(created.id)
-    assert created.id not in [p.id for p in admin.list_pats()]
+    # The OAuth `client_credentials` grant, a form: the token is the access token.
+    answer = uc.request_access_token("client_credentials", created.token_value)
+    assert (answer.access_token, answer.token_type) == (created.token_value, "Bearer")
+    assert created.token_value not in repr(answer)
+    admin.token(created.id).delete()
+    assert created.id not in [p.id for p in admin.list_tokens()]
 
 
+@pytest.mark.upstream
+def test_token_exchange_posts_a_form(uc: Calls) -> None:
+    with pytest.raises(BadRequestError, match="Authorization is disabled"):
+        uc.exchange_token(
+            "urn:ietf:params:oauth:grant-type:token-exchange",
+            "urn:ietf:params:oauth:token-type:access_token",
+            "not-a-token",
+            "urn:ietf:params:oauth:token-type:id_token",
+        )
+
+
+@pytest.mark.upstream
 def test_scim_users(uc: Calls) -> None:
     email = f"{unique('user')}@example.com"
-    created = uc.create_user(email, display_name="Ada", external_id=email)
-    assert created.id and created.created
-    assert (created.user_name, created.emails) == (email, [email])
+    created = uc.create_user(
+        emails=[ScimEmail(email, primary=True)], display_name="Ada", external_id=email
+    )
+    assert created.id and created.meta and created.meta.created
+    assert created.user_name == email
+    assert created.emails == [ScimEmail(email, primary=True)]
     assert (created.display_name, created.external_id) == ("Ada", email)
     assert created.active is True
-    assert uc.get_user(created.id) == created
-    assert uc.list_users(filter=f'userName eq "{email}"') == [created]
-    assert len(uc.list_users(start_index=1, count=1)) == 1
+    assert _without_meta(uc.get_user(created.id)) == _without_meta(created)
+    [listed] = uc.list_users(filter=f'userName eq "{email}"').resources
+    assert _without_meta(listed) == _without_meta(created)
+    assert len(uc.list_users(start_index=1, count=1).resources) == 1
 
-    updated = uc.update_user(created.id, display_name="Ada L")
+    updated = uc.replace_user(created.id, display_name="Ada L")
     assert (updated.display_name, updated.user_name) == ("Ada L", email)
     assert updated.external_id == email
     # As in upstream, a deleted user stays, disabled.
     assert uc.delete_user(created.id) is None
     assert uc.get_user(created.id).active is False
-    assert uc.update_user(created.id, active=True).active is True
+    assert uc.replace_user(created.id, active=True).active is True
+
+
+def test_patch_scim_user(uc: Calls) -> None:
+    # The upstream server has no PATCH for users.
+    email = f"{unique('user')}@example.com"
+    created = uc.create_user(emails=[ScimEmail(email, primary=True)])
+    disable = ScimPatchOperation("replace", path="active", value=False)
+    assert uc.patch_user(created.id, [disable]) is None
+    assert uc.get_user(created.id).active is False
+
+
+def _without_meta(user: ScimUser) -> tuple[object, ...]:
+    """The fields of `user` but `meta`: the upstream server gives a user who
+    was never updated the time of the request as `meta.last_modified`."""
+    return (
+        user.schemas,
+        user.id,
+        user.external_id,
+        user.user_name,
+        user.display_name,
+        user.active,
+        user.emails,
+        user.photos,
+        user.roles,
+    )
 
 
 def test_me(admin: Calls, uc: Calls) -> None:
     # The server's `admin` is a caller, but without authorization no user.
-    with pytest.raises(UcError) as error:
-        admin.me()
+    with pytest.raises(NotFoundError) as error:
+        admin.get_me()
     assert error.value.code == "NOT_FOUND"
-    # Without a token the server knows no caller.
-    with pytest.raises(UcError):
-        uc.me()
+    # Without a token the server knows no caller: a SCIM error, status 500
+    # as upstream.
+    with pytest.raises(ServerError, match="No user found"):
+        uc.get_me()
 
 
 def test_scim_groups(uc: Calls) -> None:
     name = unique("group")
     created = uc.create_group(name)
     assert created.id
-    assert (created.display_name, created.member_ids) == (name, [])
+    assert (created.display_name, created.members) == (name, [])
     assert uc.get_group(created.id) == created
-    assert uc.list_groups(filter=f'displayName eq "{name}"') == [created]
+    assert uc.list_groups(filter=f'displayName eq "{name}"').resources == [created]
+
+    email = f"{unique('user')}@example.com"
+    user = uc.create_user(emails=[ScimEmail(email, primary=True)])
+    add = ScimPatchOperation("add", path="members", value=[{"value": user.id}])
+    patched = uc.patch_group(created.id, [add])
+    assert patched.members == [ScimGroupMember(user.id)]
+    replaced = uc.replace_group(created.id, f"{name}_2")
+    assert (replaced.display_name, replaced.members) == (f"{name}_2", [])
 
     assert uc.delete_group(created.id) is None
-    assert created.id not in [g.id for g in uc.list_groups()]
-    with pytest.raises(UcError) as error:
+    assert created.id not in [g.id for g in uc.list_groups().resources]
+    with pytest.raises(NotFoundError) as error:
         uc.get_group(created.id)
     assert error.value.code == "NOT_FOUND"
 
 
 def test_backup_and_restore(admin: Calls, uc: Calls, catalog: str) -> None:
-    snapshot = admin.backup()
-    names = [row.get("name") for row in snapshot["tables"]["catalog"]]
+    snapshot = admin.get_backup()
+    names = [row.get("name") for row in snapshot.tables["catalog"]]
     assert catalog in names
-    restored = admin.restore(snapshot)
+    restored = admin.restore_backup(snapshot.version, snapshot.tables)
     assert restored.imported["catalog"] == len(names)
     assert restored.skipped == []
-    assert uc.get_catalog(catalog).name == catalog
+    assert uc.catalog(catalog).get().name == catalog
 
     # Without a token there is no admin, even with authorization off.
-    with pytest.raises(UcError) as error:
-        uc.backup()
+    with pytest.raises(UnauthenticatedError) as error:
+        uc.get_backup()
     assert error.value.code == "UNAUTHENTICATED"
 
 
@@ -402,7 +531,7 @@ def test_audit_events(admin: Calls, catalog: str) -> None:
     while True:
         events = admin.list_audit_events(
             principal="anonymous", method="POST", path_prefix=path
-        )
+        ).events
         if events or time.monotonic() > deadline:
             break
         time.sleep(0.1)
@@ -411,37 +540,43 @@ def test_audit_events(admin: Calls, catalog: str) -> None:
         ("anonymous", "POST", path)
     }
     assert all(e.id and e.status == 200 and e.timestamp for e in events)
-    assert len(admin.list_audit_events(max_results=1)) == 1
+    page = admin.list_audit_events(max_results=1)
+    assert len(page.events) == 1 and page.next_page_token
+    following = admin.list_audit_events(max_results=1, page_token=page.next_page_token)
+    assert following.events and following.events != page.events
 
 
+@pytest.mark.upstream
 def test_iceberg_rest_catalog(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, namespace = schema
-    config = uc.iceberg_config(catalog)
+    config = uc.get_iceberg_config(catalog)
     assert config.overrides["prefix"] == f"catalogs/{catalog}"
     assert config.endpoints
-    assert uc.list_iceberg_namespaces(catalog) == [[namespace]]
-    assert uc.list_iceberg_tables(catalog, namespace) == []
+    assert uc.list_iceberg_namespaces(catalog).namespaces == [[namespace]]
+    assert uc.iceberg_namespace_exists(catalog, namespace) is True
+    assert uc.iceberg_namespace_exists(catalog, "missing") is False
+    assert uc.list_iceberg_tables(catalog, namespace).identifiers == []
 
-    schema_json = {
-        "type": "struct",
-        "schema-id": 0,
-        "fields": [{"id": 1, "name": "id", "required": True, "type": "long"}],
-    }
-    uc.raw_json(
-        "POST",
-        f"iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables",
-        body={"name": "t", "schema": schema_json},
-    )
-    [table] = uc.list_iceberg_tables(catalog, namespace)
-    assert (table.namespace, table.name) == ([namespace], "t")
+    fields = [IcebergStructField(1, "id", True, "long")]
+    schema_of_t = IcebergSchema(schema_type="struct", schema_id=0, fields=fields)
+    created = uc.create_iceberg_table(catalog, namespace, "t", schema_of_t)
+    assert created.metadata and created.metadata.format_version == 2
+    [table] = uc.list_iceberg_tables(catalog, namespace).identifiers
+    assert table == IcebergTableIdentifier(namespace=[namespace], name="t")
     loaded = uc.load_iceberg_table(catalog, namespace, "t")
-    assert loaded["metadata-location"]
-    assert loaded["metadata"]["format-version"] in (1, 2)
-    with pytest.raises(UcError) as error:
+    assert loaded.metadata_location == created.metadata_location
+    assert loaded.metadata and loaded.metadata.format_version in (1, 2)
+    assert uc.iceberg_table_exists(catalog, namespace, "t") is True
+    assert uc.iceberg_table_exists(catalog, namespace, "missing") is False
+    with pytest.raises(NotFoundError) as error:
         uc.load_iceberg_table(catalog, namespace, "missing")
-    assert error.value.code == "NOT_FOUND"
+    assert error.value.code == "NoSuchTableException"
+
+    uc.drop_iceberg_table(catalog, namespace, "t")
+    assert uc.iceberg_table_exists(catalog, namespace, "t") is False
 
 
+@pytest.mark.upstream
 def test_delta_commits(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     staging = uc.create_staging_table("t", catalog, schema_name)
@@ -455,70 +590,135 @@ def test_delta_commits(uc: Calls, schema: tuple[str, str]) -> None:
         properties={"io.unitycatalog.tableId": staging.id},
     )
     assert table.table_id and table.storage_location
-    assert uc.get_delta_commits(table.table_id, table.storage_location, 0) == {
-        "commits": [],
-        "latest_table_version": 0,
-    }
+    commits = uc.get_delta_commits(table.table_id, 0, table_uri=table.storage_location)
+    assert (commits.commits, commits.latest_table_version) == ([], 0)
 
     now = int(time.time() * 1000)
-    commit_info = {
-        "version": 1,
-        "timestamp": now,
-        "file_name": "00000000000000000001.uuid.json",
-        "file_size": 10,
-        "file_modification_timestamp": now,
-    }
-    commit = {
-        "table_id": table.table_id,
-        "table_uri": table.storage_location,
-        "commit_info": commit_info,
-    }
-    assert uc.commit_delta(commit) is None
-    commits = uc.get_delta_commits(
-        table.table_id, table.storage_location, 1, end_version=1
+    commit_info = DeltaCommitInfo(1, now, "00000000000000000001.uuid.json", 10, now)
+    assert (
+        uc.commit_delta(table.table_id, table.storage_location, commit_info=commit_info)
+        is None
     )
-    assert commits == {"commits": [commit_info], "latest_table_version": 1}
+    commits = uc.get_delta_commits(
+        table.table_id, 1, table_uri=table.storage_location, end_version=1
+    )
+    assert (commits.commits, commits.latest_table_version) == ([commit_info], 1)
 
-    missing = {**commit, "table_id": "00000000-0000-0000-0000-000000000000"}
-    with pytest.raises(UcError) as error:
-        uc.commit_delta(missing)
+    with pytest.raises(NotFoundError) as error:
+        uc.commit_delta(
+            "00000000-0000-0000-0000-000000000000",
+            table.storage_location,
+            commit_info=commit_info,
+        )
     assert error.value.code == "TABLE_NOT_FOUND"
 
 
-def test_raw_json(uc: Calls, catalog: str) -> None:
-    listed = uc.raw_json("GET", "catalogs")
-    assert catalog in [c["name"] for c in listed["catalogs"]]
-    assert uc.raw_json("get", f"catalogs/{catalog}")["name"] == catalog
-    with pytest.raises(UcError) as error:
-        uc.raw_json("GET", f"catalogs/{catalog}_missing")
-    assert error.value.code == "CATALOG_NOT_FOUND"
-    page = uc.raw_json("GET", "catalogs", query={"max_results": "1"})
-    assert len(page["catalogs"]) == 1
+@pytest.mark.upstream
+def test_delta_api(uc: Calls, schema: tuple[str, str]) -> None:
+    catalog, schema_name = schema
+    config = uc.get_delta_config(catalog, "1.0")
+    assert config.protocol_version == "1.0" and config.endpoints
+    staging = uc.create_delta_staging_table(catalog, schema_name, "staged")
+    assert staging.table_type == "MANAGED"
+    assert staging.required_properties["io.unitycatalog.tableId"] == staging.table_id
+    assert uc.get_delta_staging_table_credentials(staging.table_id).storage_credentials
+
+    created = uc.create_staging_table("t", catalog, schema_name)
+    uc.create_table(
+        "t",
+        catalog,
+        schema_name,
+        "MANAGED",
+        data_source_format="DELTA",
+        storage_location=created.staging_location,
+        properties={"io.unitycatalog.tableId": created.id},
+    )
+    loaded = uc.load_delta_table(catalog, schema_name, "t")
+    assert loaded.metadata and loaded.metadata.table_uuid == created.id
+    assert set(loaded.allowed_maintenance_operations) <= set(DeltaMaintenanceOperation)
+    [credential] = uc.get_delta_table_credentials(
+        catalog, schema_name, "t", "READ"
+    ).storage_credentials
+    assert (credential.prefix, credential.operation) == (
+        created.staging_location,
+        "READ",
+    )
+
+    assert uc.rename_delta_table(catalog, schema_name, "t", "t2") is None
+    assert uc.delta_table_exists(catalog, schema_name, "t") is False
+    assert uc.delta_table_exists(catalog, schema_name, "t2") is True
+    uc.delete_delta_table(catalog, schema_name, "t2")
+    assert uc.delta_table_exists(catalog, schema_name, "t2") is False
 
 
-def test_post_form(uc: Calls) -> None:
-    form = {
-        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-        "subject_token": "not-a-token",
-    }
-    with pytest.raises(UcError):
-        uc.post_form("/api/1.0/unity-control/auth/tokens", form)
+def test_shares_recipients_and_delta_sharing(
+    uc: Calls, schema: tuple[str, str], server, mode: str
+) -> None:
+    catalog, schema_name = schema
+    staging = uc.create_staging_table("orders", catalog, schema_name)
+    uc.create_table(
+        "orders",
+        catalog,
+        schema_name,
+        "MANAGED",
+        data_source_format="DELTA",
+        storage_location=staging.staging_location,
+        properties={"io.unitycatalog.tableId": staging.id},
+    )
+    share_name, recipient_name = unique("share"), unique("recipient")
+    share = uc.create_share(share_name, comment="for partners")
+    assert (share.name, share.objects) == (share_name, [])
+    shared = SharedDataObject(f"{catalog}.{schema_name}.orders", "sales", "orders")
+    assert uc.share(share_name).update(add_objects=[shared]).objects == [shared]
+    assert share_name in [s.name for s in uc.list_shares()]
+
+    recipient = uc.create_recipient(recipient_name, comment="partner")
+    assert recipient.authentication_type == "TOKEN" and recipient.bearer_token
+    updated = uc.recipient(recipient_name).update(add_shares=[share_name])
+    assert (updated.shares, updated.bearer_token) == ([share_name], None)
+    assert recipient_name in [r.name for r in uc.list_recipients()]
+    profile = uc.recipient(recipient_name).create_recipient_profile()
+    assert profile.endpoint.endswith("/delta-sharing")
+
+    # The Delta Sharing protocol, with the token of the recipient.
+    reader = Calls(Client(server.address, token=profile.bearer_token), mode)
+    assert [s.name for s in reader.sharing_list_shares().items] == [share_name]
+    assert [s.name for s in reader.sharing_list_schemas(share_name).items] == ["sales"]
+    [table] = reader.sharing_list_tables(share_name, "sales").items
+    assert (table.share, table.schema, table.name) == (share_name, "sales", "orders")
+    assert reader.sharing_list_all_tables(share_name).items == [table]
+    version = reader.sharing_get_table_version(share_name, "sales", "orders")
+    assert version.version == 0
+    protocol, metadata = reader.sharing_get_table_metadata(
+        share_name, "sales", "orders"
+    )
+    assert protocol.protocol and metadata.metadata
+    assert metadata.metadata.id == staging.id
+
+    rotated = uc.recipient(recipient_name).rotate_recipient_token()
+    assert rotated.bearer_token and rotated.bearer_token != profile.bearer_token
+    uc.recipient(recipient_name).delete()
+    uc.share(share_name).delete()
+    assert share_name not in [s.name for s in uc.list_shares()]
 
 
+@pytest.mark.upstream
 def test_server_errors(uc: Calls) -> None:
     name = unique("missing")
-    with pytest.raises(UcError) as error:
-        uc.get_catalog(name)
-    assert error.value.code == "CATALOG_NOT_FOUND"
+    with pytest.raises(NotFoundError) as error:
+        uc.catalog(name).get()
+    assert (error.value.code, error.value.status) == ("CATALOG_NOT_FOUND", 404)
     assert name in error.value.message
     assert str(error.value) == f"CATALOG_NOT_FOUND: {error.value.message}"
+    assert error.value.details[0]["reason"] == "CATALOG_NOT_FOUND"
 
 
+@pytest.mark.upstream
 def test_async_requests_in_one_event_loop(server, catalog: str) -> None:
-    client = Client(server.url)
+    client = Client(server.address)
 
-    async def main() -> list[str | None]:
-        requests = [client.get_catalog_async(catalog) for _ in range(20)]
+    async def main() -> list[str]:
+        requests = [client.catalog(catalog).get_async() for _ in range(20)]
         return [c.name for c in await asyncio.gather(*requests)]
 
     assert asyncio.run(main()) == [catalog] * 20
@@ -526,9 +726,12 @@ def test_async_requests_in_one_event_loop(server, catalog: str) -> None:
 
 def test_unreachable_server(mode: str) -> None:
     client = Calls(Client(f"http://127.0.0.1:{_closed_port()}/"), mode)
-    with pytest.raises(UcError) as error:
+    with pytest.raises(UnityCatalogError) as error:
         client.list_catalogs()
-    assert error.value.code == "INTERNAL"
+    # Without an answer the error has no status, and so no subclass.
+    assert type(error.value) is UnityCatalogError
+    assert (error.value.code, error.value.status) == (None, None)
+    assert error.value.message.startswith("request failed: ")
 
 
 def _closed_port() -> int:

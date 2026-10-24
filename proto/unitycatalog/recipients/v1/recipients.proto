@@ -1,0 +1,150 @@
+syntax = "proto3";
+
+package unitycatalog.recipients.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+import "unitycatalog/sharing/v1/sharing.proto";
+
+// How a recipient signs in to the Delta Sharing server.
+enum AuthenticationType {
+  AUTHENTICATION_TYPE_UNSPECIFIED = 0;
+  // A bearer token.
+  TOKEN = 1;
+  // OAuth client credentials. Not implemented: the recipient gets a bearer token.
+  OAUTH_CLIENT_CREDENTIALS = 2;
+}
+
+// A Delta Sharing recipient: an organization or user outside Unity Catalog that reads shares with
+// a bearer token. The server keeps a hash of the token only.
+message RecipientInfo {
+  option (google.api.resource) = {
+    type: "unitycatalog.io/Recipient"
+    pattern: "recipients/{recipient}"
+    plural: "recipients"
+    singular: "recipient"
+  };
+
+  // Name of the recipient.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // Unique identifier of the recipient.
+  string id = 2;
+  // How the recipient signs in.
+  AuthenticationType authentication_type = 3;
+  // User-provided free-form text description.
+  optional string comment = 4;
+  // Username of the owner of the recipient.
+  optional string owner = 5;
+  // Time at which the recipient was created, in epoch milliseconds.
+  int64 created_at = 6;
+  // Username of the creator of the recipient.
+  optional string created_by = 7;
+  // The bearer token. Set only in the responses of `CreateRecipient` and `RotateRecipientToken`.
+  optional string bearer_token = 8 [debug_redact = true];
+  // The first 8 characters of the bearer token, for display only.
+  string token_prefix = 9;
+  // Names of the shares that the recipient can read.
+  repeated string shares = 10;
+}
+
+message CreateRecipient {
+  // Name of the recipient.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // How the recipient signs in. Default: `TOKEN`.
+  optional AuthenticationType authentication_type = 2;
+  // User-provided free-form text description.
+  optional string comment = 3;
+}
+
+message ListRecipientsRequest {
+  // The maximum number of recipients to return.
+  optional int32 max_results = 1;
+  // Opaque token of the page to return: the `next_page_token` of the page before.
+  optional string page_token = 2;
+}
+
+message ListRecipientsResponse {
+  // The recipients.
+  repeated RecipientInfo items = 1;
+  // Opaque token of the next page. Absent on the last page.
+  optional string next_page_token = 2;
+}
+
+message GetRecipientRequest {
+  // Name of the recipient.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message UpdateRecipient {
+  // Name of the recipient.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // User-provided free-form text description.
+  optional string comment = 2;
+  // Names of the shares to give the recipient access to.
+  repeated string add_shares = 3;
+  // Names of the shares to take the recipient's access away from.
+  repeated string remove_shares = 4;
+}
+
+message DeleteRecipientRequest {
+  // Name of the recipient.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message RotateRecipientTokenRequest {
+  // Name of the recipient.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message CreateRecipientProfileRequest {
+  // Name of the recipient.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Delta Sharing recipients and their bearer tokens. Only admins can manage them.
+service RecipientsService {
+  // List the recipients.
+  rpc ListRecipients(ListRecipientsRequest) returns (ListRecipientsResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/recipients"};
+  }
+
+  // Create a recipient. The response holds its bearer token, which no later response shows.
+  rpc CreateRecipient(.unitycatalog.recipients.v1.CreateRecipient) returns (RecipientInfo) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/recipients"
+      body: "*"
+    };
+  }
+
+  // Get a recipient. The response does not hold the bearer token.
+  rpc GetRecipient(GetRecipientRequest) returns (RecipientInfo) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/recipients/{name}"};
+  }
+
+  // Change a recipient: its comment and the shares it can read.
+  rpc UpdateRecipient(.unitycatalog.recipients.v1.UpdateRecipient) returns (RecipientInfo) {
+    option (google.api.http) = {
+      patch: "/api/2.1/unity-catalog/recipients/{name}"
+      body: "*"
+    };
+  }
+
+  // Delete a recipient.
+  rpc DeleteRecipient(DeleteRecipientRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.1/unity-catalog/recipients/{name}"};
+  }
+
+  // Replace the bearer token of a recipient. The old token stops working. The response holds the
+  // new token.
+  rpc RotateRecipientToken(RotateRecipientTokenRequest) returns (RecipientInfo) {
+    option (google.api.http) = {post: "/api/2.1/unity-catalog/recipients/{name}/rotate-token"};
+  }
+
+  // Replace the bearer token of a recipient and return a Delta Sharing profile with the new token.
+  // The old token stops working.
+  rpc CreateRecipientProfile(CreateRecipientProfileRequest) returns (unitycatalog.sharing.v1.RecipientProfile) {
+    option (google.api.http) = {post: "/api/2.1/unity-catalog/recipients/{name}/profile"};
+  }
+}

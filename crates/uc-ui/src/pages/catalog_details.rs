@@ -4,7 +4,8 @@
 
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
-use uc_api::{CatalogInfo, CreateSchema, SchemaInfo, UpdateCatalog};
+use uc_client::models::catalogs::v1::CatalogInfo;
+use uc_client::models::schemas::v1::SchemaInfo;
 
 use crate::api;
 use crate::components::icons::{DatabaseOutlined, ProductOutlined};
@@ -32,7 +33,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
         let catalog = catalog.clone();
         move || {
             let catalog = catalog.clone();
-            async move { api::client().get_catalog(&catalog).await }
+            async move { api::client().catalog(catalog).get().await }
         }
     });
     let schemas = use_load(Key::Schemas(catalog.clone()), {
@@ -49,8 +50,10 @@ fn CatalogPage(catalog: String) -> impl IntoView {
     let on_row_click = Callback::new({
         let catalog = catalog.clone();
         move |schema: SchemaInfo| {
-            let name = schema.name.unwrap_or_default();
-            navigate(&format!("/data/{catalog}/{name}"), Default::default());
+            navigate(
+                &format!("/data/{catalog}/{}", schema.name),
+                Default::default(),
+            );
         }
     });
     let save = {
@@ -58,12 +61,11 @@ fn CatalogPage(catalog: String) -> impl IntoView {
         move |comment| {
             let catalog = catalog.clone();
             async move {
-                let request = UpdateCatalog {
-                    comment: Some(comment),
-                    properties: None,
-                    new_name: None,
-                };
-                let updated = api::client().update_catalog(&catalog, &request).await?;
+                let updated = api::client()
+                    .catalog(&catalog)
+                    .update()
+                    .with_comment(comment)
+                    .await?;
                 cache.set(Key::Catalog(catalog), updated);
                 Ok(())
             }
@@ -81,7 +83,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
                 let catalog = catalog.clone();
                 move |force| {
                     let catalog = catalog.clone();
-                    async move { api::client().delete_catalog(&catalog, force).await }
+                    async move { api::client().catalog(catalog).delete().with_force(force).await }
                 }
             }
             key=Key::Catalog(catalog.clone())
@@ -98,15 +100,11 @@ fn CatalogPage(catalog: String) -> impl IntoView {
                 move |name, comment| {
                     let catalog = catalog.clone();
                     async move {
-                        let request = CreateSchema {
-                            name,
-                            catalog_name: catalog.clone(),
-                            comment,
-                            properties: None,
-                            storage_root: None,
-                        };
-                        let schema = api::client().create_schema(&request).await?;
-                        Ok(format!("/data/{catalog}/{}", schema.name.unwrap_or_default()))
+                        let schema = api::client()
+                            .create_schema(name, &catalog)
+                            .with_comment(comment)
+                            .await?;
+                        Ok(format!("/data/{catalog}/{}", schema.name))
                     }
                 }
             }
@@ -181,14 +179,12 @@ fn schema_columns() -> Vec<Column<SchemaInfo>> {
                     <span class="uc-name">
                         <DatabaseOutlined/>
                         " "
-                        {s.name.clone().unwrap_or_default()}
+                        {s.name.clone()}
                     </span>
                 }
                 .into_any()
             }),
-            search_key: Some(Box::new(|s: &SchemaInfo| {
-                s.name.clone().unwrap_or_default()
-            })),
+            search_key: Some(Box::new(|s: &SchemaInfo| s.name.clone())),
         },
         Column {
             title: "Created At",

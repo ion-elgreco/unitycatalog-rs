@@ -48,8 +48,8 @@ For a table on S3:
 ```python
 from unitycatalog import Client
 
-client = Client("http://localhost:8080/api/2.1/unity-catalog/")
-table = client.get_table("main.sales.orders")
+client = Client("http://localhost:8080/")
+table = client.table("main.sales.orders").get()
 credentials = client.generate_temporary_table_credentials(table.table_id, "READ")
 print(credentials.aws_temp_credentials.access_key_id, credentials.expiration_time)
 ```

@@ -1,0 +1,288 @@
+syntax = "proto3";
+
+package unitycatalog.tables.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+
+// The name of the data type of a column.
+enum ColumnTypeName {
+  COLUMN_TYPE_NAME_UNSPECIFIED = 0;
+  BOOLEAN = 1;
+  BYTE = 2;
+  SHORT = 3;
+  INT = 4;
+  LONG = 5;
+  FLOAT = 6;
+  DOUBLE = 7;
+  DATE = 8;
+  TIMESTAMP = 9;
+  // Timestamp without a time zone.
+  TIMESTAMP_NTZ = 10;
+  STRING = 11;
+  BINARY = 12;
+  DECIMAL = 13;
+  INTERVAL = 14;
+  ARRAY = 15;
+  STRUCT = 16;
+  MAP = 17;
+  VARIANT = 18;
+  CHAR = 19;
+  NULL = 20;
+  USER_DEFINED_TYPE = 21;
+  // The return type of a table function.
+  TABLE_TYPE = 22;
+}
+
+// The file format of the data of a table.
+enum DataSourceFormat {
+  DATA_SOURCE_FORMAT_UNSPECIFIED = 0;
+  DELTA = 1;
+  ICEBERG = 2;
+  CSV = 3;
+  JSON = 4;
+  AVRO = 5;
+  PARQUET = 6;
+  ORC = 7;
+  TEXT = 8;
+}
+
+// The type of a table.
+enum TableType {
+  TABLE_TYPE_UNSPECIFIED = 0;
+  // A table whose data Unity Catalog manages, below the managed storage of its schema or catalog.
+  MANAGED = 1;
+  // A table whose data is at a storage location that the user gives.
+  EXTERNAL = 2;
+  // A streaming table.
+  STREAMING_TABLE = 3;
+  // A materialized view.
+  MATERIALIZED_VIEW = 4;
+  // A metric view: its definition is YAML.
+  METRIC_VIEW = 5;
+  // A view: its definition is SQL.
+  VIEW = 6;
+}
+
+// A column of a table.
+message ColumnInfo {
+  // Name of the column.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Full data type of the column as SQL text, such as `decimal(10,2)`.
+  optional string type_text = 2;
+  // Full data type of the column as a JSON Spark `StructField`.
+  string type_json = 3 [(google.api.field_behavior) = REQUIRED];
+  // Name of the data type of the column.
+  optional ColumnTypeName type_name = 4;
+  // Digits of precision. Required for decimal types.
+  optional int32 type_precision = 5;
+  // Digits to the right of the decimal point. Required for decimal types.
+  optional int32 type_scale = 6;
+  // Format of an interval type.
+  optional string type_interval_type = 7;
+  // Position of the column, starting at 0.
+  optional int32 position = 8;
+  // User-provided free-form text description.
+  optional string comment = 9;
+  // Whether the column can hold null values. The server sets false when it is absent.
+  optional bool nullable = 10;
+  // Position of the column in the partition key of the table.
+  optional int32 partition_index = 11;
+}
+
+// A table that a view or function depends on.
+message TableDependency {
+  // Full name of the table, in the form `<catalog>.<schema>.<table>`.
+  string table_full_name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A function that a view or function depends on.
+message FunctionDependency {
+  // Full name of the function, in the form `<catalog>.<schema>.<function>`.
+  string function_full_name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A dependency of a view or function. Exactly one of the fields is set.
+message Dependency {
+  // A table dependency.
+  TableDependency table = 1;
+  // A function dependency.
+  FunctionDependency function = 2;
+}
+
+// The dependencies of a view or function.
+message DependencyList {
+  // The dependencies.
+  repeated Dependency dependencies = 1;
+}
+
+// A table: data in the third layer of the three-level namespace, below a schema.
+message TableInfo {
+  option (google.api.resource) = {
+    type: "unitycatalog.io/Table"
+    pattern: "tables/{table}"
+    plural: "tables"
+    singular: "table"
+  };
+
+  // Name of the table, relative to the parent schema.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // Name of the parent catalog.
+  string catalog_name = 2;
+  // Name of the parent schema.
+  string schema_name = 3;
+  // Type of the table.
+  TableType table_type = 4;
+  // File format of the data of the table.
+  optional DataSourceFormat data_source_format = 5;
+  // The columns of the table.
+  repeated ColumnInfo columns = 6;
+  // Storage location URL of the table. Absent for views.
+  optional string storage_location = 7;
+  // User-provided free-form text description.
+  optional string comment = 8;
+  // Key-value properties of the table.
+  map<string, string> properties = 9;
+  // Username of the owner of the table.
+  optional string owner = 10;
+  // Time at which the table was created, in epoch milliseconds.
+  int64 created_at = 11;
+  // Username of the creator of the table.
+  optional string created_by = 12;
+  // Time at which the table was last changed, in epoch milliseconds.
+  int64 updated_at = 13;
+  // Username of the user who last changed the table.
+  optional string updated_by = 14;
+  // Unique identifier of the table.
+  string table_id = 15;
+  // Definition of a view-like table: SQL for views, YAML for metric views.
+  optional string view_definition = 16;
+  // The tables and functions that a view-like table reads.
+  DependencyList view_dependencies = 17;
+}
+
+message CreateTable {
+  // Name of the table, relative to the parent schema.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent catalog.
+  string catalog_name = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema_name = 3 [(google.api.field_behavior) = REQUIRED];
+  // Type of the table.
+  TableType table_type = 4 [(google.api.field_behavior) = REQUIRED];
+  // The columns of the table. Views and metric views need at least one.
+  repeated ColumnInfo columns = 5;
+  // File format of the data of the table. MANAGED tables are DELTA; ICEBERG tables come only
+  // from the Iceberg REST catalog.
+  optional DataSourceFormat data_source_format = 6;
+  // Storage location URL of the table. Required for EXTERNAL tables; for MANAGED tables, the
+  // `staging_location` of a staging table that the caller created.
+  optional string storage_location = 7;
+  // User-provided free-form text description.
+  optional string comment = 8;
+  // Key-value properties of the table.
+  map<string, string> properties = 9;
+  // Definition of a view-like table: SQL for views, YAML for metric views.
+  optional string view_definition = 10;
+  // The tables and functions that a view-like table reads. Required for metric views.
+  DependencyList view_dependencies = 11;
+}
+
+message ListTablesRequest {
+  // Name of the parent catalog.
+  string catalog_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema_name = 2 [(google.api.field_behavior) = REQUIRED];
+  // The maximum number of tables to return.
+  optional int32 max_results = 3;
+  // Opaque token of the page to return: the `next_page_token` of the page before.
+  optional string page_token = 4;
+}
+
+message ListTablesResponse {
+  // The tables.
+  repeated TableInfo tables = 1;
+  // Opaque token of the next page. Absent on the last page.
+  optional string next_page_token = 2;
+}
+
+message GetTableRequest {
+  // Full name of the table, in the form `<catalog>.<schema>.<table>`.
+  string full_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Show a streaming table as a MANAGED table, as upstream's server can. This server does not
+  // read it.
+  optional bool read_streaming_table_as_managed = 2;
+  // Show a materialized view as a MANAGED table, as upstream's server can. This server does not
+  // read it.
+  optional bool read_materialized_view_as_managed = 3;
+}
+
+message DeleteTableRequest {
+  // Full name of the table, in the form `<catalog>.<schema>.<table>`.
+  string full_name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A staging table: a table id and managed storage location reserved for a MANAGED table that a
+// client is about to create.
+message StagingTableInfo {
+  // Name of the table, relative to the parent schema.
+  string name = 1;
+  // Name of the parent catalog.
+  string catalog_name = 2;
+  // Name of the parent schema.
+  string schema_name = 3;
+  // Unique identifier of the staging table. The table gets it when it is created.
+  string id = 4;
+  // Storage location URL reserved for the table. Create the table with it as its
+  // `storage_location`.
+  string staging_location = 5;
+}
+
+message CreateStagingTable {
+  // Name of the table, relative to the parent schema.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent catalog.
+  string catalog_name = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema_name = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Tables: the data below a schema.
+service TablesService {
+  // List the tables of a schema that the caller can see.
+  rpc ListTables(ListTablesRequest) returns (ListTablesResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/tables"};
+  }
+
+  // Create a table.
+  rpc CreateTable(.unitycatalog.tables.v1.CreateTable) returns (TableInfo) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/tables"
+      body: "*"
+    };
+  }
+
+  // Get a table.
+  rpc GetTable(GetTableRequest) returns (TableInfo) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/tables/{full_name}"};
+  }
+
+  // Delete a table.
+  rpc DeleteTable(DeleteTableRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.1/unity-catalog/tables/{full_name}"};
+  }
+}
+
+// Staging tables: storage reserved for MANAGED tables before they are created.
+service StagingTablesService {
+  // Create a staging table: reserve a table id and a managed storage location for a MANAGED
+  // table.
+  rpc CreateStagingTable(.unitycatalog.tables.v1.CreateStagingTable) returns (StagingTableInfo) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/staging-tables"
+      body: "*"
+    };
+  }
+}

@@ -22,7 +22,8 @@ pub enum Kind {
 #[derive(Clone, Debug)]
 pub struct Entry {
     pub name: String,
-    pub created_at: Option<EpochMillis>,
+    /// 0 when the server did not send it.
+    pub created_at: EpochMillis,
 }
 
 impl Kind {
@@ -103,9 +104,6 @@ impl Kind {
     }
 }
 
-fn entry(name: Option<String>, created_at: Option<EpochMillis>) -> Entry {
-    Entry {
-        name: name.unwrap_or_default(),
-        created_at,
-    }
+fn entry(name: String, created_at: EpochMillis) -> Entry {
+    Entry { name, created_at }
 }

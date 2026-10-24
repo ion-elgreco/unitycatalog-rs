@@ -1,0 +1,258 @@
+syntax = "proto3";
+
+package unitycatalog.functions.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+import "unitycatalog/tables/v1/tables.proto";
+
+// The kind of a function parameter.
+enum FunctionParameterType {
+  FUNCTION_PARAMETER_TYPE_UNSPECIFIED = 0;
+  // A named parameter.
+  PARAM = 1;
+  // A column of a table function result.
+  COLUMN = 2;
+}
+
+// The mode of a function parameter.
+enum FunctionParameterMode {
+  FUNCTION_PARAMETER_MODE_UNSPECIFIED = 0;
+  // An input parameter.
+  IN = 1;
+}
+
+// The language of the body of a function.
+enum RoutineBody {
+  ROUTINE_BODY_UNSPECIFIED = 0;
+  // The body is SQL.
+  SQL = 1;
+  // The body is in an external language, such as Python.
+  EXTERNAL = 2;
+}
+
+// How a function accesses SQL data.
+enum SqlDataAccess {
+  SQL_DATA_ACCESS_UNSPECIFIED = 0;
+  // The function contains SQL.
+  CONTAINS_SQL = 1;
+  // The function reads SQL data.
+  READS_SQL_DATA = 2;
+  // The function does not use SQL.
+  NO_SQL = 3;
+}
+
+// The security type of a function.
+enum SecurityType {
+  SECURITY_TYPE_UNSPECIFIED = 0;
+  // The function runs with the rights of its owner.
+  DEFINER = 1;
+}
+
+// The parameter style of a function.
+enum ParameterStyle {
+  PARAMETER_STYLE_UNSPECIFIED = 0;
+  // SQL parameter style.
+  S = 1;
+}
+
+// A parameter or result column of a function.
+message FunctionParameterInfo {
+  // Name of the parameter.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Full data type of the parameter as SQL text.
+  string type_text = 2 [(google.api.field_behavior) = REQUIRED];
+  // Full data type of the parameter as JSON.
+  optional string type_json = 3;
+  // Name of the data type of the parameter.
+  unitycatalog.tables.v1.ColumnTypeName type_name = 4 [(google.api.field_behavior) = REQUIRED];
+  // Digits of precision. Required for decimal types.
+  optional int32 type_precision = 5;
+  // Digits to the right of the decimal point. Required for decimal types.
+  optional int32 type_scale = 6;
+  // Format of an interval type.
+  optional string type_interval_type = 7;
+  // Position of the parameter, starting at 0.
+  optional int32 position = 8;
+  // Mode of the parameter.
+  optional FunctionParameterMode parameter_mode = 9;
+  // Kind of the parameter.
+  optional FunctionParameterType parameter_type = 10;
+  // Default value of the parameter.
+  optional string parameter_default = 11;
+  // User-provided free-form text description.
+  optional string comment = 12;
+}
+
+// The parameters of a function.
+message FunctionParameterInfos {
+  // The parameters.
+  repeated FunctionParameterInfo parameters = 1;
+}
+
+// The function to create.
+message CreateFunction {
+  // Name of the function, relative to the parent schema.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent catalog.
+  string catalog_name = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema_name = 3 [(google.api.field_behavior) = REQUIRED];
+  // The input parameters of the function.
+  FunctionParameterInfos input_params = 4;
+  // Name of the data type of the result.
+  optional unitycatalog.tables.v1.ColumnTypeName data_type = 5;
+  // Full data type of the result as SQL text.
+  optional string full_data_type = 6;
+  // The result columns of a table function.
+  FunctionParameterInfos return_params = 7;
+  // Language of the body of the function.
+  RoutineBody routine_body = 8 [(google.api.field_behavior) = REQUIRED];
+  // Body of the function.
+  optional string routine_definition = 9;
+  // The tables and functions that the function reads.
+  unitycatalog.tables.v1.DependencyList routine_dependencies = 10;
+  // Parameter style of the function.
+  ParameterStyle parameter_style = 11 [(google.api.field_behavior) = REQUIRED];
+  // Whether the function is deterministic.
+  optional bool is_deterministic = 12;
+  // How the function accesses SQL data.
+  optional SqlDataAccess sql_data_access = 13;
+  // Whether the function returns null when an argument is null.
+  optional bool is_null_call = 14;
+  // Security type of the function.
+  SecurityType security_type = 15 [(google.api.field_behavior) = REQUIRED];
+  // Specific name of the function.
+  optional string specific_name = 16;
+  // User-provided free-form text description.
+  optional string comment = 17;
+  // Key-value properties of the function, as a JSON-encoded object.
+  optional string properties = 18;
+  // Name of the external language of the body, such as `python`.
+  optional string external_language = 19;
+}
+
+message CreateFunctionRequest {
+  // The function to create.
+  CreateFunction function_info = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A function: a user-defined function in the third layer of the three-level namespace, below a
+// schema.
+message FunctionInfo {
+  option (google.api.resource) = {
+    type: "unitycatalog.io/Function"
+    pattern: "functions/{function}"
+    plural: "functions"
+    singular: "function"
+  };
+
+  // Name of the function, relative to the parent schema.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // Name of the parent catalog.
+  string catalog_name = 2;
+  // Name of the parent schema.
+  string schema_name = 3;
+  // The input parameters of the function. Absent when there are none.
+  FunctionParameterInfos input_params = 4;
+  // Name of the data type of the result.
+  optional unitycatalog.tables.v1.ColumnTypeName data_type = 5;
+  // Full data type of the result as SQL text.
+  optional string full_data_type = 6;
+  // The result columns of a table function. Absent when there are none.
+  FunctionParameterInfos return_params = 7;
+  // Language of the body of the function.
+  RoutineBody routine_body = 8;
+  // Body of the function.
+  optional string routine_definition = 9;
+  // The tables and functions that the function reads.
+  unitycatalog.tables.v1.DependencyList routine_dependencies = 10;
+  // Parameter style of the function.
+  ParameterStyle parameter_style = 11;
+  // Whether the function is deterministic.
+  optional bool is_deterministic = 12;
+  // How the function accesses SQL data.
+  optional SqlDataAccess sql_data_access = 13;
+  // Whether the function returns null when an argument is null.
+  optional bool is_null_call = 14;
+  // Security type of the function.
+  SecurityType security_type = 15;
+  // Specific name of the function.
+  optional string specific_name = 16;
+  // User-provided free-form text description.
+  optional string comment = 17;
+  // Key-value properties of the function, as a JSON-encoded object.
+  optional string properties = 18;
+  // Full name of the function, in the form `<catalog>.<schema>.<function>`.
+  string full_name = 19;
+  // Username of the owner of the function.
+  optional string owner = 20;
+  // Time at which the function was created, in epoch milliseconds.
+  int64 created_at = 21;
+  // Username of the creator of the function.
+  optional string created_by = 22;
+  // Time at which the function was last changed, in epoch milliseconds.
+  int64 updated_at = 23;
+  // Username of the user who last changed the function.
+  optional string updated_by = 24;
+  // Unique identifier of the function.
+  string function_id = 25;
+  // Name of the external language of the body, such as `python`.
+  optional string external_language = 26;
+}
+
+message ListFunctionsRequest {
+  // Name of the parent catalog.
+  string catalog_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema_name = 2 [(google.api.field_behavior) = REQUIRED];
+  // The maximum number of functions to return.
+  optional int32 max_results = 3;
+  // Opaque token of the page to return: the `next_page_token` of the page before.
+  optional string page_token = 4;
+}
+
+message ListFunctionsResponse {
+  // The functions.
+  repeated FunctionInfo functions = 1;
+  // Opaque token of the next page. Absent on the last page.
+  optional string next_page_token = 2;
+}
+
+message GetFunctionRequest {
+  // Full name of the function, in the form `<catalog>.<schema>.<function>`.
+  string full_name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message DeleteFunctionRequest {
+  // Full name of the function, in the form `<catalog>.<schema>.<function>`.
+  string full_name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Functions: the user-defined functions below a schema.
+service FunctionsService {
+  // List the functions of a schema that the caller can see.
+  rpc ListFunctions(ListFunctionsRequest) returns (ListFunctionsResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/functions"};
+  }
+
+  // Create a function.
+  rpc CreateFunction(CreateFunctionRequest) returns (FunctionInfo) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/functions"
+      body: "*"
+    };
+  }
+
+  // Get a function.
+  rpc GetFunction(GetFunctionRequest) returns (FunctionInfo) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/functions/{full_name}"};
+  }
+
+  // Delete a function.
+  rpc DeleteFunction(DeleteFunctionRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.1/unity-catalog/functions/{full_name}"};
+  }
+}

@@ -7,7 +7,7 @@
 use leptos::prelude::*;
 use leptos_router::NavigateOptions;
 use leptos_router::hooks::{use_navigate, use_query_map};
-use uc_api::{CreateRegisteredModel, SchemaInfo, UpdateSchema};
+use uc_client::models::schemas::v1::SchemaInfo;
 use uc_common::schema_full_name;
 
 use crate::api;
@@ -38,7 +38,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
         let full_name = full_name.clone();
         move || {
             let full_name = full_name.clone();
-            async move { api::client().get_schema(&full_name).await }
+            async move { api::client().schema(full_name).get().await }
         }
     });
     let cache = use_cache();
@@ -56,12 +56,11 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
         move |comment| {
             let full_name = full_name.clone();
             async move {
-                let request = UpdateSchema {
-                    comment: Some(comment),
-                    properties: None,
-                    new_name: None,
-                };
-                let updated = api::client().update_schema(&full_name, &request).await?;
+                let updated = api::client()
+                    .schema(&full_name)
+                    .update()
+                    .with_comment(comment)
+                    .await?;
                 cache.set(Key::Schema(full_name), updated);
                 Ok(())
             }
@@ -79,7 +78,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
                 let full_name = full_name.clone();
                 move |force| {
                     let full_name = full_name.clone();
-                    async move { api::client().delete_schema(&full_name, force).await }
+                    async move { api::client().schema(full_name).delete().with_force(force).await }
                 }
             }
             key=Key::Schema(full_name.clone())
@@ -94,15 +93,12 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
                 let catalog = catalog.clone();
                 let schema = schema.clone();
                 move |name, comment| {
-                    let request = CreateRegisteredModel {
-                        name,
-                        catalog_name: catalog.clone(),
-                        schema_name: schema.clone(),
-                        comment,
-                    };
+                    let create = api::client()
+                        .create_registered_model(name, &catalog, &schema)
+                        .with_comment(comment);
                     let page = Kind::Models.tab_href(&catalog, &schema);
                     async move {
-                        api::client().create_registered_model(&request).await?;
+                        create.await?;
                         Ok(page)
                     }
                 }

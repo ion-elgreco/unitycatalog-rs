@@ -1,8 +1,8 @@
 //! Model version detail page. Mirrors `pages/ModelVersionDetails.tsx`.
 
 use leptos::prelude::*;
-use uc_api::{ModelVersionInfo, UpdateModelVersion};
-use uc_common::{three_part_full_name, wire_name};
+use uc_client::models::models::v1::ModelVersionInfo;
+use uc_common::three_part_full_name;
 
 use super::model_details::model_rows;
 use crate::api;
@@ -12,7 +12,7 @@ use crate::components::{
 };
 use crate::layout::{Breadcrumb, DetailsLayout};
 use crate::load::{Key, Load, field, use_cache, use_load};
-use crate::util::{format_timestamp, route_params};
+use crate::util::{enum_name, format_timestamp, route_params};
 
 #[component]
 pub fn ModelVersionDetails() -> impl IntoView {
@@ -53,7 +53,7 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
         let full_name = full_name.clone();
         move || {
             let full_name = full_name.clone();
-            async move { api::client().get_model_version(&full_name, number).await }
+            async move { api::client().get_model_version(full_name, number).await }
         }
     });
     // Upstream's `ModelSidebar`: the registered model's details.
@@ -61,7 +61,7 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
         let full_name = full_name.clone();
         move || {
             let full_name = full_name.clone();
-            async move { api::client().get_registered_model(&full_name).await }
+            async move { api::client().registered_model(full_name).get().await }
         }
     });
     let cache = use_cache();
@@ -71,11 +71,8 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
         move |comment| {
             let full_name = full_name.clone();
             async move {
-                let request = UpdateModelVersion {
-                    comment: Some(comment),
-                };
                 let updated = api::client()
-                    .update_model_version(&full_name, number, &request)
+                    .update_model_version(&full_name, number, comment)
                     .await?;
                 cache.set(Key::Version(full_name, number), updated);
                 Ok(())
@@ -94,7 +91,7 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
                 let full_name = full_name.clone();
                 move |_| {
                     let full_name = full_name.clone();
-                    async move { api::client().delete_model_version(&full_name, number).await }
+                    async move { api::client().delete_model_version(full_name, number).await }
                 }
             }
             key=Key::Version(full_name.clone(), number)
@@ -175,10 +172,7 @@ fn version_rows(info: RwSignal<Load<ModelVersionInfo>>) -> Vec<(&'static str, St
             ("Created by", v.created_by.clone().unwrap_or_default()),
             ("Updated at", format_timestamp(v.updated_at)),
             ("Updated by", v.updated_by.clone().unwrap_or_default()),
-            (
-                "Status",
-                v.status.as_ref().map(wire_name).unwrap_or_default(),
-            ),
+            ("Status", enum_name(v.status)),
             ("Training run", v.run_id.clone().unwrap_or_default()),
         ]
     })

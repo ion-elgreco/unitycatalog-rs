@@ -1,9 +1,10 @@
 //! A registered model's page, as upstream's `pages/ModelDetails.tsx`: its
 //! description, its versions, its details and the action menu.
 
+use buffa::EnumValue;
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
-use uc_api::{ModelVersionInfo, ModelVersionStatus, RegisteredModelInfo, UpdateRegisteredModel};
+use uc_client::models::models::v1::{ModelVersionInfo, ModelVersionStatus, RegisteredModelInfo};
 use uc_common::three_part_full_name;
 
 use crate::api;
@@ -36,7 +37,7 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
         let full_name = full_name.clone();
         move || {
             let full_name = full_name.clone();
-            async move { api::client().get_registered_model(&full_name).await }
+            async move { api::client().registered_model(full_name).get().await }
         }
     });
     let versions = use_load(Key::Versions(full_name.clone()), {
@@ -52,8 +53,10 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
     let on_row_click = Callback::new({
         let page = format!("/models/{catalog}/{schema}/{model}");
         move |version: ModelVersionInfo| {
-            let number = version.version.unwrap_or_default();
-            navigate(&format!("{page}/versions/{number}"), Default::default());
+            navigate(
+                &format!("{page}/versions/{}", version.version),
+                Default::default(),
+            );
         }
     });
     let save = {
@@ -61,12 +64,10 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
         move |comment| {
             let full_name = full_name.clone();
             async move {
-                let request = UpdateRegisteredModel {
-                    comment: Some(comment),
-                    new_name: None,
-                };
                 let updated = api::client()
-                    .update_registered_model(&full_name, &request)
+                    .registered_model(&full_name)
+                    .update()
+                    .with_comment(comment)
                     .await?;
                 cache.set(Key::Model(full_name), updated);
                 Ok(())
@@ -85,7 +86,13 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
                 let full_name = full_name.clone();
                 move |force| {
                     let full_name = full_name.clone();
-                    async move { api::client().delete_registered_model(&full_name, force).await }
+                    async move {
+                        api::client()
+                            .registered_model(full_name)
+                            .delete()
+                            .with_force(force)
+                            .await
+                    }
                 }
             }
             key=Key::Model(full_name.clone())
@@ -164,7 +171,7 @@ fn version_columns() -> Vec<Column<ModelVersionInfo>> {
             title: "Status",
             width: "10%",
             center: true,
-            render: Box::new(|v: &ModelVersionInfo| status(v.status.as_ref())),
+            render: Box::new(|v: &ModelVersionInfo| status(v.status)),
             search_key: None,
         },
         Column {
@@ -172,11 +179,7 @@ fn version_columns() -> Vec<Column<ModelVersionInfo>> {
             width: "60%",
             center: false,
             render: Box::new(|v: &ModelVersionInfo| {
-                let label = v
-                    .version
-                    .map(|n| format!("Version {n}"))
-                    .unwrap_or_default();
-                view! { <span>{label}</span> }.into_any()
+                view! { <span>{format!("Version {}", v.version)}</span> }.into_any()
             }),
             search_key: None,
         },
@@ -194,8 +197,8 @@ fn version_columns() -> Vec<Column<ModelVersionInfo>> {
 
 /// Upstream's `ModelVersionStatusDisplay`: an icon in green, gray or red,
 /// with the status in a tooltip.
-fn status(status: Option<&ModelVersionStatus>) -> AnyView {
-    match status {
+fn status(status: EnumValue<ModelVersionStatus>) -> AnyView {
+    match status.as_known() {
         Some(ModelVersionStatus::Ready) => view! {
             <Tooltip text="READY">
                 <span class="uc-status-icon uc-status-icon--ready">

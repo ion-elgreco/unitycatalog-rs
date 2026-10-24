@@ -4,7 +4,7 @@
 use anyhow::bail;
 use clap::Subcommand;
 use serde_json::{Value, json};
-use uc_api::{ScimEmail, ScimUser, schema_uri};
+use uc_client::models::scim::v1::{ScimEmail, ScimUser};
 
 use super::options::{ScimPaging, help};
 use super::{Context, Result, upstream};
@@ -59,14 +59,13 @@ fn user_from_scim(user: &ScimUser) -> Value {
         time.and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
             .map(|t| t.timestamp_millis())
     };
-    let meta = user.meta.as_ref();
-    let email = user.emails.as_deref().and_then(<[ScimEmail]>::first);
+    let meta = user.meta.as_option();
     let user = json!({
-        "id": user.id,
+        "id": (!user.id.is_empty()).then_some(&user.id),
         "name": user.display_name,
-        "email": email.map(|e| &e.value),
+        "email": user.emails.first().map(|e| &e.value),
         "external_id": user.external_id,
-        "state": if user.is_active() { "ENABLED" } else { "DISABLED" },
+        "state": if user.active != Some(false) { "ENABLED" } else { "DISABLED" },
         "created_at": millis(meta.and_then(|m| m.created.as_ref())),
         "updated_at": millis(meta.and_then(|m| m.last_modified.as_ref())),
     });
@@ -78,7 +77,7 @@ fn primary_email(value: String) -> ScimEmail {
     ScimEmail {
         value,
         primary: Some(true),
-        r#type: None,
+        ..Default::default()
     }
 }
 
@@ -89,16 +88,12 @@ pub async fn run(c: &Context<'_>, op: UserOp) -> Result<String> {
             email,
             external_id,
         } => {
-            let request = ScimUser {
-                schemas: vec![schema_uri::USER.to_string()],
-                display_name: Some(name),
-                emails: Some(vec![primary_email(email)]),
-                external_id,
-                ..Default::default()
-            };
             let user = c
                 .client
-                .create_user(&request)
+                .create_user()
+                .with_display_name(name)
+                .with_emails([primary_email(email)])
+                .with_external_id(external_id)
                 .await
                 .map_err(upstream("createUser"))?;
             Ok(c.json(&user_from_scim(&user)))
@@ -112,16 +107,11 @@ pub async fn run(c: &Context<'_>, op: UserOp) -> Result<String> {
             if email.is_some() {
                 bail!("A user's email cannot change: it is the user's name in grants and owners");
             }
-            let request = ScimUser {
-                schemas: vec![schema_uri::USER.to_string()],
-                id: Some(id.clone()),
-                display_name: name,
-                external_id,
-                ..Default::default()
-            };
             let user = c
                 .client
-                .update_user(&id, &request)
+                .replace_user(id)
+                .with_display_name(name)
+                .with_external_id(external_id)
                 .await
                 .map_err(upstream("updateUser"))?;
             Ok(c.json(&user_from_scim(&user)))
@@ -130,7 +120,10 @@ pub async fn run(c: &Context<'_>, op: UserOp) -> Result<String> {
             let (start, count) = (paging.start_index, paging.count);
             let list = c
                 .client
-                .list_users(&paging.into())
+                .list_users()
+                .with_filter(paging.filter)
+                .with_start_index(start)
+                .with_count(count)
                 .await
                 .map_err(upstream("listUsers"))?;
             c.start_index(start, count, list.resources.len());
@@ -138,12 +131,12 @@ pub async fn run(c: &Context<'_>, op: UserOp) -> Result<String> {
             Ok(c.json(&Value::Array(users)))
         }
         UserOp::Get { id } => {
-            let user = c.client.get_user(&id).await.map_err(upstream("getUser"))?;
+            let user = c.client.get_user(id).await.map_err(upstream("getUser"))?;
             Ok(c.json(&user_from_scim(&user)))
         }
         UserOp::Delete { id } => {
             c.client
-                .delete_user(&id)
+                .delete_user(id)
                 .await
                 .map_err(upstream("deleteUser"))?;
             Ok(String::new())
