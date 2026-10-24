@@ -4859,7 +4859,7 @@ dependencies = [
 [[package]]
 name = "olai-codegen"
 version = "0.0.8"
-source = "git+https://github.com/ion-elgreco/trestle?branch=feat%2Fuc-client-plan#83dbbbfdd51fd8c97e7e15edf54fda6000a0af94"
+source = "git+https://github.com/ion-elgreco/trestle?branch=feat%2Fuc-client-plan#19c7c4f4f98f53563eb2f2b715abefbc8934ae7a"
 dependencies = [
  "convert_case 0.7.1",
  "glob",
