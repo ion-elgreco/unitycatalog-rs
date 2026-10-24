@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
-use uc_api::{CatalogInfo, CreateCatalog};
+use uc_client::models::catalogs::v1::CatalogInfo;
 
 use crate::api;
 use crate::components::CreateModal;
@@ -22,12 +22,8 @@ pub fn CatalogsList() -> impl IntoView {
             title: "Name",
             width: "60%",
             center: false,
-            render: Box::new(|c: &CatalogInfo| {
-                view! { <span>{c.name.clone().unwrap_or_default()}</span> }.into_any()
-            }),
-            search_key: Some(Box::new(|c: &CatalogInfo| {
-                c.name.clone().unwrap_or_default()
-            })),
+            render: Box::new(|c: &CatalogInfo| view! { <span>{c.name.clone()}</span> }.into_any()),
+            search_key: Some(Box::new(|c: &CatalogInfo| c.name.clone())),
         },
         Column {
             title: "Created At",
@@ -41,8 +37,7 @@ pub fn CatalogsList() -> impl IntoView {
     ];
 
     let on_row_click = Callback::new(move |catalog: CatalogInfo| {
-        let name = catalog.name.unwrap_or_default();
-        navigate(&format!("/data/{name}"), Default::default());
+        navigate(&format!("/data/{}", catalog.name), Default::default());
     });
 
     view! {
@@ -59,14 +54,8 @@ pub fn CatalogsList() -> impl IntoView {
                 noun="catalog"
                 hint="Create catalog description"
                 create=|name, comment| async move {
-                    let request = CreateCatalog {
-                        name,
-                        comment,
-                        properties: None,
-                        storage_root: None,
-                    };
-                    let catalog = api::client().create_catalog(&request).await?;
-                    Ok(format!("/data/{}", catalog.name.unwrap_or_default()))
+                    let catalog = api::client().create_catalog(name).with_comment(comment).await?;
+                    Ok(format!("/data/{}", catalog.name))
                 }
                 list=Key::Catalogs
             />

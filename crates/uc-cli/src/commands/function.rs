@@ -2,10 +2,11 @@
 //! functions with [`crate::data::python`].
 
 use clap::Subcommand;
-use uc_api::{
-    ColumnTypeName, CreateFunction, CreateFunctionRequest, FunctionParameterInfos, ParameterStyle,
-    RoutineBody, SecurityType, SqlDataAccess,
+use uc_client::models::functions::v1::{
+    CreateFunction, FunctionParameterInfos, ParameterStyle, RoutineBody, SecurityType,
+    SqlDataAccess,
 };
+use uc_client::models::tables::v1::ColumnTypeName;
 
 use super::columns::{TYPE_NAMES, parse_input_params};
 use super::options::{Paging, ThreePartName, help, one_of_wire, three_part_name, wire_name};
@@ -77,31 +78,31 @@ pub async fn run(c: &Context<'_>, op: FunctionOp) -> Result<String> {
         } => {
             let parameters = parse_input_params(&input_params)?;
             let function_info = CreateFunction {
-                name: Some(full_name.name.clone()),
-                catalog_name: Some(full_name.catalog),
-                schema_name: Some(full_name.schema),
-                input_params: Some(FunctionParameterInfos {
-                    parameters: Some(parameters),
-                }),
-                data_type: Some(data_type),
+                name: full_name.name.clone(),
+                catalog_name: full_name.catalog,
+                schema_name: full_name.schema,
+                input_params: FunctionParameterInfos {
+                    parameters,
+                    ..Default::default()
+                }
+                .into(),
+                data_type: Some(data_type.into()),
                 full_data_type: Some(wire_name(&data_type)),
-                return_params: None,
-                routine_body: RoutineBody::External,
+                routine_body: RoutineBody::External.into(),
                 routine_definition: Some(def.unwrap_or_default()),
-                routine_dependencies: None,
-                parameter_style: ParameterStyle::S,
+                parameter_style: ParameterStyle::S.into(),
                 is_deterministic: Some(true),
-                sql_data_access: Some(SqlDataAccess::NoSql),
+                sql_data_access: Some(SqlDataAccess::NoSql.into()),
                 is_null_call: Some(true),
-                security_type: SecurityType::Definer,
+                security_type: SecurityType::Definer.into(),
                 specific_name: Some(full_name.name),
                 comment,
-                properties: None,
                 external_language: Some(language),
+                ..Default::default()
             };
             let created = c
                 .client
-                .create_function(&CreateFunctionRequest { function_info })
+                .create_function(function_info)
                 .await
                 .map_err(upstream("createFunction"))?;
             Ok(c.shaped(&models::FUNCTION, &serde_json::to_value(&created)?))
@@ -113,7 +114,9 @@ pub async fn run(c: &Context<'_>, op: FunctionOp) -> Result<String> {
         } => {
             let list = c
                 .client
-                .list_functions(&catalog, &schema, &paging.into())
+                .list_functions(catalog, schema)
+                .with_max_results(paging.max_results)
+                .with_page_token(paging.page_token)
                 .await
                 .map_err(upstream("listFunctions"))?;
             Ok(c.shaped_list(
@@ -125,14 +128,16 @@ pub async fn run(c: &Context<'_>, op: FunctionOp) -> Result<String> {
         FunctionOp::Get { full_name } => {
             let info = c
                 .client
-                .get_function(&full_name)
+                .function(full_name)
+                .get()
                 .await
                 .map_err(upstream("getFunction"))?;
             Ok(c.shaped(&models::FUNCTION, &serde_json::to_value(&info)?))
         }
         FunctionOp::Delete { full_name } => {
             c.client
-                .delete_function(&full_name)
+                .function(full_name)
+                .delete()
                 .await
                 .map_err(upstream("deleteFunction"))?;
             Ok(String::new())

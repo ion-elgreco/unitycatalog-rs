@@ -12,14 +12,15 @@ description = "Leptos rebuild of the upstream Unity Catalog OSS web UI"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-uc-api.workspace = true
 uc-client.workspace = true
 uc-common.workspace = true
 
+# The protobuf runtime of uc-client's models, for their enum values.
+buffa.workspace = true
+futures.workspace = true
 leptos = { version = "0.7", features = ["csr"] }
 leptos_router = "0.7"
 gloo-timers = { version = "0.3", features = ["futures"] }
-serde_json = { workspace = true }
 wasm-bindgen = "=0.2.121"
 js-sys = "=0.3.98"
 wasm-bindgen-futures = "=0.4.71"

@@ -3,8 +3,8 @@
 Leptos rebuild of the upstream Unity Catalog OSS web UI (originally
 React/TypeScript + Ant Design). Same routes, same pages, same data shapes —
 all served as a client-side-rendered WASM app. One page is new: the
-signed-in user's access tokens. [docs/ui.md](../../docs/ui.md) shows how to
-use it.
+signed-in user's access tokens.
+[docs/clients/web-ui.md](../../docs/clients/web-ui.md) shows how to use it.
 
 ## Build and run
 
@@ -77,7 +77,7 @@ and load the page again.
 | Framework  | `leptos` 0.7 (CSR)    | React 18                     |
 | Router     | `leptos_router` 0.7   | React Router 6               |
 | HTTP       | `uc-client` (this repo) | Axios                      |
-| Types      | `uc-api` (this repo)  | OpenAPI-generated TS         |
+| Types      | `uc-client`'s models, from `proto/` | OpenAPI-generated TS |
 | UI library | CSS with antd's values | Ant Design 5                |
 | Bundler    | wasm-bindgen (`just wasm`) | Create React App (Webpack) |
 

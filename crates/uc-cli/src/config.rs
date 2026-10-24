@@ -6,7 +6,10 @@
 
 use std::path::PathBuf;
 
+use uc_client::Client;
+use uc_common::API_BASE;
 use uc_common::settings::Settings;
+use url::Url;
 
 use crate::sign_in::SignIns;
 
@@ -62,6 +65,27 @@ pub fn token(
             .token(origin)
             .map(|token| (token, TokenSource::SignIn)),
     }
+}
+
+/// The API client of the server at `url`, which sends `token`. `url` is the
+/// server's root, such as `http://localhost:8080`, or the root with the
+/// API's path, as the TUI shows the server.
+pub fn client(url: &str, token: Option<&str>) -> anyhow::Result<Client> {
+    let root = root(url)?;
+    Ok(match token {
+        Some(token) => Client::new_with_token(root, token),
+        None => Client::new_unauthenticated(root),
+    })
+}
+
+/// The root of the server at `url`, which the API's paths start from.
+fn root(url: &str) -> anyhow::Result<Url> {
+    let mut root = Url::parse(url).map_err(|e| anyhow::anyhow!("invalid base URL: {e}"))?;
+    let path = root.path().trim_end_matches('/');
+    if let Some(above) = path.strip_suffix(API_BASE) {
+        root.set_path(&format!("{above}/"));
+    }
+    Ok(root)
 }
 
 /// uc's folder for what it keeps between runs, such as the sign-ins and the
@@ -123,6 +147,19 @@ mod tests {
         assert_eq!(origin("[::1]:9000").unwrap(), "http://[::1]:9000");
         assert_eq!(origin("localhost").unwrap(), "http://localhost:8080");
         assert!(origin("http://").is_err());
+    }
+
+    #[test]
+    fn clients_call_the_root_of_the_server() {
+        let at = |url| root(url).unwrap().to_string();
+        assert_eq!(at("http://h:9"), "http://h:9/");
+        assert_eq!(at("http://h:9/api/2.1/unity-catalog/"), "http://h:9/");
+        assert_eq!(at("http://h:9/uc/api/2.1/unity-catalog"), "http://h:9/uc/");
+        assert_eq!(
+            root("not a url").unwrap_err().to_string(),
+            "invalid base URL: relative URL without a base"
+        );
+        assert!(client("http://h:9", Some("t")).is_ok());
     }
 
     #[test]

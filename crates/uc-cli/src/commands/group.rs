@@ -2,7 +2,6 @@
 //! SCIM endpoints.
 
 use clap::Subcommand;
-use uc_api::{ScimGroup, schema_uri};
 
 use super::options::{ScimPaging, help};
 use super::{Context, Result, upstream};
@@ -34,17 +33,16 @@ pub enum GroupOp {
     },
 }
 
+/// The SCIM schema of a group.
+const GROUP_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:Group";
+
 pub async fn run(c: &Context<'_>, op: GroupOp) -> Result<String> {
     match op {
         GroupOp::Create { name } => {
-            let request = ScimGroup {
-                schemas: vec![schema_uri::GROUP.to_string()],
-                display_name: name,
-                ..Default::default()
-            };
             let group = c
                 .client
-                .create_group(&request)
+                .create_group(name)
+                .with_schemas([GROUP_SCHEMA.to_string()])
                 .await
                 .map_err(upstream("createGroup"))?;
             Ok(c.json(&serde_json::to_value(&group)?))
@@ -53,23 +51,22 @@ pub async fn run(c: &Context<'_>, op: GroupOp) -> Result<String> {
             let (start, count) = (paging.start_index, paging.count);
             let list = c
                 .client
-                .list_groups(&paging.into())
+                .list_groups()
+                .with_filter(paging.filter)
+                .with_start_index(start)
+                .with_count(count)
                 .await
                 .map_err(upstream("listGroups"))?;
             c.start_index(start, count, list.resources.len());
             Ok(c.json(&serde_json::to_value(&list.resources)?))
         }
         GroupOp::Get { id } => {
-            let group = c
-                .client
-                .get_group(&id)
-                .await
-                .map_err(upstream("getGroup"))?;
+            let group = c.client.get_group(id).await.map_err(upstream("getGroup"))?;
             Ok(c.json(&serde_json::to_value(&group)?))
         }
         GroupOp::Delete { id } => {
             c.client
-                .delete_group(&id)
+                .delete_group(id)
                 .await
                 .map_err(upstream("deleteGroup"))?;
             Ok(String::new())

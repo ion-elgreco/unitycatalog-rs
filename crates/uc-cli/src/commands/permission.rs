@@ -1,10 +1,10 @@
 //! `uc permission`: get, grant and revoke privileges on a securable.
 
 use clap::Subcommand;
-use uc_api::{PermissionsChange, Privilege, UpdatePermissions};
+use uc_client::models::permissions::v1::PermissionsChange;
 use uc_common::SecurableType;
 
-use super::options::{PRIVILEGES, SECURABLE_TYPES, help, one_of_wire};
+use super::options::{PRIVILEGES, SECURABLE_TYPES, help, one_of, one_of_wire};
 use super::{Context, Result, upstream};
 use crate::output::models;
 
@@ -31,8 +31,8 @@ pub enum PermissionOp {
         #[arg(long, help = help::PRINCIPAL)]
         principal: String,
         #[arg(long, help = help::PRIVILEGE, ignore_case = true, hide_possible_values = true,
-            value_parser = one_of_wire::<Privilege>(PRIVILEGES))]
-        privilege: Privilege,
+            value_parser = one_of(PRIVILEGES))]
+        privilege: String,
     },
     /// Revoke a privilege on a securable
     Delete {
@@ -44,21 +44,19 @@ pub enum PermissionOp {
         #[arg(long, help = help::PRINCIPAL)]
         principal: String,
         #[arg(long, help = help::PRIVILEGE, ignore_case = true, hide_possible_values = true,
-            value_parser = one_of_wire::<Privilege>(PRIVILEGES))]
-        privilege: Privilege,
+            value_parser = one_of(PRIVILEGES))]
+        privilege: String,
     },
 }
 
 pub async fn run(c: &Context<'_>, op: PermissionOp) -> Result<String> {
     // One privilege added or removed for the principal.
-    let change =
-        |principal: String, add: Vec<Privilege>, remove: Vec<Privilege>| UpdatePermissions {
-            changes: vec![PermissionsChange {
-                principal,
-                add,
-                remove,
-            }],
-        };
+    let change = |principal: String, add: Vec<String>, remove: Vec<String>| PermissionsChange {
+        principal,
+        add,
+        remove,
+        ..Default::default()
+    };
     let assignments = match op {
         PermissionOp::Get {
             securable_type,
@@ -66,7 +64,8 @@ pub async fn run(c: &Context<'_>, op: PermissionOp) -> Result<String> {
             principal,
         } => c
             .client
-            .get_permissions(securable_type, &name, principal.as_deref())
+            .get_permissions(securable_type.as_str(), name)
+            .with_principal(principal)
             .await
             .map_err(upstream("get"))?,
         PermissionOp::Create {
@@ -74,25 +73,29 @@ pub async fn run(c: &Context<'_>, op: PermissionOp) -> Result<String> {
             name,
             principal,
             privilege,
-        } => {
-            let request = change(principal, vec![privilege], vec![]);
-            c.client
-                .update_permissions(securable_type, &name, &request)
-                .await
-                .map_err(upstream("update"))?
-        }
+        } => c
+            .client
+            .update_permissions(
+                securable_type.as_str(),
+                name,
+                vec![change(principal, vec![privilege], vec![])],
+            )
+            .await
+            .map_err(upstream("update"))?,
         PermissionOp::Delete {
             securable_type,
             name,
             principal,
             privilege,
-        } => {
-            let request = change(principal, vec![], vec![privilege]);
-            c.client
-                .update_permissions(securable_type, &name, &request)
-                .await
-                .map_err(upstream("update"))?
-        }
+        } => c
+            .client
+            .update_permissions(
+                securable_type.as_str(),
+                name,
+                vec![change(principal, vec![], vec![privilege])],
+            )
+            .await
+            .map_err(upstream("update"))?,
     };
     Ok(c.shaped_list(
         &models::PRIVILEGE_ASSIGNMENT,

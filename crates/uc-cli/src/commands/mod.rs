@@ -32,8 +32,11 @@ pub mod volume;
 use std::cell::RefCell;
 
 use clap::Subcommand;
-use serde_json::Value;
-use uc_client::{API_BASE, Client};
+use reqwest::StatusCode;
+use serde_json::{Value, json};
+use uc_client::Client;
+use uc_client::error::{ApiError, Error as ClientError};
+use uc_common::ErrorCode;
 use uc_common::settings::Settings;
 
 use crate::args::Global;
@@ -115,18 +118,110 @@ pub type Result<T> = anyhow::Result<T>;
 /// The error of a call to the server as upstream's `ApiException`: a
 /// refused call is `{operation} call failed with: {status} - {body}`; a
 /// call without an answer is `{operation} call failed: {error}`.
-pub fn upstream(operation: &'static str) -> impl FnOnce(uc_client::Error) -> anyhow::Error {
+pub fn upstream(operation: &'static str) -> impl FnOnce(ClientError) -> anyhow::Error {
     move |e| {
         let message = match &e {
-            uc_client::Error::Status { status, body } => {
-                format!("{operation} call failed with: {status} - {body}")
+            ClientError::Api(api) => {
+                format!(
+                    "{operation} call failed with: {} - {}",
+                    api.status,
+                    error_body(api)
+                )
             }
-            e => format!("{operation} call failed: {e}"),
+            e => format!("{operation} call failed: {}", call_error(e)),
         };
         anyhow::Error::new(CallFailed {
             message,
             status: e.status(),
         })
+    }
+}
+
+/// The body of the error answer `api`. The client keeps its parts, not its
+/// text: the body of a UC error (`error_code`, `message` and `details`) or
+/// of an Iceberg REST error (`error`, with `message`, `type` and `code`) is
+/// written again from them, as the server writes it. Of any other body, the
+/// message is left.
+pub fn error_body(api: &ApiError) -> String {
+    match api.code.as_deref() {
+        Some(code) if ErrorCode::from_wire(code).is_some() => json!({
+            "error_code": code,
+            "message": api.message,
+            "details": api.details,
+        })
+        .to_string(),
+        Some(code) if code.ends_with("Exception") => json!({
+            "error": { "message": api.message, "type": code, "code": api.status },
+        })
+        .to_string(),
+        _ => api.message.clone(),
+    }
+}
+
+/// A failed call as the commands and the TUI show it: the server's code
+/// and message; for an answer without them, a code for its HTTP status and
+/// the message `http <status>`; for a call that got no answer, `INTERNAL`
+/// and what failed.
+pub fn call_error(e: &ClientError) -> uc_common::Error {
+    use uc_common::Error;
+    match e {
+        ClientError::Api(api) => match api.code.as_deref().and_then(ErrorCode::from_wire) {
+            Some(code) => Error::new(code, &api.message),
+            None => {
+                let status =
+                    StatusCode::from_u16(api.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+                let message = format!("http {status}");
+                match status {
+                    StatusCode::NOT_FOUND => Error::not_found(message),
+                    StatusCode::CONFLICT => Error::already_exists(message),
+                    StatusCode::FORBIDDEN => Error::permission_denied(message),
+                    StatusCode::UNAUTHORIZED => Error::unauthenticated(message),
+                    StatusCode::BAD_REQUEST => Error::invalid_argument(message),
+                    _ => Error::internal(message),
+                }
+            }
+        },
+        ClientError::Url(e) => Error::internal(format!("url join: {e}")),
+        ClientError::Http(e) => Error::internal(format!("http: {}", with_cause(e))),
+        ClientError::Json(e) => Error::internal(format!("decode: {e}")),
+        e => Error::internal(e.to_string()),
+    }
+}
+
+/// `e` and its deepest cause, which reqwest's text leaves out: "error
+/// sending request for url (…): Connection refused (os error 61)".
+fn with_cause(e: &reqwest::Error) -> String {
+    let mut deepest = None;
+    let mut next = std::error::Error::source(e);
+    while let Some(cause) = next {
+        deepest = Some(cause);
+        next = cause.source();
+    }
+    match deepest {
+        Some(cause) => format!("{e}: {cause}"),
+        None => e.to_string(),
+    }
+}
+
+/// A failed call that goes up as it is: its text is [`call_error`]'s
+/// message, and its causes are those of the client's error.
+#[derive(Debug)]
+pub struct CallError(pub ClientError);
+
+impl std::fmt::Display for CallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(call_error(&self.0).message())
+    }
+}
+
+impl std::error::Error for CallError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match &self.0 {
+            ClientError::Http(e) => Some(e),
+            ClientError::Url(e) => Some(e),
+            ClientError::Json(e) => Some(e),
+            _ => None,
+        }
     }
 }
 
@@ -152,8 +247,8 @@ fn needs_sign_in(e: &anyhow::Error) -> bool {
         let status = match cause.downcast_ref::<CallFailed>() {
             Some(call) => call.status,
             None => cause
-                .downcast_ref::<uc_client::Error>()
-                .and_then(uc_client::Error::status),
+                .downcast_ref::<CallError>()
+                .and_then(|call| call.0.status()),
         };
         status == Some(401)
     })
@@ -229,22 +324,18 @@ pub async fn run(global: &Global, settings: &Settings, entity: Entity) -> i32 {
             return 1;
         }
     };
-    let client = match Client::new(format!("{origin}{API_BASE}/")) {
-        Ok(client) => client,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            return 1;
-        }
-    };
     let token = config::token(
         settings,
         global.auth_token.as_deref(),
         &origin,
         SignIns::of_user().as_ref(),
     );
-    let client = match &token {
-        Some((token, _)) => client.with_bearer(token.clone()),
-        None => client,
+    let client = match config::client(&origin, token.as_ref().map(|(token, _)| token.as_str())) {
+        Ok(client) => client,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return 1;
+        }
     };
     let c = Context {
         client: &client,
@@ -313,7 +404,7 @@ mod tests {
     use super::function::FunctionOp;
     use super::model_version::ModelVersionOp;
     use super::permission::PermissionOp;
-    use uc_api::{DataSourceFormat, Privilege, TableType};
+    use uc_client::models::tables::v1::{DataSourceFormat, TableType};
     use uc_common::SecurableType;
 
     use super::table::TableOp;
@@ -453,8 +544,8 @@ mod tests {
             panic!();
         };
         assert_eq!(
-            (securable_type, privilege),
-            (SecurableType::RegisteredModel, Privilege::UseCatalog)
+            (securable_type, privilege.as_str()),
+            (SecurableType::RegisteredModel, "USE CATALOG")
         );
         // `-` is standard input.
         let Entity::Admin(AdminOp::Restore { path }) = entity(&["admin", "restore", "--path", "-"])

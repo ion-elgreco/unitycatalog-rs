@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package unitycatalog.auth.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/protobuf/empty.proto";
+import "olai/trestle/v1/annotations.proto";
+
+// An OAuth 2.0 token exchange request (RFC 8693), sent as a form. The token types are URNs:
+// `urn:ietf:params:oauth:token-type:access_token`, `urn:ietf:params:oauth:token-type:id_token`,
+// `urn:ietf:params:oauth:token-type:jwt` and the other types of RFC 8693, section 3.
+message OAuthTokenExchangeForm {
+  // The grant type: `urn:ietf:params:oauth:grant-type:token-exchange`.
+  string grant_type = 1 [(google.api.field_behavior) = REQUIRED];
+  // The scope of the token exchange.
+  optional string scope = 2;
+  // The type of the token to issue: `urn:ietf:params:oauth:token-type:access_token`.
+  string requested_token_type = 3 [(google.api.field_behavior) = REQUIRED];
+  // The token of the identity provider that names the user, such as an ID token.
+  string subject_token = 4 [
+    (google.api.field_behavior) = REQUIRED,
+    debug_redact = true
+  ];
+  // The type of `subject_token`, such as `urn:ietf:params:oauth:token-type:id_token`.
+  string subject_token_type = 5 [(google.api.field_behavior) = REQUIRED];
+  // The token of the acting party. Not supported.
+  optional string actor_token = 6 [debug_redact = true];
+  // The type of `actor_token`. Not supported: the server refuses a request with it.
+  optional string actor_token_type = 7;
+}
+
+// An OAuth 2.0 token exchange response (RFC 8693): a Unity Catalog access token.
+message OAuthTokenExchangeInfo {
+  // The Unity Catalog access token.
+  string access_token = 1 [debug_redact = true];
+  // The type of the issued token: `urn:ietf:params:oauth:token-type:access_token`.
+  string issued_token_type = 2;
+  // How to send the token: `Bearer`.
+  string token_type = 3;
+  // Lifetime of the access token, in seconds.
+  int64 expires_in = 4;
+}
+
+// An OAuth 2.0 token request (RFC 6749, section 4.4) for a personal access token, sent as a form.
+message TokenRequest {
+  // The grant type: `client_credentials`.
+  string grant_type = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // The `id` of the personal access token. When given, it must name the token of
+  // `client_secret`, and `expires_in` is the time until that token expires.
+  optional string client_id = 2;
+  // The personal access token.
+  string client_secret = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    debug_redact = true
+  ];
+  // The scope of the request. The answer repeats it.
+  optional string scope = 4;
+}
+
+// An OAuth 2.0 token response (RFC 6749, section 5.1). The access token is the personal access
+// token itself.
+message TokenResponse {
+  // The access token: the personal access token of the request.
+  string access_token = 1 [debug_redact = true];
+  // How to send the token: `Bearer`.
+  string token_type = 2;
+  // Seconds until the token expires: the time until the token of `client_id` expires, else 3600.
+  int64 expires_in = 3;
+  // The scope of the request.
+  optional string scope = 4;
+}
+
+message LogoutRequest {}
+
+message GetAuthModeRequest {}
+
+// How the web UI signs in, and where its "Log out" goes.
+message AuthMode {
+  // How the web UI signs in: `oidc` (with the OpenID Connect provider of the server), `forward`
+  // (through an auth proxy in front of the server), `none` (no sign-in in the browser) or `off`
+  // (authorization is off, and no one signs in). `uc web` answers `token`: the browser uses the
+  // token of the `uc` commands.
+  string mode = 1;
+  // Where "Log out" goes. Absent: the web UI hides "Log out".
+  optional string logout_url = 2;
+}
+
+// Sign-in to the server.
+service AuthService {
+  // Exchange a token of an identity provider for a Unity Catalog access token (OAuth 2.0 token
+  // exchange, RFC 8693). It needs no sign-in.
+  rpc ExchangeToken(OAuthTokenExchangeForm) returns (OAuthTokenExchangeInfo) {
+    option (google.api.http) = {
+      post: "/api/1.0/unity-control/auth/tokens"
+      body: "*"
+    };
+  }
+
+  // Get an access token for a personal access token: the OAuth 2.0 `client_credentials` grant
+  // (RFC 6749, section 4.4). It needs no sign-in.
+  rpc RequestAccessToken(TokenRequest) returns (TokenResponse) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/oauth/token"
+      body: "*"
+    };
+  }
+
+  // Sign out: expire the `UC_TOKEN` cookie of the request, if any.
+  rpc Logout(LogoutRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/1.0/unity-control/auth/logout"
+      body: "*"
+    };
+  }
+
+  // Get how the web UI signs in. It needs no sign-in.
+  rpc GetAuthMode(GetAuthModeRequest) returns (AuthMode) {
+    option (google.api.http) = {get: "/auth/mode"};
+  }
+}

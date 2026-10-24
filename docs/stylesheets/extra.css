@@ -3,3 +3,191 @@
 [data-md-color-scheme="default"] .md-logo img {
   content: url("../assets/logo-light.svg");
 }
+
+/* The Python client's reference (reference/python/, docs/gen_python_reference.py):
+   API entries as a Sphinx reference shows them. A class or a method is a heading holding its
+   signature (the kind, the module, the name, then a parameter per line when there are more
+   than two); its docstring is indented below it, with its parameters, return value and
+   attributes as field lists. The colors are the site's, so both color schemes follow. */
+.md-typeset h2.uc-api,
+.md-typeset h3.uc-api {
+  margin: 2.4em 0 0.6em;
+  font-family: var(--md-code-font-family);
+  font-size: 0.85em;
+  font-weight: 400;
+  line-height: 1.7;
+  letter-spacing: 0;
+  color: var(--md-default-fg-color);
+}
+.md-typeset h2.uc-api {
+  padding-top: 1.2em;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+  font-size: 0.9em;
+}
+.md-typeset h3.uc-api {
+  margin-top: 1.8em;
+}
+.uc-sig__kind {
+  margin-right: 0.3em;
+  color: var(--md-default-fg-color--light);
+  font-style: italic;
+}
+.uc-sig__prefix {
+  color: var(--md-default-fg-color--light);
+}
+.uc-sig__name {
+  color: var(--md-accent-fg-color);
+  font-weight: 700;
+}
+.uc-sig__param {
+  font-style: italic;
+}
+.uc-sig__default,
+.uc-sig__star,
+.uc-sig__arrow {
+  color: var(--md-default-fg-color--light);
+}
+.uc-sig--wrap .uc-sig__p {
+  display: block;
+  padding-left: 2em;
+}
+.md-typeset .uc-type {
+  color: var(--md-typeset-a-color);
+}
+.md-typeset .uc-type:hover {
+  text-decoration: underline;
+}
+
+.uc-api__body {
+  margin-left: 1.6em;
+}
+.uc-api__bases,
+.uc-api__twin {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.9em;
+}
+.uc-api__twin .uc-sig {
+  font-family: var(--md-code-font-family);
+  font-size: 0.95em;
+}
+
+.md-typeset .uc-fields {
+  margin: 1em 0;
+}
+.md-typeset .uc-fields__title {
+  margin: 0 0 0.4em;
+  padding: 0.15em 0.6em;
+  border-radius: 0.2rem;
+  background-color: var(--md-code-bg-color);
+  font-weight: 700;
+}
+.md-typeset .uc-fields ul {
+  margin: 0 0 0 1.4em;
+  padding: 0;
+  list-style: none;
+}
+.md-typeset .uc-fields li {
+  margin: 0 0 0.3em;
+}
+.uc-fields__name {
+  font-family: var(--md-code-font-family);
+  font-size: 0.9em;
+}
+.uc-fields__type {
+  font-style: italic;
+}
+
+.md-typeset .uc-summary__title {
+  margin: 1.6em 0 0.4em;
+  font-weight: 700;
+}
+/* The names in the table after it stay on one line. The table is in a scroll wrapper once the
+   page's script runs. */
+.md-typeset .uc-summary__title + table td:first-child code,
+.md-typeset .uc-summary__title + .md-typeset__scrollwrap td:first-child code {
+  word-break: normal;
+  white-space: nowrap;
+}
+.md-typeset h1 code {
+  padding: 0;
+  background: none;
+  color: inherit;
+}
+
+
+/* The API reference (reference/http-api.md, overrides/api-reference.html): Scalar in the
+   whole width under the header, in the site's fonts and palette. Scalar sets its variables on
+   body.dark-mode and body.light-mode; these, more specific, win. */
+.md-main__inner:has(> .uc-scalar) {
+  max-width: none;
+  margin: 0;
+}
+.uc-scalar {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Not the site's body size (10px, for its rem-based typography). */
+  font-size: 16px;
+  /* The site's header: its row and the tabs, which hide under 1220px. */
+  --scalar-custom-header-height: 96px;
+}
+@media screen and (max-width: 76.2344em) {
+  .uc-scalar {
+    --scalar-custom-header-height: 48px;
+  }
+}
+body.dark-mode,
+body.light-mode {
+  --scalar-font: Inter, -apple-system, "system-ui", Helvetica, Arial, sans-serif;
+  --scalar-font-code: "JetBrains Mono", SFMono-Regular, Consolas, Menlo, monospace;
+  --scalar-color-accent: #2094f3;
+  --scalar-link-color: #2094f3;
+  --scalar-button-1: #2094f3;
+  --scalar-button-1-color: #fff;
+  --scalar-button-1-hover: #0091eb;
+  --scalar-sidebar-color-active: #0091eb;
+  --scalar-sidebar-item-active-background: rgb(0 145 235 / 10%);
+  --scalar-background-accent: rgb(0 145 235 / 10%);
+}
+body.dark-mode {
+  --scalar-background-1: #0b0c0f;
+  --scalar-background-2: #14171f;
+  --scalar-background-3: #1d212b;
+  --scalar-color-1: #e2e4e9;
+  --scalar-color-2: rgb(226 228 233 / 82%);
+  --scalar-color-3: rgb(226 228 233 / 56%);
+  --scalar-border-color: rgb(226 228 233 / 12%);
+  --scalar-sidebar-background-1: #0b0c0f;
+  --scalar-sidebar-color-1: rgb(226 228 233 / 82%);
+  --scalar-sidebar-color-2: rgb(226 228 233 / 56%);
+  --scalar-sidebar-border-color: rgb(226 228 233 / 12%);
+  --scalar-sidebar-item-hover-background: rgb(226 228 233 / 5%);
+  --scalar-sidebar-search-background: rgb(226 228 233 / 12%);
+  --scalar-sidebar-search-border-color: transparent;
+  --scalar-sidebar-search-color: rgb(226 228 233 / 82%);
+}
+/* Scalar keeps its code cards dark in the light scheme; the site's code is light there. */
+body.light-mode,
+body.light-mode .uc-scalar .dark-mode {
+  --scalar-background-1: #fff;
+  --scalar-background-2: #f5f5f5;
+  --scalar-background-3: #e9e9ec;
+  --scalar-color-1: rgb(0 0 0 / 87%);
+  --scalar-color-2: rgb(0 0 0 / 70%);
+  --scalar-color-3: rgb(0 0 0 / 54%);
+  --scalar-border-color: rgb(0 0 0 / 10%);
+  --scalar-sidebar-background-1: #fff;
+  --scalar-sidebar-color-1: rgb(0 0 0 / 87%);
+  --scalar-sidebar-color-2: rgb(0 0 0 / 54%);
+  --scalar-sidebar-border-color: rgb(0 0 0 / 10%);
+  --scalar-sidebar-item-hover-background: rgb(0 0 0 / 4%);
+  --scalar-sidebar-search-background: rgb(0 0 0 / 5%);
+  --scalar-sidebar-search-border-color: transparent;
+  --scalar-sidebar-search-color: rgb(0 0 0 / 70%);
+}
+
+/* The loops of the web UI and the terminal UI: the width of the text, as images. */
+.md-typeset video {
+  display: block;
+  width: 100%;
+  height: auto;
+}

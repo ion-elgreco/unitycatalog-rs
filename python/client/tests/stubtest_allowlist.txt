@@ -1,0 +1,3 @@
+# pyo3-stub-gen cannot mark a class @disjoint_base. UnityCatalogError is one at runtime: a PyO3
+# subclass of Exception has a C layout of its own.
+unitycatalog._core.UnityCatalogError

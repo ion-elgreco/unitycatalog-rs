@@ -16,6 +16,8 @@ extra_css:
 
 theme:
   name: material
+  # Templates of pages that are not Markdown: the API reference (overrides/api-reference.html).
+  custom_dir: docs/overrides
   # The web UI's logo, without its text, and its favicon.
   logo: assets/logo.svg
   favicon: assets/favicon.ico
@@ -39,8 +41,7 @@ theme:
   features:
     - content.code.copy
     - content.code.annotate
-    - navigation.sections
-    - navigation.expand
+    # A tab per part of the nav; the groups in a tab, such as the Python API's modules, fold.
     - navigation.indexes
     - search.highlight
     - search.share
@@ -49,23 +50,68 @@ theme:
     - navigation.tabs.sticky
     - navigation.top
 
+# A tab per part: start, run the server, use the clients, look things up.
 nav:
-  - Home: index.md
-  - Kubernetes: kubernetes.md
-  - Docker: docker.md
+  - Get started:
+      - index.md
+      - Quickstart: get-started/quickstart.md
+      - Install: get-started/install.md
   - Server:
       - server/index.md
-      - Settings: server/settings.md
+      - Docker: server/docker.md
+      - Kubernetes: server/kubernetes.md
       - Database: server/database.md
       - Sign-in and authorization: server/auth.md
       - Cloud storage: server/cloud-storage.md
-      - APIs: server/apis.md
       - Operations: server/operations.md
-  - CLI:
-      - cli/index.md
-      - Commands: cli/commands.md
-  - Python client: python-client.md
-  - Web UI: ui.md
+  - Clients:
+      - CLI: clients/cli.md
+      - Terminal UI: clients/tui.md
+      - Python client: clients/python.md
+      - Web UI: clients/web-ui.md
+      - REST APIs: clients/rest-apis.md
+  - Reference:
+      - reference/index.md
+      # Scalar shows the OpenAPI document that docs/gen_openapi.py writes from the protos
+      # (`just docs-reference`); overrides/api-reference.html is its template.
+      - HTTP API: reference/http-api.md
+      # Written by docs/gen_python_reference.py (`just docs-reference`), from the package's
+      # stubs: a page per public module, which it checks are all listed here.
+      - Python API:
+          - reference/python/index.md
+          - unitycatalog: reference/python/unitycatalog.md
+          - unitycatalog.admin: reference/python/admin.md
+          - unitycatalog.audit: reference/python/audit.md
+          - unitycatalog.auth: reference/python/auth.md
+          - unitycatalog.catalogs: reference/python/catalogs.md
+          - unitycatalog.credentials: reference/python/credentials.md
+          - unitycatalog.delta: reference/python/delta.md
+          - unitycatalog.external_locations: reference/python/external_locations.md
+          - unitycatalog.functions: reference/python/functions.md
+          - unitycatalog.health: reference/python/health.md
+          - unitycatalog.iceberg: reference/python/iceberg.md
+          - unitycatalog.metastore: reference/python/metastore.md
+          - unitycatalog.models: reference/python/models.md
+          - unitycatalog.permissions: reference/python/permissions.md
+          - unitycatalog.recipients: reference/python/recipients.md
+          - unitycatalog.schemas: reference/python/schemas.md
+          - unitycatalog.scim: reference/python/scim.md
+          - unitycatalog.shares: reference/python/shares.md
+          - unitycatalog.sharing: reference/python/sharing.md
+          - unitycatalog.tables: reference/python/tables.md
+          - unitycatalog.tokens: reference/python/tokens.md
+          - unitycatalog.volumes: reference/python/volumes.md
+      - CLI commands: reference/cli.md
+      - Settings: reference/settings.md
+      - Helm chart values: reference/helm-values.md
+
+plugins:
+  - search
+  # The generators of the references and the template overrides are not pages.
+  - exclude:
+      glob:
+        - gen_*.py
+        - overrides/**
 
 markdown_extensions:
   - admonition
@@ -80,5 +126,9 @@ markdown_extensions:
   - pymdownx.snippets
   - attr_list
   - md_in_html
+  # Icons such as :material-console: on the cards of the home and reference pages.
+  - pymdownx.emoji:
+      emoji_index: !!python/name:zensical.extensions.emoji.twemoji
+      emoji_generator: !!python/name:zensical.extensions.emoji.to_svg
   - toc:
       permalink: true

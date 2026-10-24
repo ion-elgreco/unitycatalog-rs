@@ -348,6 +348,23 @@ async fn discovery_endpoint_returns_static_doc(#[future(awt)] app: Router, #[cas
     let _ = assert_status(resp, StatusCode::OK, path).await;
 }
 
+/// The discovery lists are ListResponses (RFC 7644, section 4): the User and Group schemas and
+/// resource types.
+#[rstest]
+#[case::schemas("/scim2/Schemas")]
+#[case::resource_types("/scim2/ResourceTypes")]
+#[tokio::test]
+async fn discovery_lists_are_list_responses(#[future(awt)] app: Router, #[case] path: &str) {
+    let resp = app.oneshot(control(Method::GET, path)).await.unwrap();
+    let body = json_body(assert_status(resp, StatusCode::OK, path).await).await;
+    assert_eq!(
+        body["schemas"],
+        json!(["urn:ietf:params:scim:api:messages:2.0:ListResponse"])
+    );
+    assert_eq!(body["totalResults"], 2);
+    assert_eq!(body["Resources"].as_array().map(Vec::len), Some(2));
+}
+
 #[rstest]
 #[tokio::test]
 async fn service_provider_config_advertises_patch_bulk_filter(#[future(awt)] app: Router) {

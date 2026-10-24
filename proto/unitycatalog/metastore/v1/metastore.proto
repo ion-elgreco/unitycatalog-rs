@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package unitycatalog.metastore.v1;
+
+import "google/api/annotations.proto";
+
+message GetMetastoreSummaryRequest {}
+
+// A summary of the metastore of the server.
+message GetMetastoreSummaryResponse {
+  // Unique identifier of the metastore.
+  string metastore_id = 1;
+}
+
+// Metastore: the top-level container of catalogs and credentials.
+service MetastoreService {
+  // Get a summary of the metastore.
+  rpc GetMetastoreSummary(GetMetastoreSummaryRequest) returns (GetMetastoreSummaryResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/metastore_summary"};
+  }
+}

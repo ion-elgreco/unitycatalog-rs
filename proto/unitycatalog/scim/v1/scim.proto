@@ -1,0 +1,525 @@
+syntax = "proto3";
+
+package unitycatalog.scim.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "olai/trestle/v1/annotations.proto";
+
+// No message here is a `google.api.resource`: in the service of a resource, `GetMe`, `ScimBulk`
+// and `GetServiceProviderConfig` (no path parameter) are on neither the root client nor the
+// resource client, and a SCIM list, which pages by `startIndex` and `count`, either gets an
+// `into_stream` that needs `page_token` (standard `List`) or is missing from the Python root client
+// (custom `List*`).
+
+// The SCIM `meta` of a resource: its type and when it was created and last changed.
+message ScimMeta {
+  // The SCIM resource type, such as `User`.
+  string resource_type = 1;
+  // Time at which the resource was created, in RFC 3339.
+  optional string created = 2;
+  // Time at which the resource was last changed, in RFC 3339.
+  optional string last_modified = 3;
+  // Path of the resource, such as `/scim2/ResourceTypes/User`. Only the discovery resources have
+  // it.
+  optional string location = 4;
+}
+
+// A SCIM role of a user.
+message ScimRole {
+  // The role, such as `admin`.
+  string value = 1;
+}
+
+// A picture of a user.
+message ScimPhoto {
+  // URL of the picture. Empty when the user has no picture.
+  string value = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Kind of the picture, such as `photo`. The server does not keep it.
+  optional string photo_type = 2 [json_name = "type"];
+}
+
+// An email address of a user.
+message ScimEmail {
+  // The email address.
+  string value = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Whether this is the primary email address of the user.
+  optional bool primary = 2;
+  // Kind of the address, such as `work`. The server does not keep it.
+  optional string email_type = 3 [json_name = "type"];
+}
+
+// A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+message ScimUser {
+  // SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:User`.
+  repeated string schemas = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Unique identifier of the user.
+  string id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The identity the user has at the client's identity provider. The token exchange resolves an
+  // OAuth client (`azp`, `client_id`) to the user by it.
+  optional string external_id = 3;
+  // When the user was created and last changed.
+  ScimMeta meta = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The email of the user. Ignored in requests: the server takes the primary email.
+  string user_name = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Name of the user.
+  optional string display_name = 6;
+  // Whether the user can sign in. A new user is always enabled; absent in a replace request:
+  // unchanged.
+  optional bool active = 7;
+  // Email addresses of the user. A new user needs one with `primary` set; a replace request
+  // does not change the email.
+  repeated ScimEmail emails = 8;
+  // Pictures of the user. The server keeps the first; a replace request does not change it.
+  repeated ScimPhoto photos = 9;
+  // Roles of the user. Only `/scim2/Me` sends them: the role `admin` for a caller that can do
+  // what the metastore admin does. The server ignores roles in requests.
+  repeated ScimRole roles = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+message ListUsersRequest {
+  // SCIM filter (RFC 7644, section 3.4.2.2), such as `userName eq "a@example.com"`.
+  optional string filter = 1;
+  // Index of the first user to return, from 1.
+  optional int32 start_index = 2;
+  // The maximum number of users to return. The default is 50.
+  optional int32 count = 3;
+}
+
+// A page of SCIM users.
+message ListScimUsersResponse {
+  // SCIM schema URIs of the response: `urn:ietf:params:scim:api:messages:2.0:ListResponse`.
+  repeated string schemas = 1;
+  // Number of users in the page.
+  int32 total_results = 2;
+  // The users.
+  repeated ScimUser resources = 3 [json_name = "Resources"];
+  // Index of the first user of the page, from 1.
+  int32 start_index = 4;
+  // Number of users in the page.
+  int32 items_per_page = 5;
+  // Time of the list.
+  ScimMeta meta = 6;
+}
+
+message GetUserRequest {
+  // Unique identifier of the user.
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message DeleteUserRequest {
+  // Unique identifier of the user.
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message GetMeRequest {}
+
+// A member of a SCIM group.
+message ScimGroupMember {
+  // The `id` of the user.
+  string value = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // A display string, which clients set to the name of the user.
+  optional string display = 2;
+  // The SCIM resource type of the member: `User`.
+  optional string member_type = 3 [json_name = "type"];
+}
+
+// A SCIM 2.0 group of users.
+message ScimGroup {
+  // SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:Group`. Requests
+  // send the key even when empty; the server fills it in.
+  repeated string schemas = 1 [(olai.trestle.v1.emit_unpopulated) = true];
+  // Unique identifier of the group. The server assigns it.
+  string id = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Name of the group.
+  string display_name = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Members of the group.
+  repeated ScimGroupMember members = 4;
+}
+
+message ListGroupsRequest {
+  // SCIM filter (RFC 7644, section 3.4.2.2), such as `displayName eq "admins"`.
+  optional string filter = 1;
+  // Index of the first group to return, from 1.
+  optional int32 start_index = 2;
+  // The maximum number of groups to return. The default is 50.
+  optional int32 count = 3;
+}
+
+// A page of SCIM groups.
+message ListScimGroupsResponse {
+  // SCIM schema URIs of the response: `urn:ietf:params:scim:api:messages:2.0:ListResponse`.
+  repeated string schemas = 1;
+  // Number of groups in the page.
+  int32 total_results = 2;
+  // The groups.
+  repeated ScimGroup resources = 3 [json_name = "Resources"];
+  // Index of the first group of the page, from 1.
+  int32 start_index = 4;
+  // Number of groups in the page.
+  int32 items_per_page = 5;
+}
+
+message GetGroupRequest {
+  // Unique identifier of the group.
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message DeleteGroupRequest {
+  // Unique identifier of the group.
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// One operation of a SCIM PATCH request (RFC 7644, section 3.5.2).
+message ScimPatchOperation {
+  // The operation: `add`, `remove` or `replace`, in any case.
+  string op = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // SCIM attribute path, such as `active`, `displayName`, `members` or
+  // `members[value eq "<id>"]`. Absent for a `replace` whose `value` holds the attributes.
+  optional string path = 2;
+  // The new value. Any JSON: a boolean or string for `active`, a string for `displayName`, an
+  // array of members for `members`, an object of attributes for a `replace` without `path`.
+  optional google.protobuf.Value value = 3;
+}
+
+// A SCIM PATCH request (RFC 7644, section 3.5.2) for the user or group `id`.
+message ScimPatchOp {
+  // Unique identifier of the user or group.
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
+  // SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:PatchOp`.
+  repeated string schemas = 2;
+  // The operations, in order.
+  repeated ScimPatchOperation operations = 3 [
+    json_name = "Operations",
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+}
+
+// One operation of a SCIM bulk request (RFC 7644, section 3.7).
+message ScimBulkOp {
+  // The HTTP method of the operation: `POST`, `PATCH` or `DELETE`.
+  string method = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // The resource of the operation: `/Users` or `/Groups` for `POST`, `/Users/<id>` or
+  // `/Groups/<id>` for `PATCH` and `DELETE`.
+  string path = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Identifier of the operation, which the result repeats.
+  optional string bulk_id = 3;
+  // The body of the operation: a `ScimUser` or `ScimGroup` for `POST`, a `ScimPatchOp` (without
+  // `id`) for `PATCH`.
+  optional google.protobuf.Struct data = 4;
+}
+
+// A SCIM bulk request (RFC 7644, section 3.7): operations on users and groups in one request.
+message ScimBulkRequest {
+  // SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:BulkRequest`.
+  repeated string schemas = 1;
+  // Stop after this many operations failed. Absent: run every operation.
+  optional int32 fail_on_errors = 2;
+  // The operations, in order. At most 100.
+  repeated ScimBulkOp operations = 3 [json_name = "Operations"];
+}
+
+// The result of one operation of a SCIM bulk request.
+message ScimBulkOpResult {
+  // The HTTP method of the operation.
+  string method = 1;
+  // The HTTP status of the operation, such as `201`.
+  string status = 2;
+  // The `bulk_id` of the operation.
+  optional string bulk_id = 3;
+  // Path of the resource that the operation created or changed, such as `/scim2/Users/<id>`.
+  optional string location = 4;
+  // The answer of the operation: the user or group, or an error with `status` and `detail`.
+  optional google.protobuf.Struct response = 5;
+}
+
+// The answer to a SCIM bulk request: one result per operation that ran, in order.
+message ScimBulkResponse {
+  // SCIM schema URIs of the response: `urn:ietf:params:scim:api:messages:2.0:BulkResponse`.
+  repeated string schemas = 1;
+  // The results of the operations.
+  repeated ScimBulkOpResult operations = 2 [json_name = "Operations"];
+}
+
+// An attribute of a SCIM schema (RFC 7643, section 7).
+message ScimSchemaAttribute {
+  // Name of the attribute, such as `userName`.
+  string name = 1;
+  // Data type of the attribute: `string`, `boolean` or `complex`.
+  string type = 2;
+  // Whether a resource must have the attribute.
+  bool required = 3;
+  // Whether the attribute holds a list of values. Absent: a single value.
+  optional bool multi_valued = 4;
+  // How the server keeps values unique: `server`. Absent: not unique.
+  optional string uniqueness = 5;
+  // The attributes of a `complex` attribute.
+  repeated ScimSchemaAttribute sub_attributes = 6;
+}
+
+// A SCIM schema (RFC 7643, section 7).
+message ScimSchema {
+  // SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:Schema`.
+  repeated string schemas = 1;
+  // URI of the schema, such as `urn:ietf:params:scim:schemas:core:2.0:User`.
+  string id = 2;
+  // Name of the schema, such as `User`.
+  string name = 3;
+  // Description of the schema.
+  string description = 4;
+  // The attributes of the schema.
+  repeated ScimSchemaAttribute attributes = 5;
+  // The type and path of the schema.
+  ScimMeta meta = 6;
+}
+
+message ListScimSchemasRequest {}
+
+// The SCIM schemas of the server, User and Group, as a SCIM list (RFC 7644, section 4).
+message ListScimSchemasResponse {
+  // SCIM schema URIs of the response: `urn:ietf:params:scim:api:messages:2.0:ListResponse`.
+  repeated string schemas = 1;
+  // Number of schemas.
+  int32 total_results = 2;
+  // The schemas.
+  repeated ScimSchema resources = 3 [json_name = "Resources"];
+  // Index of the first schema: 1.
+  int32 start_index = 4;
+  // Number of schemas.
+  int32 items_per_page = 5;
+}
+
+// A SCIM resource type (RFC 7643, section 6).
+message ScimResourceType {
+  // SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:ResourceType`.
+  repeated string schemas = 1;
+  // Identifier of the resource type, such as `User`.
+  string id = 2;
+  // Name of the resource type, such as `User`.
+  string name = 3;
+  // Path of the resources, relative to `/scim2`, such as `/Users`.
+  string endpoint = 4;
+  // Description of the resource type.
+  string description = 5;
+  // URI of the schema of the resources, such as `urn:ietf:params:scim:schemas:core:2.0:User`.
+  string schema = 6;
+  // The type and path of the resource type.
+  ScimMeta meta = 7;
+}
+
+message ListScimResourceTypesRequest {}
+
+// The SCIM resource types of the server, User and Group, as a SCIM list (RFC 7644, section 4).
+message ListScimResourceTypesResponse {
+  // SCIM schema URIs of the response: `urn:ietf:params:scim:api:messages:2.0:ListResponse`.
+  repeated string schemas = 1;
+  // Number of resource types.
+  int32 total_results = 2;
+  // The resource types.
+  repeated ScimResourceType resources = 3 [json_name = "Resources"];
+  // Index of the first resource type: 1.
+  int32 start_index = 4;
+  // Number of resource types.
+  int32 items_per_page = 5;
+}
+
+// Whether the server supports a SCIM feature.
+message ScimSupported {
+  // Whether the feature is supported.
+  bool supported = 1;
+}
+
+// How the server supports SCIM bulk requests.
+message ScimBulkConfig {
+  // Whether bulk requests are supported.
+  bool supported = 1;
+  // The maximum number of operations in a bulk request.
+  int32 max_operations = 2;
+  // The maximum size of a bulk request, in bytes.
+  int32 max_payload_size = 3;
+}
+
+// How the server supports SCIM filters.
+message ScimFilterConfig {
+  // Whether filters are supported.
+  bool supported = 1;
+  // The maximum number of resources in an answer.
+  int32 max_results = 2;
+}
+
+// A way to authenticate to the SCIM endpoints.
+message ScimAuthenticationScheme {
+  // Kind of the scheme: `oauthbearertoken`.
+  string type = 1;
+  // Name of the scheme.
+  string name = 2;
+  // Description of the scheme.
+  string description = 3;
+  // Whether this is the preferred scheme.
+  bool primary = 4;
+}
+
+message GetServiceProviderConfigRequest {}
+
+// The SCIM features that the server supports (RFC 7643, section 5).
+message ScimServiceProviderConfig {
+  // SCIM schema URIs of the resource:
+  // `urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig`.
+  repeated string schemas = 1;
+  // PATCH requests.
+  ScimSupported patch = 2;
+  // Bulk requests.
+  ScimBulkConfig bulk = 3;
+  // Filters.
+  ScimFilterConfig filter = 4;
+  // Password changes.
+  ScimSupported change_password = 5;
+  // Sorting.
+  ScimSupported sort = 6;
+  // ETags.
+  ScimSupported etag = 7;
+  // The ways to authenticate.
+  repeated ScimAuthenticationScheme authentication_schemes = 8;
+  // The type and path of the resource.
+  ScimMeta meta = 9;
+}
+
+// SCIM 2.0 users and groups, and the signed-in user.
+service ScimService {
+  // List the users. Only the metastore admin can.
+  rpc ListUsers(ListUsersRequest) returns (ListScimUsersResponse) {
+    option (google.api.http) = {get: "/api/1.0/unity-control/scim2/Users"};
+  }
+
+  // Create a user, named by its primary email. Only the metastore admin can.
+  rpc CreateUser(ScimUser) returns (ScimUser) {
+    option (google.api.http) = {
+      post: "/api/1.0/unity-control/scim2/Users"
+      body: "*"
+    };
+  }
+
+  // Get a user. Only the metastore admin can.
+  rpc GetUser(GetUserRequest) returns (ScimUser) {
+    option (google.api.http) = {get: "/api/1.0/unity-control/scim2/Users/{id}"};
+  }
+
+  // Replace a user: the name, state and external id change when given; the email and picture
+  // stay. Only the metastore admin can.
+  rpc ReplaceUser(ScimUser) returns (ScimUser) {
+    option (google.api.http) = {
+      put: "/api/1.0/unity-control/scim2/Users/{id}"
+      body: "*"
+    };
+  }
+
+  // Enable or disable a user. The server takes the first `replace` whose `path` is `active` or
+  // absent; without `path`, the first attribute of `value` is the state (`{"active": false}`).
+  // With no such operation the server answers 501. Only the metastore admin can.
+  rpc PatchUser(ScimPatchOp) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      patch: "/api/1.0/unity-control/scim2/Users/{id}"
+      body: "*"
+    };
+  }
+
+  // Disable a user and remove its grants. The user stays, disabled. Only the metastore admin can.
+  rpc DeleteUser(DeleteUserRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/1.0/unity-control/scim2/Users/{id}"};
+  }
+
+  // Get the signed-in user. The role `admin` names a caller that can do what the metastore admin
+  // does.
+  rpc GetMe(GetMeRequest) returns (ScimUser) {
+    option (google.api.http) = {get: "/api/1.0/unity-control/scim2/Me"};
+  }
+
+  // List the groups. Only the metastore admin can.
+  rpc ListGroups(ListGroupsRequest) returns (ListScimGroupsResponse) {
+    option (google.api.http) = {get: "/api/1.0/unity-control/scim2/Groups"};
+  }
+
+  // Create a group. Only the metastore admin can.
+  rpc CreateGroup(ScimGroup) returns (ScimGroup) {
+    option (google.api.http) = {
+      post: "/api/1.0/unity-control/scim2/Groups"
+      body: "*"
+    };
+  }
+
+  // Get a group. Only the metastore admin can.
+  rpc GetGroup(GetGroupRequest) returns (ScimGroup) {
+    option (google.api.http) = {get: "/api/1.0/unity-control/scim2/Groups/{id}"};
+  }
+
+  // Replace a group: its name and members. Only the metastore admin can.
+  rpc ReplaceGroup(ScimGroup) returns (ScimGroup) {
+    option (google.api.http) = {
+      put: "/api/1.0/unity-control/scim2/Groups/{id}"
+      body: "*"
+    };
+  }
+
+  // Change a group: `add` to `members`, `remove` of `members` or `members[value eq "<id>"]`,
+  // `replace` of `displayName`, or `replace` without `path` with a whole group. Other operations
+  // are ignored. Only the metastore admin can.
+  rpc PatchGroup(ScimPatchOp) returns (ScimGroup) {
+    option (google.api.http) = {
+      patch: "/api/1.0/unity-control/scim2/Groups/{id}"
+      body: "*"
+    };
+  }
+
+  // Delete a group. Only the metastore admin can.
+  rpc DeleteGroup(DeleteGroupRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/1.0/unity-control/scim2/Groups/{id}"};
+  }
+
+  // Run operations on users and groups in one request. Each operation has its own status. Only
+  // the metastore admin can.
+  rpc ScimBulk(ScimBulkRequest) returns (ScimBulkResponse) {
+    option (google.api.http) = {
+      post: "/api/1.0/unity-control/scim2/Bulk"
+      body: "*"
+    };
+  }
+
+  // List the SCIM schemas of the server: User and Group. Any signed-in caller can.
+  rpc ListScimSchemas(ListScimSchemasRequest) returns (ListScimSchemasResponse) {
+    option (google.api.http) = {get: "/api/1.0/unity-control/scim2/Schemas"};
+  }
+
+  // List the SCIM resource types of the server: User and Group. Any signed-in caller can.
+  rpc ListScimResourceTypes(ListScimResourceTypesRequest) returns (ListScimResourceTypesResponse) {
+    option (google.api.http) = {get: "/api/1.0/unity-control/scim2/ResourceTypes"};
+  }
+
+  // Get the SCIM features that the server supports. Any signed-in caller can.
+  rpc GetServiceProviderConfig(GetServiceProviderConfigRequest) returns (ScimServiceProviderConfig) {
+    option (google.api.http) = {get: "/api/1.0/unity-control/scim2/ServiceProviderConfig"};
+  }
+}

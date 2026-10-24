@@ -5,7 +5,7 @@ name: release-python
 # (v*.*.*):
 #
 # - unitycatalog-rs (python/client/), the client: for each (os, libc,
-#   arch), an abi3-py310 wheel, which covers Python 3.10+, and a cp314t
+#   arch), an abi3-py312 wheel, which covers Python 3.12+, and a cp314t
 #   wheel for free-threaded 3.14, which abi3 does not cover.
 # - unitycatalog-rs-cli and unitycatalog-rs-server (python/cli/,
 #   python/server/): the `uc` and `uc-server` binaries, a py3-none wheel

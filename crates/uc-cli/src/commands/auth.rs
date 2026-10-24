@@ -11,10 +11,11 @@ use clap::Subcommand;
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use uc_client::{CONTROL_BASE, Error};
+use uc_client::error::Error;
+use uc_client::models::auth::v1::OAuthTokenExchangeInfo;
 use uc_common::settings::{self, Cli, Settings};
 
-use super::Context;
+use super::{CallError, Context, error_body};
 use crate::browser;
 use crate::config;
 use crate::sign_in::SignIns;
@@ -50,8 +51,8 @@ pub async fn run(
     match op {
         AuthOp::Login { identity_token } => {
             let response = login(c, identity_token, &settings.cli).await?;
-            let token = response["access_token"]
-                .as_str()
+            let token = Some(response.access_token.as_str())
+                .filter(|token| !token.is_empty())
                 .ok_or_else(|| anyhow!("The server's answer has no access_token"))?;
             match sign_ins.map(|sign_ins| sign_ins.save(origin, token)) {
                 Some(Ok(())) => match expiry(&response) {
@@ -83,9 +84,11 @@ pub async fn run(
     }
 }
 
-/// When the token of the exchange's `response` expires, in local time.
-fn expiry(response: &Value) -> Option<String> {
-    let life = chrono::TimeDelta::try_seconds(response["expires_in"].as_i64()?)?;
+/// When the token of the exchange's `response` expires, in local time; none
+/// when the answer does not say.
+fn expiry(response: &OAuthTokenExchangeInfo) -> Option<String> {
+    let seconds = Some(response.expires_in).filter(|&seconds| seconds != 0)?;
+    let life = chrono::TimeDelta::try_seconds(seconds)?;
     let until = chrono::Local::now().checked_add_signed(life)?;
     Some(until.format("%Y-%m-%d %H:%M").to_string())
 }
@@ -95,25 +98,19 @@ async fn login(
     c: &Context<'_>,
     identity_token: Option<String>,
     settings: &Cli,
-) -> anyhow::Result<Value> {
+) -> anyhow::Result<OAuthTokenExchangeInfo> {
     let identity_token = match identity_token {
         Some(token) => token,
         None => browser_login(settings).await?,
     };
-    let form = [
-        ("grant_type", TOKEN_EXCHANGE),
-        ("requested_token_type", ACCESS_TOKEN),
-        ("subject_token_type", ID_TOKEN),
-        ("subject_token", identity_token.as_str()),
-    ];
     match c
         .client
-        .post_form(&format!("{CONTROL_BASE}/auth/tokens"), &form)
+        .exchange_token(TOKEN_EXCHANGE, ACCESS_TOKEN, identity_token, ID_TOKEN)
         .await
     {
         Ok(response) => Ok(response),
-        Err(Error::Status { body, .. }) => bail!("Error authenticating - {body}"),
-        Err(e) => Err(e.into()),
+        Err(Error::Api(api)) => bail!("Error authenticating - {}", error_body(&api)),
+        Err(e) => Err(CallError(e).into()),
     }
 }
 

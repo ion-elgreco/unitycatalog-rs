@@ -1,8 +1,8 @@
 name: CI
 
 # The Rust workspace: formatting, clippy and the tests, on Turso and on
-# PostgreSQL; and the image, built as the release builds it and run. The
-# Python client: python.yml.
+# PostgreSQL; the clients generated from proto/; and the image, built as the
+# release builds it and run. The Python client: python.yml.
 
 on:
   merge_group:
@@ -59,6 +59,42 @@ jobs:
 
       - name: Run Rust tests
         run: just test-rust
+
+  # The clients generated from proto/ (`just generate`) are the committed ones.
+  generated:
+    name: Generated clients
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+        with:
+          components: rustfmt
+
+      # Ubuntu's protoc (3.21) does not know `debug_redact`. install-action names
+      # protoc 34.x `3.34`.
+      - name: Install protoc
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
+        with:
+          tool: protoc@3.34
+
+      - name: The generated clients are up to date
+        run: |
+          just generate
+          paths=(crates/uc-client/src/codegen crates/uc-client/src/models/_gen python/client/src/codegen python/client/unitycatalog/_enums.py)
+          if [ -n "$(git status --porcelain "${paths[@]}")" ]; then
+            git status --short "${paths[@]}"
+            git diff "${paths[@]}"
+            echo "The generated clients differ from proto/: run 'just generate'." >&2
+            exit 1
+          fi
 
   # The same tests on PostgreSQL: each test gets a schema of its own.
   postgres:

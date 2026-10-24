@@ -11,10 +11,8 @@ use delta_kernel::object_store::azure::{AzureConfigKey, MicrosoftAzureBuilder};
 use delta_kernel::object_store::gcp::{GcpCredential, GoogleCloudStorageBuilder};
 use delta_kernel::object_store::local::LocalFileSystem;
 use delta_kernel::object_store::{ObjectStore, StaticCredentialProvider};
-use uc_api::{
-    GenerateTemporaryPathCredential, GenerateTemporaryTableCredential,
-    GenerateTemporaryVolumeCredential, PathOperation, TableOperation, TemporaryCredentials,
-    VolumeOperation,
+use uc_client::models::credentials::v1::{
+    PathOperation, TableOperation, TemporaryCredentials, VolumeOperation,
 };
 use uc_common::settings;
 use url::Url;
@@ -46,12 +44,8 @@ pub async fn table_credentials(
     table_id: &str,
     operation: TableOperation,
 ) -> anyhow::Result<TemporaryCredentials> {
-    let request = GenerateTemporaryTableCredential {
-        table_id: table_id.to_string(),
-        operation,
-    };
     c.client
-        .generate_temporary_table_credentials(&request)
+        .generate_temporary_table_credentials(table_id, operation)
         .await
         .map_err(upstream("generateTemporaryTableCredentials"))
 }
@@ -62,12 +56,8 @@ pub async fn volume_credentials(
     volume_id: &str,
     operation: VolumeOperation,
 ) -> anyhow::Result<TemporaryCredentials> {
-    let request = GenerateTemporaryVolumeCredential {
-        volume_id: volume_id.to_string(),
-        operation,
-    };
     c.client
-        .generate_temporary_volume_credentials(&request)
+        .generate_temporary_volume_credentials(volume_id, operation)
         .await
         .map_err(upstream("generateTemporaryVolumeCredentials"))
 }
@@ -78,12 +68,8 @@ pub async fn path_credentials(
     url: &str,
     operation: PathOperation,
 ) -> anyhow::Result<TemporaryCredentials> {
-    let request = GenerateTemporaryPathCredential {
-        url: url.to_string(),
-        operation,
-    };
     c.client
-        .generate_temporary_path_credentials(&request)
+        .generate_temporary_path_credentials(url, operation)
         .await
         .map_err(upstream("generateTemporaryPathCredentials"))
 }
@@ -105,14 +91,14 @@ pub fn store_for(
                     builder = builder.with_region(region);
                 }
             }
-            if let Some(aws) = credentials.and_then(|c| c.aws_temp_credentials.as_ref()) {
-                if let Some(key) = &aws.access_key_id {
+            if let Some(aws) = credentials.and_then(|c| c.aws_temp_credentials.as_option()) {
+                if let Some(key) = given(&aws.access_key_id) {
                     builder = builder.with_access_key_id(key);
                 }
-                if let Some(secret) = &aws.secret_access_key {
+                if let Some(secret) = given(&aws.secret_access_key) {
                     builder = builder.with_secret_access_key(secret);
                 }
-                if let Some(token) = &aws.session_token {
+                if let Some(token) = given(&aws.session_token) {
                     builder = builder.with_token(token);
                 }
             }
@@ -120,17 +106,19 @@ pub fn store_for(
         }
         "gs" => {
             let mut builder = GoogleCloudStorageBuilder::from_env().with_url(url.as_str());
-            let token = credentials.and_then(|c| c.gcp_oauth_token.as_ref());
-            if let Some(bearer) = token.and_then(|t| t.oauth_token.clone()) {
-                let provider = StaticCredentialProvider::new(GcpCredential { bearer });
+            let token = credentials.and_then(|c| c.gcp_oauth_token.as_option());
+            if let Some(bearer) = token.and_then(|t| given(&t.oauth_token)) {
+                let provider = StaticCredentialProvider::new(GcpCredential {
+                    bearer: bearer.to_string(),
+                });
                 builder = builder.with_credentials(Arc::new(provider));
             }
             Arc::new(builder.build().context("GCS storage")?)
         }
         "abfs" | "abfss" => {
             let mut builder = MicrosoftAzureBuilder::from_env().with_url(url.as_str());
-            let sas = credentials.and_then(|c| c.azure_user_delegation_sas.as_ref());
-            if let Some(token) = sas.and_then(|s| s.sas_token.as_ref()) {
+            let sas = credentials.and_then(|c| c.azure_user_delegation_sas.as_option());
+            if let Some(token) = sas.and_then(|s| given(&s.sas_token)) {
                 builder = builder.with_config(AzureConfigKey::SasKey, token);
             }
             Arc::new(builder.build().context("Azure storage")?)
@@ -138,6 +126,11 @@ pub fn store_for(
         other => anyhow::bail!("Unsupported URI scheme: {other}"),
     };
     Ok(store)
+}
+
+/// A value of the vended credentials; none when the server left it out.
+fn given(value: &str) -> Option<&str> {
+    Some(value).filter(|value| !value.is_empty())
 }
 
 /// `location` as a directory URL (ending in `/`).
