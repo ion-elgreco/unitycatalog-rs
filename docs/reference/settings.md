@@ -62,7 +62,7 @@ region = "us-east-1"
 role_arn = "arn:aws:iam::123456789012:role/uc"
 ```
 
-[Cloud storage](cloud-storage.md) tells how the server uses them.
+[Cloud storage](../server/cloud-storage.md) tells how the server uses them.
 
 ## `[server]`
 
@@ -84,7 +84,7 @@ role_arn = "arn:aws:iam::123456789012:role/uc"
 
 | Key | Variable | Default | Description |
 | --- | --- | --- | --- |
-| `url` | `UC_DB_URL` | `uc.db` in `data_dir` | `file:<path>`, `memory`, `postgresql://…` or `jdbc:postgresql://…`. See [Database](database.md). |
+| `url` | `UC_DB_URL` | `uc.db` in `data_dir` | `file:<path>`, `memory`, `postgresql://…` or `jdbc:postgresql://…`. See [Database](../server/database.md). |
 | `user` | `UC_DB_USER` | from the URL | The PostgreSQL user, instead of the URL's. |
 | `password` | `UC_DB_PASSWORD` | from the URL | The PostgreSQL password, instead of the URL's. |
 | `pool_size` | `UC_DB_POOL_SIZE` | `20` | The most PostgreSQL connections at one time. |
@@ -94,13 +94,13 @@ role_arn = "arn:aws:iam::123456789012:role/uc"
 | Key | Variable | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | `UC_AUTH_ENABLED` | `false` | Require sign-in, and check privileges. |
-| `signing_key_file` | `UC_AUTH_SIGNING_KEY_FILE` | none | The PEM file of the RSA key that signs the server's tokens. Without it, the server makes a key in memory at each start. See [The signing key](auth.md#the-signing-key). |
-| `users` | none | none | `[[auth.users]]`: the users that the server makes at each start when they are missing. Only in `uc.toml`. See [The first users](auth.md#the-first-users). |
+| `signing_key_file` | `UC_AUTH_SIGNING_KEY_FILE` | none | The PEM file of the RSA key that signs the server's tokens. Without it, the server makes a key in memory at each start. See [The signing key](../server/auth.md#the-signing-key). |
+| `users` | none | none | `[[auth.users]]`: the users that the server makes at each start when they are missing. Only in `uc.toml`. See [The first users](../server/auth.md#the-first-users). |
 | `allowed_issuers` | `UC_AUTH_ALLOWED_ISSUERS` | none | The issuers of identity tokens that the server exchanges: exact, or with `*` for one DNS label. |
 | `audiences` | `UC_AUTH_AUDIENCES` | none | The audiences that those tokens must have. `*` alone accepts every audience. |
 | `access_token_timeout` | `UC_AUTH_ACCESS_TOKEN_TIMEOUT` | `24h` | The life of the server's access tokens. |
 | `cookie_timeout` | `UC_AUTH_COOKIE_TIMEOUT` | `5d` | The life of the `UC_TOKEN` cookie of the web UI. |
-| `admin_principals` | `UC_AUTH_ADMIN_PRINCIPALS` | none | The emails of the admins, besides the metastore's owner: see [Privileges](auth.md#privileges). |
+| `admin_principals` | `UC_AUTH_ADMIN_PRINCIPALS` | none | The emails of the admins, besides the metastore's owner: see [Privileges](../server/auth.md#privileges). |
 | `cedar` | `UC_AUTH_CEDAR` | `false` | Check privileges with the Cedar policy engine. |
 | `cedar_policies` | `UC_AUTH_CEDAR_POLICIES` | none | Files of Cedar policies, on top of the default policies. |
 | `mode` | `UC_AUTH_MODE` | `none` | The web UI's sign-in: `none`, `oidc` or `forward`. |
@@ -109,13 +109,13 @@ role_arn = "arn:aws:iam::123456789012:role/uc"
 | `oidc_client_id` | `UC_AUTH_OIDC_CLIENT_ID` | none | The OAuth client. |
 | `oidc_client_secret` | `UC_AUTH_OIDC_CLIENT_SECRET` | none | Its secret; none for a public client. |
 | `oidc_scopes` | `UC_AUTH_OIDC_SCOPES` | `openid email profile` | The scopes that the server asks for. |
-| `oidc_end_session` | `UC_AUTH_OIDC_END_SESSION` | `false` | "Log out" also ends the provider's session: see [OpenID Connect](auth.md#openid-connect). |
+| `oidc_end_session` | `UC_AUTH_OIDC_END_SESSION` | `false` | "Log out" also ends the provider's session: see [OpenID Connect](../server/auth.md#openid-connect). |
 | `forward_trusted_proxies` | `UC_AUTH_FORWARD_TRUSTED_PROXIES` | none | The auth proxies whose headers count: CIDRs or addresses. |
 | `forward_email_header` | `UC_AUTH_FORWARD_EMAIL_HEADER` | `Remote-Email` | The header with the user's email. |
 | `forward_user_header` | `UC_AUTH_FORWARD_USER_HEADER` | `Remote-User` | The header with the user, without the email header. |
 | `forward_logout_url` | `UC_AUTH_FORWARD_LOGOUT_URL` | none | The proxy's sign-out, where the web UI's "Log out" goes. |
 
-[Sign-in and authorization](auth.md) tells how these settings work together.
+[Sign-in and authorization](../server/auth.md) tells how these settings work together.
 
 ## `[storage]`
 
@@ -149,7 +149,7 @@ The server's own AWS identity, which assumes the roles of storage credentials.
 | `access_key` | `UC_AWS_ACCESS_KEY` | the AWS SDK's default chain | The access key. |
 | `secret_key` | `UC_AWS_SECRET_KEY` | the AWS SDK's default chain | The secret key. |
 | `master_role_arn` | `UC_AWS_MASTER_ROLE_ARN` | none | The server's role, shown as `unity_catalog_iam_arn` on storage credentials. |
-| `endpoint` | `UC_AWS_ENDPOINT` | AWS | The S3 and STS API of an S3-compatible store, such as MinIO or RustFS: `http://` or `https://`. See [Cloud storage](cloud-storage.md#an-s3-compatible-store). |
+| `endpoint` | `UC_AWS_ENDPOINT` | AWS | The S3 and STS API of an S3-compatible store, such as MinIO or RustFS: `http://` or `https://`. See [Cloud storage](../server/cloud-storage.md#aws-s3). |
 
 ## `[s3.<name>]`
 

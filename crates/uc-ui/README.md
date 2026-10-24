@@ -3,8 +3,8 @@
 Leptos rebuild of the upstream Unity Catalog OSS web UI (originally
 React/TypeScript + Ant Design). Same routes, same pages, same data shapes —
 all served as a client-side-rendered WASM app. One page is new: the
-signed-in user's access tokens. [docs/ui.md](../../docs/ui.md) shows how to
-use it.
+signed-in user's access tokens.
+[docs/clients/web-ui.md](../../docs/clients/web-ui.md) shows how to use it.
 
 ## Build and run
 

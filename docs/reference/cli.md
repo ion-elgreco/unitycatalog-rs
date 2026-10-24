@@ -1,7 +1,8 @@
-# Commands
+# CLI commands
 
-Each command is `uc <entity> <operation> [flags]`. `uc <entity> <operation> --help` shows the same
-flags as this page. The flags in **bold** are required.
+Each command of [`uc`](../clients/cli.md) is `uc <entity> <operation> [flags]`.
+`uc <entity> <operation> --help` shows the same flags as this page. The flags in **bold** are
+required.
 
 Every command also takes the global options:
 

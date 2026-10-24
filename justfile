@@ -21,10 +21,6 @@ upstream_image := "unitycatalog/unitycatalog:v0.7.0"
 # (squidfunk/mike), at a fixed commit.
 mike := "git+https://github.com/squidfunk/mike.git@2d4ad799442f4592db8ad53b179bfb33db8c69ac"
 
-# The plugins of the Python client's reference in the docs site: mkdocstrings
-# reads the package and its stubs, api-autonav writes a page per module.
-docs_plugins := "--with mkdocstrings-python --with mkdocs-api-autonav"
-
 _default:
     just --list
 
@@ -247,15 +243,22 @@ generate-stubs:
         cargo run -q --profile {{ profile }} -p uc-py --no-default-features --features stub-gen --bin stub_gen
     "{{ python }}" -m ruff format --quiet python/client/unitycatalog/_core
 
-# Build the docs site (docs/, mkdocs.yml) into site/ with zensical; a warning, such as a broken link, fails the build
-docs-build:
-    uvx {{ docs_plugins }} zensical build --strict
+# Write the references of the docs site, which docs-build and docs-serve include: the OpenAPI document of the HTTP APIs (docs/reference/openapi.json) from the protos in proto/, through a descriptor set that protoc writes with their comments; and the Python client's pages (docs/reference/python/) from the package's stubs
+docs-reference:
+    mkdir -p target/docs
+    protoc --include_imports --include_source_info -I proto --descriptor_set_out=target/docs/api.binpb $(find proto/unitycatalog -name '*.proto' | sort)
+    uv run --no-project --with protobuf --with googleapis-common-protos python docs/gen_openapi.py target/docs/api.binpb
+    uv run --no-project --with griffe python docs/gen_python_reference.py
 
-# Serve the docs site on http://localhost:8000, and build it again after each change
-docs-serve:
-    uvx {{ docs_plugins }} zensical serve
+# Build the docs site (docs/, mkdocs.yml) into site/ with zensical; a warning, such as a broken link, fails the build
+docs-build: docs-reference
+    uvx zensical build --strict
+
+# Serve the docs site on http://localhost:8000, and build it again after each change (the reference: `just docs-reference`)
+docs-serve: docs-reference
+    uvx zensical serve
 
 # Publish the docs as `version`, and as `latest`, which the site's root opens: mike commits them to the gh-pages branch; push="" only commits
-docs-deploy version push="--push":
-    uvx --from "{{ mike }}" --with zensical {{ docs_plugins }} mike deploy {{ push }} --update-aliases {{ version }} latest
-    uvx --from "{{ mike }}" --with zensical {{ docs_plugins }} mike set-default {{ push }} latest
+docs-deploy version push="--push": docs-reference
+    uvx --from "{{ mike }}" --with zensical mike deploy {{ push }} --update-aliases {{ version }} latest
+    uvx --from "{{ mike }}" --with zensical mike set-default {{ push }} latest
