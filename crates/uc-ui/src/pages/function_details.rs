@@ -2,8 +2,8 @@
 //! parameters and definition, its details, its grants; "Delete".
 
 use leptos::prelude::*;
-use uc_api::FunctionInfo;
-use uc_common::{SecurableType, three_part_full_name, wire_name};
+use uc_client::models::functions::v1::FunctionInfo;
+use uc_common::{SecurableType, three_part_full_name};
 
 use crate::api;
 use crate::auth::use_manages;
@@ -13,7 +13,7 @@ use crate::components::{
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
-use crate::util::{format_timestamp, or_dash, pretty_json, route_params};
+use crate::util::{enum_name, format_timestamp, or_dash, pretty_json, route_params};
 
 #[component]
 pub fn FunctionDetails() -> impl IntoView {
@@ -30,7 +30,7 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
     let name = StoredValue::new(full_name.clone());
     let info = use_load(Key::Function(full_name.clone()), move || {
         let full_name = name.get_value();
-        async move { api::client().get_function(&full_name).await }
+        async move { api::client().function(full_name).get().await }
     });
     let cache = use_cache();
     let delete_open = RwSignal::new(false);
@@ -43,11 +43,11 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
         let language = f
             .external_language
             .clone()
-            .or_else(|| f.routine_body.as_ref().map(wire_name));
+            .or_else(|| Some(enum_name(f.routine_body)).filter(|body| !body.is_empty()));
         let returns = f
             .full_data_type
             .clone()
-            .or_else(|| f.data_type.as_ref().map(wire_name));
+            .or_else(|| f.data_type.map(enum_name));
         [language, returns]
             .into_iter()
             .flatten()
@@ -55,8 +55,8 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
     });
     let parameters = field(info, |f: &FunctionInfo| {
         f.input_params
-            .as_ref()
-            .and_then(|p| p.parameters.clone())
+            .as_option()
+            .map(|p| p.parameters.clone())
             .unwrap_or_default()
     });
     let definition = field(info, |f: &FunctionInfo| {
@@ -88,7 +88,7 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
                             .map(|(i, p)| {
                                 let position = p.position.map_or(i.to_string(), |p| p.to_string());
                                 let type_text = if p.type_text.is_empty() {
-                                    wire_name(&p.type_name)
+                                    enum_name(p.type_name)
                                 } else {
                                     p.type_text
                                 };
@@ -148,7 +148,7 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
             name=function.clone()
             delete=move |_| {
                 let full_name = name.get_value();
-                async move { api::client().delete_function(&full_name).await }
+                async move { api::client().function(full_name).delete().await }
             }
             key=Key::Function(full_name.clone())
             list=Key::Entries(catalog.clone(), schema.clone(), Kind::Functions)
@@ -165,7 +165,7 @@ fn function_rows(f: &FunctionInfo) -> Vec<MetaRow> {
             or_dash(
                 f.full_data_type
                     .clone()
-                    .or_else(|| f.data_type.as_ref().map(wire_name)),
+                    .or_else(|| f.data_type.map(enum_name)),
             ),
         ),
         MetaRow::new("Created at", format_timestamp(f.created_at)),

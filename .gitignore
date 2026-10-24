@@ -25,6 +25,9 @@ Cargo.lock.bak
 
 # The docs site, built by `just docs-build` (zensical's .cache ignores itself)
 /site
+# The references of the docs site, written by `just docs-reference`
+/docs/reference/openapi.json
+/docs/reference/python
 
 # Python client (python/client/): virtualenvs, caches, and the extension module
 # that `maturin develop` puts in the package

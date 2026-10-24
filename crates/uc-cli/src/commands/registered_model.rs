@@ -3,7 +3,6 @@
 
 use clap::Subcommand;
 use clap::builder::BoolishValueParser;
-use uc_api::{CreateRegisteredModel, UpdateRegisteredModel};
 
 use super::options::{Paging, changes, help};
 use super::{Context, Result, upstream};
@@ -65,15 +64,10 @@ pub async fn run(c: &Context<'_>, op: RegisteredModelOp) -> Result<String> {
             name,
             comment,
         } => {
-            let request = CreateRegisteredModel {
-                name,
-                catalog_name: catalog,
-                schema_name: schema,
-                comment,
-            };
             let info = c
                 .client
-                .create_registered_model(&request)
+                .create_registered_model(name, catalog, schema)
+                .with_comment(comment)
                 .await
                 .map_err(upstream("createRegisteredModel"))?;
             Ok(c.shaped(&models::REGISTERED_MODEL, &serde_json::to_value(&info)?))
@@ -85,7 +79,11 @@ pub async fn run(c: &Context<'_>, op: RegisteredModelOp) -> Result<String> {
         } => {
             let list = c
                 .client
-                .list_registered_models(catalog.as_deref(), schema.as_deref(), &paging.into())
+                .list_registered_models()
+                .with_catalog_name(catalog)
+                .with_schema_name(schema)
+                .with_max_results(paging.max_results)
+                .with_page_token(paging.page_token)
                 .await
                 .map_err(upstream("listRegisteredModels"))?;
             Ok(c.shaped_list(
@@ -97,7 +95,8 @@ pub async fn run(c: &Context<'_>, op: RegisteredModelOp) -> Result<String> {
         RegisteredModelOp::Get { full_name } => {
             let info = c
                 .client
-                .get_registered_model(&full_name)
+                .registered_model(full_name)
+                .get()
                 .await
                 .map_err(upstream("getRegisteredModel"))?;
             Ok(c.shaped(&models::REGISTERED_MODEL, &serde_json::to_value(&info)?))
@@ -107,17 +106,21 @@ pub async fn run(c: &Context<'_>, op: RegisteredModelOp) -> Result<String> {
             new_name,
             comment,
         } => {
-            let request = UpdateRegisteredModel { comment, new_name };
             let info = c
                 .client
-                .update_registered_model(&full_name, &request)
+                .registered_model(full_name)
+                .update()
+                .with_comment(comment)
+                .with_new_name(new_name)
                 .await
                 .map_err(upstream("updateRegisteredModel"))?;
             Ok(c.shaped(&models::REGISTERED_MODEL, &serde_json::to_value(&info)?))
         }
         RegisteredModelOp::Delete { full_name, force } => {
             c.client
-                .delete_registered_model(&full_name, force.unwrap_or(false))
+                .registered_model(full_name)
+                .delete()
+                .with_force(force.unwrap_or(false))
                 .await
                 .map_err(upstream("deleteRegisteredModel"))?;
             Ok(String::new())

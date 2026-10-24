@@ -3,7 +3,7 @@
 //! properties), "Create schema" and "Delete".
 
 use leptos::prelude::*;
-use uc_api::{CatalogInfo, CreateSchema, UpdateCatalog};
+use uc_client::models::catalogs::v1::CatalogInfo;
 use uc_common::SecurableType;
 
 use crate::api;
@@ -36,7 +36,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
     let name = StoredValue::new(catalog.clone());
     let info = use_load(Key::Catalog(catalog.clone()), move || {
         let catalog = name.get_value();
-        async move { api::client().get_catalog(&catalog).await }
+        async move { api::client().catalog(catalog).get().await }
     });
     let schemas = use_load(Key::Schemas(catalog.clone()), move || {
         let catalog = name.get_value();
@@ -50,17 +50,18 @@ fn CatalogPage(catalog: String) -> impl IntoView {
     let comment = field(info, |c: &CatalogInfo| {
         c.comment.clone().unwrap_or_default()
     });
-    let props = field(info, |c: &CatalogInfo| properties(c.properties.as_ref()));
+    let props = field(info, |c: &CatalogInfo| properties(&c.properties));
 
     let save_metadata = move |changes: Changes| {
         let catalog = name.get_value();
         async move {
-            let request = UpdateCatalog {
-                comment: changes.comment,
-                properties: changes.properties,
-                new_name: changes.new_name.clone(),
-            };
-            let updated = api::client().update_catalog(&catalog, &request).await?;
+            let updated = api::client()
+                .catalog(&catalog)
+                .update()
+                .with_comment(changes.comment)
+                .with_properties(changes.properties.unwrap_or_default())
+                .with_new_name(changes.new_name.clone())
+                .await?;
             let page = changes.new_name.as_deref().map(catalog_href);
             let renamed = changes
                 .new_name
@@ -94,7 +95,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
                     {list
                         .into_iter()
                         .map(|s| {
-                            let schema = s.name.unwrap_or_default();
+                            let schema = s.name;
                             view! {
                                 <ObjectRow
                                     icon=schema_icon()
@@ -157,7 +158,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
             name=catalog.clone()
             delete=move |force| {
                 let catalog = name.get_value();
-                async move { api::client().delete_catalog(&catalog, force).await }
+                async move { api::client().catalog(catalog).delete().with_force(force).await }
             }
             key=Key::Catalog(catalog.clone())
             list=Key::Catalogs
@@ -170,14 +171,11 @@ fn CatalogPage(catalog: String) -> impl IntoView {
             create=move |form: NewObject| {
                 let catalog = name.get_value();
                 async move {
-                    let request = CreateSchema {
-                        name: form.name,
-                        catalog_name: catalog,
-                        comment: form.comment,
-                        properties: None,
-                        storage_root: form.location,
-                    };
-                    api::client().create_schema(&request).await?;
+                    api::client()
+                        .create_schema(form.name, catalog)
+                        .with_comment(form.comment)
+                        .with_storage_root(form.location)
+                        .await?;
                     Ok(())
                 }
             }

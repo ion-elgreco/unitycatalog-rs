@@ -3,7 +3,6 @@
 
 use clap::Subcommand;
 use clap::builder::BoolishValueParser;
-use uc_api::{CreateExternalLocation, UpdateExternalLocation};
 
 use super::options::{Paging, changes, help};
 use super::{Context, Result, upstream};
@@ -65,15 +64,10 @@ pub async fn run(c: &Context<'_>, op: ExternalLocationOp) -> Result<String> {
             credential_name,
             comment,
         } => {
-            let request = CreateExternalLocation {
-                name,
-                url,
-                credential_name,
-                comment,
-            };
             let info = c
                 .client
-                .create_external_location(&request)
+                .create_external_location(name, url, credential_name)
+                .with_comment(comment)
                 .await
                 .map_err(upstream("createExternalLocation"))?;
             Ok(c.shaped(&models::EXTERNAL_LOCATION, &serde_json::to_value(&info)?))
@@ -81,7 +75,9 @@ pub async fn run(c: &Context<'_>, op: ExternalLocationOp) -> Result<String> {
         ExternalLocationOp::List { paging } => {
             let list = c
                 .client
-                .list_external_locations(&paging.into())
+                .list_external_locations()
+                .with_max_results(paging.max_results)
+                .with_page_token(paging.page_token)
                 .await
                 .map_err(upstream("listExternalLocations"))?;
             Ok(c.shaped_list(
@@ -93,7 +89,8 @@ pub async fn run(c: &Context<'_>, op: ExternalLocationOp) -> Result<String> {
         ExternalLocationOp::Get { name } => {
             let info = c
                 .client
-                .get_external_location(&name)
+                .external_location(name)
+                .get()
                 .await
                 .map_err(upstream("getExternalLocation"))?;
             Ok(c.shaped(&models::EXTERNAL_LOCATION, &serde_json::to_value(&info)?))
@@ -105,23 +102,23 @@ pub async fn run(c: &Context<'_>, op: ExternalLocationOp) -> Result<String> {
             credential_name,
             comment,
         } => {
-            let request = UpdateExternalLocation {
-                url,
-                new_name,
-                comment,
-                credential_name,
-                owner: None,
-            };
             let info = c
                 .client
-                .update_external_location(&name, &request)
+                .external_location(name)
+                .update()
+                .with_url(url)
+                .with_new_name(new_name)
+                .with_comment(comment)
+                .with_credential_name(credential_name)
                 .await
                 .map_err(upstream("updateExternalLocation"))?;
             Ok(c.shaped(&models::EXTERNAL_LOCATION, &serde_json::to_value(&info)?))
         }
         ExternalLocationOp::Delete { name, force } => {
             c.client
-                .delete_external_location(&name, force.unwrap_or(false))
+                .external_location(name)
+                .delete()
+                .with_force(force.unwrap_or(false))
                 .await
                 .map_err(upstream("deleteExternalLocation"))?;
             Ok("{}".into())

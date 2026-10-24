@@ -1,0 +1,212 @@
+syntax = "proto3";
+
+package unitycatalog.sharing.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "olai/trestle/v1/annotations.proto";
+
+// The Delta Sharing protocol: what a recipient reads with its bearer token. The JSON names are
+// lowerCamelCase, as the protocol has them.
+//
+// No message here is a `google.api.resource`: the protocol has no get, update or delete of a
+// share, schema or table, so every RPC is on the root client. The RPC names start with `Sharing`,
+// so that they do not take the names of the Unity Catalog RPCs (`ListShares`, `ListSchemas`,
+// `ListTables`) on the root client, and are not taken for their standard methods.
+
+// A Delta Sharing profile file (`profile.json`): what a Delta Sharing client needs to connect to
+// the server as a recipient.
+message RecipientProfile {
+  // Version of the profile file format. Always 1.
+  int32 share_credentials_version = 1;
+  // URL of the Delta Sharing server: the URL the caller used, ending in
+  // `/api/2.1/unity-catalog/delta-sharing`.
+  string endpoint = 2;
+  // The bearer token of the recipient.
+  string bearer_token = 3 [debug_redact = true];
+  // Time at which the token expires, as an ISO 8601 timestamp. The server sends `null`: the tokens
+  // do not expire.
+  optional string expiration_time = 4;
+}
+
+// A share that the recipient can read.
+message SharingShare {
+  // Name of the share.
+  string name = 1;
+  // Unique identifier of the share. The server does not send it.
+  optional string id = 2;
+}
+
+// A schema of a share: the `shared_as_schema` of one or more of its tables.
+message SharingSchema {
+  // Name of the schema.
+  string name = 1;
+  // Name of the share.
+  string share = 2;
+}
+
+// A table of a share, by the name under which the recipient sees it.
+message SharingTable {
+  // Name of the table.
+  string name = 1;
+  // Name of the schema of the table.
+  string schema = 2;
+  // Name of the share.
+  string share = 3;
+  // Unique identifier of the table. The server does not send it.
+  optional string id = 4;
+}
+
+message SharingListSharesRequest {}
+
+message SharingListSharesResponse {
+  // The shares.
+  repeated SharingShare items = 1;
+  // Opaque token of the next page. The server does not send it: the first page holds all shares.
+  optional string next_page_token = 2;
+}
+
+message SharingListSchemasRequest {
+  // Name of the share.
+  string share = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message SharingListSchemasResponse {
+  // The schemas, sorted by name.
+  repeated SharingSchema items = 1;
+  // Opaque token of the next page. The server does not send it: the first page holds all
+  // schemas.
+  optional string next_page_token = 2;
+}
+
+message SharingListTablesRequest {
+  // Name of the share.
+  string share = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the schema.
+  string schema = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+message SharingListTablesResponse {
+  // The tables.
+  repeated SharingTable items = 1;
+  // Opaque token of the next page. The server does not send it: the first page holds all tables.
+  optional string next_page_token = 2;
+}
+
+message SharingListAllTablesRequest {
+  // Name of the share.
+  string share = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message SharingGetTableVersionRequest {
+  // Name of the share.
+  string share = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the schema.
+  string schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The version of a table. The response has no body.
+message SharingGetTableVersionResponse {
+  // Version of the table, from the `Delta-Table-Version` header. Always 0: the server does not
+  // read the Delta log.
+  int64 version = 1 [(olai.trestle.v1.response_header) = "Delta-Table-Version"];
+}
+
+message SharingGetTableMetadataRequest {
+  // Name of the share.
+  string share = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the schema.
+  string schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+message SharingQueryTableRequest {
+  // Name of the share.
+  string share = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the schema.
+  string schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The protocol of a table: the minimum version of the Delta Sharing reader that can read it.
+message SharingProtocol {
+  // Minimum reader version. Always 1.
+  int32 min_reader_version = 1;
+}
+
+// The format of the data files of a table.
+message SharingFormat {
+  // Name of the file format. Always `parquet`.
+  string provider = 1;
+}
+
+// The metadata of a table.
+message SharingMetadata {
+  // Unique identifier of the table. Empty when the table has none.
+  string id = 1;
+  // Name of the Unity Catalog table.
+  string name = 2;
+  // Format of the data files of the table.
+  SharingFormat format = 3;
+  // The columns of the Unity Catalog table: its `columns` as a JSON array in a string, not a Delta
+  // schema. Empty when the table has no columns.
+  string schema_string = 4;
+  // Names of the partition columns. Always empty.
+  repeated string partition_columns = 5;
+  // Configuration of the table. Always empty.
+  map<string, string> configuration = 6;
+}
+
+// One line of the NDJSON answer of `SharingGetTableMetadata` and `SharingQueryTable`: an object
+// with one key. The first line holds `protocol`, the second `metaData`.
+message SharingTableLine {
+  // The protocol of the table.
+  optional SharingProtocol protocol = 1;
+  // The metadata of the table.
+  optional SharingMetadata metadata = 2 [json_name = "metaData"];
+}
+
+// The Delta Sharing protocol for recipients: the shares, schemas and tables that a recipient can
+// read. Sign in with the bearer token of the recipient.
+service SharingService {
+  // List the shares that the recipient can read.
+  rpc SharingListShares(SharingListSharesRequest) returns (SharingListSharesResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/delta-sharing/shares"};
+  }
+
+  // List the schemas of a share.
+  rpc SharingListSchemas(SharingListSchemasRequest) returns (SharingListSchemasResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/delta-sharing/shares/{share}/schemas"};
+  }
+
+  // List the tables of a schema of a share.
+  rpc SharingListTables(SharingListTablesRequest) returns (SharingListTablesResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/delta-sharing/shares/{share}/schemas/{schema}/tables"};
+  }
+
+  // List the tables of all schemas of a share.
+  rpc SharingListAllTables(SharingListAllTablesRequest) returns (SharingListTablesResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/delta-sharing/shares/{share}/all-tables"};
+  }
+
+  // Get the version of a table.
+  rpc SharingGetTableVersion(SharingGetTableVersionRequest) returns (SharingGetTableVersionResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/delta-sharing/shares/{share}/schemas/{schema}/tables/{table}/version"};
+  }
+
+  // Get the protocol and the metadata of a table. The response also has the version of the table
+  // in the `Delta-Table-Version` header (always 0).
+  rpc SharingGetTableMetadata(SharingGetTableMetadataRequest) returns (stream SharingTableLine) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/delta-sharing/shares/{share}/schemas/{schema}/tables/{table}/metadata"};
+  }
+
+  // Read a table. The server does not read the Delta log: the answer is that of
+  // `SharingGetTableMetadata`, with no data files. The server ignores the request body.
+  rpc SharingQueryTable(SharingQueryTableRequest) returns (stream SharingTableLine) {
+    option (google.api.http) = {post: "/api/2.1/unity-catalog/delta-sharing/shares/{share}/schemas/{schema}/tables/{table}/query"};
+  }
+}

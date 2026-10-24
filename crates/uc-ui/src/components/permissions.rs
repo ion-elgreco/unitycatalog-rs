@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::{Privilege, PrivilegeAssignment};
-use uc_common::{SecurableType, wire_name};
+use uc_client::models::permissions::v1::PrivilegeAssignment;
+use uc_common::SecurableType;
 
 use super::card::Card;
 use super::field::{Select, TextField};
@@ -19,60 +19,99 @@ use crate::auth::{Session, use_auth, use_manages};
 use crate::components::use_notify;
 use crate::load::{Key, use_cache, use_load};
 
-/// The privileges that a securable of `kind` can hold.
-fn choices(kind: SecurableType) -> &'static [Privilege] {
-    use Privilege::*;
+const CREATE_CATALOG: &str = "CREATE CATALOG";
+const USE_CATALOG: &str = "USE CATALOG";
+const CREATE_SCHEMA: &str = "CREATE SCHEMA";
+const USE_SCHEMA: &str = "USE SCHEMA";
+const CREATE_TABLE: &str = "CREATE TABLE";
+const SELECT: &str = "SELECT";
+const MODIFY: &str = "MODIFY";
+const CREATE_FUNCTION: &str = "CREATE FUNCTION";
+const EXECUTE: &str = "EXECUTE";
+const CREATE_VOLUME: &str = "CREATE VOLUME";
+const READ_VOLUME: &str = "READ VOLUME";
+const CREATE_MODEL: &str = "CREATE MODEL";
+const CREATE_EXTERNAL_LOCATION: &str = "CREATE EXTERNAL LOCATION";
+const READ_FILES: &str = "READ FILES";
+const WRITE_FILES: &str = "WRITE FILES";
+const CREATE_EXTERNAL_TABLE: &str = "CREATE EXTERNAL TABLE";
+const CREATE_EXTERNAL_VOLUME: &str = "CREATE EXTERNAL VOLUME";
+const CREATE_MANAGED_STORAGE: &str = "CREATE MANAGED STORAGE";
+const CREATE_STORAGE_CREDENTIAL: &str = "CREATE STORAGE CREDENTIAL";
+
+/// The privileges that a securable of `kind` can hold, as the server names
+/// them.
+fn choices(kind: SecurableType) -> &'static [&'static str] {
     match kind {
         SecurableType::Catalog => &[
-            UseCatalog,
-            CreateSchema,
-            UseSchema,
-            CreateTable,
-            Select,
-            Modify,
-            CreateFunction,
-            Execute,
-            CreateVolume,
-            ReadVolume,
-            CreateModel,
+            USE_CATALOG,
+            CREATE_SCHEMA,
+            USE_SCHEMA,
+            CREATE_TABLE,
+            SELECT,
+            MODIFY,
+            CREATE_FUNCTION,
+            EXECUTE,
+            CREATE_VOLUME,
+            READ_VOLUME,
+            CREATE_MODEL,
         ],
         SecurableType::Schema => &[
-            UseSchema,
-            CreateTable,
-            Select,
-            Modify,
-            CreateFunction,
-            Execute,
-            CreateVolume,
-            ReadVolume,
-            CreateModel,
+            USE_SCHEMA,
+            CREATE_TABLE,
+            SELECT,
+            MODIFY,
+            CREATE_FUNCTION,
+            EXECUTE,
+            CREATE_VOLUME,
+            READ_VOLUME,
+            CREATE_MODEL,
         ],
-        SecurableType::Table => &[Select, Modify],
-        SecurableType::Volume => &[ReadVolume],
-        SecurableType::Function | SecurableType::RegisteredModel => &[Execute],
-        SecurableType::Credential => &[CreateExternalLocation],
+        SecurableType::Table => &[SELECT, MODIFY],
+        SecurableType::Volume => &[READ_VOLUME],
+        SecurableType::Function | SecurableType::RegisteredModel => &[EXECUTE],
+        SecurableType::Credential => &[CREATE_EXTERNAL_LOCATION],
         SecurableType::ExternalLocation => &[
-            ReadFiles,
-            WriteFiles,
-            CreateExternalTable,
-            CreateExternalVolume,
-            CreateManagedStorage,
+            READ_FILES,
+            WRITE_FILES,
+            CREATE_EXTERNAL_TABLE,
+            CREATE_EXTERNAL_VOLUME,
+            CREATE_MANAGED_STORAGE,
         ],
-        SecurableType::Metastore => Privilege::ALL,
+        SecurableType::Metastore => &[
+            CREATE_CATALOG,
+            USE_CATALOG,
+            CREATE_SCHEMA,
+            USE_SCHEMA,
+            CREATE_TABLE,
+            SELECT,
+            MODIFY,
+            CREATE_FUNCTION,
+            EXECUTE,
+            CREATE_VOLUME,
+            READ_VOLUME,
+            CREATE_MODEL,
+            CREATE_EXTERNAL_LOCATION,
+            READ_FILES,
+            WRITE_FILES,
+            CREATE_EXTERNAL_TABLE,
+            CREATE_EXTERNAL_VOLUME,
+            CREATE_MANAGED_STORAGE,
+            CREATE_STORAGE_CREDENTIAL,
+        ],
     }
 }
 
 /// "Grant me …": the button's text, and the privileges that use an object
 /// of `kind`, as the console offers them to its owner.
-fn self_grant(kind: SecurableType) -> Option<(&'static str, &'static [Privilege])> {
-    use Privilege::*;
+fn self_grant(kind: SecurableType) -> Option<(&'static str, &'static [&'static str])> {
     Some(match kind {
-        SecurableType::Catalog => ("Grant me USE CATALOG", &[UseCatalog]),
-        SecurableType::Schema => ("Grant me USE SCHEMA", &[UseSchema]),
-        SecurableType::Table => ("Grant me read/write", &[Select, Modify]),
-        SecurableType::Volume => ("Grant me READ VOLUME", &[ReadVolume]),
+        SecurableType::Catalog => ("Grant me USE CATALOG", &[USE_CATALOG]),
+        SecurableType::Schema => ("Grant me USE SCHEMA", &[USE_SCHEMA]),
+        SecurableType::Table => ("Grant me read/write", &[SELECT, MODIFY]),
+        SecurableType::Volume => ("Grant me READ VOLUME", &[READ_VOLUME]),
         SecurableType::Function | SecurableType::RegisteredModel => {
-            ("Grant me EXECUTE", &[Execute])
+            ("Grant me EXECUTE", &[EXECUTE])
         }
         _ => return None,
     })
@@ -107,7 +146,7 @@ pub fn PermissionsCard(
                 .map(|list| {
                     list.iter()
                         .filter(|a| Some(&a.principal) == me.as_ref())
-                        .flat_map(|a| a.privileges.iter().copied())
+                        .flat_map(|a| a.privileges.iter().cloned())
                         .collect::<BTreeSet<_>>()
                 })
                 .unwrap_or_default()
@@ -118,14 +157,10 @@ pub fn PermissionsCard(
     // Grant or revoke, then show the grants the server answers with.
     let change = Callback::new({
         let full_name = full_name.clone();
-        move |(principal, privileges, grant): (String, Vec<Privilege>, bool)| {
+        move |(principal, privileges, grant): (String, Vec<String>, bool)| {
             let full_name = full_name.clone();
             let key = key.clone();
-            let what = privileges
-                .iter()
-                .map(wire_name)
-                .collect::<Vec<_>>()
-                .join(", ");
+            let what = privileges.join(", ");
             let (add, remove) = match grant {
                 true => (privileges, Vec::new()),
                 false => (Vec::new(), privileges),
@@ -164,7 +199,8 @@ pub fn PermissionsCard(
                     disabled=move || busy.get()
                     on:click=move |_| {
                         if let Some(me) = me.get_untracked() {
-                            change.run((me, privileges.to_vec(), true));
+                            let privileges = privileges.iter().map(|p| p.to_string()).collect();
+                            change.run((me, privileges, true));
                         }
                     }
                 >
@@ -192,7 +228,7 @@ pub fn PermissionsCard(
                 </Show>
                 {mine
                     .into_iter()
-                    .map(|p| view! { <span class="uc-badge uc-badge--success">{wire_name(&p)}</span> })
+                    .map(|p| view! { <span class="uc-badge uc-badge--success">{p}</span> })
                     .collect_view()}
             </div>
         }
@@ -254,7 +290,7 @@ pub fn PermissionsCard(
 fn GrantRow(
     assignment: PrivilegeAssignment,
     manages: Memo<bool>,
-    change: Callback<(String, Vec<Privilege>, bool)>,
+    change: Callback<(String, Vec<String>, bool)>,
 ) -> impl IntoView {
     let principal = assignment.principal;
     let chips = assignment
@@ -262,14 +298,14 @@ fn GrantRow(
         .into_iter()
         .map(|privilege| {
             let principal = principal.clone();
-            let name = wire_name(&privilege);
-            let label = format!("Revoke {name} from {principal}");
+            let label = format!("Revoke {privilege} from {principal}");
             view! {
                 <span class="uc-badge">
-                    {name}
+                    {privilege.clone()}
                     <Show when=move || manages.get()>
                         {
                             let principal = principal.clone();
+                            let privilege = privilege.clone();
                             let label = label.clone();
                             view! {
                                 <button
@@ -278,7 +314,7 @@ fn GrantRow(
                                     title=label.clone()
                                     aria-label=label
                                     on:click=move |_| {
-                                        change.run((principal.clone(), vec![privilege], false))
+                                        change.run((principal.clone(), vec![privilege.clone()], false))
                                     }
                                 >
                                     <X/>
@@ -305,7 +341,7 @@ fn GrantRow(
 fn GrantForm(
     kind: SecurableType,
     busy: RwSignal<bool>,
-    change: Callback<(String, Vec<Privilege>, bool)>,
+    change: Callback<(String, Vec<String>, bool)>,
 ) -> impl IntoView {
     let choices = choices(kind);
     let principal = RwSignal::new(String::new());
@@ -316,7 +352,7 @@ fn GrantForm(
         if who.is_empty() {
             return;
         }
-        change.run((who, vec![privilege.get_untracked()], true));
+        change.run((who, vec![privilege.get_untracked().to_string()], true));
         principal.set(String::new());
     };
     view! {
@@ -333,7 +369,7 @@ fn GrantForm(
                 label="privilege"
                 choices
                 value=privilege
-                name=wire_name
+                name=|p| p.to_string()
                 fixed=true
             />
             <button

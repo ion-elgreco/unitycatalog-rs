@@ -2,8 +2,8 @@
 //! details, its credentials and grants; "Edit" and "Delete".
 
 use leptos::prelude::*;
-use uc_api::{UpdateVolumeRequestContent, VolumeInfo};
-use uc_common::{SecurableType, three_part_full_name, wire_name};
+use uc_client::models::volumes::v1::VolumeInfo;
+use uc_common::{SecurableType, three_part_full_name};
 
 use crate::api;
 use crate::auth::use_manages;
@@ -14,7 +14,7 @@ use crate::components::{
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
-use crate::util::{format_timestamp, or_dash, pretty_json, route_params};
+use crate::util::{enum_name, format_timestamp, or_dash, pretty_json, route_params};
 
 #[component]
 pub fn VolumeDetails() -> impl IntoView {
@@ -31,7 +31,7 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
     let names = StoredValue::new((catalog.clone(), schema.clone(), full_name.clone()));
     let info = use_load(Key::Volume(full_name.clone()), move || {
         let (_, _, full_name) = names.get_value();
-        async move { api::client().get_volume(&full_name).await }
+        async move { api::client().volume(full_name).get().await }
     });
     let cache = use_cache();
     let delete_open = RwSignal::new(false);
@@ -39,20 +39,26 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
     let manages = use_manages(owner);
     let comment = field(info, |v: &VolumeInfo| v.comment.clone().unwrap_or_default());
     let badges = field(info, |v: &VolumeInfo| {
-        let mut badges: Vec<String> = v.volume_type.as_ref().map(wire_name).into_iter().collect();
+        let mut badges: Vec<String> = Some(enum_name(v.volume_type))
+            .filter(|kind| !kind.is_empty())
+            .into_iter()
+            .collect();
         badges.push("VOLUME".into());
         badges
     });
-    let volume_id = field(info, |v: &VolumeInfo| v.volume_id.clone());
+    let volume_id = field(info, |v: &VolumeInfo| {
+        Some(v.volume_id.clone()).filter(|id| !id.is_empty())
+    });
 
     let save_metadata = move |changes: Changes| {
         let (catalog, schema, full_name) = names.get_value();
         async move {
-            let request = UpdateVolumeRequestContent {
-                comment: changes.comment,
-                new_name: changes.new_name.clone(),
-            };
-            let updated = api::client().update_volume(&full_name, &request).await?;
+            let updated = api::client()
+                .volume(&full_name)
+                .update()
+                .with_comment(changes.comment)
+                .with_new_name(changes.new_name.clone())
+                .await?;
             let page = changes
                 .new_name
                 .as_deref()
@@ -115,7 +121,7 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
             name=volume.clone()
             delete=move |_| {
                 let (_, _, full_name) = names.get_value();
-                async move { api::client().delete_volume(&full_name).await }
+                async move { api::client().volume(full_name).delete().await }
             }
             key=Key::Volume(full_name.clone())
             list=Key::Entries(catalog.clone(), schema.clone(), Kind::Volumes)
@@ -127,7 +133,7 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
 fn volume_rows(v: &VolumeInfo) -> Vec<MetaRow> {
     vec![
         MetaRow::new("Owner", or_dash(v.owner.clone())),
-        MetaRow::new("Type", or_dash(v.volume_type.as_ref().map(wire_name))),
+        MetaRow::new("Type", or_dash(enum_name(v.volume_type))),
         MetaRow::new("Created at", format_timestamp(v.created_at)),
         MetaRow::new("Updated at", format_timestamp(v.updated_at)),
         MetaRow::mono("Volume ID", or_dash(v.volume_id.clone())),

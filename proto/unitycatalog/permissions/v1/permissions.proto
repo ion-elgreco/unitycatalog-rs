@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package unitycatalog.permissions.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "olai/trestle/v1/annotations.proto";
+
+// The privileges of one principal on a securable.
+message PrivilegeAssignment {
+  // The principal: the email address of a user.
+  string principal = 1;
+  // The privileges of the principal. Values: `CREATE CATALOG`, `USE CATALOG`, `CREATE SCHEMA`,
+  // `USE SCHEMA`, `CREATE TABLE`, `SELECT`, `MODIFY`, `CREATE FUNCTION`, `EXECUTE`,
+  // `CREATE VOLUME`, `READ VOLUME`, `CREATE MODEL`, `CREATE EXTERNAL LOCATION`, `READ FILES`,
+  // `WRITE FILES`, `CREATE EXTERNAL TABLE`, `CREATE EXTERNAL VOLUME`, `CREATE MANAGED STORAGE`,
+  // `CREATE STORAGE CREDENTIAL`.
+  repeated string privileges = 2;
+}
+
+// The privileges on a securable, per principal.
+message PermissionsList {
+  // The privileges of each principal.
+  repeated PrivilegeAssignment privilege_assignments = 1;
+}
+
+// A change to the privileges of one principal.
+message PermissionsChange {
+  // The principal whose privileges change: the email address of a user.
+  string principal = 1 [(google.api.field_behavior) = REQUIRED];
+  // The privileges to grant. The values are those of `PrivilegeAssignment.privileges`.
+  repeated string add = 2;
+  // The privileges to revoke. The values are those of `PrivilegeAssignment.privileges`.
+  repeated string remove = 3;
+}
+
+message GetPermissionsRequest {
+  // Type of the securable. Values: `metastore`, `catalog`, `schema`, `table`, `volume`,
+  // `function`, `registered_model`, `external_location`, `credential`.
+  string securable_type = 1 [(google.api.field_behavior) = REQUIRED];
+  // Full name of the securable, such as `catalog.schema.table`.
+  string full_name = 2 [(google.api.field_behavior) = REQUIRED];
+  // Return only the privileges of this principal.
+  optional string principal = 3;
+}
+
+message UpdatePermissions {
+  // Type of the securable. Values: `metastore`, `catalog`, `schema`, `table`, `volume`,
+  // `function`, `registered_model`, `external_location`, `credential`.
+  string securable_type = 1 [(google.api.field_behavior) = REQUIRED];
+  // Full name of the securable, such as `catalog.schema.table`.
+  string full_name = 2 [(google.api.field_behavior) = REQUIRED];
+  // The changes to make, one per principal.
+  repeated PermissionsChange changes = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+}
+
+// Permissions: the privileges that principals hold on securables.
+service PermissionsService {
+  // Get the privileges on a securable.
+  rpc GetPermissions(GetPermissionsRequest) returns (PermissionsList) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/permissions/{securable_type}/{full_name}"};
+  }
+
+  // Grant and revoke privileges on a securable. The response lists the privileges of the
+  // principals of the request.
+  rpc UpdatePermissions(.unitycatalog.permissions.v1.UpdatePermissions) returns (PermissionsList) {
+    option (google.api.http) = {
+      patch: "/api/2.1/unity-catalog/permissions/{securable_type}/{full_name}"
+      body: "*"
+    };
+  }
+}

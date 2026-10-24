@@ -6,7 +6,7 @@
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::{AwsIamRoleRequest, CreateCredentialRequest, CredentialInfo, CredentialPurpose};
+use uc_client::models::credentials::v1::{AwsIamRoleRequest, CredentialInfo, CredentialPurpose};
 
 use crate::api;
 use crate::components::icons::Plus;
@@ -17,7 +17,8 @@ use crate::util::{Section, format_timestamp, or_dash};
 
 /// The ARN of a credential's AWS IAM role.
 pub fn role_arn(c: &CredentialInfo) -> Option<String> {
-    c.aws_iam_role.as_ref()?.role_arn.clone()
+    let arn = &c.aws_iam_role.as_option()?.role_arn;
+    (!arn.is_empty()).then(|| arn.clone())
 }
 
 #[component]
@@ -29,7 +30,7 @@ pub fn Credentials() -> impl IntoView {
             title: "Name",
             width: "24%",
             render: Box::new(|c: &CredentialInfo| {
-                let name = c.name.clone().unwrap_or_default();
+                let name = c.name.clone();
                 view! {
                     <a class="uc-btn uc-btn--link" href=Section::Credentials.item_href(&name)>
                         {name.clone()}
@@ -37,9 +38,7 @@ pub fn Credentials() -> impl IntoView {
                 }
                 .into_any()
             }),
-            search_key: Some(Box::new(|c: &CredentialInfo| {
-                c.name.clone().unwrap_or_default()
-            })),
+            search_key: Some(Box::new(|c: &CredentialInfo| c.name.clone())),
         },
         Column {
             title: "AWS IAM role",
@@ -117,16 +116,22 @@ fn CreateCredential(open: RwSignal<bool>) -> impl IntoView {
             return;
         }
         let arn = role.get_untracked().trim().to_string();
+        if arn.is_empty() {
+            notify.error("AWS IAM role ARN is required");
+            return;
+        }
         let text = comment.get_untracked();
-        let request = CreateCredentialRequest {
-            name: new_name,
-            comment: (!text.is_empty()).then_some(text),
-            aws_iam_role: (!arn.is_empty()).then_some(AwsIamRoleRequest { role_arn: arn }),
-            purpose: Some(CredentialPurpose::Storage),
+        let role = AwsIamRoleRequest {
+            role_arn: arn,
+            ..Default::default()
         };
+        let create = api::client()
+            .create_credential(new_name, role)
+            .with_comment((!text.is_empty()).then_some(text))
+            .with_purpose(CredentialPurpose::Storage);
         busy.set(true);
         spawn_local(async move {
-            match api::client().create_credential(&request).await {
+            match create.await {
                 Ok(_) => {
                     notify.success("Create credential complete");
                     cache.changed(Key::Credentials);

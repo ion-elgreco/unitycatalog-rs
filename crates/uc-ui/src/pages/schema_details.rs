@@ -6,7 +6,7 @@
 use leptos::prelude::*;
 use leptos_router::NavigateOptions;
 use leptos_router::hooks::{use_navigate, use_query_map};
-use uc_api::{SchemaInfo, UpdateSchema};
+use uc_client::models::schemas::v1::SchemaInfo;
 use uc_common::{SecurableType, schema_full_name};
 
 use crate::api;
@@ -40,7 +40,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
     let names = StoredValue::new((catalog.clone(), schema.clone(), full_name.clone()));
     let info = use_load(Key::Schema(full_name.clone()), move || {
         let (_, _, full_name) = names.get_value();
-        async move { api::client().get_schema(&full_name).await }
+        async move { api::client().schema(full_name).get().await }
     });
     let cache = use_cache();
     let query = use_query_map();
@@ -56,17 +56,18 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
     let owner = field(info, |s: &SchemaInfo| s.owner.clone());
     let manages = use_manages(owner);
     let comment = field(info, |s: &SchemaInfo| s.comment.clone().unwrap_or_default());
-    let props = field(info, |s: &SchemaInfo| properties(s.properties.as_ref()));
+    let props = field(info, |s: &SchemaInfo| properties(&s.properties));
 
     let save_metadata = move |changes: Changes| {
         let (catalog, _, full_name) = names.get_value();
         async move {
-            let request = UpdateSchema {
-                comment: changes.comment,
-                properties: changes.properties,
-                new_name: changes.new_name.clone(),
-            };
-            let updated = api::client().update_schema(&full_name, &request).await?;
+            let updated = api::client()
+                .schema(&full_name)
+                .update()
+                .with_comment(changes.comment)
+                .with_properties(changes.properties.unwrap_or_default())
+                .with_new_name(changes.new_name.clone())
+                .await?;
             let page = changes
                 .new_name
                 .as_deref()
@@ -159,7 +160,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
             name=schema.clone()
             delete=move |force| {
                 let (_, _, full_name) = names.get_value();
-                async move { api::client().delete_schema(&full_name, force).await }
+                async move { api::client().schema(full_name).delete().with_force(force).await }
             }
             key=Key::Schema(full_name.clone())
             list=Key::Schemas(catalog.clone())

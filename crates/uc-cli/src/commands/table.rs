@@ -2,7 +2,7 @@
 //! tables with [`crate::data::delta`].
 
 use clap::{Args, Subcommand};
-use uc_api::{DataSourceFormat, TableType};
+use uc_client::models::tables::v1::{DataSourceFormat, TableInfo, TableType};
 
 use super::options::{
     Paging, Properties, TABLE_TYPES, ThreePartName, help, one_of_wire, properties, three_part_name,
@@ -78,6 +78,17 @@ pub struct TableCreate {
     pub table_type: TableType,
 }
 
+/// The table `full_name`, as upstream's CLI reads it: a streaming table or a
+/// materialized view as a MANAGED table.
+pub async fn get_table(c: &Context<'_>, full_name: &str) -> uc_client::error::Result<TableInfo> {
+    c.client
+        .table(full_name)
+        .get()
+        .with_read_streaming_table_as_managed(true)
+        .with_read_materialized_view_as_managed(true)
+        .await
+}
+
 pub async fn run(c: &Context<'_>, op: TableOp) -> Result<String> {
     match op {
         TableOp::Create(create) => delta::create_table(c, create).await,
@@ -88,15 +99,15 @@ pub async fn run(c: &Context<'_>, op: TableOp) -> Result<String> {
         } => {
             let list = c
                 .client
-                .list_tables(&catalog, &schema, &paging.into())
+                .list_tables(catalog, schema)
+                .with_max_results(paging.max_results)
+                .with_page_token(paging.page_token)
                 .await
                 .map_err(upstream("listTables"))?;
             Ok(c.shaped_list(&models::TABLE, &serde_json::to_value(&list)?, "tables"))
         }
         TableOp::Get { full_name } => {
-            let info = c
-                .client
-                .get_table(&full_name, true, true)
+            let info = get_table(c, &full_name)
                 .await
                 .map_err(upstream("getTable"))?;
             Ok(c.shaped(&models::TABLE, &serde_json::to_value(&info)?))
@@ -108,7 +119,8 @@ pub async fn run(c: &Context<'_>, op: TableOp) -> Result<String> {
         TableOp::Write { full_name } => delta::write_table(c, &full_name).await,
         TableOp::Delete { full_name } => {
             c.client
-                .delete_table(&full_name)
+                .table(full_name)
+                .delete()
                 .await
                 .map_err(upstream("deleteTable"))?;
             Ok(String::new())

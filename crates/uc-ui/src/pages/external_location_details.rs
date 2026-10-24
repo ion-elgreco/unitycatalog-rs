@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
-use uc_api::{ExternalLocationInfo, UpdateExternalLocation};
+use uc_client::models::external_locations::v1::ExternalLocationInfo;
 use uc_common::SecurableType;
 
 use super::external_locations::CredentialSelect;
@@ -32,7 +32,7 @@ fn LocationPage(name: String) -> impl IntoView {
     let key = StoredValue::new(name.clone());
     let info = use_load(Key::ExternalLocation(name.clone()), move || {
         let name = key.get_value();
-        async move { api::client().get_external_location(&name).await }
+        async move { api::client().external_location(name).get().await }
     });
     let cache = use_cache();
     let delete_open = RwSignal::new(false);
@@ -41,19 +41,19 @@ fn LocationPage(name: String) -> impl IntoView {
     let comment = field(info, |l: &ExternalLocationInfo| {
         l.comment.clone().unwrap_or_default()
     });
-    let url = field(info, |l: &ExternalLocationInfo| l.url.clone());
+    let url = field(info, |l: &ExternalLocationInfo| {
+        Some(l.url.clone()).filter(|url| !url.is_empty())
+    });
     let credential = field(info, |l: &ExternalLocationInfo| {
         l.credential_name.clone().unwrap_or_default()
     });
     let save_comment = move |comment: String| {
         let name = key.get_value();
         async move {
-            let request = UpdateExternalLocation {
-                comment: Some(comment),
-                ..Default::default()
-            };
             let updated = api::client()
-                .update_external_location(&name, &request)
+                .external_location(&name)
+                .update()
+                .with_comment(comment)
                 .await?;
             cache.set(Key::ExternalLocation(name), updated);
             Ok(())
@@ -128,7 +128,13 @@ fn LocationPage(name: String) -> impl IntoView {
             name=name.clone()
             delete=move |force| {
                 let name = key.get_value();
-                async move { api::client().delete_external_location(&name, force).await }
+                async move {
+                    api::client()
+                        .external_location(name)
+                        .delete()
+                        .with_force(force)
+                        .await
+                }
             }
             key=Key::ExternalLocation(name.clone())
             list=Key::ExternalLocations
@@ -180,36 +186,35 @@ fn EditLocation(
             return;
         }
         let text = new_comment.get_untracked();
-        let request = UpdateExternalLocation {
-            url: (Some(moved.as_str()) != url.get_untracked().as_deref()).then_some(moved),
-            new_name: (renamed != name).then_some(renamed),
-            comment: (text != comment.get_untracked()).then_some(text),
-            credential_name: (rebound != credential.get_untracked()).then_some(rebound),
-            owner: None,
-        };
+        let url_change = (Some(moved.as_str()) != url.get_untracked().as_deref()).then_some(moved);
+        let name_change = (renamed != name).then_some(renamed);
+        let comment_change = (text != comment.get_untracked()).then_some(text);
+        let credential_change = (rebound != credential.get_untracked()).then_some(rebound);
         // Nothing to save: the dialog stays, as the console's.
-        if request.url.is_none()
-            && request.new_name.is_none()
-            && request.comment.is_none()
-            && request.credential_name.is_none()
+        if url_change.is_none()
+            && name_change.is_none()
+            && comment_change.is_none()
+            && credential_change.is_none()
         {
             return;
         }
+        let update = api::client()
+            .external_location(&name)
+            .update()
+            .with_url(url_change)
+            .with_new_name(name_change.clone())
+            .with_comment(comment_change)
+            .with_credential_name(credential_change);
         let navigate = navigate.clone();
         busy.set(true);
         spawn_local(async move {
-            match api::client()
-                .update_external_location(&name, &request)
-                .await
-            {
+            match update.await {
                 Ok(updated) => {
                     notify.success("Edit external location complete");
-                    let page = request
-                        .new_name
+                    let page = name_change
                         .as_deref()
                         .map(|new_name| Section::ExternalLocations.item_href(new_name));
-                    let renamed = request
-                        .new_name
+                    let renamed = name_change
                         .map(|new_name| (Key::ExternalLocation(new_name), Key::ExternalLocations));
                     cache.edited(Key::ExternalLocation(name), updated, renamed);
                     if busy.try_get_untracked().is_some() {

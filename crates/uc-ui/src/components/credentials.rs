@@ -6,10 +6,8 @@
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::{
-    GenerateTemporaryPathCredential, GenerateTemporaryTableCredential,
-    GenerateTemporaryVolumeCredential, PathOperation, TableOperation, TemporaryCredentials,
-    VolumeOperation,
+use uc_client::models::credentials::v1::{
+    PathOperation, TableOperation, TemporaryCredentials, VolumeOperation,
 };
 
 use super::card::Card;
@@ -64,34 +62,31 @@ impl Vendable {
         let client = api::client();
         match self {
             Vendable::Path => {
-                let request = GenerateTemporaryPathCredential {
-                    url: id,
-                    operation: match write {
-                        true => PathOperation::PathReadWrite,
-                        false => PathOperation::PathRead,
-                    },
+                let operation = match write {
+                    true => PathOperation::PathReadWrite,
+                    false => PathOperation::PathRead,
                 };
-                client.generate_temporary_path_credentials(&request).await
+                client
+                    .generate_temporary_path_credentials(id, operation)
+                    .await
             }
             Vendable::Table => {
-                let request = GenerateTemporaryTableCredential {
-                    table_id: id,
-                    operation: match write {
-                        true => TableOperation::ReadWrite,
-                        false => TableOperation::Read,
-                    },
+                let operation = match write {
+                    true => TableOperation::ReadWrite,
+                    false => TableOperation::Read,
                 };
-                client.generate_temporary_table_credentials(&request).await
+                client
+                    .generate_temporary_table_credentials(id, operation)
+                    .await
             }
             Vendable::Volume => {
-                let request = GenerateTemporaryVolumeCredential {
-                    volume_id: id,
-                    operation: match write {
-                        true => VolumeOperation::WriteVolume,
-                        false => VolumeOperation::ReadVolume,
-                    },
+                let operation = match write {
+                    true => VolumeOperation::WriteVolume,
+                    false => VolumeOperation::ReadVolume,
                 };
-                client.generate_temporary_volume_credentials(&request).await
+                client
+                    .generate_temporary_volume_credentials(id, operation)
+                    .await
             }
         }
     }
@@ -167,19 +162,23 @@ pub fn CredentialsCard(kind: Vendable, #[prop(into)] id: Signal<Option<String>>)
 #[component]
 fn Vended(write: bool, credentials: TemporaryCredentials) -> impl IntoView {
     let operation = if write { "read and write" } else { "read" };
-    let aws = credentials.aws_temp_credentials;
+    let aws = credentials.aws_temp_credentials.into_option();
     let sas = credentials
         .azure_user_delegation_sas
-        .and_then(|sas| sas.sas_token);
-    let gcp = credentials.gcp_oauth_token.and_then(|t| t.oauth_token);
+        .into_option()
+        .map(|sas| sas.sas_token);
+    let gcp = credentials
+        .gcp_oauth_token
+        .into_option()
+        .map(|token| token.oauth_token);
     view! {
         <dl class="uc-meta">
             <dt>"Operation"</dt>
             <dd>{operation}</dd>
             <dt>"Expires"</dt>
-            <dd>{format_timestamp(credentials.expiration_time)}</dd>
-            {credentials
-                .url
+            <dd>{format_timestamp(credentials.expiration_time.unwrap_or_default())}</dd>
+            {(!credentials.url.is_empty())
+                .then_some(credentials.url)
                 .map(|url| {
                     view! {
                         <dt>"URL"</dt>
@@ -193,15 +192,15 @@ fn Vended(write: bool, credentials: TemporaryCredentials) -> impl IntoView {
                     view! {
                         <dt>"Access key ID"</dt>
                         <dd>
-                            <Plain value=aws.access_key_id.unwrap_or_default()/>
+                            <Plain value=aws.access_key_id/>
                         </dd>
                         <dt>"Secret access key"</dt>
                         <dd>
-                            <Secret value=aws.secret_access_key.unwrap_or_default()/>
+                            <Secret value=aws.secret_access_key/>
                         </dd>
                         <dt>"Session token"</dt>
                         <dd>
-                            <Secret value=aws.session_token.unwrap_or_default()/>
+                            <Secret value=aws.session_token/>
                         </dd>
                     }
                 })}

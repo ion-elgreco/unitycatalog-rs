@@ -8,7 +8,7 @@ use delta_kernel::object_store::buffered::BufWriter;
 use delta_kernel::object_store::path::Path as ObjectPath;
 use delta_kernel::object_store::{self, ObjectStore, ObjectStoreExt as _, PutPayload};
 use tokio::io::{AsyncRead, AsyncWriteExt as _};
-use uc_api::{VolumeInfo, VolumeOperation};
+use uc_client::models::credentials::v1::VolumeOperation;
 use url::Url;
 
 use super::storage::{directory_url, store_for, volume_credentials};
@@ -26,18 +26,18 @@ async fn open(
         VolumeOperation::WriteVolume => "Write",
         _ => "Read",
     };
-    let info: VolumeInfo = c
+    let info = c
         .client
-        .get_volume(full_name)
+        .volume(full_name)
+        .get()
         .await
         .map_err(upstream("getVolume"))?;
-    let location = info
-        .storage_location
+    let location = Some(info.storage_location)
+        .filter(|location| !location.is_empty())
         .ok_or_else(|| anyhow!("The volume has no storage location"))?;
     let base = directory_url(&location)?;
     let target = resolve(&base, relative, action)?;
-    let id = info.volume_id.unwrap_or_default();
-    let credentials = volume_credentials(c, &id, operation).await?;
+    let credentials = volume_credentials(c, &info.volume_id, operation).await?;
     Ok((
         location,
         target,

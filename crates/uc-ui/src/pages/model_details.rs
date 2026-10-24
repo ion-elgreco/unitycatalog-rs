@@ -4,11 +4,8 @@
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::{
-    CreateModelVersion, ModelVersionInfo, ModelVersionStatus, RegisteredModelInfo,
-    UpdateRegisteredModel,
-};
-use uc_common::{SecurableType, three_part_full_name, wire_name};
+use uc_client::models::models::v1::{ModelVersionInfo, ModelVersionStatus, RegisteredModelInfo};
+use uc_common::{SecurableType, three_part_full_name};
 
 use crate::api;
 use crate::auth::use_manages;
@@ -22,7 +19,7 @@ use crate::components::{
 use crate::contents::Holder;
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
-use crate::util::{format_timestamp, or_dash, pretty_json, route_params};
+use crate::util::{enum_name, format_timestamp, or_dash, pretty_json, route_params};
 
 #[component]
 pub fn ModelDetails() -> impl IntoView {
@@ -52,7 +49,7 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
     ));
     let info = use_load(Key::Model(full_name.clone()), move || {
         let (_, _, _, full_name) = names.get_value();
-        async move { api::client().get_registered_model(&full_name).await }
+        async move { api::client().registered_model(full_name).get().await }
     });
     let versions = use_load(Key::Versions(full_name.clone()), move || {
         let (_, _, _, full_name) = names.get_value();
@@ -70,12 +67,11 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
     let save_metadata = move |changes: Changes| {
         let (catalog, schema, _, full_name) = names.get_value();
         async move {
-            let request = UpdateRegisteredModel {
-                comment: changes.comment,
-                new_name: changes.new_name.clone(),
-            };
             let updated = api::client()
-                .update_registered_model(&full_name, &request)
+                .registered_model(&full_name)
+                .update()
+                .with_comment(changes.comment)
+                .with_new_name(changes.new_name.clone())
                 .await?;
             let page = changes
                 .new_name
@@ -126,7 +122,7 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
                             {list
                                 .into_iter()
                                 .map(|v| {
-                                    let number = v.version.unwrap_or_default();
+                                    let number = v.version;
                                     view! {
                                         <tr>
                                             <td class="uc-strong">
@@ -134,7 +130,7 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
                                                     {format!("v{number}")}
                                                 </a>
                                             </td>
-                                            <td class="uc-muted">{or_dash(v.status.as_ref().map(wire_name))}</td>
+                                            <td class="uc-muted">{or_dash(enum_name(v.status))}</td>
                                             <td class="uc-muted">{format_timestamp(v.created_at)}</td>
                                         </tr>
                                     }
@@ -189,7 +185,13 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
             name=model.clone()
             delete=move |force| {
                 let (_, _, _, full_name) = names.get_value();
-                async move { api::client().delete_registered_model(&full_name, force).await }
+                async move {
+                    api::client()
+                        .registered_model(full_name)
+                        .delete()
+                        .with_force(force)
+                        .await
+                }
             }
             key=Key::Model(full_name.clone())
             list=Key::Entries(catalog.clone(), schema.clone(), Kind::Models)
@@ -238,17 +240,13 @@ fn CreateVersion(
         let (catalog, schema, model) = names.get_value();
         let run = run_id.get_untracked().trim().to_string();
         let text = comment.get_untracked();
-        let request = CreateModelVersion {
-            model_name: model.clone(),
-            catalog_name: catalog.clone(),
-            schema_name: schema.clone(),
-            source: from,
-            run_id: (!run.is_empty()).then_some(run),
-            comment: (!text.is_empty()).then_some(text),
-        };
+        let create = api::client()
+            .create_model_version(&model, &catalog, &schema, from)
+            .with_run_id((!run.is_empty()).then_some(run))
+            .with_comment((!text.is_empty()).then_some(text));
         busy.set(true);
         spawn_local(async move {
-            match api::client().create_model_version(&request).await {
+            match create.await {
                 Ok(_) => {
                     notify.success("Create model version complete");
                     cache.changed(Key::Versions(three_part_full_name(
@@ -298,5 +296,5 @@ fn model_rows(m: &RegisteredModelInfo) -> Vec<MetaRow> {
 
 /// Whether a version still waits for its files.
 pub fn is_pending(v: &ModelVersionInfo) -> bool {
-    matches!(v.status, Some(ModelVersionStatus::PendingRegistration))
+    v.status == ModelVersionStatus::PendingRegistration
 }

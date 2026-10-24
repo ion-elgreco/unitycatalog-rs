@@ -3,7 +3,6 @@
 //! server sent it (the "Raw JSON" card).
 
 use leptos::prelude::*;
-use uc_common::SecurablePropertiesMap;
 
 use super::card::Card;
 
@@ -72,10 +71,13 @@ pub fn MetaGrid(#[prop(into)] rows: Signal<Vec<MetaRow>>) -> impl IntoView {
 }
 
 /// A properties map as the card's rows, sorted by key.
-pub fn properties(map: Option<&SecurablePropertiesMap>) -> Vec<(String, String)> {
+pub fn properties<'a>(
+    map: impl IntoIterator<Item = (&'a String, &'a String)>,
+) -> Vec<(String, String)> {
     let mut rows: Vec<(String, String)> = map
-        .map(|map| map.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
-        .unwrap_or_default();
+        .into_iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
     rows.sort();
     rows
 }

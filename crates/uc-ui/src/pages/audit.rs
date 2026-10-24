@@ -6,9 +6,7 @@
 use js_sys::Date;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::AuditEvent;
-use uc_client::AuditFilter;
-use uc_common::EpochMillis;
+use uc_client::models::audit::v1::AuditEvent;
 
 use crate::api;
 use crate::components::{
@@ -91,35 +89,37 @@ fn AuditList() -> impl IntoView {
     // The last load: only its answer counts.
     let loads = StoredValue::new(0u64);
     let notify = use_notify();
-    let filter = move || AuditFilter {
-        principal: Some(principal.get_untracked().trim().to_string()).filter(|p| !p.is_empty()),
-        method: method.get_untracked().name().map(str::to_string),
-        path_prefix: Some(path.get_untracked().trim().to_string()).filter(|p| !p.is_empty()),
-        since: time_of(&since.get_untracked()),
-        // The field names a minute: through its end.
-        until: time_of(&until.get_untracked()).map(|t| t + MINUTE_MS - 1),
-        max_results: Some(PAGE),
-        page_token: None,
-    };
     // The first page for the filter, or the page after `token`.
     let load = move |token: Option<String>| {
         loads.update_value(|n| *n += 1);
         let this = loads.get_value();
-        let mut filter = filter();
-        filter.page_token = token.clone();
         let more = token.is_some();
+        let list = api::client()
+            .list_audit_events()
+            .with_principal(
+                Some(principal.get_untracked().trim().to_string()).filter(|p| !p.is_empty()),
+            )
+            .with_method(method.get_untracked().name().map(str::to_string))
+            .with_path_prefix(
+                Some(path.get_untracked().trim().to_string()).filter(|p| !p.is_empty()),
+            )
+            .with_since(time_of(&since.get_untracked()))
+            // The field names a minute: through its end.
+            .with_until(time_of(&until.get_untracked()).map(|t| t + MINUTE_MS - 1))
+            .with_max_results(PAGE)
+            .with_page_token(token);
         match more {
             true => loading_more.set(true),
             false => events.set(Load::Loading),
         }
         spawn_local(async move {
-            let answer = api::client().list_audit_events(&filter).await;
+            let answer = list.await;
             if loads.try_get_value() != Some(this) {
                 return;
             }
             match answer {
                 Ok(list) => {
-                    next.set(list.next_page_token.map(|t| t.0).filter(|t| !t.is_empty()));
+                    next.set(list.next_page_token.filter(|t| !t.is_empty()));
                     if more {
                         events.update(|events| {
                             if let Load::Ready(items) = events {
@@ -252,7 +252,7 @@ fn EventRow(event: AuditEvent) -> impl IntoView {
     };
     view! {
         <tr>
-            <td class="uc-muted uc-nowrap">{format_timestamp(Some(event.timestamp as EpochMillis))}</td>
+            <td class="uc-muted uc-nowrap">{format_timestamp(event.timestamp)}</td>
             <td class="uc-strong uc-nowrap">{event.principal}</td>
             <td>
                 <span class="uc-badge">{event.method}</span>

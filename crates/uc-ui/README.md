@@ -4,8 +4,8 @@ Leptos port of upstream's new Unity Catalog console (`ui-new`: React 19
 with shadcn/ui on Tailwind). Same layout, same pages, same look, served as
 a client-side-rendered WASM app from `uc-server` and `uc web`. It adds what
 the console leaves out: grants, temporary credentials, column comments and
-the signed-in user's access tokens. [docs/ui.md](../../docs/ui.md) shows
-how to use it.
+the signed-in user's access tokens.
+[docs/clients/web-ui.md](../../docs/clients/web-ui.md) shows how to use it.
 
 ## Build and run
 
@@ -91,7 +91,7 @@ credentials (`components/credentials.rs`). The tree on the left is
 | Framework  | `leptos` 0.7 (CSR)      | React 19                         |
 | Router     | `leptos_router` 0.7     | TanStack Router                  |
 | HTTP       | `uc-client` (this repo) | Connect RPC through a Rust bridge |
-| Types      | `uc-api` (this repo)    | protobuf-generated TS            |
+| Types      | `uc-client`'s models, from `proto/` | protobuf-generated TS |
 | UI library | CSS with shadcn's tokens | shadcn/ui on Tailwind v4        |
 | Icons      | lucide paths, inline     | lucide-react                    |
 | Bundler    | wasm-bindgen (`just wasm`) | Vite                          |

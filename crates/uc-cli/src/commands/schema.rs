@@ -2,7 +2,6 @@
 
 use clap::Subcommand;
 use clap::builder::BoolishValueParser;
-use uc_api::{CreateSchema, UpdateSchema};
 
 use super::options::{Paging, Properties, changes, help, properties};
 use super::{Context, Result, upstream};
@@ -67,16 +66,12 @@ pub async fn run(c: &Context<'_>, op: SchemaOp) -> Result<String> {
             properties,
             storage_root,
         } => {
-            let request = CreateSchema {
-                name,
-                catalog_name: catalog,
-                comment,
-                properties,
-                storage_root,
-            };
             let info = c
                 .client
-                .create_schema(&request)
+                .create_schema(name, catalog)
+                .with_comment(comment)
+                .with_properties(properties.unwrap_or_default())
+                .with_storage_root(storage_root)
                 .await
                 .map_err(upstream("createSchema"))?;
             Ok(c.shaped(&models::SCHEMA, &serde_json::to_value(&info)?))
@@ -84,7 +79,9 @@ pub async fn run(c: &Context<'_>, op: SchemaOp) -> Result<String> {
         SchemaOp::List { catalog, paging } => {
             let list = c
                 .client
-                .list_schemas(&catalog, &paging.into())
+                .list_schemas(catalog)
+                .with_max_results(paging.max_results)
+                .with_page_token(paging.page_token)
                 .await
                 .map_err(upstream("listSchemas"))?;
             Ok(c.shaped_list(&models::SCHEMA, &serde_json::to_value(&list)?, "schemas"))
@@ -92,7 +89,8 @@ pub async fn run(c: &Context<'_>, op: SchemaOp) -> Result<String> {
         SchemaOp::Get { full_name } => {
             let info = c
                 .client
-                .get_schema(&full_name)
+                .schema(full_name)
+                .get()
                 .await
                 .map_err(upstream("getSchema"))?;
             Ok(c.shaped(&models::SCHEMA, &serde_json::to_value(&info)?))
@@ -103,21 +101,22 @@ pub async fn run(c: &Context<'_>, op: SchemaOp) -> Result<String> {
             comment,
             properties,
         } => {
-            let request = UpdateSchema {
-                new_name,
-                comment,
-                properties,
-            };
             let info = c
                 .client
-                .update_schema(&full_name, &request)
+                .schema(full_name)
+                .update()
+                .with_new_name(new_name)
+                .with_comment(comment)
+                .with_properties(properties.unwrap_or_default())
                 .await
                 .map_err(upstream("updateSchema"))?;
             Ok(c.shaped(&models::SCHEMA, &serde_json::to_value(&info)?))
         }
         SchemaOp::Delete { full_name, force } => {
             c.client
-                .delete_schema(&full_name, force.unwrap_or(false))
+                .schema(full_name)
+                .delete()
+                .with_force(force.unwrap_or(false))
                 .await
                 .map_err(upstream("deleteSchema"))?;
             Ok(String::new())

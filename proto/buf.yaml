@@ -1,0 +1,10 @@
+# For editors: `buf lsp`, the protobuf language server of Zed and VS Code, resolves the imports
+# from this directory, as `protoc -I proto` does in `just generate`, and reports buf's BASIC lint
+# rules. buf has the `google/protobuf` files built in. The clients are generated without buf.
+version: v2
+lint:
+  use:
+    - BASIC
+  # Vendored from googleapis.
+  ignore:
+    - google

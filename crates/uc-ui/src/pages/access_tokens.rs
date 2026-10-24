@@ -10,7 +10,7 @@ use js_sys::Date;
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::{CreatePat, PatInfo};
+use uc_client::models::tokens::v1::PatInfo;
 use uc_common::EpochMillis;
 
 use crate::api;
@@ -64,17 +64,15 @@ fn TokenList() -> impl IntoView {
             title: "Name",
             width: "28%",
             render: Box::new(|t: &PatInfo| {
-                view! { <span class="uc-strong">{t.name.clone().unwrap_or_default()}</span> }
-                    .into_any()
+                view! { <span class="uc-strong">{t.name.clone()}</span> }.into_any()
             }),
-            search_key: Some(Box::new(|t: &PatInfo| t.name.clone().unwrap_or_default())),
+            search_key: Some(Box::new(|t: &PatInfo| t.name.clone())),
         },
         Column {
             title: "Token",
             width: "16%",
             render: Box::new(|t: &PatInfo| {
-                let start = t.token_prefix.clone().unwrap_or_default();
-                view! { <code>{format!("{start}…")}</code> }.into_any()
+                view! { <code>{format!("{}…", t.token_prefix)}</code> }.into_any()
             }),
             search_key: None,
         },
@@ -146,10 +144,10 @@ fn expiry(expires_at: Option<EpochMillis>) -> AnyView {
     match expires_at {
         None | Some(0) => view! { <span class="uc-muted">"Never"</span> }.into_any(),
         Some(ms) if (ms as f64) <= Date::now() => view! {
-            <span class="uc-danger">{format!("Expired on {}", format_timestamp(Some(ms)))}</span>
+            <span class="uc-danger">{format!("Expired on {}", format_timestamp(ms))}</span>
         }
         .into_any(),
-        Some(ms) => view! { <span class="uc-muted">{format_timestamp(Some(ms))}</span> }.into_any(),
+        Some(ms) => view! { <span class="uc-muted">{format_timestamp(ms)}</span> }.into_any(),
     }
 }
 
@@ -158,7 +156,7 @@ fn expiry(expires_at: Option<EpochMillis>) -> AnyView {
 fn NewToken(created: RwSignal<Option<PatInfo>>) -> impl IntoView {
     move || {
         created.get().map(|token| {
-            let name = token.name.unwrap_or_default();
+            let name = token.name;
             let value = token.token_value.unwrap_or_default();
             view! {
                 <div class="uc-alert uc-alert--success" role="status">
@@ -316,13 +314,12 @@ fn CreateToken(open: RwSignal<bool>, created: RwSignal<Option<PatInfo>>) -> impl
             },
             Expiry::Never => None,
         };
-        let request = CreatePat {
-            name: new_name,
-            expires_at: expires_at.map(|ms| ms as EpochMillis),
-        };
+        let create = api::client()
+            .create_token(new_name)
+            .with_expires_at(expires_at.map(|ms| ms as EpochMillis));
         busy.set(true);
         spawn_local(async move {
-            match api::client().create_pat(&request).await {
+            match create.await {
                 Ok(token) => {
                     cache.changed(Key::Tokens);
                     // Only when the user is still on the page.
@@ -393,7 +390,7 @@ fn ExpiryNote(expiry: RwSignal<Expiry>, date: RwSignal<String>) -> impl IntoView
     let on = |at: f64| {
         format!(
             "The token expires on {}.",
-            format_timestamp(Some(at as EpochMillis))
+            format_timestamp(at as EpochMillis)
         )
     };
     move || match expiry.get() {
@@ -450,23 +447,20 @@ fn DeleteToken(
     let notify = use_notify();
     let cache = use_cache();
     let on_ok = move || {
-        let Some(token) = deleting.get_untracked() else {
+        let Some(PatInfo { id, name, .. }) = deleting.get_untracked() else {
             return;
         };
-        let id = token.id.unwrap_or_default();
-        let name = token.name.unwrap_or_default();
         busy.set(true);
         spawn_local(async move {
-            match api::client().revoke_pat(&id).await {
+            match api::client().token(&id).delete().await {
                 Ok(()) => {
                     notify.success(format!("Deleted the token {name}"));
                     cache.changed(Key::Tokens);
                     // Only when the user is still on the page.
                     if busy.try_get_untracked().is_some() {
                         deleting.set(None);
-                        let shown = created.with_untracked(|t| {
-                            t.as_ref().and_then(|t| t.id.as_deref()) == Some(id.as_str())
-                        });
+                        let shown =
+                            created.with_untracked(|t| t.as_ref().is_some_and(|t| t.id == id));
                         if shown {
                             created.set(None);
                         }
@@ -479,7 +473,7 @@ fn DeleteToken(
     };
     let name = move || {
         deleting
-            .try_with(|t| t.as_ref().and_then(|t| t.name.clone()))
+            .try_with(|t| t.as_ref().map(|t| t.name.clone()))
             .flatten()
             .unwrap_or_default()
     };

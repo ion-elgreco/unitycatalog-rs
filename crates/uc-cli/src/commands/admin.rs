@@ -1,12 +1,12 @@
 //! `uc admin`: back up and restore the catalog; list audit events.
 
 use clap::Subcommand;
-use uc_api::BackupResponse;
-use uc_client::AuditFilter;
+use serde_json::json;
+use uc_client::models::admin::v1::BackupResponse;
 
 use super::options::help;
 use super::{Context, Result, upstream};
-use crate::output::{Format, jackson_pretty};
+use crate::output::{Format, jackson_pretty, sorted};
 
 #[derive(Debug, Subcommand)]
 #[command(rename_all = "snake_case")]
@@ -37,10 +37,12 @@ pub enum AdminOp {
 
 pub async fn run(c: &Context<'_>, op: AdminOp) -> Result<String> {
     match op {
-        // A snapshot is for `admin restore`: JSON whatever the format.
+        // A snapshot is for `admin restore`: JSON whatever the format. Its
+        // tables and the columns of their rows are in name order.
         AdminOp::Backup => {
-            let snapshot = c.client.backup().await.map_err(upstream("backup"))?;
-            let snapshot = serde_json::to_value(&snapshot)?;
+            let snapshot = c.client.get_backup().await.map_err(upstream("backup"))?;
+            let mut snapshot = serde_json::to_value(&snapshot)?;
+            snapshot["tables"] = sorted(snapshot["tables"].take());
             Ok(match c.format {
                 Format::JsonPretty => jackson_pretty(&snapshot),
                 _ => snapshot.to_string(),
@@ -55,10 +57,14 @@ pub async fn run(c: &Context<'_>, op: AdminOp) -> Result<String> {
             let snapshot: BackupResponse = serde_json::from_str(&text)?;
             let report = c
                 .client
-                .restore(&snapshot)
+                .restore_backup(snapshot.version, snapshot.tables)
                 .await
                 .map_err(upstream("restore"))?;
-            Ok(c.json(&serde_json::to_value(&report)?))
+            let report = json!({
+                "imported": sorted(serde_json::to_value(&report.imported)?),
+                "skipped": report.skipped,
+            });
+            Ok(c.json(&report))
         }
         AdminOp::Audit {
             principal,
@@ -66,16 +72,13 @@ pub async fn run(c: &Context<'_>, op: AdminOp) -> Result<String> {
             path_prefix,
             max_results,
         } => {
-            let filter = AuditFilter {
-                principal,
-                method,
-                path_prefix,
-                max_results,
-                ..AuditFilter::default()
-            };
             let events = c
                 .client
-                .list_audit_events(&filter)
+                .list_audit_events()
+                .with_principal(principal)
+                .with_method(method)
+                .with_path_prefix(path_prefix)
+                .with_max_results(max_results)
                 .await
                 .map_err(upstream("audit"))?;
             Ok(c.json(&serde_json::to_value(&events.events)?))

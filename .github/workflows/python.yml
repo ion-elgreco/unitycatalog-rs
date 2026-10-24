@@ -1,7 +1,8 @@
 name: python
 
 # The Python client (python/client/): its linting, its stubs and its tests, which
-# run against a uc-server built from this repository.
+# run against a uc-server built from this repository, and those marked
+# `upstream` against the upstream Java server too.
 
 on:
   merge_group:
@@ -47,7 +48,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ["3.10", "3.14"]
+        python-version: ["3.12", "3.14"]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -126,7 +127,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { label: linux-glibc-x86_64, runner: ubuntu-latest, python-version: "3.10" }
+          - { label: linux-glibc-x86_64, runner: ubuntu-latest, python-version: "3.12" }
           - { label: linux-glibc-x86_64, runner: ubuntu-latest, python-version: "3.13" }
           - { label: linux-glibc-arm64, runner: ubuntu-24.04-arm, python-version: "3.13" }
           - { label: macos-arm64, runner: macos-15, python-version: "3.13" }
@@ -162,3 +163,30 @@ jobs:
 
       - name: Run tests
         run: just test
+
+  # The tests marked `upstream`, against the upstream Java server
+  # (upstream_image in the justfile), which runs in Docker.
+  upstream:
+    name: Python tests against upstream Unity Catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    env:
+      # Those tests use no engines.
+      UV_NO_GROUP: integrations
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+
+      - name: Build and install unitycatalog
+        run: just develop-client
+
+      - name: Run the tests against the upstream server
+        run: just test-upstream

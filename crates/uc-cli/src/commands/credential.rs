@@ -3,9 +3,7 @@
 
 use clap::Subcommand;
 use clap::builder::BoolishValueParser;
-use uc_api::{
-    AwsIamRoleRequest, CreateCredentialRequest, CredentialPurpose, UpdateCredentialRequest,
-};
+use uc_client::models::credentials::v1::{AwsIamRoleRequest, CredentialPurpose};
 
 use super::options::{Paging, changes, help};
 use super::{Context, Result, upstream};
@@ -56,22 +54,23 @@ pub enum CredentialOp {
 }
 
 pub async fn run(c: &Context<'_>, op: CredentialOp) -> Result<String> {
-    let role = |arn: Option<String>| arn.map(|role_arn| AwsIamRoleRequest { role_arn });
+    let role = |role_arn: String| AwsIamRoleRequest {
+        role_arn,
+        ..Default::default()
+    };
     match op {
         CredentialOp::Create {
             name,
             comment,
             aws_iam_role_arn,
         } => {
-            let request = CreateCredentialRequest {
-                name,
-                comment,
-                aws_iam_role: role(aws_iam_role_arn),
-                purpose: Some(CredentialPurpose::Storage),
-            };
+            // The API takes a role: without `--aws_iam_role_arn`, its ARN is
+            // empty.
             let info = c
                 .client
-                .create_credential(&request)
+                .create_credential(name, role(aws_iam_role_arn.unwrap_or_default()))
+                .with_comment(comment)
+                .with_purpose(CredentialPurpose::Storage)
                 .await
                 .map_err(upstream("createCredential"))?;
             Ok(c.shaped(&models::CREDENTIAL, &serde_json::to_value(&info)?))
@@ -79,7 +78,9 @@ pub async fn run(c: &Context<'_>, op: CredentialOp) -> Result<String> {
         CredentialOp::List { paging } => {
             let list = c
                 .client
-                .list_credentials(&paging.into())
+                .list_credentials()
+                .with_max_results(paging.max_results)
+                .with_page_token(paging.page_token)
                 .await
                 .map_err(upstream("listCredentials"))?;
             Ok(c.shaped_list(
@@ -91,7 +92,8 @@ pub async fn run(c: &Context<'_>, op: CredentialOp) -> Result<String> {
         CredentialOp::Get { name } => {
             let info = c
                 .client
-                .get_credential(&name)
+                .credential(name)
+                .get()
                 .await
                 .map_err(upstream("getCredential"))?;
             Ok(c.shaped(&models::CREDENTIAL, &serde_json::to_value(&info)?))
@@ -102,22 +104,22 @@ pub async fn run(c: &Context<'_>, op: CredentialOp) -> Result<String> {
             comment,
             aws_iam_role_arn,
         } => {
-            let request = UpdateCredentialRequest {
-                comment,
-                owner: None,
-                aws_iam_role: role(aws_iam_role_arn),
-                new_name,
-            };
             let info = c
                 .client
-                .update_credential(&name, &request)
+                .credential(name)
+                .update()
+                .with_comment(comment)
+                .with_aws_iam_role(aws_iam_role_arn.map(role))
+                .with_new_name(new_name)
                 .await
                 .map_err(upstream("updateCredential"))?;
             Ok(c.shaped(&models::CREDENTIAL, &serde_json::to_value(&info)?))
         }
         CredentialOp::Delete { name, force } => {
             c.client
-                .delete_credential(&name, force.unwrap_or(false))
+                .credential(name)
+                .delete()
+                .with_force(force.unwrap_or(false))
                 .await
                 .map_err(upstream("deleteCredential"))?;
             Ok("{}".into())

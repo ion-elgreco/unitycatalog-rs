@@ -2,7 +2,7 @@
 //! "Create catalog".
 
 use leptos::prelude::*;
-use uc_api::{CatalogInfo, CreateCatalog};
+use uc_client::models::catalogs::v1::CatalogInfo;
 
 use crate::api;
 use crate::components::icons::Plus;
@@ -44,13 +44,11 @@ pub fn CatalogsList() -> impl IntoView {
                 noun="catalog"
                 storage_root=true
                 create=|form: NewObject| async move {
-                    let request = CreateCatalog {
-                        name: form.name,
-                        comment: form.comment,
-                        properties: None,
-                        storage_root: form.location,
-                    };
-                    api::client().create_catalog(&request).await?;
+                    api::client()
+                        .create_catalog(form.name)
+                        .with_comment(form.comment)
+                        .with_storage_root(form.location)
+                        .await?;
                     Ok(())
                 }
                 list=Key::Catalogs
@@ -61,9 +59,12 @@ pub fn CatalogsList() -> impl IntoView {
 
 #[component]
 fn CatalogCard(catalog: CatalogInfo) -> impl IntoView {
-    let name = catalog.name.unwrap_or_default();
+    let name = catalog.name;
     let href = catalog_href(&name);
-    let updated = format_timestamp(catalog.updated_at.or(catalog.created_at));
+    let updated = format_timestamp(match catalog.updated_at {
+        0 => catalog.created_at,
+        at => at,
+    });
     view! {
         <a class="uc-card uc-card--link" href=href>
             <span class="uc-card__name">

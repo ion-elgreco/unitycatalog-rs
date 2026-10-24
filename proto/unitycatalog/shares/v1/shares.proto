@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package unitycatalog.shares.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+
+// A table of a share: a Unity Catalog table and the name under which the recipients see it.
+message SharedDataObject {
+  // Three-level name of the Unity Catalog table: `catalog.schema.table`. A share holds a table
+  // once.
+  string source_table_full_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Schema under which the recipients see the table, such as `default`.
+  string shared_as_schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name under which the recipients see the table.
+  string shared_as_name = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A share: a named set of tables that Delta Sharing recipients can read.
+message ShareInfo {
+  option (google.api.resource) = {
+    type: "unitycatalog.io/Share"
+    pattern: "shares/{share}"
+    plural: "shares"
+    singular: "share"
+  };
+
+  // Name of the share.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // Unique identifier of the share.
+  string id = 2;
+  // User-provided free-form text description.
+  optional string comment = 3;
+  // Username of the owner of the share.
+  optional string owner = 4;
+  // Time at which the share was created, in epoch milliseconds.
+  int64 created_at = 5;
+  // Username of the creator of the share.
+  optional string created_by = 6;
+  // Time at which the share was last changed, in epoch milliseconds.
+  int64 updated_at = 7;
+  // Username of the user who last changed the share.
+  optional string updated_by = 8;
+  // The tables of the share.
+  repeated SharedDataObject objects = 9;
+}
+
+message CreateShare {
+  // Name of the share.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // User-provided free-form text description.
+  optional string comment = 2;
+}
+
+message ListSharesRequest {
+  // The maximum number of shares to return.
+  optional int32 max_results = 1;
+  // Opaque token of the page to return: the `next_page_token` of the page before.
+  optional string page_token = 2;
+}
+
+message ListSharesResponse {
+  // The shares.
+  repeated ShareInfo items = 1;
+  // Opaque token of the next page. Absent on the last page.
+  optional string next_page_token = 2;
+}
+
+message GetShareRequest {
+  // Name of the share.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message UpdateShare {
+  // Name of the share.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // User-provided free-form text description.
+  optional string comment = 2;
+  // New name of the share.
+  optional string new_name = 3;
+  // Tables to add to the share. A table that the share holds already is skipped.
+  repeated SharedDataObject add_objects = 4;
+  // Tables to remove from the share, matched by `source_table_full_name`.
+  repeated SharedDataObject remove_objects = 5;
+}
+
+message DeleteShareRequest {
+  // Name of the share.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Shares: named sets of tables for Delta Sharing recipients. Only admins can manage them.
+service SharesService {
+  // List the shares.
+  rpc ListShares(ListSharesRequest) returns (ListSharesResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/shares"};
+  }
+
+  // Create a share. It holds no tables: add them with `UpdateShare`.
+  rpc CreateShare(.unitycatalog.shares.v1.CreateShare) returns (ShareInfo) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/shares"
+      body: "*"
+    };
+  }
+
+  // Get a share.
+  rpc GetShare(GetShareRequest) returns (ShareInfo) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/shares/{name}"};
+  }
+
+  // Change a share: its comment, its name and its tables.
+  rpc UpdateShare(.unitycatalog.shares.v1.UpdateShare) returns (ShareInfo) {
+    option (google.api.http) = {
+      patch: "/api/2.1/unity-catalog/shares/{name}"
+      body: "*"
+    };
+  }
+
+  // Delete a share.
+  rpc DeleteShare(DeleteShareRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.1/unity-catalog/shares/{name}"};
+  }
+}

@@ -1,0 +1,715 @@
+syntax = "proto3";
+
+package unitycatalog.delta.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "olai/trestle/v1/annotations.proto";
+import "unitycatalog/tables/v1/tables.proto";
+
+// One Delta commit file.
+message DeltaCommitInfo {
+  // Version of the commit. It must be positive.
+  int64 version = 1 [(google.api.field_behavior) = REQUIRED];
+  // The in-commit timestamp that the client wrote, in epoch milliseconds. It must be positive.
+  int64 timestamp = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the commit file under `_delta_log/_staged_commits`, without a path.
+  string file_name = 3 [(google.api.field_behavior) = REQUIRED];
+  // Size of the commit file, in bytes. It must be positive.
+  int64 file_size = 4 [(google.api.field_behavior) = REQUIRED];
+  // Time at which the commit file was last changed, in epoch milliseconds. It must be positive.
+  int64 file_modification_timestamp = 5 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The columns of a Delta metadata change.
+message ColumnInfos {
+  // The columns of the table.
+  repeated unitycatalog.tables.v1.ColumnInfo columns = 1;
+}
+
+// The properties of a Delta metadata change.
+message DeltaCommitMetadataProperties {
+  // The properties of the table. They replace the properties of the table.
+  map<string, string> properties = 1;
+}
+
+// A Delta metadata change to apply to the table with the commit. At least one field must be
+// set.
+message DeltaMetadata {
+  // The comment of the table.
+  optional string description = 1;
+  // The columns of the table. They replace the columns of the table.
+  optional ColumnInfos schema = 2;
+  // The properties of the table.
+  optional DeltaCommitMetadataProperties properties = 3;
+}
+
+// The Iceberg metadata of a UniForm table.
+message DeltaUniformIceberg {
+  // URL of the Iceberg metadata file. It must be inside the table.
+  optional string metadata_location = 1;
+  // The Delta version that the Iceberg metadata was converted from.
+  optional int64 converted_delta_version = 2;
+  // When the Delta version was converted, as an ISO-8601 instant in UTC.
+  optional string converted_delta_timestamp = 3;
+  // The Delta version of the Iceberg metadata that the conversion started from.
+  optional int64 base_converted_delta_version = 4;
+}
+
+// UniForm metadata committed with a Delta commit.
+message DeltaUniform {
+  // The Iceberg metadata of the table.
+  optional DeltaUniformIceberg iceberg = 1;
+}
+
+// A commit, a backfill report, or both. At least one of `commit_info` and
+// `latest_backfilled_version` must be set.
+message DeltaCommit {
+  // Unique identifier of the table to commit to.
+  string table_id = 1 [(google.api.field_behavior) = REQUIRED];
+  // Storage location of the table. It must be the location of the table.
+  string table_uri = 2 [(google.api.field_behavior) = REQUIRED];
+  // The commit file to ratify.
+  optional DeltaCommitInfo commit_info = 3;
+  // The commits up to this version are backfilled into `_delta_log`, so the server stops tracking
+  // them.
+  optional int64 latest_backfilled_version = 4;
+  // A metadata change to apply with the commit. Not with a backfill report alone.
+  optional DeltaMetadata metadata = 5;
+  // UniForm metadata to commit with the commit.
+  optional DeltaUniform uniform = 6;
+}
+
+// Which commits of a table to get. The server takes it as the JSON body of a `GET`.
+message DeltaGetCommits {
+  // Unique identifier of the table.
+  string table_id = 1 [(google.api.field_behavior) = REQUIRED];
+  // Storage location of the table.
+  optional string table_uri = 2;
+  // First version to return (inclusive). It must be 0 or more.
+  int64 start_version = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Last version to return (inclusive). It does not change `latest_table_version`.
+  optional int64 end_version = 4;
+}
+
+// The commits that the server tracks for a table.
+message DeltaGetCommitsResponse {
+  // The commits that are not backfilled yet, newest first.
+  repeated DeltaCommitInfo commits = 1;
+  // The latest version that the server tracks; 0 before the first commit.
+  int64 latest_table_version = 2;
+}
+
+// The type of a Delta table.
+enum DeltaTableType {
+  DELTA_TABLE_TYPE_UNSPECIFIED = 0;
+  // A table whose data Unity Catalog manages.
+  MANAGED = 1;
+  // A table whose data is at a storage location that the user gives.
+  EXTERNAL = 2;
+}
+
+// The access level of a storage credential.
+enum DeltaCredentialOperation {
+  DELTA_CREDENTIAL_OPERATION_UNSPECIFIED = 0;
+  // Read the data.
+  READ = 1;
+  // Read and write the data.
+  READ_WRITE = 2;
+}
+
+// A maintenance operation that the catalog allows on a table, in addition to the operations that
+// the Delta protocol allows.
+enum DeltaMaintenanceOperation {
+  DELTA_MAINTENANCE_OPERATION_UNSPECIFIED = 0;
+  // Rewrite the data files of the latest version to group, cluster or lay out the data, without
+  // a change to the data.
+  DATA_REORGANIZATION = 1;
+  // Delete old data files, without a change to the data of the latest version.
+  DATA_CLEANUP = 2;
+  // Delete old metadata files, without a change to the data of the latest version.
+  METADATA_CLEANUP = 3;
+}
+
+// Cloud credential settings. Only the keys of one cloud provider are set.
+message DeltaStorageCredentialConfig {
+  // AWS access key id.
+  optional string s3_access_key_id = 1 [json_name = "s3.access-key-id"];
+  // AWS secret access key.
+  optional string s3_secret_access_key = 2 [json_name = "s3.secret-access-key"];
+  // AWS session token of the temporary credentials.
+  optional string s3_session_token = 3 [json_name = "s3.session-token"];
+  // Azure SAS (shared access signature) token.
+  optional string azure_sas_token = 4 [json_name = "azure.sas-token"];
+  // GCP OAuth token.
+  optional string gcs_oauth_token = 5 [json_name = "gcs.oauth-token"];
+}
+
+// A temporary credential for a storage prefix. When more than one credential applies, use the
+// one with the longest prefix.
+message DeltaStorageCredential {
+  // The storage path prefix that the credential is for.
+  string prefix = 1;
+  // The access level of the credential.
+  DeltaCredentialOperation operation = 2;
+  // The cloud credential settings.
+  DeltaStorageCredentialConfig config = 3;
+  // Time at which the credential expires, in epoch milliseconds.
+  optional int64 expiration_time_ms = 4 [json_name = "expiration-time-ms"];
+}
+
+// Temporary credentials for the data of a table.
+message DeltaCredentialsResponse {
+  // The temporary cloud storage credentials.
+  repeated DeltaStorageCredential storage_credentials = 1 [json_name = "storage-credentials"];
+}
+
+// The configuration of the Delta API for a catalog.
+message DeltaCatalogConfig {
+  // The endpoints that the server supports, such as
+  // `GET /v1/catalogs/main/schemas/{schema}/tables/{table}`.
+  repeated string endpoints = 1;
+  // The protocol version of the endpoints, such as `1.0`.
+  string protocol_version = 2 [json_name = "protocol-version"];
+}
+
+message GetDeltaConfigRequest {
+  // Name of the catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // The highest protocol versions that the client supports per major version, comma-separated,
+  // such as `1.0` or `1.1,2.3`. The server answers with the highest version that both support.
+  string protocol_versions = 2 [
+    json_name = "protocol-versions",
+    (google.api.field_behavior) = REQUIRED
+  ];
+}
+
+// Delta protocol versions and features.
+message DeltaProtocol {
+  // Minimum reader version.
+  optional int32 min_reader_version = 1 [json_name = "min-reader-version"];
+  // Minimum writer version.
+  optional int32 min_writer_version = 2 [json_name = "min-writer-version"];
+  // The reader features, such as `deletionVectors`.
+  repeated string reader_features = 3 [json_name = "reader-features"];
+  // The writer features, such as `catalogManaged`.
+  repeated string writer_features = 4 [json_name = "writer-features"];
+}
+
+// Features that a client should enable when it can.
+message DeltaSuggestedProtocol {
+  // The suggested reader features.
+  repeated string reader_features = 1 [json_name = "reader-features"];
+  // The suggested writer features.
+  repeated string writer_features = 2 [json_name = "writer-features"];
+}
+
+message DeltaCreateStagingTableRequest {
+  // Name of the parent catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string name = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A staging table: the table id and storage location that the server reserves for a new MANAGED
+// table, and what the first commit must contain.
+message DeltaStagingTableResponse {
+  // Unique identifier of the table.
+  string table_id = 1 [json_name = "table-id"];
+  // Type of the table. Always `MANAGED`.
+  DeltaTableType table_type = 2 [json_name = "table-type"];
+  // The storage location of the table.
+  string location = 3;
+  // Temporary credentials to write the first commit.
+  repeated DeltaStorageCredential storage_credentials = 4 [json_name = "storage-credentials"];
+  // The protocol that the first commit must have at least.
+  DeltaProtocol required_protocol = 5 [json_name = "required-protocol"];
+  // Features that the client should enable when it can.
+  DeltaSuggestedProtocol suggested_protocol = 6 [json_name = "suggested-protocol"];
+  // Table properties that the table must have. Each value is a string, or `null` when any valid
+  // value is allowed.
+  map<string, google.protobuf.Value> required_properties = 7 [json_name = "required-properties"];
+  // Table properties that the table should have. Each value is a string, or `null` when the client
+  // makes the value.
+  map<string, google.protobuf.Value> suggested_properties = 8 [json_name = "suggested-properties"];
+}
+
+// A Delta struct type, such as the columns of a table.
+message DeltaStructType {
+  // The type name. Always `struct`.
+  string type_name = 1 [json_name = "type"];
+  // The fields of the struct. At least one.
+  repeated DeltaStructField fields = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A field of a Delta struct type, as in the Delta protocol schema format.
+message DeltaStructField {
+  // Name of the field. It is unique in its struct, case-insensitively.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Data type of the field: a string for a primitive type (`long`, `decimal(10,2)`), or an object
+  // with a `type` of `array` (`element-type`, `contains-null`), `map` (`key-type`, `value-type`,
+  // `value-contains-null`), `struct` (`fields`) or `decimal` (`precision`, `scale`).
+  google.protobuf.Value data_type = 2 [
+    json_name = "type",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  // Whether the field can hold null values.
+  bool nullable = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Metadata of the field, such as `comment` or `delta.columnMapping.id`. An empty object when
+  // there is none.
+  google.protobuf.Struct metadata = 4 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The domain metadata of a clustered table.
+message DeltaClusteringDomainMetadata {
+  // The clustering columns. Each one is a list of strings: the path from the root of the schema to
+  // the column, with physical names when column mapping is on. An empty list is sent too: the
+  // table is clustered by no columns.
+  repeated google.protobuf.ListValue clustering_columns = 1 [
+    json_name = "clusteringColumns",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+}
+
+// The domain metadata of a table with row tracking.
+message DeltaRowTrackingDomainMetadata {
+  // The highest row id given so far.
+  optional int64 row_id_high_water_mark = 1 [json_name = "rowIdHighWaterMark"];
+}
+
+// Domain metadata entries, by domain name.
+message DeltaDomainMetadataUpdates {
+  // The `delta.clustering` domain.
+  optional DeltaClusteringDomainMetadata delta_clustering = 1 [json_name = "delta.clustering"];
+  // The `delta.rowTracking` domain.
+  optional DeltaRowTrackingDomainMetadata delta_row_tracking = 2 [json_name = "delta.rowTracking"];
+}
+
+// The Iceberg metadata of a UniForm table.
+message DeltaUniformMetadataIceberg {
+  // URL of the Iceberg metadata file.
+  optional string metadata_location = 1 [json_name = "metadata-location"];
+  // The Delta version that was converted to Iceberg.
+  optional int64 converted_delta_version = 2 [json_name = "converted-delta-version"];
+  // When the Delta version was converted, in epoch milliseconds.
+  optional int64 converted_delta_timestamp = 3 [json_name = "converted-delta-timestamp"];
+  // The Delta version that the incremental conversion started from.
+  optional int64 base_converted_delta_version = 4 [json_name = "base-converted-delta-version"];
+}
+
+// UniForm conversion metadata. Only UniForm (Delta and Iceberg) tables have it.
+message DeltaUniformMetadata {
+  // The Iceberg metadata of the table.
+  optional DeltaUniformMetadataIceberg iceberg = 1;
+}
+
+message DeltaCreateTableRequest {
+  // Name of the parent catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string name = 3 [(google.api.field_behavior) = REQUIRED];
+  // Storage location of the table. For a MANAGED table, the location of its staging table.
+  string location = 4 [(google.api.field_behavior) = REQUIRED];
+  // Type of the table.
+  DeltaTableType table_type = 5 [
+    json_name = "table-type",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  // User-provided free-form text description.
+  optional string comment = 6;
+  // The columns of the table. They must hold at least one field.
+  DeltaStructType columns = 7 [(google.api.field_behavior) = REQUIRED];
+  // Names of the partition columns.
+  repeated string partition_columns = 8 [json_name = "partition-columns"];
+  // The Delta protocol of the table.
+  DeltaProtocol protocol = 9 [(google.api.field_behavior) = REQUIRED];
+  // The Delta table properties.
+  map<string, string> properties = 10;
+  // The domain metadata of the table.
+  optional DeltaDomainMetadataUpdates domain_metadata = 11 [json_name = "domain-metadata"];
+  // Timestamp of version 0, the commit that the client wrote before the call, in epoch
+  // milliseconds.
+  int64 last_commit_timestamp_ms = 12 [
+    json_name = "last-commit-timestamp-ms",
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // UniForm conversion metadata. With it, the table is UniForm-enabled; the client writes the
+  // Iceberg metadata file before the call.
+  optional DeltaUniformMetadata uniform = 13;
+}
+
+// A commit of a catalog-managed table.
+message DeltaApiCommit {
+  // Version of the commit.
+  int64 version = 1 [(google.api.field_behavior) = REQUIRED];
+  // The in-commit timestamp, in epoch milliseconds.
+  int64 timestamp = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the staged commit file under `_delta_log/_staged_commits`, without a path.
+  string file_name = 3 [
+    json_name = "file-name",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  // Size of the commit file, in bytes.
+  int64 file_size = 4 [
+    json_name = "file-size",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  // Time at which the commit file was last changed, in epoch milliseconds.
+  int64 file_modification_timestamp = 5 [
+    json_name = "file-modification-timestamp",
+    (google.api.field_behavior) = REQUIRED
+  ];
+}
+
+// The metadata of a Delta table.
+message DeltaTableMetadata {
+  // Entity tag of the metadata. It changes when the metadata changes.
+  string etag = 1;
+  // Type of the table.
+  DeltaTableType table_type = 2 [json_name = "table-type"];
+  // Unique identifier of the table.
+  string table_uuid = 3 [json_name = "table-uuid"];
+  // Storage location of the table.
+  string location = 4;
+  // Time at which the table was created, in epoch milliseconds.
+  int64 created_time = 5 [json_name = "created-time"];
+  // Time at which the table was last changed, in epoch milliseconds.
+  int64 updated_time = 6 [json_name = "updated-time"];
+  // The columns of the table.
+  DeltaStructType columns = 7;
+  // Names of the partition columns.
+  repeated string partition_columns = 8 [json_name = "partition-columns"];
+  // The table properties, with keys that the server derives (`delta.minReaderVersion`,
+  // `delta.feature.*`, `delta.lastUpdateVersion`, ...). Clients must not write those back.
+  map<string, string> properties = 9;
+  // Version of the last commit that changed the metadata.
+  optional int64 last_commit_version = 10 [json_name = "last-commit-version"];
+  // Timestamp of the last commit that changed the metadata, in epoch milliseconds.
+  optional int64 last_commit_timestamp_ms = 11 [json_name = "last-commit-timestamp-ms"];
+}
+
+// A Delta table: its metadata and, for a MANAGED table, its commits that are not backfilled yet.
+message DeltaLoadTableResponse {
+  // The metadata of the table.
+  DeltaTableMetadata metadata = 1;
+  // The commits that are not backfilled yet, newest first. Only for MANAGED tables.
+  repeated DeltaApiCommit commits = 2;
+  // UniForm conversion metadata. Only for UniForm tables.
+  optional DeltaUniformMetadata uniform = 3;
+  // The latest version that the server tracks, data-only commits included. Only for MANAGED
+  // tables.
+  optional int64 latest_table_version = 4 [json_name = "latest-table-version"];
+  // Maintenance operations that the catalog allows in addition to the Delta protocol defaults.
+  repeated DeltaMaintenanceOperation allowed_maintenance_operations = 5 [json_name = "allowed-maintenance-operations"];
+}
+
+message LoadDeltaTableRequest {
+  // Name of the parent catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A precondition of a table update. The `type` says which field is set:
+// - `assert-table-uuid`: `uuid`, the expected table id.
+// - `assert-etag`: `etag`, the expected entity tag of the metadata.
+message DeltaTableRequirement {
+  // Kind of the requirement, the JSON `type`: `assert-table-uuid` or `assert-etag`.
+  string requirement_type = 1 [
+    json_name = "type",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  // The expected unique identifier of the table. For `assert-table-uuid`.
+  optional string uuid = 2;
+  // The expected entity tag of the table metadata. For `assert-etag`.
+  optional string etag = 3;
+}
+
+// One update action. The `action` says which fields are set:
+// - `set-properties`: `updates`, property names to string values.
+// - `remove-properties`: `removals`.
+// - `set-columns`: `columns`.
+// - `set-table-comment`: `comment`.
+// - `add-commit`: `commit` and `uniform`.
+// - `set-latest-backfilled-version`: `latest_published_version`.
+// - `set-protocol`: `protocol`.
+// - `set-domain-metadata`: `updates`, domain names to their metadata:
+//   `delta.clustering` to `{"clusteringColumns": [["a"], ["b", "c"]]}`, `delta.rowTracking` to
+//   `{"rowIdHighWaterMark": 9}`.
+// - `remove-domain-metadata`: `domains`.
+// - `set-partition-columns`: `partition_columns`.
+// - `update-metadata-snapshot-version`: `last_commit_version` and `last_commit_timestamp_ms`.
+message DeltaTableUpdate {
+  // Kind of the update: one of the actions above.
+  string action = 1 [(google.api.field_behavior) = REQUIRED];
+  // For `set-properties`: property names to string values. For `set-domain-metadata`: domain
+  // names to their metadata objects.
+  map<string, google.protobuf.Value> updates = 2;
+  // For `remove-properties`: the property keys to remove.
+  repeated string removals = 3;
+  // For `set-columns`: the new columns of the table.
+  optional DeltaStructType columns = 4;
+  // For `set-table-comment`: the new comment of the table.
+  optional string comment = 5;
+  // For `add-commit`: the commit to add.
+  optional DeltaApiCommit commit = 6;
+  // For `add-commit`: UniForm metadata to commit with the commit.
+  optional DeltaUniformMetadata uniform = 7;
+  // For `set-latest-backfilled-version`: the commits up to this version are backfilled.
+  optional int64 latest_published_version = 8 [json_name = "latest-published-version"];
+  // For `set-protocol`: the new protocol. It replaces the protocol of the table.
+  optional DeltaProtocol protocol = 9;
+  // For `remove-domain-metadata`: the domain names to remove.
+  repeated string domains = 10;
+  // For `set-partition-columns`: names of the partition columns. An empty list is sent too: it
+  // removes the partitioning.
+  repeated string partition_columns = 11 [
+    json_name = "partition-columns",
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // For `update-metadata-snapshot-version`: version of the last commit
+  // (`delta.lastUpdateVersion`).
+  optional int64 last_commit_version = 12 [json_name = "last-commit-version"];
+  // For `update-metadata-snapshot-version`: timestamp of the last commit, in epoch milliseconds
+  // (`delta.lastCommitTimestamp`).
+  optional int64 last_commit_timestamp_ms = 13 [json_name = "last-commit-timestamp-ms"];
+}
+
+// Updates to a table, with preconditions. All updates apply atomically.
+message DeltaUpdateTableRequest {
+  // Name of the parent catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+  // Preconditions of the update. An `assert-table-uuid` requirement is always required; at most
+  // one of each type.
+  repeated DeltaTableRequirement requirements = 4 [(google.api.field_behavior) = REQUIRED];
+  // The updates to apply. At least one; at most one of each action.
+  repeated DeltaTableUpdate updates = 5 [(google.api.field_behavior) = REQUIRED];
+}
+
+message DeltaTableExistsRequest {
+  // Name of the parent catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+message DeleteDeltaTableRequest {
+  // Name of the parent catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+message DeltaRenameTableRequest {
+  // Name of the parent catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+  // New name of the table, in the same schema.
+  string new_name = 4 [
+    json_name = "new-name",
+    (google.api.field_behavior) = REQUIRED
+  ];
+}
+
+// A file size histogram of a commit.
+message DeltaFileSizeHistogram {
+  // Start of each bin (inclusive), in bytes, sorted. The first one is 0.
+  repeated int64 sorted_bin_boundaries = 1 [json_name = "sorted-bin-boundaries"];
+  // Number of files in each bin.
+  repeated int64 file_counts = 2 [json_name = "file-counts"];
+  // Total bytes in each bin.
+  repeated int64 total_bytes = 3 [json_name = "total-bytes"];
+  // Version of the commit that the histogram is for.
+  optional int64 commit_version = 4 [json_name = "commit-version"];
+}
+
+// The metrics of a commit.
+message DeltaCommitReport {
+  // Number of files that the commit added.
+  optional int64 num_files_added = 1 [json_name = "num-files-added"];
+  // Number of bytes that the commit added.
+  optional int64 num_bytes_added = 2 [json_name = "num-bytes-added"];
+  // Number of files that the commit removed.
+  optional int64 num_files_removed = 3 [json_name = "num-files-removed"];
+  // Number of bytes that the commit removed.
+  optional int64 num_bytes_removed = 4 [json_name = "num-bytes-removed"];
+  // Number of rows that the commit inserted.
+  optional int64 num_rows_inserted = 5 [json_name = "num-rows-inserted"];
+  // Number of rows that the commit removed.
+  optional int64 num_rows_removed = 6 [json_name = "num-rows-removed"];
+  // Number of rows that the commit updated.
+  optional int64 num_rows_updated = 7 [json_name = "num-rows-updated"];
+  // File counts and total bytes by file size.
+  optional DeltaFileSizeHistogram file_size_histogram = 8 [json_name = "file-size-histogram"];
+}
+
+// The reported metrics.
+message DeltaMetricsReport {
+  // The metrics of a commit.
+  optional DeltaCommitReport commit_report = 1 [json_name = "commit-report"];
+}
+
+message DeltaReportMetricsRequest {
+  // Name of the parent catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+  // Unique identifier of the table. It must be the id of the table in the path.
+  string table_id = 4 [
+    json_name = "table-id",
+    (google.api.field_behavior) = REQUIRED
+  ];
+  // The metrics. The server accepts them and does not store them.
+  optional DeltaMetricsReport report = 5;
+}
+
+message GetDeltaTableCredentialsRequest {
+  // Name of the parent catalog.
+  string catalog = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the table.
+  string table = 3 [(google.api.field_behavior) = REQUIRED];
+  // The access level of the credentials.
+  DeltaCredentialOperation operation = 4 [(google.api.field_behavior) = REQUIRED];
+}
+
+message GetDeltaStagingTableCredentialsRequest {
+  // Unique identifier of the staging table.
+  string table_id = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The commit coordinator of MANAGED Delta tables.
+service DeltaCommitsService {
+  // Ratify a staged commit, report backfilled commits, or both. Another commit at the same
+  // version is a conflict (status 409).
+  rpc CommitDelta(DeltaCommit) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/delta/preview/commits"
+      body: "*"
+    };
+  }
+
+  // Get the commits of a table that are not backfilled yet. The server takes the request as the
+  // JSON body of a `GET`.
+  rpc GetDeltaCommits(DeltaGetCommits) returns (DeltaGetCommitsResponse) {
+    option (google.api.http) = {
+      get: "/api/2.1/unity-catalog/delta/preview/commits"
+      body: "*"
+    };
+  }
+}
+
+// The Delta REST API for Delta clients: tables, staging tables and their credentials. Its errors
+// have the Delta body `{"error": {"message", "type", "code"}}`.
+service DeltaApiService {
+  // Get the configuration of the Delta API for a catalog: the endpoints that the server supports
+  // and the protocol version.
+  rpc GetDeltaConfig(GetDeltaConfigRequest) returns (DeltaCatalogConfig) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/delta/v1/config"};
+  }
+
+  // Create a staging table: reserve a table id and a storage location for a new MANAGED table,
+  // with credentials to write its first commit.
+  rpc CreateDeltaStagingTable(DeltaCreateStagingTableRequest) returns (DeltaStagingTableResponse) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/delta/v1/catalogs/{catalog}/schemas/{schema}/staging-tables"
+      body: "*"
+    };
+  }
+
+  // Create a table. A MANAGED table takes over the staging table at its location.
+  rpc CreateDeltaTable(DeltaCreateTableRequest) returns (DeltaLoadTableResponse) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/delta/v1/catalogs/{catalog}/schemas/{schema}/tables"
+      body: "*"
+    };
+  }
+
+  // Load a table: its metadata and, for a MANAGED table, its commits that are not backfilled yet.
+  // It holds no credentials.
+  rpc LoadDeltaTable(LoadDeltaTableRequest) returns (DeltaLoadTableResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}"};
+  }
+
+  // Update a table or commit to it, then load it. A replay of an accepted `add-commit` is a no-op.
+  // A version or requirement conflict is status 409; too many commits that are not backfilled
+  // is status 429.
+  rpc UpdateDeltaTable(DeltaUpdateTableRequest) returns (DeltaLoadTableResponse) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}"
+      body: "*"
+    };
+  }
+
+  // Check that a table exists. A missing table is status 404.
+  rpc DeltaTableExists(DeltaTableExistsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      custom: {
+        kind: "HEAD"
+        path: "/api/2.1/unity-catalog/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}"
+      }
+    };
+  }
+
+  // Delete a table.
+  rpc DeleteDeltaTable(DeleteDeltaTableRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.1/unity-catalog/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}"};
+  }
+
+  // Rename a table in its schema.
+  rpc RenameDeltaTable(DeltaRenameTableRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}/rename"
+      body: "*"
+    };
+  }
+
+  // Report the metrics of a commit. The server checks the table id and does not store the
+  // metrics.
+  rpc ReportDeltaTableMetrics(DeltaReportMetricsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}/metrics"
+      body: "*"
+    };
+  }
+
+  // Get temporary credentials for the data of a table.
+  rpc GetDeltaTableCredentials(GetDeltaTableCredentialsRequest) returns (DeltaCredentialsResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}/credentials"};
+  }
+
+  // Get temporary credentials for the data of a staging table. They are always `READ_WRITE`, for
+  // the first commit. Only the owner of the staging table gets them.
+  rpc GetDeltaStagingTableCredentials(GetDeltaStagingTableCredentialsRequest) returns (DeltaCredentialsResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/delta/v1/staging-tables/{table_id}/credentials"};
+  }
+}

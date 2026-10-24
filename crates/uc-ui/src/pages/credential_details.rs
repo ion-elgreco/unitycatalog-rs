@@ -5,8 +5,8 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
-use uc_api::{AwsIamRoleRequest, CredentialInfo, UpdateCredentialRequest};
-use uc_common::{SecurableType, wire_name};
+use uc_client::models::credentials::v1::{AwsIamRoleRequest, CredentialInfo};
+use uc_common::SecurableType;
 
 use super::credentials::role_arn;
 use crate::api;
@@ -17,7 +17,7 @@ use crate::components::{
 };
 use crate::contents::Holder;
 use crate::load::{Key, Load, field, use_cache, use_load};
-use crate::util::{Section, format_timestamp, or_dash, pretty_json, route_params};
+use crate::util::{Section, enum_name, format_timestamp, or_dash, pretty_json, route_params};
 
 #[component]
 pub fn CredentialDetails() -> impl IntoView {
@@ -33,7 +33,7 @@ fn CredentialPage(name: String) -> impl IntoView {
     let key = StoredValue::new(name.clone());
     let info = use_load(Key::Credential(name.clone()), move || {
         let name = key.get_value();
-        async move { api::client().get_credential(&name).await }
+        async move { api::client().credential(name).get().await }
     });
     let locations = use_load(Key::ExternalLocations, api::external_locations);
     let cache = use_cache();
@@ -47,13 +47,11 @@ fn CredentialPage(name: String) -> impl IntoView {
     let save_comment = move |comment: String| {
         let name = key.get_value();
         async move {
-            let request = UpdateCredentialRequest {
-                comment: Some(comment),
-                owner: None,
-                aws_iam_role: None,
-                new_name: None,
-            };
-            let updated = api::client().update_credential(&name, &request).await?;
+            let updated = api::client()
+                .credential(&name)
+                .update()
+                .with_comment(comment)
+                .await?;
             cache.set(Key::Credential(name), updated);
             Ok(())
         }
@@ -92,13 +90,12 @@ fn CredentialPage(name: String) -> impl IntoView {
                     {list
                         .into_iter()
                         .map(|l| {
-                            let name = l.name.unwrap_or_default();
                             view! {
                                 <ObjectRow
                                     icon=Section::ExternalLocations.icon()
-                                    name=name.clone()
-                                    href=Section::ExternalLocations.item_href(&name)
-                                    comment=l.url
+                                    name=l.name.clone()
+                                    href=Section::ExternalLocations.item_href(&l.name)
+                                    comment=Some(l.url)
                                 />
                             }
                         })
@@ -149,7 +146,7 @@ fn CredentialPage(name: String) -> impl IntoView {
             name=name.clone()
             delete=move |force| {
                 let name = key.get_value();
-                async move { api::client().delete_credential(&name, force).await }
+                async move { api::client().credential(name).delete().with_force(force).await }
             }
             key=Key::Credential(name.clone())
             list=Key::Credentials
@@ -190,32 +187,35 @@ fn EditCredential(
         }
         let arn = new_role.get_untracked().trim().to_string();
         let text = new_comment.get_untracked();
-        let request = UpdateCredentialRequest {
-            comment: (text != comment.get_untracked()).then_some(text),
-            owner: None,
-            // The API sets a role; it does not unset one.
-            aws_iam_role: (!arn.is_empty() && arn != role.get_untracked())
-                .then_some(AwsIamRoleRequest { role_arn: arn }),
-            new_name: (renamed != name).then_some(renamed),
-        };
+        let comment_change = (text != comment.get_untracked()).then_some(text);
+        // The API sets a role; it does not unset one.
+        let role_change =
+            (!arn.is_empty() && arn != role.get_untracked()).then_some(AwsIamRoleRequest {
+                role_arn: arn,
+                ..Default::default()
+            });
+        let name_change = (renamed != name).then_some(renamed);
         // Nothing to save: the dialog stays, as the console's.
-        if request.comment.is_none() && request.aws_iam_role.is_none() && request.new_name.is_none()
-        {
+        if comment_change.is_none() && role_change.is_none() && name_change.is_none() {
             return;
         }
+        let update = api::client()
+            .credential(&name)
+            .update()
+            .with_comment(comment_change)
+            .with_aws_iam_role(role_change)
+            .with_new_name(name_change.clone());
         let navigate = navigate.clone();
         busy.set(true);
         spawn_local(async move {
-            match api::client().update_credential(&name, &request).await {
+            match update.await {
                 Ok(updated) => {
                     notify.success("Edit credential complete");
-                    let page = request
-                        .new_name
+                    let page = name_change
                         .as_deref()
                         .map(|new_name| Section::Credentials.item_href(new_name));
-                    let renamed = request
-                        .new_name
-                        .map(|new_name| (Key::Credential(new_name), Key::Credentials));
+                    let renamed =
+                        name_change.map(|new_name| (Key::Credential(new_name), Key::Credentials));
                     cache.edited(Key::Credential(name), updated, renamed);
                     if busy.try_get_untracked().is_some() {
                         open.set(false);
@@ -254,22 +254,19 @@ fn EditCredential(
 }
 
 fn credential_rows(c: &CredentialInfo) -> Vec<MetaRow> {
-    let role = c.aws_iam_role.as_ref();
+    let role = c.aws_iam_role.as_option();
     vec![
         MetaRow::new("Owner", or_dash(c.owner.clone())),
-        MetaRow::new("Purpose", or_dash(c.purpose.as_ref().map(wire_name))),
+        MetaRow::new("Purpose", or_dash(c.purpose.map(enum_name))),
         MetaRow::mono(
             "AWS IAM role ARN",
-            or_dash(role.and_then(|r| r.role_arn.clone())),
+            or_dash(role.map(|r| r.role_arn.clone())),
         ),
         MetaRow::mono(
             "Unity Catalog IAM ARN",
             or_dash(role.and_then(|r| r.unity_catalog_iam_arn.clone())),
         ),
-        MetaRow::mono(
-            "External ID",
-            or_dash(role.and_then(|r| r.external_id.clone())),
-        ),
+        MetaRow::mono("External ID", or_dash(role.map(|r| r.external_id.clone()))),
         MetaRow::new("Created at", format_timestamp(c.created_at)),
         MetaRow::new("Created by", or_dash(c.created_by.clone())),
         MetaRow::new("Updated at", format_timestamp(c.updated_at)),

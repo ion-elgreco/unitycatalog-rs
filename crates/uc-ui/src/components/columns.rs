@@ -3,8 +3,7 @@
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::{TableInfo, UpdateColumn, UpdateTable};
-use uc_common::wire_name;
+use uc_client::models::tables::v1::{TableInfo, UpdateColumn};
 
 use super::card::Card;
 use super::field::TextArea;
@@ -12,7 +11,7 @@ use super::icons::Pencil;
 use crate::api;
 use crate::components::{Modal, use_notify};
 use crate::load::{Key, Load, use_cache};
-use crate::util::or_dash;
+use crate::util::{enum_name, or_dash};
 
 /// A nested type over several lines, as the console shows it: each `<`
 /// and `,` ends a line, and what follows is indented by its depth.
@@ -73,16 +72,17 @@ pub fn ColumnsCard(
             return;
         };
         let full_name = full_name.clone();
-        let request = UpdateTable {
-            comment: None,
-            columns: vec![UpdateColumn {
+        let update = api::client()
+            .table(&full_name)
+            .update()
+            .with_columns([UpdateColumn {
                 name: name.clone(),
                 comment: text.get_untracked(),
-            }],
-        };
+                ..Default::default()
+            }]);
         busy.set(true);
         spawn_local(async move {
-            match api::client().update_table(&full_name, &request).await {
+            match update.await {
                 Ok(updated) => {
                     cache.set(Key::Table(full_name), updated);
                     notify.success(format!("Updated the comment of {name}"));
@@ -96,11 +96,7 @@ pub fn ColumnsCard(
         });
     };
     let rows = move || {
-        let columns = info.with(|i| {
-            i.ready()
-                .and_then(|t| t.columns.clone())
-                .unwrap_or_default()
-        });
+        let columns = info.with(|i| i.ready().map(|t| t.columns.clone()).unwrap_or_default());
         if columns.is_empty() {
             return view! { <p class="uc-empty">"No columns."</p> }.into_any();
         }
@@ -124,13 +120,13 @@ pub fn ColumnsCard(
                             .map(|(i, column)| {
                                 let position = column.position.map_or(i.to_string(), |p| p.to_string());
                                 let type_text = pretty_type(&or_dash(
-                                    column.type_text.or_else(|| column.type_name.as_ref().map(wire_name)),
+                                    column.type_text.or_else(|| column.type_name.map(enum_name)),
                                 ));
                                 let nullable = match column.nullable {
                                     Some(false) => "false",
                                     _ => "true",
                                 };
-                                let name = column.name.unwrap_or_default();
+                                let name = column.name;
                                 let title = format!("Edit the comment of {name}");
                                 // What the pencil edits: the name and the comment.
                                 let target = (name.clone(), column.comment.clone().unwrap_or_default());

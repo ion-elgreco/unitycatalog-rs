@@ -2,8 +2,8 @@
 //! columns, its details, its credentials and grants; "Delete".
 
 use leptos::prelude::*;
-use uc_api::{TableInfo, UpdateTable};
-use uc_common::{SecurableType, three_part_full_name, wire_name};
+use uc_client::models::tables::v1::TableInfo;
+use uc_common::{SecurableType, three_part_full_name};
 
 use crate::api;
 use crate::auth::use_manages;
@@ -13,7 +13,7 @@ use crate::components::{
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
-use crate::util::{format_timestamp, or_dash, pretty_json, route_params};
+use crate::util::{enum_name, format_timestamp, or_dash, pretty_json, route_params};
 
 #[component]
 pub fn TableDetails() -> impl IntoView {
@@ -30,7 +30,7 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
     let name = StoredValue::new(full_name.clone());
     let info = use_load(Key::Table(full_name.clone()), move || {
         let full_name = name.get_value();
-        async move { api::client().get_table(&full_name, false, false).await }
+        async move { api::client().table(full_name).get().await }
     });
     let cache = use_cache();
     let delete_open = RwSignal::new(false);
@@ -39,23 +39,25 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
     let comment = field(info, |t: &TableInfo| t.comment.clone().unwrap_or_default());
     let badges = field(info, |t: &TableInfo| {
         [
-            t.table_type.as_ref().map(wire_name),
-            t.data_source_format.as_ref().map(wire_name),
+            enum_name(t.table_type),
+            t.data_source_format.map(enum_name).unwrap_or_default(),
         ]
         .into_iter()
-        .flatten()
+        .filter(|badge| !badge.is_empty())
         .collect::<Vec<_>>()
     });
-    let table_id = field(info, |t: &TableInfo| t.table_id.clone());
+    let table_id = field(info, |t: &TableInfo| {
+        Some(t.table_id.clone()).filter(|id| !id.is_empty())
+    });
 
     let save_comment = move |comment: String| {
         let full_name = name.get_value();
         async move {
-            let request = UpdateTable {
-                comment: Some(comment),
-                columns: Vec::new(),
-            };
-            let updated = api::client().update_table(&full_name, &request).await?;
+            let updated = api::client()
+                .table(&full_name)
+                .update()
+                .with_comment(comment)
+                .await?;
             cache.set(Key::Table(full_name), updated);
             Ok(())
         }
@@ -83,7 +85,7 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
                         view! {
                             <DetailsTab
                                 rows=field(info, table_rows)
-                                properties=field(info, |t: &TableInfo| properties(t.properties.as_ref()))
+                                properties=field(info, |t: &TableInfo| properties(&t.properties))
                                 json=field(info, pretty_json)
                             />
                         }
@@ -103,7 +105,7 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
             name=table.clone()
             delete=move |_| {
                 let full_name = name.get_value();
-                async move { api::client().delete_table(&full_name).await }
+                async move { api::client().table(full_name).delete().await }
             }
             key=Key::Table(full_name.clone())
             list=Key::Entries(catalog.clone(), schema.clone(), Kind::Tables)
@@ -115,11 +117,8 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
 fn table_rows(t: &TableInfo) -> Vec<MetaRow> {
     vec![
         MetaRow::new("Owner", or_dash(t.owner.clone())),
-        MetaRow::new("Type", or_dash(t.table_type.as_ref().map(wire_name))),
-        MetaRow::new(
-            "Format",
-            or_dash(t.data_source_format.as_ref().map(wire_name)),
-        ),
+        MetaRow::new("Type", or_dash(enum_name(t.table_type))),
+        MetaRow::new("Format", or_dash(t.data_source_format.map(enum_name))),
         MetaRow::new("Created at", format_timestamp(t.created_at)),
         MetaRow::new("Updated at", format_timestamp(t.updated_at)),
         MetaRow::mono("Table ID", or_dash(t.table_id.clone())),

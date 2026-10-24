@@ -3,8 +3,8 @@
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::{ModelVersionInfo, RegisteredModelInfo, UpdateModelVersion};
-use uc_common::{three_part_full_name, wire_name};
+use uc_client::models::models::v1::{ModelVersionInfo, RegisteredModelInfo};
+use uc_common::three_part_full_name;
 
 use super::model_details::is_pending;
 use crate::api;
@@ -15,7 +15,7 @@ use crate::components::{
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
-use crate::util::{format_timestamp, or_dash, pretty_json, route_params};
+use crate::util::{enum_name, format_timestamp, or_dash, pretty_json, route_params};
 
 #[component]
 pub fn ModelVersionDetails() -> impl IntoView {
@@ -48,11 +48,11 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
     ));
     let info = use_load(Key::Version(full_name.clone(), number), move || {
         let (_, _, _, full_name) = names.get_value();
-        async move { api::client().get_model_version(&full_name, number).await }
+        async move { api::client().get_model_version(full_name, number).await }
     });
     let model_info = use_load(Key::Model(full_name.clone()), move || {
         let (_, _, _, full_name) = names.get_value();
-        async move { api::client().get_registered_model(&full_name).await }
+        async move { api::client().registered_model(full_name).get().await }
     });
     let cache = use_cache();
     let notify = use_notify();
@@ -64,9 +64,8 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
         v.comment.clone().unwrap_or_default()
     });
     let badges = field(info, |v: &ModelVersionInfo| {
-        v.status
-            .as_ref()
-            .map(wire_name)
+        Some(enum_name(v.status))
+            .filter(|status| !status.is_empty())
             .into_iter()
             .collect::<Vec<_>>()
     });
@@ -75,11 +74,8 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
     let save_comment = move |comment: String| {
         let (_, _, _, full_name) = names.get_value();
         async move {
-            let request = UpdateModelVersion {
-                comment: Some(comment),
-            };
             let updated = api::client()
-                .update_model_version(&full_name, number, &request)
+                .update_model_version(&full_name, number, comment)
                 .await?;
             cache.set(Key::Version(full_name, number), updated);
             Ok(())
@@ -145,7 +141,7 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
             name=version.clone()
             delete=move |_| {
                 let (_, _, _, full_name) = names.get_value();
-                async move { api::client().delete_model_version(&full_name, number).await }
+                async move { api::client().delete_model_version(full_name, number).await }
             }
             key=Key::Version(full_name.clone(), number)
             list=Key::Versions(full_name.clone())
@@ -158,8 +154,8 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
 fn version_rows(v: &ModelVersionInfo) -> Vec<MetaRow> {
     vec![
         MetaRow::new("Model", or_dash(v.model_name.clone())),
-        MetaRow::new("Version", or_dash(v.version.map(|n| format!("v{n}")))),
-        MetaRow::new("Status", or_dash(v.status.as_ref().map(wire_name))),
+        MetaRow::new("Version", format!("v{}", v.version)),
+        MetaRow::new("Status", or_dash(enum_name(v.status))),
         MetaRow::mono("Source", or_dash(v.source.clone())),
         MetaRow::mono("Run ID", or_dash(v.run_id.clone())),
         MetaRow::mono("Storage location", or_dash(v.storage_location.clone())),

@@ -2,7 +2,6 @@
 //! model versions.
 
 use clap::Subcommand;
-use uc_api::{CreateModelVersion, UpdateModelVersion};
 
 use super::options::{Paging, help};
 use super::{Context, Result, upstream};
@@ -77,17 +76,11 @@ pub async fn run(c: &Context<'_>, op: ModelVersionOp) -> Result<String> {
             comment,
             run_id,
         } => {
-            let request = CreateModelVersion {
-                model_name: name,
-                catalog_name: catalog,
-                schema_name: schema,
-                source,
-                run_id,
-                comment,
-            };
             let info = c
                 .client
-                .create_model_version(&request)
+                .create_model_version(name, catalog, schema, source)
+                .with_run_id(run_id)
+                .with_comment(comment)
                 .await
                 .map_err(upstream("createModelVersion"))?;
             Ok(c.shaped(&models::MODEL_VERSION, &serde_json::to_value(&info)?))
@@ -95,7 +88,9 @@ pub async fn run(c: &Context<'_>, op: ModelVersionOp) -> Result<String> {
         ModelVersionOp::List { full_name, paging } => {
             let list = c
                 .client
-                .list_model_versions(&full_name, &paging.into())
+                .list_model_versions(full_name)
+                .with_max_results(paging.max_results)
+                .with_page_token(paging.page_token)
                 .await
                 .map_err(upstream("listModelVersions"))?;
             Ok(c.shaped_list(
@@ -107,7 +102,7 @@ pub async fn run(c: &Context<'_>, op: ModelVersionOp) -> Result<String> {
         ModelVersionOp::Get { full_name, version } => {
             let info = c
                 .client
-                .get_model_version(&full_name, version)
+                .get_model_version(full_name, version)
                 .await
                 .map_err(upstream("getModelVersion"))?;
             Ok(c.shaped(&models::MODEL_VERSION, &serde_json::to_value(&info)?))
@@ -117,17 +112,18 @@ pub async fn run(c: &Context<'_>, op: ModelVersionOp) -> Result<String> {
             version,
             comment,
         } => {
-            let request = UpdateModelVersion { comment };
+            // An empty comment is not sent: without `--comment`, the request
+            // has none.
             let info = c
                 .client
-                .update_model_version(&full_name, version, &request)
+                .update_model_version(full_name, version, comment.unwrap_or_default())
                 .await
                 .map_err(upstream("updateModelVersion"))?;
             Ok(c.shaped(&models::MODEL_VERSION, &serde_json::to_value(&info)?))
         }
         ModelVersionOp::Delete { full_name, version } => {
             c.client
-                .delete_model_version(&full_name, version)
+                .delete_model_version(full_name, version)
                 .await
                 .map_err(upstream("deleteModelVersion"))?;
             Ok(String::new())
@@ -135,7 +131,7 @@ pub async fn run(c: &Context<'_>, op: ModelVersionOp) -> Result<String> {
         ModelVersionOp::Finalize { full_name, version } => {
             let info = c
                 .client
-                .finalize_model_version(&full_name, version)
+                .finalize_model_version(full_name, version)
                 .await
                 .map_err(upstream("finalizeModelVersion"))?;
             Ok(c.shaped(&models::MODEL_VERSION, &serde_json::to_value(&info)?))

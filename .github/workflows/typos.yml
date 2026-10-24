@@ -48,6 +48,13 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
 
+      # The API reference reads the protos through protoc; Ubuntu's (3.21) does not know
+      # `debug_redact`. install-action names protoc 34.x `3.34`.
+      - name: Install protoc
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
+        with:
+          tool: protoc@3.34
+
       # A broken link or anchor fails the build.
       - name: Build the docs
         run: just docs-build

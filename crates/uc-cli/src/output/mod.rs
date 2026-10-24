@@ -77,6 +77,21 @@ fn pretty(out: &mut String, value: &Value, level: usize) {
     }
 }
 
+/// `value` with the keys of its objects in order, at every depth. The API's
+/// models keep the entries of a map in no order; printed, they are in key
+/// order.
+pub fn sorted(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<(String, Value)> = map.into_iter().collect();
+            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            Value::Object(entries.into_iter().map(|(k, v)| (k, sorted(v))).collect())
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(sorted).collect()),
+        other => other,
+    }
+}
+
 /// What a command prints for its result `output` (JSON text, or text);
 /// `width` is the `cli.output_width` setting.
 pub fn print(format: Format, width: Option<usize>, output: &str) -> String {

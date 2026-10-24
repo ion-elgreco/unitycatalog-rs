@@ -937,6 +937,74 @@ dependencies = [
 ]
 
 [[package]]
+name = "buffa"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec95898e2ef31d6266042f21c398fa5ff8334d14d6b2ac5fb38b55448d94f595"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "compact_str 0.9.1",
+ "ecow",
+ "hashbrown 0.15.5",
+ "once_cell",
+ "serde",
+ "serde_json",
+ "smol_str",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "buffa-build"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c26e1e2ec3ddd680a25e60687e0dca72fc2326f01d2ff26acbd8c266a3664693"
+dependencies = [
+ "buffa",
+ "buffa-codegen",
+ "tempfile",
+]
+
+[[package]]
+name = "buffa-codegen"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "855364959e603cad456c1656bcf57f431ae6e5b4d4e4f166f7d594df882b6218"
+dependencies = [
+ "buffa",
+ "buffa-descriptor",
+ "prettyplease 0.2.37",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "buffa-descriptor"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f74c0bf128c53f22b0fc3c1e8e66969cd21375879061293fd4e5298e839099a9"
+dependencies = [
+ "buffa",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "buffa-types"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5103995623b8e213abfa84b89feb98a0df84514607aafd52e6add9ca53c57d2e"
+dependencies = [
+ "buffa",
+ "bytes",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1263,6 +1331,21 @@ dependencies = [
  "itoa",
  "rustversion",
  "ryu",
+ "static_assertions",
+]
+
+[[package]]
+name = "compact_str"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9dfdd1c2274d9aa354115b09dc9a901d6c5576818cdf70d14cae2bdb47df00ab"
+dependencies = [
+ "castaway",
+ "cfg-if",
+ "itoa",
+ "rustversion",
+ "ryu",
+ "serde",
  "static_assertions",
 ]
 
@@ -1969,6 +2052,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ecow"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78e4f79b296fbaab6ce2e22d52cb4c7f010fe0ebe7a32e34fa25885fd797bd02"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "educe"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2621,6 +2713,7 @@ dependencies = [
  "allocator-api2 0.2.21",
  "equivalent",
  "foldhash 0.1.5",
+ "serde",
 ]
 
 [[package]]
@@ -3086,6 +3179,28 @@ dependencies = [
  "zerotrie",
  "zerovec",
 ]
+
+[[package]]
+name = "icu_segmenter"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82d07aafccd67af15d02512a6adf5896fbc5ed00f2e99b471d2efa14016db3db"
+dependencies = [
+ "icu_collections",
+ "icu_locale_fallback",
+ "icu_provider",
+ "icu_segmenter_data",
+ "potential_utf",
+ "smallvec",
+ "utf8_iter",
+ "zerovec",
+]
+
+[[package]]
+name = "icu_segmenter_data"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae293c039020f9ec10710af98d29ce6aa2051486638b49c9a6409f3b4a9e98ad"
 
 [[package]]
 name = "id-arena"
@@ -4324,6 +4439,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "olai-codegen"
+version = "0.0.8"
+source = "git+https://github.com/ion-elgreco/trestle?branch=feat%2Fuc-client-plan#081193ff741bb5fe983f463202664957a4334a29"
+dependencies = [
+ "convert_case 0.7.1",
+ "glob",
+ "itertools 0.14.0",
+ "prettyplease 0.2.37",
+ "proc-macro2",
+ "prost",
+ "prost-types",
+ "protobuf",
+ "quote",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "syn 2.0.117",
+ "textwrap",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4946,10 +5085,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "prost-types"
+version = "0.14.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8991c4cbdb8bc5b11f0b074ffe286c30e523de90fee5ba8132f1399f23cb3dd7"
+dependencies = [
+ "prost",
+]
+
+[[package]]
+name = "protobuf"
+version = "3.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d65a1d4ddae7d8b5de68153b48f6aa3bba8cb002b243dbdbc55a5afbc98f99f4"
+dependencies = [
+ "once_cell",
+ "protobuf-support",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "protobuf-support"
+version = "3.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e36c2f31e0a47f9280fb347ef5e461ffcd2c52dd520d8e216b52f93b0b0d7d6"
+dependencies = [
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -5329,7 +5497,7 @@ checksum = "eabd94c2f37801c20583fc49dd5cd6b0ba68c716787c2dd6ed18571e1e63117b"
 dependencies = [
  "bitflags",
  "cassowary",
- "compact_str",
+ "compact_str 0.8.1",
  "crossterm",
  "indoc",
  "instability",
@@ -6204,6 +6372,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap 2.14.0",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
 name = "server_fn"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6454,13 +6635,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
-name = "smol_str"
-version = "0.3.6"
+name = "smawk"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4aaa7368fcf4852a4c2dd92df0cace6a71f2091ca0a23391ce7f3a31833f1523"
+checksum = "e8e2fb0f499abb4d162f2bedad68f5ef91a1682b5a03596ddb67efd37768d100"
+
+[[package]]
+name = "smol_str"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9676b89cd56310a87b93dec47b11af744f34d5fc9f367b829474eec0a891350d"
 dependencies = [
  "borsh",
- "serde_core",
+ "serde",
 ]
 
 [[package]]
@@ -6820,6 +7007,17 @@ checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix 1.1.4",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "textwrap"
+version = "0.16.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ecfad6c3abc80a577f2b91c1e412ee57e7a060d430b553c1b0c940974ebcd49"
+dependencies = [
+ "icu_segmenter",
+ "smawk",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
@@ -7642,18 +7840,30 @@ name = "uc-client"
 version = "0.0.0-dev"
 dependencies = [
  "axum",
+ "buffa",
+ "buffa-types",
  "futures",
- "percent-encoding",
+ "jsonwebtoken",
+ "pyo3",
+ "pyo3-stub-gen",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
- "uc-api",
  "uc-common",
  "uc-metastore",
  "uc-server",
  "url",
+]
+
+[[package]]
+name = "uc-codegen"
+version = "0.0.0-dev"
+dependencies = [
+ "buffa-build",
+ "olai-codegen",
+ "protobuf",
 ]
 
 [[package]]
@@ -7717,16 +7927,15 @@ dependencies = [
 name = "uc-py"
 version = "0.0.0-dev"
 dependencies = [
+ "futures",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-build-config",
  "pyo3-stub-gen",
- "serde",
  "serde_json",
  "tokio",
- "uc-api",
  "uc-client",
- "uc-common",
+ "url",
 ]
 
 [[package]]
@@ -7811,7 +8020,9 @@ dependencies = [
 name = "uc-ui"
 version = "0.0.0-dev"
 dependencies = [
+ "buffa",
  "console_error_panic_hook",
+ "futures",
  "gloo-timers",
  "js-sys",
  "leptos",
@@ -7819,7 +8030,6 @@ dependencies = [
  "percent-encoding",
  "serde",
  "serde_json",
- "uc-api",
  "uc-client",
  "uc-common",
  "wasm-bindgen",
@@ -8003,6 +8213,12 @@ dependencies = [
  "crypto-common 0.1.7",
  "subtle",
 ]
+
+[[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"

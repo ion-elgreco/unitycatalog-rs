@@ -5,7 +5,7 @@
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::{CreateExternalLocation, ExternalLocationInfo};
+use uc_client::models::external_locations::v1::ExternalLocationInfo;
 
 use crate::api;
 use crate::components::icons::Plus;
@@ -23,7 +23,7 @@ pub fn ExternalLocations() -> impl IntoView {
             title: "Name",
             width: "16%",
             render: Box::new(|l: &ExternalLocationInfo| {
-                let name = l.name.clone().unwrap_or_default();
+                let name = l.name.clone();
                 view! {
                     <a class="uc-btn uc-btn--link" href=Section::ExternalLocations.item_href(&name)>
                         {name.clone()}
@@ -31,9 +31,7 @@ pub fn ExternalLocations() -> impl IntoView {
                 }
                 .into_any()
             }),
-            search_key: Some(Box::new(|l: &ExternalLocationInfo| {
-                l.name.clone().unwrap_or_default()
-            })),
+            search_key: Some(Box::new(|l: &ExternalLocationInfo| l.name.clone())),
         },
         Column {
             title: "URL",
@@ -41,9 +39,7 @@ pub fn ExternalLocations() -> impl IntoView {
             render: Box::new(|l: &ExternalLocationInfo| {
                 view! { <code>{or_dash(l.url.clone())}</code> }.into_any()
             }),
-            search_key: Some(Box::new(|l: &ExternalLocationInfo| {
-                l.url.clone().unwrap_or_default()
-            })),
+            search_key: Some(Box::new(|l: &ExternalLocationInfo| l.url.clone())),
         },
         Column {
             title: "Credential",
@@ -136,7 +132,7 @@ pub fn CredentialSelect(#[prop(into)] id: String, value: RwSignal<String>) -> im
                             </option>
                             {list
                                 .into_iter()
-                                .filter_map(|c| c.name)
+                                .map(|c| c.name)
                                 .map(|name| {
                                     let this = name.clone();
                                     let text = name.clone();
@@ -189,15 +185,12 @@ fn CreateLocation(open: RwSignal<bool>) -> impl IntoView {
             return;
         }
         let text = comment.get_untracked();
-        let request = CreateExternalLocation {
-            name: new_name,
-            url: new_url,
-            credential_name,
-            comment: (!text.is_empty()).then_some(text),
-        };
+        let create = api::client()
+            .create_external_location(new_name, new_url, credential_name)
+            .with_comment((!text.is_empty()).then_some(text));
         busy.set(true);
         spawn_local(async move {
-            match api::client().create_external_location(&request).await {
+            match create.await {
                 Ok(_) => {
                     notify.success("Create external location complete");
                     cache.changed(Key::ExternalLocations);

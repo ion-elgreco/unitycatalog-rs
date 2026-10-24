@@ -1,0 +1,17 @@
+[package]
+name = "uc-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Generates the Rust and Python clients from proto/: `just generate`."
+publish = false
+
+[dependencies]
+# The generator of the clients: trestle's library, from the branch with the options that the
+# clients use.
+olai-codegen = { git = "https://github.com/ion-elgreco/trestle", branch = "feat/uc-client-plan" }
+buffa-build = "0.7"
+protobuf = "3"

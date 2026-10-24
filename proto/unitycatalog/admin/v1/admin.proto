@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package unitycatalog.admin.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/protobuf/struct.proto";
+import "olai/trestle/v1/annotations.proto";
+
+message GetBackupRequest {}
+
+// A snapshot of the whole catalog: the rows of each table of the store. The audit log is not in
+// it.
+message BackupResponse {
+  // Version of the snapshot format. A restore takes only version 1.
+  int64 version = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // The rows of each table, by table name. A row is a JSON object of its columns, as the table
+  // of the store has them.
+  map<string, google.protobuf.ListValue> tables = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+}
+
+// What a restore imported.
+message RestoreResponse {
+  // Number of rows imported, by table name.
+  map<string, int32> imported = 1;
+  // The rows left out, each as `<table>: <reason>`, such as a row without its key.
+  repeated string skipped = 2;
+}
+
+// Backup and restore of the whole catalog. Only a signed-in admin can.
+service AdminService {
+  // Get a snapshot of the whole catalog, in one answer.
+  rpc GetBackup(GetBackupRequest) returns (BackupResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/admin/backup"};
+  }
+
+  // Replace the whole catalog with a snapshot, in one transaction: every table of the store is
+  // emptied, then filled with the rows of the snapshot.
+  rpc RestoreBackup(BackupResponse) returns (RestoreResponse) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/admin/restore"
+      body: "*"
+    };
+  }
+}

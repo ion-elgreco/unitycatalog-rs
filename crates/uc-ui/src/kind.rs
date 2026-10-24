@@ -152,9 +152,9 @@ impl Kind {
     }
 }
 
-fn entry(name: Option<String>, comment: Option<String>) -> Entry {
+fn entry(name: String, comment: Option<String>) -> Entry {
     Entry {
-        name: name.unwrap_or_default(),
+        name,
         comment: comment.filter(|c| !c.is_empty()),
     }
 }

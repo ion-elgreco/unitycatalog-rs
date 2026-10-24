@@ -948,20 +948,32 @@ fn service_provider_config_doc() -> serde_json::Value {
     })
 }
 
+/// `resources` as a SCIM ListResponse, the format of the discovery lists (RFC 7644, section 4).
+fn list_response(resources: serde_json::Value) -> serde_json::Value {
+    let count = resources.as_array().map_or(0, Vec::len);
+    serde_json::json!({
+        "schemas": [schema_uri::LIST_RESPONSE],
+        "totalResults": count,
+        "startIndex": 1,
+        "itemsPerPage": count,
+        "Resources": resources,
+    })
+}
+
 #[utoipa::path(get, path = "/scim2/Schemas",
-    responses((status = 200, description = "SCIM Schemas catalog")),
+    responses((status = 200, description = "SCIM Schemas catalog, as a ListResponse")),
     tag = "SCIM",
 )]
 pub async fn list_schemas() -> axum::Json<serde_json::Value> {
-    axum::Json(schemas_doc())
+    axum::Json(list_response(schemas_doc()))
 }
 
 #[utoipa::path(get, path = "/scim2/ResourceTypes",
-    responses((status = 200, description = "SCIM ResourceTypes catalog")),
+    responses((status = 200, description = "SCIM ResourceTypes catalog, as a ListResponse")),
     tag = "SCIM",
 )]
 pub async fn list_resource_types() -> axum::Json<serde_json::Value> {
-    axum::Json(resource_types_doc())
+    axum::Json(list_response(resource_types_doc()))
 }
 
 #[utoipa::path(get, path = "/scim2/ServiceProviderConfig",

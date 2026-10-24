@@ -7,16 +7,22 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[features]
+# The PyO3 classes of the models, for the Python client (`python/client`).
+python = ["dep:pyo3", "dep:pyo3-stub-gen"]
+
 [dependencies]
 uc-common.workspace = true
-uc-api.workspace = true
 
+buffa.workspace = true
+buffa-types.workspace = true
 futures.workspace = true
 reqwest.workspace = true
 url.workspace = true
-percent-encoding.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 uc-server = { path = "../uc-server" }
@@ -24,3 +30,5 @@ uc-metastore.workspace = true
 axum.workspace = true
 tokio.workspace = true
 tempfile = "3"
+# The ID tokens of the identity provider of the token exchange tests.
+jsonwebtoken.workspace = true

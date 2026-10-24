@@ -5,7 +5,6 @@ use clap::builder::{PossibleValuesParser, TypedValueParser};
 use clap::{ArgGroup, Args};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use uc_client::{Page, ScimPage};
 use uc_common::SecurablePropertiesMap;
 pub use uc_common::{from_wire, wire_name};
 
@@ -92,6 +91,17 @@ where
     })
 }
 
+/// One of `values`, in any case (with `ignore_case`), as `values` writes
+/// it.
+pub fn one_of(values: &'static [&'static str]) -> impl TypedValueParser<Value = String> {
+    PossibleValuesParser::new(values).map(move |given| {
+        values
+            .iter()
+            .find(|name| name.eq_ignore_ascii_case(&given))
+            .map_or(given, |name| name.to_string())
+    })
+}
+
 pub const TABLE_TYPES: &[&str] = &["MANAGED", "EXTERNAL"];
 
 /// Upstream's securable types, as the permissions API names them.
@@ -169,32 +179,4 @@ pub struct IcebergPaging {
     pub max_results: Option<i32>,
     #[arg(long, help = help::PAGE_TOKEN)]
     pub page_token: Option<String>,
-}
-
-impl From<Paging> for Page {
-    fn from(paging: Paging) -> Self {
-        Page {
-            max_results: Some(paging.max_results),
-            page_token: paging.page_token,
-        }
-    }
-}
-
-impl From<ScimPaging> for ScimPage {
-    fn from(paging: ScimPaging) -> Self {
-        ScimPage {
-            filter: paging.filter,
-            start_index: Some(paging.start_index),
-            count: Some(paging.count),
-        }
-    }
-}
-
-impl From<IcebergPaging> for Page {
-    fn from(paging: IcebergPaging) -> Self {
-        Page {
-            max_results: paging.max_results,
-            page_token: paging.page_token,
-        }
-    }
 }

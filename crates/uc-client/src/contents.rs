@@ -2,12 +2,12 @@
 //! delete with `force` removes along with it, as the server cascades it.
 //! The web UI and the TUI count it before they ask to delete it all.
 
-use std::future::Future;
-
+use futures::TryStreamExt;
 use futures::future::try_join_all;
-use uc_common::{PageToken, three_part_full_name};
+use uc_common::three_part_full_name;
 
-use crate::{Client, Page, Result};
+use crate::Client;
+use crate::error::Result;
 
 /// How many objects of each kind an object holds.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -66,21 +66,20 @@ impl Contents {
 impl Client {
     /// What the catalog `catalog` holds: its schemas, and what they hold.
     pub async fn catalog_contents(&self, catalog: &str) -> Result<Contents> {
-        let schemas = all(|page| async move {
-            let list = self.list_schemas(catalog, &page).await?;
-            Ok((list.schemas, list.next_page_token))
-        })
-        .await?;
-        let names: Vec<String> = schemas.into_iter().filter_map(|s| s.name).collect();
+        let schemas: Vec<_> = self
+            .list_schemas(catalog)
+            .into_stream()
+            .try_collect()
+            .await?;
         let each = try_join_all(
-            names
+            schemas
                 .iter()
-                .map(|schema| self.schema_contents(catalog, schema)),
+                .map(|schema| self.schema_contents(catalog, &schema.name)),
         )
         .await?;
         Ok(each.into_iter().fold(
             Contents {
-                schemas: names.len(),
+                schemas: schemas.len(),
                 ..Contents::default()
             },
             Contents::plus,
@@ -91,28 +90,24 @@ impl Client {
     /// models.
     pub async fn schema_contents(&self, catalog: &str, schema: &str) -> Result<Contents> {
         let (tables, volumes, functions, models) = futures::try_join!(
-            all(|page| async move {
-                let list = self.list_tables(catalog, schema, &page).await?;
-                Ok((list.tables, list.next_page_token))
-            }),
-            all(|page| async move {
-                let list = self.list_volumes(catalog, schema, &page).await?;
-                Ok((list.volumes, list.next_page_token))
-            }),
-            all(|page| async move {
-                let list = self.list_functions(catalog, schema, &page).await?;
-                Ok((list.functions, list.next_page_token))
-            }),
-            all(|page| async move {
-                let list = self
-                    .list_registered_models(Some(catalog), Some(schema), &page)
-                    .await?;
-                Ok((list.registered_models, list.next_page_token))
-            }),
+            self.list_tables(catalog, schema)
+                .into_stream()
+                .try_collect::<Vec<_>>(),
+            self.list_volumes(catalog, schema)
+                .into_stream()
+                .try_collect::<Vec<_>>(),
+            self.list_functions(catalog, schema)
+                .into_stream()
+                .try_collect::<Vec<_>>(),
+            self.list_registered_models()
+                .with_catalog_name(catalog.to_string())
+                .with_schema_name(schema.to_string())
+                .into_stream()
+                .try_collect::<Vec<_>>(),
         )?;
-        let versions = try_join_all(models.iter().filter_map(|model| {
-            let full_name = three_part_full_name(catalog, schema, model.name.as_deref()?);
-            Some(async move { self.model_contents(&full_name).await })
+        let versions = try_join_all(models.iter().map(|model| {
+            let full_name = three_part_full_name(catalog, schema, &model.name);
+            async move { self.model_contents(&full_name).await }
         }))
         .await?;
         Ok(versions.into_iter().fold(
@@ -129,11 +124,11 @@ impl Client {
 
     /// What the registered model `full_name` holds: its versions.
     pub async fn model_contents(&self, full_name: &str) -> Result<Contents> {
-        let versions = all(|page| async move {
-            let list = self.list_model_versions(full_name, &page).await?;
-            Ok((list.model_versions, list.next_page_token))
-        })
-        .await?;
+        let versions: Vec<_> = self
+            .list_model_versions(full_name)
+            .into_stream()
+            .try_collect()
+            .await?;
         Ok(Contents {
             versions: versions.len(),
             ..Contents::default()
@@ -143,11 +138,11 @@ impl Client {
     /// What the credential `name` holds: the external locations bound to
     /// it, among the ones the caller may see.
     pub async fn credential_contents(&self, name: &str) -> Result<Contents> {
-        let locations = all(|page| async move {
-            let list = self.list_external_locations(&page).await?;
-            Ok((list.external_locations, list.next_page_token))
-        })
-        .await?;
+        let locations: Vec<_> = self
+            .list_external_locations()
+            .into_stream()
+            .try_collect()
+            .await?;
         Ok(Contents {
             external_locations: locations
                 .iter()
@@ -155,23 +150,6 @@ impl Client {
                 .count(),
             ..Contents::default()
         })
-    }
-}
-
-/// Every item of a list: `page` gets one page, and the token of the next.
-async fn all<T, F>(mut page: impl FnMut(Page) -> F) -> Result<Vec<T>>
-where
-    F: Future<Output = Result<(Vec<T>, Option<PageToken>)>>,
-{
-    let mut items = Vec::new();
-    let mut next = Page::default();
-    loop {
-        let (batch, token) = page(next.clone()).await?;
-        items.extend(batch);
-        match token {
-            Some(PageToken(token)) if !token.is_empty() => next.page_token = Some(token),
-            _ => return Ok(items),
-        }
     }
 }
 

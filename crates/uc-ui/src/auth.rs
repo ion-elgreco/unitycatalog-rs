@@ -19,10 +19,14 @@ use std::cell::Cell;
 use leptos::ev;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::ScimUser;
-use uc_client::Method;
+use uc_client::models::auth::v1::AuthMode;
+use uc_client::models::scim::v1::ScimUser;
 
 use crate::api;
+
+/// The role that `/scim2/Me` names for a caller that the server lets do
+/// what the metastore admin does.
+const ADMIN_ROLE: &str = "admin";
 
 /// How the browser signs in: the server's `auth.mode`, or `uc web`'s
 /// token.
@@ -59,8 +63,8 @@ impl Mode {
         }
     }
 
-    fn from_json(body: &serde_json::Value) -> Option<Self> {
-        let sign_in = match body.get("mode")?.as_str()? {
+    fn from_answer(answer: AuthMode) -> Option<Self> {
+        let sign_in = match answer.mode.as_str() {
             "oidc" => SignIn::Oidc,
             "forward" => SignIn::Forward,
             "none" => SignIn::None,
@@ -68,13 +72,9 @@ impl Mode {
             "off" => SignIn::Off,
             _ => return None,
         };
-        let logout_url = body
-            .get("logout_url")
-            .and_then(|url| url.as_str())
-            .map(str::to_string);
         Some(Self {
             sign_in,
-            logout_url,
+            logout_url: answer.logout_url,
         })
     }
 }
@@ -113,7 +113,7 @@ impl Session {
     /// admin. Without a user, authorization is off.
     pub fn manages(&self, owner: Option<&str>) -> bool {
         match self {
-            Session::User(user) => user.is_admin() || owner == Some(user.user_name.as_str()),
+            Session::User(user) => self.is_admin() || owner == Some(user.user_name.as_str()),
             Session::Anonymous => true,
             Session::Unknown | Session::SignedOut | Session::Denied(_) => false,
         }
@@ -124,7 +124,7 @@ impl Session {
     /// off, and the server lets everyone.
     pub fn is_admin(&self) -> bool {
         match self {
-            Session::User(user) => user.is_admin(),
+            Session::User(user) => user.roles.iter().any(|role| role.value == ADMIN_ROLE),
             Session::Anonymous => true,
             Session::Unknown | Session::SignedOut | Session::Denied(_) => false,
         }
@@ -160,13 +160,16 @@ impl Auth {
         }
         auth.checking.set_value(true);
         spawn_local(async move {
-            let answer = api::client().me().await;
+            let answer = api::client().get_me().await;
             auth.checking.set_value(false);
             let session = match answer {
                 Ok(user) => Session::User(Box::new(user)),
                 Err(e) => match e.status() {
                     Some(401) => Session::SignedOut,
-                    Some(403) => Session::Denied(e.message()),
+                    // The server's message; a proxy's refusal has none.
+                    Some(403) => Session::Denied(
+                        api::server_message(&e).unwrap_or_else(|| "http 403 Forbidden".into()),
+                    ),
                     // The server or the network failed: keep what the UI
                     // knows.
                     None | Some(502..=504)
@@ -195,12 +198,10 @@ pub fn provide_auth() {
     provide_context(auth);
     AUTH.set(Some(auth));
     spawn_local(async move {
-        let answer = api::client()
-            .raw_json(Method::GET, "/auth/mode", &[], None)
-            .await;
+        let answer = api::client().get_auth_mode().await;
         let mode = answer
             .ok()
-            .and_then(|body| Mode::from_json(&body))
+            .and_then(Mode::from_answer)
             .unwrap_or_else(Mode::fallback);
         let off = mode.sign_in == SignIn::Off;
         auth.mode.set(Some(mode));

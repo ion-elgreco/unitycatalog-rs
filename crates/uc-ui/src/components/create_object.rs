@@ -4,14 +4,14 @@
 //! and have any number of columns. After the call, a toast, and the list
 //! that gained the object loads again.
 
+use buffa::Enumeration;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::{
-    ColumnInfo, ColumnTypeName, CreateFunction, CreateFunctionRequest, CreateRegisteredModel,
-    CreateTable, CreateVolumeRequestContent, DataSourceFormat, ParameterStyle, RoutineBody,
-    SecurityType, SqlDataAccess, TableType, VolumeType,
+use uc_client::models::functions::v1::{
+    CreateFunction, ParameterStyle, RoutineBody, SecurityType, SqlDataAccess,
 };
-use uc_common::wire_name;
+use uc_client::models::tables::v1::{ColumnInfo, ColumnTypeName, DataSourceFormat, TableType};
+use uc_client::models::volumes::v1::VolumeType;
 
 use super::field::{Select, TextArea, TextField};
 use super::icons::{Plus, X};
@@ -44,6 +44,10 @@ const FORMATS: [DataSourceFormat; 7] = [
     DataSourceFormat::Text,
 ];
 
+/// The property that names the id of a managed Delta table: the id of
+/// its staging table.
+const TABLE_ID: &str = "io.unitycatalog.tableId";
+
 /// Managed, at a location the server picks under the storage root, or
 /// external, at a location of yours.
 const TABLE_TYPES: [TableType; 2] = [TableType::Managed, TableType::External];
@@ -56,6 +60,11 @@ struct NewColumn {
     id: u64,
     name: RwSignal<String>,
     kind: RwSignal<ColumnTypeName>,
+}
+
+/// An enum value's name as the server sends it, such as `MANAGED`.
+fn wire_name<E: Enumeration>(value: &E) -> String {
+    value.proto_name().to_string()
 }
 
 /// A scalar type's name in Delta's schema, for `type_json`.
@@ -82,10 +91,10 @@ fn column(name: &str, t: ColumnTypeName, position: i32) -> ColumnInfo {
         "metadata": {},
     });
     ColumnInfo {
-        name: Some(name.to_string()),
+        name: name.to_string(),
         type_text: Some(wire_name(&t).to_lowercase()),
-        type_json: Some(type_json.to_string()),
-        type_name: Some(t),
+        type_json: type_json.to_string(),
+        type_name: Some(t.into()),
         position: Some(position),
         nullable: Some(true),
         ..Default::default()
@@ -163,8 +172,15 @@ pub fn CreateObjectModal(
                 })
                 .collect()
         });
-        if kind == Kind::Tables && columns.iter().any(|c| c.name.as_deref() == Some("")) {
+        if kind == Kind::Tables && columns.iter().any(|c| c.name.is_empty()) {
             notify.error("Every column needs a name");
+            return;
+        }
+        if kind == Kind::Tables
+            && table_type.get_untracked() == TableType::Managed
+            && format.get_untracked() != DataSourceFormat::Delta
+        {
+            notify.error("A managed table is in Delta format");
             return;
         }
         let path = location.get_untracked().trim().to_string();
@@ -185,71 +201,68 @@ pub fn CreateObjectModal(
             let client = api::client();
             let answer = match kind {
                 Kind::Tables => {
-                    let table_type = table_type.get_untracked();
-                    let request = CreateTable {
-                        name: new_name,
-                        catalog_name: catalog,
-                        schema_name: schema,
-                        table_type,
-                        columns,
-                        data_source_format: Some(format.get_untracked()),
-                        storage_location: (table_type == TableType::External).then_some(path),
-                        comment,
-                        properties: None,
-                        view_definition: None,
-                        view_dependencies: None,
-                    };
-                    client.create_table(&request).await.map(|_| ())
+                    async {
+                        let table_type = table_type.get_untracked();
+                        let create = client
+                            .create_table(&new_name, &catalog, &schema, table_type)
+                            .with_columns(columns)
+                            .with_data_source_format(format.get_untracked())
+                            .with_comment(comment);
+                        // A managed table takes over a staging table, as
+                        // engines make one: its id and its location under the
+                        // storage root.
+                        let create = if table_type == TableType::Managed {
+                            let staging = client
+                                .create_staging_table(new_name, catalog, schema)
+                                .await?;
+                            create
+                                .with_storage_location(staging.staging_location)
+                                .with_properties([(TABLE_ID, staging.id)])
+                        } else {
+                            create.with_storage_location(path)
+                        };
+                        create.await.map(|_| ())
+                    }
+                    .await
                 }
                 Kind::Volumes => {
                     let volume_type = volume_type.get_untracked();
-                    let request = CreateVolumeRequestContent {
-                        catalog_name: catalog,
-                        schema_name: schema,
-                        name: new_name,
-                        volume_type,
-                        comment,
-                        storage_location: (volume_type == VolumeType::External).then_some(path),
-                    };
-                    client.create_volume(&request).await.map(|_| ())
+                    client
+                        .create_volume(catalog, schema, new_name, volume_type)
+                        .with_comment(comment)
+                        .with_storage_location(
+                            (volume_type == VolumeType::External).then_some(path),
+                        )
+                        .await
+                        .map(|_| ())
                 }
                 Kind::Functions => {
                     // A SQL function, as the console makes it.
                     let return_type = return_type.get_untracked();
-                    let request = CreateFunctionRequest {
-                        function_info: CreateFunction {
-                            name: Some(new_name.clone()),
-                            catalog_name: Some(catalog),
-                            schema_name: Some(schema),
-                            input_params: None,
-                            data_type: Some(return_type),
-                            full_data_type: Some(wire_name(&return_type)),
-                            return_params: None,
-                            routine_body: RoutineBody::Sql,
-                            routine_definition: Some(routine),
-                            routine_dependencies: None,
-                            parameter_style: ParameterStyle::S,
-                            is_deterministic: Some(true),
-                            sql_data_access: Some(SqlDataAccess::NoSql),
-                            is_null_call: Some(false),
-                            security_type: SecurityType::Definer,
-                            specific_name: Some(new_name),
-                            comment,
-                            properties: None,
-                            external_language: None,
-                        },
-                    };
-                    client.create_function(&request).await.map(|_| ())
-                }
-                Kind::Models => {
-                    let request = CreateRegisteredModel {
-                        name: new_name,
+                    let function = CreateFunction {
+                        name: new_name.clone(),
                         catalog_name: catalog,
                         schema_name: schema,
+                        data_type: Some(return_type.into()),
+                        full_data_type: Some(wire_name(&return_type)),
+                        routine_body: RoutineBody::Sql.into(),
+                        routine_definition: Some(routine),
+                        parameter_style: ParameterStyle::S.into(),
+                        is_deterministic: Some(true),
+                        sql_data_access: Some(SqlDataAccess::NoSql.into()),
+                        is_null_call: Some(false),
+                        security_type: SecurityType::Definer.into(),
+                        specific_name: Some(new_name),
                         comment,
+                        ..Default::default()
                     };
-                    client.create_registered_model(&request).await.map(|_| ())
+                    client.create_function(function).await.map(|_| ())
                 }
+                Kind::Models => client
+                    .create_registered_model(new_name, catalog, schema)
+                    .with_comment(comment)
+                    .await
+                    .map(|_| ()),
             };
             match answer {
                 Ok(()) => {
@@ -291,7 +304,7 @@ pub fn CreateObjectModal(
                     value=table_type
                     name=wire_name
                     text=|t: &TableType| {
-                        match t {
+                        match *t {
                             TableType::External => "External",
                             _ => "Managed",
                         }
@@ -361,9 +374,9 @@ pub fn CreateObjectModal(
                     value=volume_type
                     name=wire_name
                     text=|t: &VolumeType| {
-                        match t {
-                            VolumeType::Managed => "Managed",
+                        match *t {
                             VolumeType::External => "External",
+                            _ => "Managed",
                         }
                             .to_string()
                     }

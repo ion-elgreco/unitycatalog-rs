@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package unitycatalog.tokens.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+import "olai/trestle/v1/annotations.proto";
+
+// A personal access token of a user. The server keeps a hash of the token only: the token itself
+// is in the response of `CreateToken` and nowhere else.
+message PatInfo {
+  option (google.api.resource) = {
+    type: "unitycatalog.io/Token"
+    pattern: "tokens/{token}"
+    plural: "tokens"
+    singular: "token"
+  };
+
+  // Unique identifier of the token.
+  string id = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // Name of the token.
+  string name = 2;
+  // The first 8 characters of the token, for display only.
+  string token_prefix = 3;
+  // Username of the owner of the token.
+  string owner = 4;
+  // Time at which the token was created, in epoch milliseconds.
+  int64 created_at = 5;
+  // Time at which the token expires, in epoch milliseconds. Absent or 0: the token does not
+  // expire.
+  optional int64 expires_at = 6;
+  // The token. Set only in the response of `CreateToken`.
+  optional string token_value = 7 [debug_redact = true];
+}
+
+message CreatePat {
+  // Name of the token.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+  // Time at which the token expires, in epoch milliseconds. Without it the token does not expire.
+  optional int64 expires_at = 2;
+}
+
+message ListTokensRequest {
+  // The maximum number of tokens to return.
+  optional int32 max_results = 1;
+  // Opaque token of the page to return: the `next_page_token` of the page before.
+  optional string page_token = 2;
+}
+
+message ListPatsResponse {
+  // The tokens.
+  repeated PatInfo tokens = 1;
+  // Opaque token of the next page. Absent on the last page.
+  optional string next_page_token = 2;
+}
+
+message DeleteTokenRequest {
+  // Unique identifier of the token.
+  string id = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Personal access tokens of the signed-in user.
+service TokensService {
+  // List the personal access tokens of the caller.
+  rpc ListTokens(ListTokensRequest) returns (ListPatsResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/tokens"};
+  }
+
+  // Create a personal access token for the caller.
+  rpc CreateToken(CreatePat) returns (PatInfo) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/tokens"
+      body: "*"
+    };
+  }
+
+  // Revoke a personal access token. Only its owner or an admin can revoke it.
+  rpc DeleteToken(DeleteTokenRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.1/unity-catalog/tokens/{id}"};
+  }
+}

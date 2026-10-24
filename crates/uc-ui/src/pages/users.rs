@@ -6,7 +6,7 @@
 use js_sys::Date;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::{ScimEmail, ScimUser, schema_uri};
+use uc_client::models::scim::v1::{ScimEmail, ScimUser};
 use uc_common::EpochMillis;
 
 use crate::api;
@@ -27,9 +27,17 @@ pub fn Users() -> impl IntoView {
 
 /// When the user was made, from SCIM's `meta.created`.
 fn created(user: &ScimUser) -> String {
-    let created = user.meta.as_ref().and_then(|meta| meta.created.as_deref());
+    let created = user
+        .meta
+        .as_option()
+        .and_then(|meta| meta.created.as_deref());
     let ms = created.map(Date::parse).filter(|ms| !ms.is_nan());
-    format_timestamp(ms.map(|ms| ms as EpochMillis))
+    format_timestamp(ms.map_or(0, |ms| ms as EpochMillis))
+}
+
+/// Whether the user can sign in: a user without `active` is.
+fn is_active(user: &ScimUser) -> bool {
+    user.active != Some(false)
 }
 
 #[component]
@@ -61,7 +69,7 @@ fn UserList() -> impl IntoView {
         Column {
             title: "State",
             width: "12%",
-            render: Box::new(|u: &ScimUser| match u.is_active() {
+            render: Box::new(|u: &ScimUser| match is_active(u) {
                 true => {
                     view! { <span class="uc-badge uc-badge--success">"Active"</span> }.into_any()
                 }
@@ -82,7 +90,7 @@ fn UserList() -> impl IntoView {
             title: "",
             width: "12%",
             render: Box::new(move |u: &ScimUser| {
-                if !u.is_active() {
+                if !is_active(u) {
                     return ().into_any();
                 }
                 let user = u.clone();
@@ -145,20 +153,18 @@ fn CreateUser(open: RwSignal<bool>) -> impl IntoView {
             return;
         }
         let display = name.get_untracked().trim().to_string();
-        let user = ScimUser {
-            schemas: vec![schema_uri::USER.to_string()],
-            user_name: address.clone(),
-            display_name: (!display.is_empty()).then_some(display),
-            emails: Some(vec![ScimEmail {
+        // The server names the user by its primary email.
+        let create = api::client()
+            .create_user()
+            .with_display_name((!display.is_empty()).then_some(display))
+            .with_emails([ScimEmail {
                 value: address,
                 primary: Some(true),
-                r#type: None,
-            }]),
-            ..Default::default()
-        };
+                ..Default::default()
+            }]);
         busy.set(true);
         spawn_local(async move {
-            match api::client().create_user(&user).await {
+            match create.await {
                 Ok(_) => {
                     notify.success("Create user complete");
                     cache.changed(Key::Users);
@@ -204,11 +210,14 @@ fn DeleteUser(deleting: RwSignal<Option<ScimUser>>) -> impl IntoView {
         let Some(user) = deleting.get_untracked() else {
             return;
         };
-        let id = user.id.unwrap_or_default();
-        let email = user.user_name;
+        let ScimUser {
+            id,
+            user_name: email,
+            ..
+        } = user;
         busy.set(true);
         spawn_local(async move {
-            match api::client().delete_user(&id).await {
+            match api::client().delete_user(id).await {
                 Ok(()) => {
                     notify.success(format!("Deleted the user {email}"));
                     cache.changed(Key::Users);

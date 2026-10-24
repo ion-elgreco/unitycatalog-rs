@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package unitycatalog.catalogs.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+
+// A catalog: the first layer of the three-level namespace. It holds schemas.
+message CatalogInfo {
+  option (google.api.resource) = {
+    type: "unitycatalog.io/Catalog"
+    pattern: "catalogs/{catalog}"
+    plural: "catalogs"
+    singular: "catalog"
+  };
+
+  // Name of the catalog.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // User-provided free-form text description.
+  optional string comment = 2;
+  // Key-value properties of the catalog.
+  map<string, string> properties = 3;
+  // Username of the owner of the catalog.
+  optional string owner = 4;
+  // Time at which the catalog was created, in epoch milliseconds.
+  int64 created_at = 5;
+  // Username of the creator of the catalog.
+  optional string created_by = 6;
+  // Time at which the catalog was last changed, in epoch milliseconds.
+  int64 updated_at = 7;
+  // Username of the user who last changed the catalog.
+  optional string updated_by = 8;
+  // Unique identifier of the catalog.
+  string id = 9;
+  // Storage root URL for the managed storage of the catalog, such as `s3://bucket/ucroot`.
+  optional string storage_root = 10;
+  // Storage location URL (full path) of the managed storage of the catalog.
+  optional string storage_location = 11;
+}
+
+message CreateCatalog {
+  // Name of the catalog.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // User-provided free-form text description.
+  optional string comment = 2;
+  // Key-value properties of the catalog.
+  map<string, string> properties = 3;
+  // Storage root URL for the managed storage of the catalog.
+  optional string storage_root = 4;
+}
+
+message ListCatalogsRequest {
+  // The maximum number of catalogs to return.
+  optional int32 max_results = 1;
+  // Opaque token of the page to return: the `next_page_token` of the page before.
+  optional string page_token = 2;
+}
+
+message ListCatalogsResponse {
+  // The catalogs.
+  repeated CatalogInfo catalogs = 1;
+  // Opaque token of the next page. Absent on the last page.
+  optional string next_page_token = 2;
+}
+
+message GetCatalogRequest {
+  // Name of the catalog.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message UpdateCatalog {
+  // Name of the catalog.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // User-provided free-form text description.
+  optional string comment = 2;
+  // Key-value properties of the catalog. They replace the properties of the catalog.
+  map<string, string> properties = 3;
+  // New name of the catalog.
+  optional string new_name = 4;
+}
+
+message DeleteCatalogRequest {
+  // Name of the catalog.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Delete the schemas, tables and volumes of the catalog too.
+  optional bool force = 2;
+}
+
+// Catalogs: the first layer of the three-level namespace.
+service CatalogsService {
+  // List the catalogs that the caller can see.
+  rpc ListCatalogs(ListCatalogsRequest) returns (ListCatalogsResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/catalogs"};
+  }
+
+  // Create a catalog.
+  rpc CreateCatalog(.unitycatalog.catalogs.v1.CreateCatalog) returns (CatalogInfo) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/catalogs"
+      body: "*"
+    };
+  }
+
+  // Get a catalog.
+  rpc GetCatalog(GetCatalogRequest) returns (CatalogInfo) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/catalogs/{name}"};
+  }
+
+  // Change a catalog.
+  rpc UpdateCatalog(.unitycatalog.catalogs.v1.UpdateCatalog) returns (CatalogInfo) {
+    option (google.api.http) = {
+      patch: "/api/2.1/unity-catalog/catalogs/{name}"
+      body: "*"
+    };
+  }
+
+  // Delete a catalog.
+  rpc DeleteCatalog(DeleteCatalogRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.1/unity-catalog/catalogs/{name}"};
+  }
+}

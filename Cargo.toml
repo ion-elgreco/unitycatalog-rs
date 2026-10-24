@@ -10,6 +10,7 @@ members = [
     "crates/uc-client",
     "crates/uc-cli",
     "crates/uc-ui",
+    "crates/uc-codegen",
     "python/client",
 ]
 # Skip the Python client (python/client/) from plain `cargo build` / `cargo test` so
@@ -64,6 +65,9 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 # HTTP client
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+# The protobuf runtime of the generated models (`just generate`), with their JSON.
+buffa = { version = "0.7", features = ["json"] }
+buffa-types = { version = "0.7", features = ["json"] }
 url = "2"
 percent-encoding = "2"
 
@@ -144,7 +148,7 @@ tracing-opentelemetry = "0.32"
 
 # Python client (python/client/, crate uc-py). Its default feature turns on pyo3's
 # `extension-module`.
-pyo3 = { version = "0.28", features = ["abi3-py310", "chrono"] }
+pyo3 = { version = "0.28", features = ["abi3-py312", "chrono"] }
 pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
 pyo3-build-config = "0.28"
 # `infer_signature`: the stubs show the default values of the arguments.

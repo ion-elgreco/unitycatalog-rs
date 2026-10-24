@@ -4,7 +4,7 @@
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::{ScimGroup, schema_uri};
+use uc_client::models::scim::v1::ScimGroup;
 
 use crate::api;
 use crate::components::icons::Plus;
@@ -44,7 +44,7 @@ fn GroupList() -> impl IntoView {
             title: "Members",
             width: "40%",
             render: Box::new(|g: &ScimGroup| {
-                let count = g.members.as_ref().map_or(0, Vec::len);
+                let count = g.members.len();
                 view! { <span class="uc-muted">{count}</span> }.into_any()
             }),
             search_key: None,
@@ -91,14 +91,11 @@ fn CreateGroup(open: RwSignal<bool>) -> impl IntoView {
             notify.error("Name is required");
             return;
         }
-        let group = ScimGroup {
-            schemas: vec![schema_uri::GROUP.to_string()],
-            display_name: new_name,
-            ..Default::default()
-        };
+        // The server fills in the group's schema.
+        let create = api::client().create_group(new_name);
         busy.set(true);
         spawn_local(async move {
-            match api::client().create_group(&group).await {
+            match create.await {
                 Ok(_) => {
                     notify.success("Create group complete");
                     cache.changed(Key::Groups);

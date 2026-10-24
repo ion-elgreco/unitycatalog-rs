@@ -175,10 +175,8 @@ fn ManageNav() -> impl IntoView {
     let auth = use_auth();
     let route = use_route();
     let admin = Memo::new(move |_| auth.session.with(|s| s.is_admin()));
-    let signed_in_admin = Memo::new(move |_| {
-        auth.session
-            .with(|s| s.user().is_some_and(|user| user.is_admin()))
-    });
+    let signed_in_admin =
+        Memo::new(move |_| auth.session.with(|s| s.user().is_some() && s.is_admin()));
     let shows = move |section: Section| match section {
         Section::Audit => signed_in_admin.get(),
         section if section.admin_only() => admin.get(),
@@ -265,12 +263,10 @@ fn AccountMenu() -> impl IntoView {
         auth.session.with(|session| {
             session
                 .user()
-                .and_then(|user| {
+                .map(|user| {
                     user.emails
-                        .as_ref()?
                         .first()
-                        .map(|e| e.value.clone())
-                        .or_else(|| Some(user.user_name.clone()))
+                        .map_or_else(|| user.user_name.clone(), |e| e.value.clone())
                 })
                 .unwrap_or_default()
         })

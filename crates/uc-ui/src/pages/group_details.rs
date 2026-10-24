@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_api::{ScimGroup, ScimGroupMember, ScimUser};
+use uc_client::models::scim::v1::{ScimGroupMember, ScimUser};
 
 use crate::api;
 use crate::auth::use_auth;
@@ -44,11 +44,7 @@ fn GroupPage(name: String) -> impl IntoView {
     let adding = RwSignal::new(String::new());
     let admin = Memo::new(move |_| auth.session.with(|s| s.is_admin()));
     let members = Signal::derive(move || {
-        info.with(|g| {
-            g.ready()
-                .and_then(|g| g.members.clone())
-                .unwrap_or_default()
-        })
+        info.with(|g| g.ready().map(|g| g.members.clone()).unwrap_or_default())
     });
     let refresh = Callback::new(move |_| {
         cache.changed(Key::Group(key.get_value()));
@@ -59,18 +55,14 @@ fn GroupPage(name: String) -> impl IntoView {
         let Some(group) = info.with_untracked(|g| g.ready().cloned()) else {
             return;
         };
-        let Some(id) = group.id.clone() else {
-            notify.error("The group has no id.");
-            return;
-        };
         let name = key.get_value();
-        let group = ScimGroup {
-            members: Some(members),
-            ..group
-        };
+        let replace = api::client()
+            .replace_group(group.id, group.display_name)
+            .with_schemas(group.schemas)
+            .with_members(members);
         busy.set(true);
         spawn_local(async move {
-            match api::client().update_group(&id, &group).await {
+            match replace.await {
                 Ok(updated) => {
                     cache.set(Key::Group(name), updated);
                     cache.changed(Key::Groups);
@@ -101,8 +93,8 @@ fn GroupPage(name: String) -> impl IntoView {
         }
         all.push(ScimGroupMember {
             value: id,
-            display: None,
-            r#type: Some("User".into()),
+            member_type: Some("User".into()),
+            ..Default::default()
         });
         adding.set(String::new());
         set_members(all);
@@ -112,7 +104,7 @@ fn GroupPage(name: String) -> impl IntoView {
         users.with(|users| {
             users
                 .ready()
-                .and_then(|list| list.iter().find(|u| u.id.as_deref() == Some(id)).cloned())
+                .and_then(|list| list.iter().find(|u| u.id == id).cloned())
         })
     };
     // The users who are not members yet, by name.
@@ -123,10 +115,7 @@ fn GroupPage(name: String) -> impl IntoView {
                 .ready()
                 .map(|list| {
                     list.iter()
-                        .filter(|u| {
-                            u.id.as_ref()
-                                .is_some_and(|id| !members.iter().any(|m| m.value == *id))
-                        })
+                        .filter(|u| !members.iter().any(|m| m.value == u.id))
                         .cloned()
                         .collect()
                 })
@@ -216,7 +205,7 @@ fn GroupPage(name: String) -> impl IntoView {
                             </option>
                             {list
                                 .into_iter()
-                                .filter_map(|u| Some((u.id?, u.display_name, u.user_name)))
+                                .map(|u| (u.id, u.display_name, u.user_name))
                                 .map(|(id, name, email)| {
                                     let text = match name {
                                         Some(name) if !name.is_empty() => format!("{name} ({email})"),
@@ -266,10 +255,8 @@ fn GroupPage(name: String) -> impl IntoView {
             noun="group"
             name=name.clone()
             delete=move |_force| {
-                let id = info.with_untracked(|g| g.ready().and_then(|g| g.id.clone()));
-                async move {
-                    api::client().delete_group(&id.unwrap_or_default()).await
-                }
+                let id = info.with_untracked(|g| g.ready().map(|g| g.id.clone()));
+                async move { api::client().delete_group(id.unwrap_or_default()).await }
             }
             key=Key::Group(name.clone())
             list=Key::Groups

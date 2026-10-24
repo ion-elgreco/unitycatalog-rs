@@ -18,7 +18,7 @@ pub fn AdminOnly(
     let auth = use_auth();
     let allowed = Memo::new(move |_| {
         auth.session.with(|session| match signed_in {
-            true => session.user().is_some_and(|user| user.is_admin()),
+            true => session.user().is_some() && session.is_admin(),
             false => session.is_admin(),
         })
     });

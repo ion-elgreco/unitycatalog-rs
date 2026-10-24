@@ -1,7 +1,8 @@
 //! Upstream `CliUtils.parseColumns` and `parseInputParams`: `--columns
 //! "id INT, price DECIMAL(10,2)"` and `--input_params "a INT, b STRING"`.
 
-use uc_api::{ColumnInfo, ColumnTypeName, FunctionParameterInfo};
+use uc_client::models::functions::v1::FunctionParameterInfo;
+use uc_client::models::tables::v1::{ColumnInfo, ColumnTypeName};
 
 use super::options::from_wire;
 
@@ -30,6 +31,14 @@ pub const TYPE_NAMES: &[&str] = &[
     "USER_DEFINED_TYPE",
     "TABLE_TYPE",
 ];
+
+/// The type of one of [`TYPE_NAMES`].
+fn type_named(type_name: &str) -> Option<ColumnTypeName> {
+    TYPE_NAMES
+        .contains(&type_name)
+        .then(|| from_wire(type_name))
+        .flatten()
+}
 
 /// The SQL type text: `LONG` is `bigint`, `SHORT` `smallint`, `BYTE`
 /// `tinyint`, any other the name in lower case.
@@ -108,7 +117,7 @@ pub fn parse_columns(text: &str) -> anyhow::Result<Vec<ColumnInfo>> {
     let mut columns = Vec::new();
     for (position, (name, type_name, params, matched)) in matches(text).into_iter().enumerate() {
         let type_name = type_name.to_uppercase();
-        let Some(column_type) = from_wire::<ColumnTypeName>(&type_name) else {
+        let Some(column_type) = type_named(&type_name) else {
             anyhow::bail!("Invalid column definition: {matched}");
         };
         // Upstream `setPrecisionAndScale`.
@@ -127,12 +136,9 @@ pub fn parse_columns(text: &str) -> anyhow::Result<Vec<ColumnInfo>> {
         }
         columns.push(ColumnInfo {
             type_text: Some(type_text(&type_name)),
-            type_json: Some(type_json(
-                &name,
-                &format!("{}{suffix}", json_type(&type_name)),
-            )),
-            name: Some(name),
-            type_name: Some(column_type),
+            type_json: type_json(&name, &format!("{}{suffix}", json_type(&type_name))),
+            name,
+            type_name: Some(column_type.into()),
             type_precision: Some(precision),
             type_scale: Some(scale),
             position: Some(position as i32),
@@ -154,22 +160,16 @@ pub fn parse_input_params(text: &str) -> anyhow::Result<Vec<FunctionParameterInf
             anyhow::bail!("Invalid input parameter: {}", spec.trim());
         };
         let type_name = type_name.to_uppercase();
-        let Some(parameter_type) = from_wire::<ColumnTypeName>(&type_name) else {
+        let Some(parameter_type) = type_named(&type_name) else {
             anyhow::bail!("Unexpected value '{type_name}'");
         };
         parameters.push(FunctionParameterInfo {
             name: name.to_string(),
             type_text: type_text(&type_name),
             type_json: Some(type_json(name, &json_type(&type_name))),
-            type_name: parameter_type,
-            type_precision: None,
-            type_scale: None,
-            type_interval_type: None,
+            type_name: parameter_type.into(),
             position: Some(position as i32),
-            parameter_mode: None,
-            parameter_type: None,
-            parameter_default: None,
-            comment: None,
+            ..Default::default()
         });
     }
     Ok(parameters)
@@ -185,18 +185,18 @@ mod tests {
         assert_eq!(columns.len(), 4);
         assert_eq!(columns[0].type_text.as_deref(), Some("int"));
         assert_eq!(
-            columns[0].type_json.as_deref(),
-            Some(r#"{"name":"id","type":"integer","nullable":true,"metadata":{}}"#)
+            columns[0].type_json,
+            r#"{"name":"id","type":"integer","nullable":true,"metadata":{}}"#
         );
         assert_eq!(columns[0].type_precision, Some(0));
         assert_eq!(columns[0].nullable, Some(true));
-        assert_eq!(columns[1].type_name, Some(ColumnTypeName::String));
+        assert_eq!(columns[1].type_name, Some(ColumnTypeName::String.into()));
         assert_eq!(columns[2].type_text.as_deref(), Some("decimal"));
         assert_eq!(columns[2].type_precision, Some(10));
         assert_eq!(columns[2].type_scale, Some(2));
         assert_eq!(
-            columns[2].type_json.as_deref(),
-            Some(r#"{"name":"price","type":"decimal(10,2)","nullable":true,"metadata":{}}"#)
+            columns[2].type_json,
+            r#"{"name":"price","type":"decimal(10,2)","nullable":true,"metadata":{}}"#
         );
         assert_eq!(columns[3].type_text.as_deref(), Some("bigint"));
         assert_eq!(columns[3].position, Some(3));

@@ -14,7 +14,6 @@ path = "src/main.rs"
 [dependencies]
 # `ui`: the web UI's files, for `uc web`.
 uc-common = { workspace = true, features = ["ui"] }
-uc-api.workspace = true
 uc-client.workspace = true
 
 clap.workspace = true
@@ -55,6 +54,8 @@ libc = "0.2"
 [dev-dependencies]
 uc-server = { path = "../uc-server" }
 uc-metastore.workspace = true
+# The users that the tests put in the metastore.
+uc-api.workspace = true
 axum.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "io-util", "test-util"] }
 tempfile = "3"
