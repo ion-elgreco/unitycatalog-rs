@@ -269,8 +269,8 @@ fn config(scratch: &Path) -> CodeGenConfig {
 }
 
 /// Format `file` with blank lines between its items (buffa's models have none), then with
-/// rustfmt and `config`. Through stdin, so that rustfmt does not follow the `mod` declarations
-/// of the file: the models `mod.rs` declares the extractors, which are left out.
+/// rustfmt and `config`. Through stdin, so that rustfmt formats only this file and not the
+/// files of its `mod` declarations.
 fn rustfmt(file: &Path, config: &Path) -> Result<()> {
     let mut child = Command::new("rustfmt")
         .args(["--edition", "2024", "--emit", "stdout", "--config-path"])
@@ -339,6 +339,14 @@ fn copy_tree(from: &Path, to: &Path, written: &mut Vec<PathBuf>) -> Result<()> {
         let target = to.join(name);
         if path.is_dir() {
             copy_tree(&path, &target, written)?;
+        } else if name == "mod.rs" {
+            // The declaration of the extractors left out above.
+            let source = fs::read_to_string(&path)?;
+            fs::write(
+                &target,
+                source.replace("#[cfg(feature = \"axum\")]\npub mod extractors;\n", ""),
+            )?;
+            written.push(target);
         } else {
             fs::copy(&path, &target)?;
             written.push(target);

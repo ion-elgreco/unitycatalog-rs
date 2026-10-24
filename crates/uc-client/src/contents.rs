@@ -58,7 +58,11 @@ impl Contents {
 impl Client {
     /// What the catalog `catalog` holds: its schemas, and what they hold.
     pub async fn catalog_contents(&self, catalog: &str) -> Result<Contents> {
-        let schemas: Vec<_> = self.list_schemas(catalog).into_stream().try_collect().await?;
+        let schemas: Vec<_> = self
+            .list_schemas(catalog)
+            .into_stream()
+            .try_collect()
+            .await?;
         let each = try_join_all(
             schemas
                 .iter()

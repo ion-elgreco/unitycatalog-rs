@@ -78,8 +78,12 @@ jobs:
         with:
           components: rustfmt
 
+      # Ubuntu's protoc (3.21) does not know `debug_redact`. install-action names
+      # protoc 34.x `3.34`.
       - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
+        with:
+          tool: protoc@3.34
 
       - name: The generated clients are up to date
         run: |
