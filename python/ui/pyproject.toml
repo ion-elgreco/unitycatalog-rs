@@ -2,7 +2,7 @@
 name = "unitycatalog-rs-ui"
 version = "0.0.0.dev0"
 description = "The web UI of unitycatalog-rs (Rust reimplementation of Unity Catalog OSS)."
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = "Apache-2.0"
 authors = [{ name = "Ion Koutsouris" }]
 

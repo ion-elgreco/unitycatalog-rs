@@ -144,7 +144,7 @@ tracing-opentelemetry = "0.32"
 
 # Python client (python/client/, crate uc-py). Its default feature turns on pyo3's
 # `extension-module`.
-pyo3 = { version = "0.28", features = ["abi3-py310", "chrono"] }
+pyo3 = { version = "0.28", features = ["abi3-py312", "chrono"] }
 pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
 pyo3-build-config = "0.28"
 # `infer_signature`: the stubs show the default values of the arguments.
