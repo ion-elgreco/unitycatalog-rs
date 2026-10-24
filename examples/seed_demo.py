@@ -13,12 +13,12 @@ import json
 from pathlib import Path
 
 from unitycatalog import Client, ColumnTypeName
-from unitycatalog._core.functions import (
+from unitycatalog.functions import (
     CreateFunction,
     FunctionParameterInfo,
     FunctionParameterInfos,
 )
-from unitycatalog._core.tables import ColumnInfo
+from unitycatalog.tables import ColumnInfo
 
 # A column type: its type name, its type text and its type in Delta's schema.
 Type = tuple[ColumnTypeName, str, str]

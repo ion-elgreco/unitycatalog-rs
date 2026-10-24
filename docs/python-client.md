@@ -36,7 +36,7 @@ client = Client("https://uc.example.com/", token=os.environ["UC_TOKEN"])
 
 ```python
 from unitycatalog import Client
-from unitycatalog._core.tables import ColumnInfo
+from unitycatalog.tables import ColumnInfo
 
 client = Client("http://localhost:8080/")
 
@@ -87,8 +87,8 @@ arguments.
 
 - The methods return classes, such as `CatalogInfo` and `TableInfo`, with each field of the API's
   JSON as an attribute. They cannot change, and they compare by value. The classes are in a
-  submodule of `unitycatalog._core` per API, such as `unitycatalog._core.tables` for
-  `ColumnInfo` and `TableInfo`.
+  module of `unitycatalog` per API, such as `unitycatalog.tables` for `ColumnInfo` and
+  `TableInfo`.
 - The enums are `enum.StrEnum` classes, such as `TableType`, and `unitycatalog` exports them. A
   member is equal to its name, so an argument takes `TableType.MANAGED` or `"MANAGED"`. Another
   string raises `ValueError`.
@@ -140,7 +140,7 @@ wait.
 ## Privileges
 
 ```python
-from unitycatalog._core.permissions import PermissionsChange
+from unitycatalog.permissions import PermissionsChange
 
 client.update_permissions(
     "schema",
@@ -193,33 +193,11 @@ print([share.name for share in recipient.sharing_list_shares().items])
 ## Methods
 
 Each method that sends a request also comes as `<name>_async`. `catalog(name)` and the other
-handles return the requests on one object.
+handles return the requests on one object. The [reference](reference/) lists every method of
+`Client` and of each handle, with its arguments and its return type: `unitycatalog.tables`,
+for example, has `TableClient`, and the classes `TableInfo` and `ColumnInfo` it returns.
 
-| Resource | Methods |
-| --- | --- |
-| Catalogs | `create_catalog`, `list_catalogs`; `catalog(name)`: `get`, `update`, `delete` |
-| Schemas | `create_schema`, `list_schemas`; `schema(full_name)`: `get`, `update`, `delete` |
-| Tables | `create_table`, `create_staging_table`, `list_tables`; `table(full_name)`: `get`, `delete` |
-| Volumes | `create_volume`, `list_volumes`; `volume(full_name)`: `get`, `update`, `delete` |
-| Functions | `create_function`, `list_functions`; `function(full_name)`: `get`, `delete` |
-| Registered models | `create_registered_model`, `list_registered_models`; `registered_model(full_name)`: `get`, `update`, `delete` |
-| Model versions | `create_model_version`, `get_model_version`, `list_model_versions`, `update_model_version`, `delete_model_version`, `finalize_model_version` |
-| Storage credentials | `create_credential`, `list_credentials`; `credential(name)`: `get`, `update`, `delete` |
-| External locations | `create_external_location`, `list_external_locations`; `external_location(name)`: `get`, `update`, `delete` |
-| Temporary credentials | `generate_temporary_table_credentials`, `generate_temporary_volume_credentials`, `generate_temporary_path_credentials`, `generate_temporary_model_version_credentials` |
-| Privileges | `get_permissions`, `update_permissions` |
-| Metastore, health | `get_metastore_summary`, `get_health`, `get_version` |
-| Personal access tokens | `create_token`, `list_tokens`; `token(id)`: `delete` |
-| Sign-in | `exchange_token`, `request_access_token`, `get_auth_mode`, `logout` |
-| Users and groups (SCIM) | `create_user`, `get_user`, `list_users`, `replace_user`, `patch_user`, `delete_user`, `get_me`, `create_group`, `get_group`, `list_groups`, `replace_group`, `patch_group`, `delete_group`, `scim_bulk`, `list_scim_schemas`, `list_scim_resource_types`, `get_service_provider_config` |
-| Admin | `get_backup`, `restore_backup`, `list_audit_events` |
-| Shares and recipients | `create_share`, `list_shares`, `create_recipient`, `list_recipients`; `share(name)`: `get`, `update`, `delete`; `recipient(name)`: `get`, `update`, `delete`, `rotate_recipient_token`, `create_recipient_profile` |
-| Delta Sharing | `sharing_list_shares`, `sharing_list_schemas`, `sharing_list_tables`, `sharing_list_all_tables`, `sharing_get_table_version`, `sharing_get_table_metadata`, `sharing_query_table` |
-| Iceberg REST catalog | `get_iceberg_config`, `list_iceberg_namespaces`, `create_iceberg_namespace`, `load_iceberg_namespace`, `iceberg_namespace_exists`, `update_iceberg_namespace_properties`, `drop_iceberg_namespace`, `list_iceberg_tables`, `create_iceberg_table`, `load_iceberg_table`, `iceberg_table_exists`, `commit_iceberg_table`, `rename_iceberg_table`, `drop_iceberg_table`, `load_iceberg_table_credentials`, `report_iceberg_metrics`, `load_iceberg_view` |
-| Delta API | `get_delta_config`, `create_delta_staging_table`, `get_delta_staging_table_credentials`, `create_delta_table`, `load_delta_table`, `update_delta_table`, `delta_table_exists`, `rename_delta_table`, `delete_delta_table`, `get_delta_table_credentials`, `report_delta_table_metrics` |
-| Delta commits | `get_delta_commits`, `commit_delta` |
-
-`help(Client.create_table)` shows the arguments of a method.
+`help(Client.create_table)` shows the arguments of a method, from the same docstrings.
 
 ## The other packages
 

@@ -4,6 +4,7 @@ that match the extension."""
 
 import asyncio
 import enum
+import importlib
 import inspect
 import pickle
 import re
@@ -27,11 +28,11 @@ from unitycatalog import (
     UnityCatalogError,
     _enums,
 )
-from unitycatalog._core.credentials import AwsIamRoleRequest
-from unitycatalog._core.delta import DeltaProtocol, DeltaStructField, DeltaStructType
-from unitycatalog._core.functions import CreateFunction, FunctionParameterInfo
-from unitycatalog._core.permissions import PermissionsChange
-from unitycatalog._core.tables import ColumnInfo
+from unitycatalog.credentials import AwsIamRoleRequest
+from unitycatalog.delta import DeltaProtocol, DeltaStructField, DeltaStructType
+from unitycatalog.functions import CreateFunction, FunctionParameterInfo
+from unitycatalog.permissions import PermissionsChange
+from unitycatalog.tables import ColumnInfo
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 UC_CLIENT = REPO_ROOT / "crates" / "uc-client" / "src" / "codegen"
@@ -68,6 +69,20 @@ def _resource_classes() -> dict[str, type]:
                 if class_name.endswith("Client") and inspect.isclass(cls):
                     classes[class_name] = cls
     return classes
+
+
+def test_each_api_package_has_a_public_module() -> None:
+    """`unitycatalog.tables` and so on export the classes of their submodule of
+    the extension."""
+    for name in [n for n in dir(unitycatalog._core) if not n.startswith("_")]:
+        core = getattr(unitycatalog._core, name)
+        if not inspect.ismodule(core):
+            continue
+        public = importlib.import_module(f"unitycatalog.{name}")
+        classes = {n for n, value in vars(core).items() if inspect.isclass(value)}
+        assert classes <= set(public.__all__), name
+        for class_name in classes:
+            assert getattr(public, class_name) is getattr(core, class_name)
 
 
 def _requests(cls: type) -> set[str]:

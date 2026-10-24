@@ -2,7 +2,8 @@
 //!
 //! 1. `protoc` compiles the protos into a descriptor set, with their comments.
 //! 2. buffa writes the models; trestle's `olai-codegen` writes the Rust client, the PyO3
-//!    bindings (with their exception classes and Tokio runtime) and the enums, `_enums.py`.
+//!    bindings (with their exception classes and Tokio runtime), the enums, `_enums.py`, and a
+//!    public module per API package, such as `unitycatalog/tables.py`.
 //! 3. The JSON rewrites make the models send snake_case field names, and 64-bit integers and
 //!    whole numbers of free-form JSON as numbers, as the server does.
 //!
@@ -12,7 +13,7 @@
 //! - `crates/uc-client/src/models/_gen`: the models
 //! - `crates/uc-client/src/codegen`: the Rust client
 //! - `python/client/src/codegen`: the PyO3 bindings
-//! - `python/client/unitycatalog/_enums.py`
+//! - `python/client/unitycatalog/*.py`, except `__init__.py`: the enums and the public modules
 //!
 //! `--check <dir> <proto>...` generates only from those protos into `dir`, and writes nothing
 //! in the repo: it checks a proto without touching the generated code.
@@ -160,14 +161,23 @@ fn main() -> Result<()> {
         }
         copy_tree(from, to, &mut written)?;
     }
-    // No enums, no `_enums.py`.
-    let enums = root.join("python/client/unitycatalog/_enums.py");
-    match scratch.join("pkg/_enums.py") {
-        generated if generated.exists() => {
-            fs::copy(generated, &enums)?;
+    // The pure-Python files replace the generated files of the package, which start with
+    // trestle's `@generated` line; `__init__.py` is hand-written.
+    let package = root.join("python/client/unitycatalog");
+    for entry in fs::read_dir(&package)? {
+        let path = entry?.path();
+        if path.extension().is_some_and(|e| e == "py")
+            && fs::read_to_string(&path)?.starts_with("# @generated")
+        {
+            fs::remove_file(&path)?;
         }
-        _ if enums.exists() => fs::remove_file(&enums)?,
-        _ => {}
+    }
+    for entry in fs::read_dir(scratch.join("pkg"))? {
+        let path = entry?.path();
+        fs::copy(
+            &path,
+            package.join(path.file_name().expect("a file has a name")),
+        )?;
     }
 
     for file in written
@@ -264,6 +274,8 @@ fn config(scratch: &Path) -> CodeGenConfig {
                     dir: scratch.join("pkg"),
                     name: "unitycatalog".into(),
                 }),
+                // `unitycatalog.tables` and so on, instead of `unitycatalog._core.tables`.
+                public_modules: true,
             },
         }),
     }

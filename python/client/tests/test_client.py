@@ -17,27 +17,27 @@ from unitycatalog import (
     UnauthenticatedError,
     UnityCatalogError,
 )
-from unitycatalog._core.credentials import AwsIamRoleRequest
-from unitycatalog._core.delta import DeltaCommitInfo
-from unitycatalog._core.functions import (
+from unitycatalog.credentials import AwsIamRoleRequest
+from unitycatalog.delta import DeltaCommitInfo
+from unitycatalog.functions import (
     CreateFunction,
     FunctionParameterInfo,
     FunctionParameterInfos,
 )
-from unitycatalog._core.iceberg import (
+from unitycatalog.iceberg import (
     IcebergSchema,
     IcebergStructField,
     IcebergTableIdentifier,
 )
-from unitycatalog._core.permissions import PermissionsChange
-from unitycatalog._core.scim import (
+from unitycatalog.permissions import PermissionsChange
+from unitycatalog.scim import (
     ScimEmail,
     ScimGroupMember,
     ScimPatchOperation,
     ScimUser,
 )
-from unitycatalog._core.shares import SharedDataObject
-from unitycatalog._core.tables import (
+from unitycatalog.shares import SharedDataObject
+from unitycatalog.tables import (
     ColumnInfo,
     Dependency,
     DependencyList,

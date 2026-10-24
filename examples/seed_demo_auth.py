@@ -23,8 +23,8 @@ from pathlib import Path
 
 from seed_demo import seed
 from unitycatalog import Client
-from unitycatalog._core.credentials import AwsIamRoleRequest
-from unitycatalog._core.permissions import PermissionsChange
+from unitycatalog.credentials import AwsIamRoleRequest
+from unitycatalog.permissions import PermissionsChange
 
 BUCKET = "s3://uc-demo"
 

@@ -12,7 +12,7 @@ import pytest
 from _helpers import unique
 
 from unitycatalog import Client, ColumnTypeName
-from unitycatalog._core.tables import ColumnInfo, StagingTableInfo, TableInfo
+from unitycatalog.tables import ColumnInfo, StagingTableInfo, TableInfo
 
 pl = pytest.importorskip("polars")
 deltalake = pytest.importorskip("deltalake")

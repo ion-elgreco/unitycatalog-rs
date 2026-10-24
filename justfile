@@ -21,6 +21,10 @@ upstream_image := "unitycatalog/unitycatalog:v0.7.0"
 # (squidfunk/mike), at a fixed commit.
 mike := "git+https://github.com/squidfunk/mike.git@2d4ad799442f4592db8ad53b179bfb33db8c69ac"
 
+# The plugins of the Python client's reference in the docs site: mkdocstrings
+# reads the package and its stubs, api-autonav writes a page per module.
+docs_plugins := "--with mkdocstrings-python --with mkdocs-api-autonav"
+
 _default:
     just --list
 
@@ -245,13 +249,13 @@ generate-stubs:
 
 # Build the docs site (docs/, mkdocs.yml) into site/ with zensical; a warning, such as a broken link, fails the build
 docs-build:
-    uvx zensical build --strict
+    uvx {{ docs_plugins }} zensical build --strict
 
 # Serve the docs site on http://localhost:8000, and build it again after each change
 docs-serve:
-    uvx zensical serve
+    uvx {{ docs_plugins }} zensical serve
 
 # Publish the docs as `version`, and as `latest`, which the site's root opens: mike commits them to the gh-pages branch; push="" only commits
 docs-deploy version push="--push":
-    uvx --from "{{ mike }}" --with zensical mike deploy {{ push }} --update-aliases {{ version }} latest
-    uvx --from "{{ mike }}" --with zensical mike set-default {{ push }} latest
+    uvx --from "{{ mike }}" --with zensical {{ docs_plugins }} mike deploy {{ push }} --update-aliases {{ version }} latest
+    uvx --from "{{ mike }}" --with zensical {{ docs_plugins }} mike set-default {{ push }} latest

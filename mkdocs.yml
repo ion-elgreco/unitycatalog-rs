@@ -64,8 +64,38 @@ nav:
   - CLI:
       - cli/index.md
       - Commands: cli/commands.md
-  - Python client: python-client.md
+  - Python client:
+      - Guide: python-client.md
+      # A page per module of the package, from api-autonav.
+      - Reference: reference/
   - Web UI: ui.md
+
+# The reference of the Python client: a page per public module of the package,
+# from its docstrings and the stubs of the extension module (`_core`).
+plugins:
+  - search
+  - api-autonav:
+      modules: [python/client/unitycatalog]
+      nav_section_title: Reference
+      api_root_uri: reference
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [python/client]
+          options:
+            # The stubs, also when the extension module is built: the same pages
+            # with and without it.
+            allow_inspection: false
+            docstring_style: google
+            show_source: false
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            merge_init_into_class: true
+            # The constructors of the PyO3 classes are `__new__`, without a
+            # docstring; mkdocstrings merges only `__init__` into the class.
+            show_if_no_docstring: true
+            filters: ["!^_", "^__new__$"]
 
 markdown_extensions:
   - admonition

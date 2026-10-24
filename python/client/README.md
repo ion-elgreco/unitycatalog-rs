@@ -65,8 +65,8 @@ asyncio.run(main())
 - Required arguments are positional; the others are keyword-only.
 - Results are frozen classes, such as `CatalogInfo`, with each field of the
   API's JSON. They compare by value, and their repr shows the fields that are
-  set. The classes are in a submodule of `unitycatalog._core` per API package,
-  such as `unitycatalog._core.tables` (`ColumnInfo`, `TableInfo`). The classes
+  set. The classes are in a module of `unitycatalog` per API package, such as
+  `unitycatalog.tables` (`ColumnInfo`, `TableInfo`). The classes
   of the requests, such as `ColumnInfo`, take the required fields as
   arguments and the others as keywords.
 - Enums are `enum.StrEnum` classes, such as `TableType`, exported by
@@ -132,6 +132,7 @@ python/client/
 ├── unitycatalog/
 │   ├── __init__.py      the public names
 │   ├── _enums.py        the enums, generated (just generate)
+│   ├── <package>.py     a module per API package, generated (just generate): its classes and enums
 │   └── _core/           the generated stubs
 └── tests/               pytest, against a uc-server
     └── integrations/    polars, deltalake, obstore and pyiceberg against it; S3 from moto
@@ -139,11 +140,13 @@ python/client/
 
 The classes of the models come from the `python` feature of `uc-client`
 (`crates/uc-client/src/models/_gen`). They are in a submodule of
-`unitycatalog._core` per API package: `admin`, `audit`, `auth`, `catalogs`,
-`credentials`, `delta`, `external_locations`, `functions`, `health`, `iceberg`,
-`metastore`, `models`, `permissions`, `recipients`, `schemas`, `scim`,
-`shares`, `sharing`, `tables`, `tokens` and `volumes`. Each handle class is
-in the submodule of its resource, such as `catalogs.CatalogClient`.
+`unitycatalog._core` per API package, and the module of `unitycatalog` with
+the same name exports them, with the enums of that package: `admin`, `audit`,
+`auth`, `catalogs`, `credentials`, `delta`, `external_locations`, `functions`,
+`health`, `iceberg`, `metastore`, `models`, `permissions`, `recipients`,
+`schemas`, `scim`, `shares`, `sharing`, `tables`, `tokens` and `volumes`. Each
+handle class is in the module of its resource, such as
+`catalogs.CatalogClient`.
 
 Its folder sits next to the other Python packages, `python/cli`,
 `python/server` and `python/ui`, in the uv workspace of the repository
