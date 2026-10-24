@@ -133,6 +133,13 @@ pub async fn vend_credential(
     Ok(credentials)
 }
 
+/// The text of the first `<tag>` element.
+pub(crate) fn xml_text<'a>(xml: &'a str, tag: &str) -> Option<&'a str> {
+    let start = xml.find(&format!("<{tag}>"))? + tag.len() + 2;
+    let end = xml[start..].find(&format!("</{tag}>"))? + start;
+    Some(&xml[start..end])
+}
+
 /// The stored credential of the external location that covers `url`, if
 /// any.
 pub async fn credential_for_url(

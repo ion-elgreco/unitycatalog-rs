@@ -71,8 +71,8 @@ storage:
         awsRoleArn: arn:aws:iam::123456789012:role/uc
 ```
 
-Without `credentialsSecretName`, the AWS SDK finds the identity that assumes the role, such as
-the role of the pod's service account (`serviceAccount.create` and `annotations`). See
+Without `credentialsSecretName`, the identity that assumes the role comes from the environment,
+such as the role of the pod's service account (`serviceAccount.create` and `annotations`). See
 [Cloud storage](cloud-storage.md).
 
 ## Expose the server

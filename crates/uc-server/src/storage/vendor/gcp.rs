@@ -7,6 +7,10 @@
 //! `storage.objectViewer` for reads, `storage.objectAdmin` for writes.
 //! Upstream's `TestingCredentialGenerator` gives a fixed token. External
 //! locations are not supported for GCP yet, as upstream.
+//!
+//! The server's token does not come from `object_store`: for a service
+//! account key it is a self-signed JWT, not the OAuth access token that
+//! STS exchanges.
 
 use std::collections::HashMap;
 

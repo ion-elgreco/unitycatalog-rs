@@ -47,7 +47,9 @@ uc external_location create --name analytics \
 
 The answer of `uc credential create` has an `external_id`. In AWS, let the server's identity
 assume the role with that external id, in the role's trust policy. The server's identity is the
-`[aws]` settings, else the AWS SDK's default chain, such as an instance role.
+`[aws]` settings, else the environment: the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
+variables, the role of a Kubernetes service account, an ECS task role, EKS Pod Identity or an
+instance role. AWS profiles in `~/.aws` are not read.
 
 Or, without an external location, give the role of a bucket in the settings:
 

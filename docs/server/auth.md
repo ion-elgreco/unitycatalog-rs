@@ -49,7 +49,10 @@ uc user create --name Bob --email bob@example.com
 
 Users are SCIM users: `uc user`, the Python client, or `/api/1.0/unity-control/scim2/Users`. A
 user's email is their name in grants and owners. To delete a user, the server disables the user
-and removes their grants. Groups (`uc group`) exist, but privileges go to users only.
+and removes their grants.
+
+Groups (`uc group`) are SCIM groups. A privilege granted to a group counts for each of its
+members: the group's name is its name in grants, and cannot be the email of a user.
 
 ## Tokens
 
@@ -151,4 +154,6 @@ forbid (
 ```
 
 A privilege is an action, such as `Action::"SELECT"`, the user is `User::"<email>"`, and a
-securable is an entity such as `Table::"<id>"`, in its schema, catalog and metastore.
+securable is an entity such as `Table::"<id>"`, in its schema, catalog and metastore. A securable
+has the attributes `owner` and `granted_privileges`: what is granted on it or a parent, to the
+user or to a group of the user.
