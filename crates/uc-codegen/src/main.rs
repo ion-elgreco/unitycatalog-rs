@@ -220,7 +220,8 @@ fn config(scratch: &Path) -> CodeGenConfig {
             json_query_packages: CAMEL_CASE_PACKAGES.iter().map(|p| p.to_string()).collect(),
         },
         output: CodeGenOutput {
-            common: models.join("_gen"),
+            // No request extractors: the server is hand-written.
+            common: None,
             models: Some(models),
             models_subdir: "_gen".into(),
             server: None,
@@ -326,27 +327,19 @@ fn compile_descriptors(include: &Path, protos: &[PathBuf], scratch: &Path) -> Re
     Ok(descriptors)
 }
 
-/// Copy the tree `from` to `to`, without the server's request extractors and buffa's include
-/// file, which the clients do not use. Adds the files it writes to `written`.
+/// Copy the tree `from` to `to`, without buffa's include file, which the clients do not use.
+/// Adds the files it writes to `written`.
 fn copy_tree(from: &Path, to: &Path, written: &mut Vec<PathBuf>) -> Result<()> {
     fs::create_dir_all(to)?;
     for entry in fs::read_dir(from)? {
         let path = entry?.path();
         let name = path.file_name().expect("a directory entry has a name");
-        if name == "extractors" || name == "_include.rs" || name == "client.pyi" {
+        if name == "_include.rs" || name == "client.pyi" {
             continue;
         }
         let target = to.join(name);
         if path.is_dir() {
             copy_tree(&path, &target, written)?;
-        } else if name == "mod.rs" {
-            // The declaration of the extractors left out above.
-            let source = fs::read_to_string(&path)?;
-            fs::write(
-                &target,
-                source.replace("#[cfg(feature = \"axum\")]\npub mod extractors;\n", ""),
-            )?;
-            written.push(target);
         } else {
             fs::copy(&path, &target)?;
             written.push(target);
