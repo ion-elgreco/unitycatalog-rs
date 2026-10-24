@@ -4,10 +4,12 @@
 //! the UI goes to the parent page.
 //!
 //! The server deletes a catalog, schema or model only when it holds
-//! nothing, unless the call sets `force`; the console never sets it. Here
-//! an admin (see [`crate::auth::Session::is_admin`]) gets a box that sets
-//! it, in two steps: with the box on, the dialog counts what goes with the
-//! object, and the delete asks again, in a second dialog over the first.
+//! nothing, unless the call sets `force`; the console never sets it. Here,
+//! for an admin (see [`crate::auth::Session::is_admin`]), the dialog counts
+//! what the object holds when it opens. An object that holds something
+//! gets a box that sets `force`: the delete waits for it, and asks again,
+//! in a second dialog over the first. An object that holds nothing gets
+//! neither.
 
 use std::future::Future;
 
@@ -55,7 +57,7 @@ where
     let forced = RwSignal::new(false);
     // The name as typed: the delete waits for the whole of it.
     let typed = RwSignal::new(String::new());
-    // What goes with the object: counted when the box goes on. A newer
+    // What goes with the object: counted when the dialog opens. A newer
     // count wins.
     let counted: RwSignal<Option<Load<Contents>>> = RwSignal::new(None);
     let counts = StoredValue::new(0u64);
@@ -77,7 +79,7 @@ where
         typed.set(String::new());
     };
     let count = move || {
-        if counted.get_untracked().is_some() {
+        if counted.get_untracked().is_some() || !untrack(can_force) {
             return;
         }
         let Some(holder) = holder.get_value() else {
@@ -130,6 +132,11 @@ where
             busy.set(false);
         });
     };
+    Effect::new(move |_| {
+        if open.get() {
+            count();
+        }
+    });
     // The first step: without the box, the delete; with it, the second
     // step.
     let on_ok = {
@@ -140,6 +147,16 @@ where
         }
     };
     let counting = move || matches!(counted.get(), Some(Load::Loading));
+    // What the count found: something, which the delete takes only with
+    // the box on, or nothing.
+    let holds = move || {
+        counted
+            .with(|c| matches!(c, Some(Load::Ready(contents)) if *contents != Contents::default()))
+    };
+    let empty = move || {
+        counted
+            .with(|c| matches!(c, Some(Load::Ready(contents)) if *contents == Contents::default()))
+    };
     let named = move || typed.with(|typed| expected.with_value(|name| typed == name));
     // The second step, by what the count found.
     let summary = {
@@ -167,14 +184,17 @@ where
             danger=true
             busy=Signal::derive(move || busy.get() && !confirming.get())
             disabled=Signal::derive(move || {
-                (blocked.get().is_some() && !forced.get()) || (forced.get() && counting()) || !named()
+                !named()
+                    || counting()
+                    || (holds() && !forced.get())
+                    || (blocked.get().is_some() && !forced.get() && !empty())
             })
             on_cancel=move || close()
             on_ok
         >
             {
                 let name = name.clone();
-                move || match (blocked.get(), forced.get()) {
+                move || match (blocked.get(), forced.get() || empty()) {
                     (Some(reason), false) => view! { <p class="uc-muted">{reason}</p> }.into_any(),
                     _ => {
                         view! {
@@ -196,29 +216,7 @@ where
                 prop:value=move || typed.get()
                 on:input=move |e| typed.set(event_target_value(&e))
             />
-            {move || {
-                can_force()
-                    .then(|| {
-                        let label = holder.with_value(|h| h.as_ref().map(Holder::force_label));
-                        view! {
-                            <label class="uc-checkbox">
-                                <input
-                                    type="checkbox"
-                                    prop:checked=move || forced.get()
-                                    on:change=move |e| {
-                                        let on = event_target_checked(&e);
-                                        forced.set(on);
-                                        if on {
-                                            count();
-                                        }
-                                    }
-                                />
-                                <span>{label}</span>
-                            </label>
-                        }
-                    })
-            }}
-            {move || forced.get().then(|| view! { <ForceNote counted holder/> })}
+            {move || can_force().then(|| view! { <ForceChoice counted holder forced/> })}
         </Modal>
         <Modal
             open=confirming
@@ -254,25 +252,42 @@ pub fn DeleteButton(open: RwSignal<bool>, when: Memo<bool>) -> impl IntoView {
     }
 }
 
-/// The first step's count, under the box: what the delete takes along.
+/// The first step's count, and the box that deletes what it found too.
+/// Nothing for an object that holds nothing.
 #[component]
-fn ForceNote(
+fn ForceChoice(
     counted: RwSignal<Option<Load<Contents>>>,
     holder: StoredValue<Option<Holder>>,
+    forced: RwSignal<bool>,
 ) -> impl IntoView {
     let what = holder.with_value(|h| h.as_ref().map(Holder::noun).unwrap_or("it"));
+    let label = holder.with_value(|h| h.as_ref().map(Holder::force_label).unwrap_or_default());
     move || {
-        let text = match counted.get() {
-            None | Some(Load::Loading) => format!("Counting what {what} holds…"),
+        let note = match counted.get() {
+            None | Some(Load::Loading) => {
+                let text = format!("Counting what {what} holds…");
+                return view! { <p class="uc-hint">{text}</p> }.into_any();
+            }
             Some(Load::Ready(contents)) => match contents.describe() {
-                Some(text) => format!("This also deletes {text}."),
-                None => format!("{} holds nothing else.", capitalized(what)),
+                Some(text) => format!("{} holds {text}.", capitalized(what)),
+                None => return ().into_any(),
             },
             Some(Load::Failed(message)) => {
                 format!("The UI could not count what {what} holds: {message}")
             }
         };
-        view! { <p class="uc-hint">{text}</p> }
+        view! {
+            <p class="uc-hint">{note}</p>
+            <label class="uc-checkbox">
+                <input
+                    type="checkbox"
+                    prop:checked=move || forced.get()
+                    on:change=move |e| forced.set(event_target_checked(&e))
+                />
+                <span>{label}</span>
+            </label>
+        }
+        .into_any()
     }
 }
 
