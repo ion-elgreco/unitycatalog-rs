@@ -45,6 +45,16 @@ const FORM_METHODS: &[&str] = &[
     "unitycatalog.auth.v1.AuthService.RequestAccessToken",
 ];
 
+/// The RPCs whose request body keeps the path values. Elsewhere the body leaves them out, and
+/// the Delta API of the upstream server rejects them. Upstream's finalize checks that the body
+/// names the model version of the path, and the body of a SCIM `PUT` is the whole resource,
+/// with its `id`.
+const PATH_FIELDS_IN_BODY_METHODS: &[&str] = &[
+    "unitycatalog.models.v1.ModelVersionsService.FinalizeModelVersion",
+    "unitycatalog.scim.v1.ScimService.ReplaceUser",
+    "unitycatalog.scim.v1.ScimService.ReplaceGroup",
+];
+
 fn main() -> Result<()> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let root = root.canonicalize()?;
@@ -203,6 +213,10 @@ fn config(scratch: &Path) -> CodeGenConfig {
                 ..ErrorModuleConfig::default()
             }),
             form_encoded_methods: FORM_METHODS.iter().map(|m| m.to_string()).collect(),
+            path_fields_in_body_methods: PATH_FIELDS_IN_BODY_METHODS
+                .iter()
+                .map(|m| m.to_string())
+                .collect(),
             json_query_packages: CAMEL_CASE_PACKAGES.iter().map(|p| p.to_string()).collect(),
         },
         output: CodeGenOutput {

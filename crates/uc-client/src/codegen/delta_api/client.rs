@@ -61,7 +61,10 @@ impl DeltaApiClient {
             encode_path_value(&request.schema, false)
         );
         let url = self.base_url.join(&formatted_path)?;
-        let response = self.client.post(url).json(request).send().await?;
+        let mut body = request.clone();
+        body.catalog = Default::default();
+        body.schema = Default::default();
+        let response = self.client.post(url).json(&body).send().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -83,7 +86,10 @@ impl DeltaApiClient {
             encode_path_value(&request.schema, false)
         );
         let url = self.base_url.join(&formatted_path)?;
-        let response = self.client.post(url).json(request).send().await?;
+        let mut body = request.clone();
+        body.catalog = Default::default();
+        body.schema = Default::default();
+        let response = self.client.post(url).json(&body).send().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -132,7 +138,11 @@ impl DeltaApiClient {
             encode_path_value(&request.table, false)
         );
         let url = self.base_url.join(&formatted_path)?;
-        let response = self.client.post(url).json(request).send().await?;
+        let mut body = request.clone();
+        body.catalog = Default::default();
+        body.schema = Default::default();
+        body.table = Default::default();
+        let response = self.client.post(url).json(&body).send().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -187,7 +197,11 @@ impl DeltaApiClient {
             encode_path_value(&request.table, false)
         );
         let url = self.base_url.join(&formatted_path)?;
-        let response = self.client.post(url).json(request).send().await?;
+        let mut body = request.clone();
+        body.catalog = Default::default();
+        body.schema = Default::default();
+        body.table = Default::default();
+        let response = self.client.post(url).json(&body).send().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -207,7 +221,11 @@ impl DeltaApiClient {
             encode_path_value(&request.table, false)
         );
         let url = self.base_url.join(&formatted_path)?;
-        let response = self.client.post(url).json(request).send().await?;
+        let mut body = request.clone();
+        body.catalog = Default::default();
+        body.schema = Default::default();
+        body.table = Default::default();
+        let response = self.client.post(url).json(&body).send().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
