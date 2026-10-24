@@ -156,6 +156,7 @@ The recipes of the justfile at the repository root, as CI runs them:
 ```bash
 just develop-client     # .venv with the dev tools and the engines of the integration tests (uv.lock); builds the extension into it
 just test               # builds and starts a uc-server
+just test-upstream      # the tests marked `upstream`, against the upstream Java server in Docker
 just pre-commit-check   # ruff and mypy; uv.lock up to date
 just test-packages      # the wheels of the four packages, installed into a new venv and run
 ```
@@ -184,6 +185,12 @@ method of the generated `uc-client` is here, with its `_async` twin, that
 the enums list the values that the extension takes, and runs
 `mypy.stubtest` on the stubs. CI runs them on Linux, macOS and Windows, on
 Python 3.12 to 3.14 and on free-threaded 3.14t.
+
+With `UC_TEST_SERVER_URL` the tests use that server instead, and only those
+marked `upstream` run. Mark a test `upstream` when the upstream Java server
+passes it too: it uses only the API that both servers have. `just
+test-upstream` runs them against upstream's latest release (`upstream_image`
+in the justfile), as CI does.
 
 `tests/integrations/` runs engines against the server: polars and deltalake
 write Delta tables, polars and obstore write files into volumes, and

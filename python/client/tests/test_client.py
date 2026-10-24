@@ -2,7 +2,6 @@
 
 import asyncio
 import time
-from pathlib import Path
 
 import pytest
 from _helpers import Calls, unique
@@ -31,7 +30,12 @@ from unitycatalog._core.iceberg import (
     IcebergTableIdentifier,
 )
 from unitycatalog._core.permissions import PermissionsChange
-from unitycatalog._core.scim import ScimEmail, ScimGroupMember, ScimPatchOperation
+from unitycatalog._core.scim import (
+    ScimEmail,
+    ScimGroupMember,
+    ScimPatchOperation,
+    ScimUser,
+)
 from unitycatalog._core.shares import SharedDataObject
 from unitycatalog._core.tables import (
     ColumnInfo,
@@ -41,13 +45,14 @@ from unitycatalog._core.tables import (
 )
 
 
-def test_catalogs(uc: Calls, tmp_path: Path) -> None:
+@pytest.mark.upstream
+def test_catalogs(uc: Calls, storage_root: str) -> None:
     name = unique("catalog")
     created = uc.create_catalog(
         name,
         comment="primary",
         properties={"team": "data"},
-        storage_root=tmp_path.as_uri(),
+        storage_root=storage_root,
     )
     assert (created.name, created.comment) == (name, "primary")
     assert created.properties == {"team": "data"}
@@ -68,6 +73,7 @@ def test_catalogs(uc: Calls, tmp_path: Path) -> None:
     assert (error.value.code, error.value.status) == ("CATALOG_NOT_FOUND", 404)
 
 
+@pytest.mark.upstream
 def test_schemas(uc: Calls, catalog: str) -> None:
     created = uc.create_schema(
         "s", catalog, comment="raw data", properties={"layer": "bronze"}
@@ -83,6 +89,7 @@ def test_schemas(uc: Calls, catalog: str) -> None:
     assert uc.list_schemas(catalog) == []
 
 
+@pytest.mark.upstream
 def test_tables_and_views(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     columns = [
@@ -143,6 +150,7 @@ def test_tables_and_views(uc: Calls, schema: tuple[str, str]) -> None:
     assert uc.list_tables(catalog, schema_name) == []
 
 
+@pytest.mark.upstream
 def test_volumes(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     created = uc.create_volume(catalog, schema_name, "v", "MANAGED", comment="scratch")
@@ -158,6 +166,7 @@ def test_volumes(uc: Calls, schema: tuple[str, str]) -> None:
     assert uc.list_volumes(catalog, schema_name) == []
 
 
+@pytest.mark.upstream
 def test_functions(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     parameters = FunctionParameterInfos(
@@ -199,6 +208,7 @@ def test_functions(uc: Calls, schema: tuple[str, str]) -> None:
     assert uc.list_functions(catalog, schema_name) == []
 
 
+@pytest.mark.upstream
 def test_registered_models_and_versions(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     full_name = f"{catalog}.{schema_name}.m"
@@ -225,6 +235,7 @@ def test_registered_models_and_versions(uc: Calls, schema: tuple[str, str]) -> N
     assert full_name not in [m.full_name for m in uc.list_registered_models()]
 
 
+@pytest.mark.upstream
 def test_model_versions(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     full_name = f"{catalog}.{schema_name}.m"
@@ -250,6 +261,7 @@ def test_model_versions(uc: Calls, schema: tuple[str, str]) -> None:
     assert error.value.code == "NOT_FOUND"
 
 
+@pytest.mark.upstream
 def test_credentials_and_external_locations(uc: Calls) -> None:
     credential_name = unique("credential")
     role = "arn:aws:iam::123456789012:role/uc"
@@ -263,8 +275,6 @@ def test_credentials_and_external_locations(uc: Calls) -> None:
     assert uc.credential(credential_name).get() == credential
     assert credential_name in [c.name for c in uc.list_credentials()]
     assert credential_name in [c.name for c in uc.list_credentials(purpose="STORAGE")]
-    services = uc.list_credentials(purpose="SERVICE_PRINCIPAL")
-    assert credential_name not in [c.name for c in services]
 
     updated = uc.credential(credential_name).update(
         comment="edited", aws_iam_role=AwsIamRoleRequest(f"{role}2")
@@ -296,6 +306,18 @@ def test_credentials_and_external_locations(uc: Calls) -> None:
     assert credential_name not in [c.name for c in uc.list_credentials()]
 
 
+def test_list_credentials_by_purpose(uc: Calls) -> None:
+    # The upstream server takes `purpose`, but lists every credential.
+    name = unique("credential")
+    role = AwsIamRoleRequest("arn:aws:iam::123456789012:role/uc")
+    uc.create_credential(name, role, purpose="STORAGE")
+    assert name in [c.name for c in uc.list_credentials(purpose="STORAGE")]
+    services = uc.list_credentials(purpose="SERVICE_PRINCIPAL")
+    assert name not in [c.name for c in services]
+    uc.credential(name).delete()
+
+
+@pytest.mark.upstream
 def test_temporary_credentials(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     staging = uc.create_staging_table("t", catalog, schema_name)
@@ -331,6 +353,7 @@ def test_temporary_credentials(uc: Calls, schema: tuple[str, str]) -> None:
 
 
 def test_permissions(uc: Calls, catalog: str) -> None:
+    # The upstream server keeps no grants while authorization is off.
     user = f"{unique('user')}@example.com"
     other = f"{unique('user')}@example.com"
     uc.create_user(emails=[ScimEmail(user, primary=True)])
@@ -359,10 +382,14 @@ def test_permissions(uc: Calls, catalog: str) -> None:
         uc.get_permissions("bogus", catalog)
 
 
-def test_metastore_summary_health_and_version(uc: Calls) -> None:
+@pytest.mark.upstream
+def test_metastore_summary(uc: Calls) -> None:
     summary = uc.get_metastore_summary()
     assert summary.metastore_id
     assert uc.get_metastore_summary() == summary
+
+
+def test_health_and_version(uc: Calls) -> None:
     assert uc.get_health().status == "ok"
     version = uc.get_version()
     assert (version.server, version.api_version) == ("unitycatalog-rs", "2.1")
@@ -387,6 +414,7 @@ def test_personal_access_tokens(admin: Calls, uc: Calls, server) -> None:
     assert created.id not in [p.id for p in admin.list_tokens()]
 
 
+@pytest.mark.upstream
 def test_token_exchange_posts_a_form(uc: Calls) -> None:
     with pytest.raises(BadRequestError, match="Authorization is disabled"):
         uc.exchange_token(
@@ -397,6 +425,7 @@ def test_token_exchange_posts_a_form(uc: Calls) -> None:
         )
 
 
+@pytest.mark.upstream
 def test_scim_users(uc: Calls) -> None:
     email = f"{unique('user')}@example.com"
     created = uc.create_user(
@@ -407,8 +436,9 @@ def test_scim_users(uc: Calls) -> None:
     assert created.emails == [ScimEmail(email, primary=True)]
     assert (created.display_name, created.external_id) == ("Ada", email)
     assert created.active is True
-    assert uc.get_user(created.id) == created
-    assert uc.list_users(filter=f'userName eq "{email}"').resources == [created]
+    assert _without_meta(uc.get_user(created.id)) == _without_meta(created)
+    [listed] = uc.list_users(filter=f'userName eq "{email}"').resources
+    assert _without_meta(listed) == _without_meta(created)
     assert len(uc.list_users(start_index=1, count=1).resources) == 1
 
     updated = uc.replace_user(created.id, display_name="Ada L")
@@ -418,9 +448,31 @@ def test_scim_users(uc: Calls) -> None:
     assert uc.delete_user(created.id) is None
     assert uc.get_user(created.id).active is False
     assert uc.replace_user(created.id, active=True).active is True
+
+
+def test_patch_scim_user(uc: Calls) -> None:
+    # The upstream server has no PATCH for users.
+    email = f"{unique('user')}@example.com"
+    created = uc.create_user(emails=[ScimEmail(email, primary=True)])
     disable = ScimPatchOperation("replace", path="active", value=False)
     assert uc.patch_user(created.id, [disable]) is None
     assert uc.get_user(created.id).active is False
+
+
+def _without_meta(user: ScimUser) -> tuple[object, ...]:
+    """The fields of `user` but `meta`: the upstream server gives a user who
+    was never updated the time of the request as `meta.last_modified`."""
+    return (
+        user.schemas,
+        user.id,
+        user.external_id,
+        user.user_name,
+        user.display_name,
+        user.active,
+        user.emails,
+        user.photos,
+        user.roles,
+    )
 
 
 def test_me(admin: Calls, uc: Calls) -> None:
@@ -494,6 +546,7 @@ def test_audit_events(admin: Calls, catalog: str) -> None:
     assert following.events and following.events != page.events
 
 
+@pytest.mark.upstream
 def test_iceberg_rest_catalog(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, namespace = schema
     config = uc.get_iceberg_config(catalog)
@@ -523,6 +576,7 @@ def test_iceberg_rest_catalog(uc: Calls, schema: tuple[str, str]) -> None:
     assert uc.iceberg_table_exists(catalog, namespace, "t") is False
 
 
+@pytest.mark.upstream
 def test_delta_commits(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     staging = uc.create_staging_table("t", catalog, schema_name)
@@ -559,6 +613,7 @@ def test_delta_commits(uc: Calls, schema: tuple[str, str]) -> None:
     assert error.value.code == "TABLE_NOT_FOUND"
 
 
+@pytest.mark.upstream
 def test_delta_api(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     config = uc.get_delta_config(catalog, "1.0")
@@ -647,6 +702,7 @@ def test_shares_recipients_and_delta_sharing(
     assert share_name not in [s.name for s in uc.list_shares()]
 
 
+@pytest.mark.upstream
 def test_server_errors(uc: Calls) -> None:
     name = unique("missing")
     with pytest.raises(NotFoundError) as error:
@@ -657,6 +713,7 @@ def test_server_errors(uc: Calls) -> None:
     assert error.value.details[0]["reason"] == "CATALOG_NOT_FOUND"
 
 
+@pytest.mark.upstream
 def test_async_requests_in_one_event_loop(server, catalog: str) -> None:
     client = Client(server.address)
 

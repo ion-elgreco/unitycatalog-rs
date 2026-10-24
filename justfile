@@ -14,6 +14,9 @@ uc_server := justfile_directory() / "target" / (if profile == "dev" { "debug" } 
 # The image that `just docker` builds.
 image := "unitycatalog-rs:dev"
 
+# The upstream Java server that `just test-upstream` runs: its latest release.
+upstream_image := "unitycatalog/unitycatalog:v0.7.0"
+
 # mike, which publishes a version of the docs site: zensical's fork of it
 # (squidfunk/mike), at a fixed commit.
 mike := "git+https://github.com/squidfunk/mike.git@2d4ad799442f4592db8ad53b179bfb33db8c69ac"
@@ -121,6 +124,18 @@ demo-auth port="8080" idp_port="8090" s3_port="9000": develop
 test:
     cargo build -p uc-server --profile {{ profile }}
     cd python/client && UC_TEST_SERVER_BIN='{{ uc_server }}' PYTHONWARNINGS='error:The global interpreter lock (GIL) has been enabled:RuntimeWarning' uv run --no-sync pytest tests
+
+# Run the Python client's tests that are marked `upstream` against the upstream Java server, in Docker (upstream_image); needs the client in .venv (just develop-client)
+test-upstream:
+    #!/usr/bin/env bash
+    # The image starts the server with authorization off: the tests need no
+    # token.
+    set -euo pipefail
+    id=$(docker run -d -p 127.0.0.1:18183:8080 {{ upstream_image }})
+    trap 'status=$?; [ $status -eq 0 ] || docker logs "$id"; docker rm -f -v "$id" > /dev/null; exit $status' EXIT
+    url=http://127.0.0.1:18183
+    curl -fs --retry 60 --retry-all-errors --retry-delay 1 "$url/api/2.1/unity-catalog/catalogs" > /dev/null
+    cd python/client && UC_TEST_SERVER_URL="$url" uv run --no-sync pytest tests
 
 # Build the wheels of the four Python packages, and run `uc dev`, `uc web` and the client from them, as `pip install 'unitycatalog-rs[all]'` installs them
 test-packages: wasm-dev

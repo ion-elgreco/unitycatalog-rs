@@ -5,6 +5,10 @@ which cargo builds first. It gets no settings but its own: an empty `uc.toml`
 and the `UC_*` variables here, with a signing key of `uc-server keygen`, so
 that `uc-server token` gives the admin's token.
 
+With `UC_TEST_SERVER_URL` the tests use that server instead, such as the
+upstream Java server (`just test-upstream`). Then only the tests marked
+`upstream` run: those of the API that both servers have.
+
 The tests in integrations/ use engines (polars, deltalake, obstore and
 pyiceberg) from the `integrations` dependency group. A module whose engine
 is not installed is skipped. For S3 they have `s3_server`, a second server that vends
@@ -28,6 +32,7 @@ from _helpers import Calls, unique
 from unitycatalog import Client, UnityCatalogError
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+SERVER_URL = os.environ.get("UC_TEST_SERVER_URL")
 
 
 @dataclass(frozen=True)
@@ -127,8 +132,31 @@ def _running_server(root: Path, settings: dict[str, str]) -> Iterator[Server]:
             process.wait(timeout=10)
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers", "upstream: also runs against the upstream Java server"
+    )
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """With `UC_TEST_SERVER_URL`, only the tests marked `upstream` run."""
+    if not SERVER_URL:
+        return
+    other = [item for item in items if not item.get_closest_marker("upstream")]
+    if other:
+        config.hook.pytest_deselected(items=other)
+        items[:] = [item for item in items if item.get_closest_marker("upstream")]
+
+
 @pytest.fixture(scope="session")
 def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Server]:
+    if SERVER_URL:
+        address = SERVER_URL.rstrip("/")
+        url = f"{address}/api/2.1/unity-catalog/"
+        yield Server(address=address, url=url, token="")
+        return
     with _running_server(tmp_path_factory.mktemp("uc-server"), {}) as server:
         yield server
 
@@ -192,11 +220,21 @@ def admin(server: Server, mode: str) -> Calls:
 
 
 @pytest.fixture
-def catalog(server: Server, tmp_path: Path) -> Iterator[str]:
+def storage_root(tmp_path: Path) -> str:
+    """A new directory for managed storage, as the server sees it: `tmp_path`,
+    or a directory in /tmp of the server of `UC_TEST_SERVER_URL`, which can
+    run on another machine or in a container."""
+    if SERVER_URL:
+        return f"file:///tmp/{unique('storage')}"
+    return tmp_path.as_uri()
+
+
+@pytest.fixture
+def catalog(server: Server, storage_root: str) -> Iterator[str]:
     """A new catalog with managed storage in a temporary directory."""
     client = Client(server.address)
     name = unique("catalog")
-    client.create_catalog(name, storage_root=tmp_path.as_uri())
+    client.create_catalog(name, storage_root=storage_root)
     yield name
     client.catalog(name).delete(force=True)
 
