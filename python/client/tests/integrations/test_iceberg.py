@@ -55,11 +55,11 @@ def test_config_gives_the_prefix_and_the_endpoints_of_a_catalog(
 
 
 def test_namespaces_are_the_schemas_of_the_catalog(server, catalog: str) -> None:
-    client = Client(server.url)
+    client = Client(server.address)
     iceberg = rest_catalog(server.url, catalog)
     iceberg.create_namespace("sales", {"team": "finance", "tier": "gold"})
     iceberg.create_namespace("hr")
-    assert client.get_schema(f"{catalog}.sales").properties == {
+    assert client.schema(f"{catalog}.sales").get().properties == {
         "team": "finance",
         "tier": "gold",
     }
@@ -86,7 +86,7 @@ def test_namespaces_are_the_schemas_of_the_catalog(server, catalog: str) -> None
         ["owner"],
         ["region"],
     )
-    assert client.get_schema(f"{catalog}.sales").properties == {
+    assert client.schema(f"{catalog}.sales").get().properties == {
         "team": "finance",
         "owner": "ann",
     }
@@ -105,11 +105,11 @@ def test_tables_are_iceberg_tables_of_unity_catalog(
     server, schema: tuple[str, str]
 ) -> None:
     catalog, schema_name = schema
-    client = Client(server.url)
+    client = Client(server.address)
     iceberg = rest_catalog(server.url, catalog)
     for name in ("a", "b", "c"):
         iceberg.create_table((schema_name, name), schema=SCHEMA)
-    table = client.get_table(f"{catalog}.{schema_name}.a")
+    table = client.table(f"{catalog}.{schema_name}.a").get()
     assert (table.table_type, table.data_source_format) == ("MANAGED", "ICEBERG")
     with pytest.raises(errors.TableAlreadyExistsError):
         iceberg.create_table((schema_name, "a"), schema=SCHEMA)
@@ -142,7 +142,7 @@ def test_pyiceberg_commits_appends_a_column_and_properties_that_polars_reads(
     server, schema: tuple[str, str]
 ) -> None:
     catalog, schema_name = schema
-    client = Client(server.url)
+    client = Client(server.address)
     iceberg = rest_catalog(server.url, catalog)
     january = pa.table(
         {"order_id": pa.array([1, 2], pa.int64()), "customer": ["ann", "bo"]}
@@ -165,12 +165,12 @@ def test_pyiceberg_commits_appends_a_column_and_properties_that_polars_reads(
         )
     )
     full_name = f"{catalog}.{schema_name}.orders"
-    columns = client.get_table(full_name).columns
-    assert [c.name for c in columns or []] == ["order_id", "customer", "amount"]
+    columns = client.table(full_name).get().columns
+    assert [c.name for c in columns] == ["order_id", "customer", "amount"]
     # So are properties, which Unity Catalog keeps.
     with table.transaction() as transaction:
         transaction.set_properties(team="data")
-    assert (client.get_table(full_name).properties or {})["team"] == "data"
+    assert client.table(full_name).get().properties["team"] == "data"
 
     orders = pl.scan_iceberg(iceberg.load_table((schema_name, "orders"))).collect()
     assert orders.sort("order_id").to_dicts() == [
@@ -212,7 +212,7 @@ def test_a_staged_create_makes_the_table_at_its_commit(
     transaction.append(ids(1, 2))
     transaction.commit_transaction()
 
-    table = Client(server.url).get_table(f"{catalog}.{schema_name}.orders")
+    table = Client(server.address).table(f"{catalog}.{schema_name}.orders").get()
     assert (table.table_type, table.data_source_format) == ("MANAGED", "ICEBERG")
     read = iceberg.load_table((schema_name, "orders")).scan().to_arrow()
     assert read["id"].to_pylist() == [1, 2]
@@ -267,7 +267,7 @@ def test_pyiceberg_writes_a_table_on_s3_with_what_the_server_sends(
     # pyiceberg has no settings for S3: each table comes with credentials,
     # the endpoint of moto and the region.
     catalog = unique("catalog")
-    Client(s3_server.url).create_catalog(
+    Client(s3_server.address).create_catalog(
         catalog, storage_root=f"s3://uc-test/{catalog}"
     )
     iceberg = rest_catalog(s3_server.url, catalog)

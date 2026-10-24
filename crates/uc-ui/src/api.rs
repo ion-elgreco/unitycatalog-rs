@@ -6,23 +6,28 @@
 //! items a page, with a token for the next page.
 
 use std::cmp::Reverse;
-use std::future::Future;
 
-use uc_api::{
-    CatalogInfo, FunctionInfo, ModelVersionInfo, PatInfo, RegisteredModelInfo, SchemaInfo,
-    TableInfo, VolumeInfo,
-};
-use uc_client::{API_BASE, Client, Page};
-use uc_common::PageToken;
+use futures::TryStreamExt;
+use uc_client::Client;
+use uc_client::models::catalogs::v1::CatalogInfo;
+use uc_client::models::functions::v1::FunctionInfo;
+use uc_client::models::models::v1::{ModelVersionInfo, RegisteredModelInfo};
+use uc_client::models::schemas::v1::SchemaInfo;
+use uc_client::models::tables::v1::TableInfo;
+use uc_client::models::tokens::v1::PatInfo;
+use uc_client::models::volumes::v1::VolumeInfo;
 
-pub use uc_client::{Error, Result};
+pub use uc_client::error::{Error, Result};
 
 /// A client of the API on this page's origin.
 pub fn client() -> Client {
     let origin = web_sys::window()
         .and_then(|window| window.location().origin().ok())
         .unwrap_or_default();
-    Client::new(format!("{origin}{API_BASE}/")).expect("the page's origin is a URL")
+    let root = format!("{origin}/")
+        .parse()
+        .expect("the page's origin is a URL");
+    Client::new_unauthenticated(root)
 }
 
 /// What the UI shows for a failed call: the server's message, else
@@ -36,108 +41,78 @@ pub fn failure(e: &Error, action: &str) -> String {
     server_message(e).unwrap_or_else(|| action.to_string())
 }
 
-/// The `message` of the server's JSON answer: none without an answer, or
-/// for a proxy's error page.
-fn server_message(e: &Error) -> Option<String> {
-    let Error::Status { body, .. } = e else {
+/// The message of the server's JSON error: none without an answer, or for
+/// a proxy's error page.
+pub fn server_message(e: &Error) -> Option<String> {
+    let Error::Api(answer) = e else {
         return None;
     };
-    let body: serde_json::Value = serde_json::from_str(body).ok()?;
-    let message = body.get("message")?.as_str()?;
-    (!message.is_empty()).then(|| message.to_string())
-}
-
-/// Every item of a list: `page` gets one page, and the token of the next.
-async fn all<T, F>(mut page: impl FnMut(Page) -> F) -> Result<Vec<T>>
-where
-    F: Future<Output = Result<(Vec<T>, Option<PageToken>)>>,
-{
-    let mut items = Vec::new();
-    let mut next = Page::default();
-    loop {
-        let (batch, token) = page(next.clone()).await?;
-        items.extend(batch);
-        match token {
-            Some(PageToken(token)) if !token.is_empty() => next.page_token = Some(token),
-            _ => return Ok(items),
-        }
+    // The server's errors name their code. The client takes the text of
+    // other answers, such as a proxy's error page, as their message.
+    if answer.code.is_none() || answer.message.is_empty() {
+        return None;
     }
+    Some(answer.message.clone())
 }
 
 pub async fn catalogs() -> Result<Vec<CatalogInfo>> {
-    let client = &client();
-    all(move |page| async move {
-        let list = client.list_catalogs(&page).await?;
-        Ok((list.catalogs, list.next_page_token))
-    })
-    .await
+    client().list_catalogs().into_stream().try_collect().await
 }
 
 pub async fn schemas(catalog: &str) -> Result<Vec<SchemaInfo>> {
-    let client = &client();
-    all(move |page| async move {
-        let list = client.list_schemas(catalog, &page).await?;
-        Ok((list.schemas, list.next_page_token))
-    })
-    .await
+    client()
+        .list_schemas(catalog)
+        .into_stream()
+        .try_collect()
+        .await
 }
 
 pub async fn tables(catalog: &str, schema: &str) -> Result<Vec<TableInfo>> {
-    let client = &client();
-    all(move |page| async move {
-        let list = client.list_tables(catalog, schema, &page).await?;
-        Ok((list.tables, list.next_page_token))
-    })
-    .await
+    client()
+        .list_tables(catalog, schema)
+        .into_stream()
+        .try_collect()
+        .await
 }
 
 pub async fn volumes(catalog: &str, schema: &str) -> Result<Vec<VolumeInfo>> {
-    let client = &client();
-    all(move |page| async move {
-        let list = client.list_volumes(catalog, schema, &page).await?;
-        Ok((list.volumes, list.next_page_token))
-    })
-    .await
+    client()
+        .list_volumes(catalog, schema)
+        .into_stream()
+        .try_collect()
+        .await
 }
 
 pub async fn functions(catalog: &str, schema: &str) -> Result<Vec<FunctionInfo>> {
-    let client = &client();
-    all(move |page| async move {
-        let list = client.list_functions(catalog, schema, &page).await?;
-        Ok((list.functions, list.next_page_token))
-    })
-    .await
+    client()
+        .list_functions(catalog, schema)
+        .into_stream()
+        .try_collect()
+        .await
 }
 
 pub async fn models(catalog: &str, schema: &str) -> Result<Vec<RegisteredModelInfo>> {
-    let client = &client();
-    all(move |page| async move {
-        let list = client
-            .list_registered_models(Some(catalog), Some(schema), &page)
-            .await?;
-        Ok((list.registered_models, list.next_page_token))
-    })
-    .await
+    client()
+        .list_registered_models()
+        .with_catalog_name(catalog.to_string())
+        .with_schema_name(schema.to_string())
+        .into_stream()
+        .try_collect()
+        .await
 }
 
 /// The versions of the registered model `full_name`.
 pub async fn model_versions(full_name: &str) -> Result<Vec<ModelVersionInfo>> {
-    let client = &client();
-    all(move |page| async move {
-        let list = client.list_model_versions(full_name, &page).await?;
-        Ok((list.model_versions, list.next_page_token))
-    })
-    .await
+    client()
+        .list_model_versions(full_name)
+        .into_stream()
+        .try_collect()
+        .await
 }
 
 /// The signed-in user's access tokens, the newest first.
 pub async fn tokens() -> Result<Vec<PatInfo>> {
-    let client = &client();
-    let mut tokens = all(move |page| async move {
-        let list = client.list_pats(&page).await?;
-        Ok((list.tokens, list.next_page_token))
-    })
-    .await?;
+    let mut tokens: Vec<PatInfo> = client().list_tokens().into_stream().try_collect().await?;
     tokens.sort_by_key(|token| Reverse(token.created_at));
     Ok(tokens)
 }

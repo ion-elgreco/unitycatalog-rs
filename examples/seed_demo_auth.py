@@ -22,7 +22,9 @@ import urllib.request
 from pathlib import Path
 
 from seed_demo import seed
-from unitycatalog import Client, PermissionsChange
+from unitycatalog import Client
+from unitycatalog._core.credentials import AwsIamRoleRequest
+from unitycatalog._core.permissions import PermissionsChange
 
 BUCKET = "s3://uc-demo"
 
@@ -42,16 +44,13 @@ def sign_in(client: Client, cli: dict, name: str) -> str:
     data = urllib.parse.urlencode(form).encode()
     with urllib.request.urlopen(cli["oauth_token_url"], data) as response:
         id_token = json.load(response)["id_token"]
-    answer = client.post_form(
-        "/api/1.0/unity-control/auth/tokens",
-        {
-            "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-            "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
-            "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
-            "subject_token": id_token,
-        },
+    answer = client.exchange_token(
+        "urn:ietf:params:oauth:grant-type:token-exchange",
+        "urn:ietf:params:oauth:token-type:access_token",
+        id_token,
+        "urn:ietf:params:oauth:token-type:id_token",
     )
-    return answer["access_token"]
+    return answer.access_token
 
 
 def main() -> None:
@@ -64,11 +63,10 @@ def main() -> None:
     args = parser.parse_args()
     settings = args.dir / "uc.toml"
     cli = tomllib.loads(settings.read_text())["cli"]
-    client = Client(f"{cli['server']}/api/2.1/unity-catalog/")
-    token = sign_in(client, cli, "alice")
-    alice = client.with_bearer(token)
+    token = sign_in(Client(cli["server"]), cli, "alice")
+    alice = Client(cli["server"], token=token)
     # An admin lists every catalog.
-    existing = sorted(c.name or "" for c in alice.list_catalogs())
+    existing = sorted(c.name for c in alice.list_catalogs())
     if existing:
         print(
             f"The server has catalogs, so it gets no dummy data: {', '.join(existing)}."
@@ -80,8 +78,8 @@ def main() -> None:
     # limits each credential to its path and operation.
     alice.create_credential(
         "rustfs",
+        AwsIamRoleRequest("arn:aws:iam::000000000000:role/uc-demo"),
         purpose="STORAGE",
-        aws_iam_role_arn="arn:aws:iam::000000000000:role/uc-demo",
         comment="The server's root user at RustFS",
     )
     alice.create_external_location(
@@ -99,9 +97,9 @@ def main() -> None:
         )
 
     for catalog in alice.list_catalogs():
-        c = catalog.name or ""
+        c = catalog.name
         for schema in alice.list_schemas(c):
-            s = schema.name or ""
+            s = schema.name
             for table in alice.list_tables(c, s):
                 uc("table", "write", "--full_name", f"{c}.{s}.{table.name}")
             for volume in alice.list_volumes(c, s):
@@ -109,12 +107,12 @@ def main() -> None:
 
     bob = "bob@example.com"
     alice.update_permissions(
-        "catalog", "sales", [PermissionsChange(bob, add=["USE CATALOG"])]
+        "catalog", "sales", changes=[PermissionsChange(bob, add=["USE CATALOG"])]
     )
     alice.update_permissions(
         "schema",
         "sales.eu",
-        [PermissionsChange(bob, add=["USE SCHEMA", "SELECT", "READ VOLUME"])],
+        changes=[PermissionsChange(bob, add=["USE SCHEMA", "SELECT", "READ VOLUME"])],
     )
     print("alice's dummy data is in RustFS, and bob reads sales.eu.")
 

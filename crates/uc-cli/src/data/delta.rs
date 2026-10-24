@@ -29,18 +29,18 @@ use delta_kernel_default_engine::executor::tokio::TokioBackgroundExecutor;
 use delta_kernel_default_engine::{DefaultEngine, DefaultEngineBuilder};
 use rand::Rng as _;
 use rand::rngs::ThreadRng;
-use uc_api::{
-    ColumnInfo, ColumnTypeName, CreateStagingTable, CreateTable, DataSourceFormat, DeltaCommit,
-    DeltaCommitInfo, DeltaGetCommits, PathOperation, TableInfo, TableOperation, TableType,
-    TemporaryCredentials,
-};
 use uc_client::Client;
+use uc_client::models::credentials::v1::{PathOperation, TableOperation, TemporaryCredentials};
+use uc_client::models::delta::v1::DeltaCommitInfo;
+use uc_client::models::tables::v1::{
+    ColumnInfo, ColumnTypeName, DataSourceFormat, TableInfo, TableType,
+};
 use url::Url;
 
 use super::storage::{S3Store, directory_url, path_credentials, store_for, table_credentials};
 use crate::commands::columns::parse_columns;
 use crate::commands::options::{ThreePartName, wire_name};
-use crate::commands::table::TableCreate;
+use crate::commands::table::{TableCreate, get_table};
 use crate::commands::{Context, upstream};
 use crate::output::models::{self, shape};
 
@@ -59,41 +59,38 @@ fn engine(
 
 /// Upstream `findBasicTypeFromString`: the Delta type of a column.
 fn data_type(column: &ColumnInfo) -> anyhow::Result<DataType> {
-    let name = column.name.as_deref().unwrap_or_default();
+    let name = column.name.as_str();
     let type_name = column
         .type_name
         .ok_or_else(|| anyhow!("Column type is missing: {name}"))?;
-    Ok(match type_name {
-        ColumnTypeName::Int => DataType::INTEGER,
-        ColumnTypeName::String => DataType::STRING,
-        ColumnTypeName::Double => DataType::DOUBLE,
-        ColumnTypeName::Boolean => DataType::BOOLEAN,
-        ColumnTypeName::Long => DataType::LONG,
-        ColumnTypeName::Float => DataType::FLOAT,
-        ColumnTypeName::Short => DataType::SHORT,
-        ColumnTypeName::Byte => DataType::BYTE,
-        ColumnTypeName::Date => DataType::DATE,
-        ColumnTypeName::Timestamp => DataType::TIMESTAMP,
-        ColumnTypeName::TimestampNtz => DataType::TIMESTAMP_NTZ,
-        ColumnTypeName::Binary => DataType::BINARY,
-        ColumnTypeName::Decimal => {
+    Ok(match type_name.as_known() {
+        Some(ColumnTypeName::Int) => DataType::INTEGER,
+        Some(ColumnTypeName::String) => DataType::STRING,
+        Some(ColumnTypeName::Double) => DataType::DOUBLE,
+        Some(ColumnTypeName::Boolean) => DataType::BOOLEAN,
+        Some(ColumnTypeName::Long) => DataType::LONG,
+        Some(ColumnTypeName::Float) => DataType::FLOAT,
+        Some(ColumnTypeName::Short) => DataType::SHORT,
+        Some(ColumnTypeName::Byte) => DataType::BYTE,
+        Some(ColumnTypeName::Date) => DataType::DATE,
+        Some(ColumnTypeName::Timestamp) => DataType::TIMESTAMP,
+        Some(ColumnTypeName::TimestampNtz) => DataType::TIMESTAMP_NTZ,
+        Some(ColumnTypeName::Binary) => DataType::BINARY,
+        Some(ColumnTypeName::Decimal) => {
             let precision = column.type_precision.filter(|p| *p > 0);
             DataType::decimal(
                 precision.map_or(10, |p| p as u8),
                 column.type_scale.map_or(0, |s| s as u8),
             )?
         }
-        other => bail!("Unsupported basic data type: {}", wire_name(&other)),
+        _ => bail!("Unsupported basic data type: {}", wire_name(&type_name)),
     })
 }
 
 fn schema(columns: &[ColumnInfo]) -> anyhow::Result<Arc<StructType>> {
     let fields = columns
         .iter()
-        .map(|c| {
-            let name = c.name.as_deref().unwrap_or_default();
-            Ok(StructField::nullable(name, data_type(c)?))
-        })
+        .map(|c| Ok(StructField::nullable(c.name.as_str(), data_type(c)?)))
         .collect::<anyhow::Result<Vec<_>>>()?;
     Ok(Arc::new(StructType::try_new(fields)?))
 }
@@ -162,19 +159,15 @@ pub async fn create_table(c: &Context<'_>, create: TableCreate) -> anyhow::Resul
                     wire_name(&format)
                 );
             }
-            let request = CreateStagingTable {
-                name: name.clone(),
-                catalog_name: catalog.clone(),
-                schema_name: schema_name.clone(),
-            };
             let staging = c
                 .client
-                .create_staging_table(&request)
+                .create_staging_table(name.clone(), catalog.clone(), schema_name.clone())
                 .await
                 .map_err(upstream("createStagingTable"))?;
-            let (Some(id), Some(location)) = (staging.id, staging.staging_location) else {
+            let (id, location) = (staging.id, staging.staging_location);
+            if id.is_empty() || location.is_empty() {
                 bail!("Failed to create staging table");
-            };
+            }
             let credentials = table_credentials(c, &id, TableOperation::ReadWrite).await?;
             (location, Some(credentials), Some(id))
         }
@@ -207,22 +200,13 @@ pub async fn create_table(c: &Context<'_>, create: TableCreate) -> anyhow::Resul
         }
     }
 
-    let request = CreateTable {
-        name,
-        catalog_name: catalog,
-        schema_name,
-        table_type,
-        columns,
-        data_source_format: Some(format),
-        storage_location: Some(location),
-        comment: None,
-        properties: properties.map(|p| p.into_iter().collect()),
-        view_definition: None,
-        view_dependencies: None,
-    };
     let info = c
         .client
-        .create_table(&request)
+        .create_table(name, catalog, schema_name, table_type)
+        .with_columns(columns)
+        .with_data_source_format(format)
+        .with_storage_location(location)
+        .with_properties(properties.unwrap_or_default())
         .await
         .map_err(upstream("createTable"))?;
     Ok(c.json(&shape(&models::TABLE, &serde_json::to_value(&info)?)))
@@ -342,26 +326,20 @@ async fn catalog_commits(
     let mut start = 0i64;
     let mut paths = BTreeMap::new();
     loop {
-        let request = DeltaGetCommits {
-            table_id: Some(table_id.to_string()),
-            table_uri: Some(url.to_string()),
-            start_version: Some(start),
-            end_version: None,
-        };
         let page = c
             .client
-            .get_delta_commits(&request)
+            .get_delta_commits(table_id, start)
+            .with_table_uri(url.to_string())
             .await
             .map_err(upstream("getCommits"))?;
         let latest = page.latest_table_version;
         let commits = page.commits;
         let mut newest = start - 1;
         for commit in &commits {
-            let version = commit.version.unwrap_or(-1);
-            let file_name = commit.file_name.as_deref().unwrap_or_default();
-            let modified = commit.file_modification_timestamp.unwrap_or(0);
-            let size = commit.file_size.unwrap_or(0).max(0) as u64;
-            let path = LogPath::staged_commit(url.clone(), file_name, modified, size)?;
+            let version = commit.version;
+            let modified = commit.file_modification_timestamp;
+            let size = commit.file_size.max(0) as u64;
+            let path = LogPath::staged_commit(url.clone(), &commit.file_name, modified, size)?;
             paths.entry(version).or_insert(path);
             newest = newest.max(version);
         }
@@ -388,9 +366,8 @@ fn load_snapshot(
 
 /// Whether the table's properties mark it catalog-managed.
 fn is_catalog_managed(info: &TableInfo) -> bool {
-    let properties = info.properties.as_ref();
-    properties
-        .and_then(|p| p.get("delta.feature.catalogManaged"))
+    info.properties
+        .get("delta.feature.catalogManaged")
         .map(String::as_str)
         == Some("supported")
 }
@@ -410,17 +387,14 @@ async fn target(
     operation: TableOperation,
     verb: &str,
 ) -> anyhow::Result<TableTarget> {
-    // Upstream's CLI reads streaming tables and materialized views as
-    // MANAGED tables.
-    let info = c
-        .client
-        .get_table(full_name, true, true)
+    let info = get_table(c, full_name)
         .await
         .map_err(upstream("getTable"))?;
-    if info.data_source_format != Some(DataSourceFormat::Delta) {
+    let format = info.data_source_format.and_then(|f| f.as_known());
+    if format != Some(DataSourceFormat::Delta) {
         bail!("Only Delta tables are supported for {verb} operations");
     }
-    let table_id = info.table_id.clone().unwrap_or_default();
+    let table_id = info.table_id.clone();
     let location = info
         .storage_location
         .as_deref()
@@ -438,7 +412,7 @@ async fn target(
     Ok(TableTarget {
         url,
         table_id,
-        columns: info.columns.unwrap_or_default(),
+        columns: info.columns,
         catalog,
         credentials,
         s3: c.s3.clone(),
@@ -686,20 +660,20 @@ impl Committer for UcCommitter {
             .and_then(|mut s| s.next_back())
             .unwrap_or_default()
             .to_string();
-        let commit = DeltaCommit {
-            table_id: Some(self.table_id.clone()),
-            table_uri: Some(self.table_uri.to_string()),
-            commit_info: Some(DeltaCommitInfo {
-                version: Some(version as i64),
-                timestamp: Some(timestamp),
-                file_name: Some(file_name),
-                file_size: Some(size as i64),
-                file_modification_timestamp: Some(timestamp),
-            }),
-            latest_backfilled_version: metadata.max_published_version().map(|v| v as i64),
+        let commit = DeltaCommitInfo {
+            version: version as i64,
+            timestamp,
+            file_name,
+            file_size: size as i64,
+            file_modification_timestamp: timestamp,
             ..Default::default()
         };
-        match self.handle.block_on(self.client.commit_delta(&commit)) {
+        let call = self
+            .client
+            .commit_delta(self.table_id.clone(), self.table_uri.to_string())
+            .with_commit_info(commit)
+            .with_latest_backfilled_version(metadata.max_published_version().map(|v| v as i64));
+        match self.handle.block_on(call.into_future()) {
             Ok(()) => Ok(CommitResponse::Committed {
                 file_meta: FileMeta::new(staged, timestamp, size),
             }),

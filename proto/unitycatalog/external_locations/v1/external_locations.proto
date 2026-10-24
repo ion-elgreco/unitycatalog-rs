@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+package unitycatalog.external_locations.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+
+// An external location: a storage path and the credential that gives access to it.
+message ExternalLocationInfo {
+  option (google.api.resource) = {
+    type: "unitycatalog.io/ExternalLocation"
+    pattern: "external-locations/{external_location}"
+    plural: "external_locations"
+    singular: "external_location"
+  };
+
+  // Name of the external location.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // URL of the storage path, such as `s3://bucket/path`.
+  string url = 2;
+  // Name of the credential that gives access to the path. Absent when the credential was
+  // deleted with `force`.
+  optional string credential_name = 3;
+  // Username of the owner of the external location.
+  optional string owner = 4;
+  // User-provided free-form text description.
+  optional string comment = 5;
+  // Time at which the external location was created, in epoch milliseconds.
+  int64 created_at = 6;
+  // Username of the creator of the external location.
+  optional string created_by = 7;
+  // Time at which the external location was last changed, in epoch milliseconds.
+  int64 updated_at = 8;
+  // Username of the user who last changed the external location.
+  optional string updated_by = 9;
+  // Unique identifier of the external location.
+  string id = 10;
+  // Unique identifier of the credential that gives access to the path.
+  string credential_id = 11;
+}
+
+message CreateExternalLocation {
+  // Name of the external location.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // URL of the storage path, such as `s3://bucket/path`.
+  string url = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the credential that gives access to the path.
+  string credential_name = 3 [(google.api.field_behavior) = REQUIRED];
+  // User-provided free-form text description.
+  optional string comment = 4;
+}
+
+message ListExternalLocationsRequest {
+  // The maximum number of external locations to return.
+  optional int32 max_results = 1;
+  // Opaque token of the page to return: the `next_page_token` of the page before.
+  optional string page_token = 2;
+}
+
+message ListExternalLocationsResponse {
+  // The external locations.
+  repeated ExternalLocationInfo external_locations = 1;
+  // Opaque token of the next page. Absent on the last page.
+  optional string next_page_token = 2;
+}
+
+message GetExternalLocationRequest {
+  // Name of the external location.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message UpdateExternalLocation {
+  // Name of the external location.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // New URL of the storage path.
+  optional string url = 2;
+  // New name of the external location.
+  optional string new_name = 3;
+  // User-provided free-form text description.
+  optional string comment = 4;
+  // Name of the new credential that gives access to the path.
+  optional string credential_name = 5;
+}
+
+message DeleteExternalLocationRequest {
+  // Name of the external location.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Delete the external location even when tables, volumes or models use its path.
+  optional bool force = 2;
+}
+
+// External locations: storage paths outside the managed storage, each with the credential that
+// gives access to it.
+service ExternalLocationsService {
+  // List the external locations that the caller can see.
+  rpc ListExternalLocations(ListExternalLocationsRequest) returns (ListExternalLocationsResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/external-locations"};
+  }
+
+  // Create an external location.
+  rpc CreateExternalLocation(.unitycatalog.external_locations.v1.CreateExternalLocation) returns (ExternalLocationInfo) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/external-locations"
+      body: "*"
+    };
+  }
+
+  // Get an external location.
+  rpc GetExternalLocation(GetExternalLocationRequest) returns (ExternalLocationInfo) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/external-locations/{name}"};
+  }
+
+  // Change an external location.
+  rpc UpdateExternalLocation(.unitycatalog.external_locations.v1.UpdateExternalLocation) returns (ExternalLocationInfo) {
+    option (google.api.http) = {
+      patch: "/api/2.1/unity-catalog/external-locations/{name}"
+      body: "*"
+    };
+  }
+
+  // Delete an external location.
+  rpc DeleteExternalLocation(DeleteExternalLocationRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.1/unity-catalog/external-locations/{name}"};
+  }
+}

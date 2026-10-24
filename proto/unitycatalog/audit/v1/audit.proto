@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package unitycatalog.audit.v1;
+
+import "google/api/annotations.proto";
+
+// One request that could change the catalog: a `POST`, `PATCH`, `PUT` or `DELETE`.
+message AuditEvent {
+  // Unique identifier of the event.
+  string id = 1;
+  // Username of the principal that sent the request, or `anonymous`.
+  string principal = 2;
+  // HTTP method of the request, such as `POST` or `DELETE`.
+  string method = 3;
+  // Path of the request, with the query string.
+  string path = 4;
+  // HTTP status code of the response.
+  int32 status = 5;
+  // Time at which the response was sent, in epoch milliseconds.
+  int64 timestamp = 6;
+}
+
+message ListAuditEventsRequest {
+  // Return only the events of this principal.
+  optional string principal = 1;
+  // Return only the events of this HTTP method, such as `DELETE`.
+  optional string method = 2;
+  // Return only the events whose path starts with this prefix.
+  optional string path_prefix = 3;
+  // Return only the events at or after this time, in epoch milliseconds.
+  optional int64 since = 4;
+  // Return only the events at or before this time, in epoch milliseconds.
+  optional int64 until = 5;
+  // The maximum number of events to return.
+  optional int32 max_results = 6;
+  // Opaque token of the page to return: the `next_page_token` of the page before.
+  optional string page_token = 7;
+}
+
+message ListAuditEventsResponse {
+  // The events, newest first.
+  repeated AuditEvent events = 1;
+  // Opaque token of the next page. Absent on the last page.
+  optional string next_page_token = 2;
+}
+
+// Audit log: the requests that could change the catalog. For admins only.
+service AuditService {
+  // List the audit events, newest first.
+  rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/admin/audit"};
+  }
+}

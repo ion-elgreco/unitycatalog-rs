@@ -205,6 +205,10 @@ pre-commit-check:
     cd python/client && uv run --no-sync ruff format --check --diff .
     cd python/client && uv run --no-sync mypy .
 
+# Generate the Rust client (crates/uc-client) and the Python bindings (python/client) from the protos in proto/; needs protoc
+generate:
+    cargo run -q --profile {{ profile }} -p uc-codegen
+
 # Write the stubs of the Python client (python/client/unitycatalog/_core) from the Rust code, and format them with ruff
 generate-stubs:
     #!/usr/bin/env bash

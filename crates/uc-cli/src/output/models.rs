@@ -1,9 +1,11 @@
 //! Upstream's client models: the fields, in order, that its CLI prints. As
 //! the generated Java client, a field the server leaves out prints as
 //! `null`, or as `[]` and `{}` for lists and maps; unknown fields are
-//! dropped.
+//! dropped. A map prints in key order.
 
 use serde_json::{Map, Value};
+
+use super::sorted;
 
 pub enum Kind {
     Plain,
@@ -250,10 +252,33 @@ pub fn shape(model: &Model, value: &Value) -> Value {
                 Value::Array(items.iter().map(|i| shape(item, i)).collect())
             }
             (Kind::Object(inner), Some(v @ Value::Object(_))) => shape(inner, v),
+            (Kind::Map, Some(v @ Value::Object(_))) => sorted(v.clone()),
             (_, Some(v)) => v.clone(),
         };
         out.insert(name.to_string(), shaped);
     }
+    Value::Object(out)
+}
+
+/// `value`, an object of `model`'s type, with its empty maps and lists,
+/// which the API's models leave out and the server sends; its maps in key
+/// order. Its other fields stay as they are.
+pub fn with_empty(model: &Model, value: Value) -> Value {
+    let Value::Object(mut fields) = value else {
+        return value;
+    };
+    let mut out = Map::new();
+    for (name, kind) in model.0 {
+        let field = match (fields.shift_remove(*name), kind) {
+            (Some(v @ Value::Object(_)), Kind::Map) => sorted(v),
+            (Some(v), _) => v,
+            (None, Kind::Map) => Value::Object(Map::new()),
+            (None, Kind::List(_)) => Value::Array(Vec::new()),
+            (None, _) => continue,
+        };
+        out.insert(name.to_string(), field);
+    }
+    out.extend(fields);
     Value::Object(out)
 }
 
@@ -297,5 +322,36 @@ mod tests {
         );
         assert_eq!(shaped["columns"][0]["nullable"], Value::Null);
         assert!(shaped.get("extra").is_none());
+        // Maps print in key order.
+        let shaped = shape(&CATALOG, &json!({ "properties": { "b": "1", "a": "2" } }));
+        let keys: Vec<&String> = shaped["properties"].as_object().unwrap().keys().collect();
+        assert_eq!(keys, ["a", "b"]);
+    }
+
+    #[test]
+    fn empty_maps_and_lists_come_back_in_place() {
+        let table = with_empty(
+            &TABLE,
+            json!({ "x": 0, "name": "t", "table_type": "EXTERNAL", "owner": "o", "y": 1 }),
+        );
+        assert_eq!(
+            table,
+            json!({ "name": "t", "table_type": "EXTERNAL", "columns": [], "properties": {},
+                "owner": "o", "x": 0, "y": 1 })
+        );
+        let keys: Vec<&String> = table.as_object().unwrap().keys().collect();
+        let expected = [
+            "name",
+            "table_type",
+            "columns",
+            "properties",
+            "owner",
+            "x",
+            "y",
+        ];
+        assert_eq!(keys, expected);
+        let catalog = with_empty(&CATALOG, json!({ "properties": { "b": "1", "a": "2" } }));
+        let keys: Vec<&String> = catalog["properties"].as_object().unwrap().keys().collect();
+        assert_eq!(keys, ["a", "b"]);
     }
 }

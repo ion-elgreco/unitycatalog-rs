@@ -2,7 +2,7 @@
 //! write their files with [`crate::data::files`].
 
 use clap::Subcommand;
-use uc_api::{CreateVolumeRequestContent, UpdateVolumeRequestContent, VolumeType};
+use uc_client::models::volumes::v1::VolumeType;
 
 use super::options::{
     Paging, TABLE_TYPES, ThreePartName, changes, help, one_of_wire, three_part_name,
@@ -85,17 +85,16 @@ pub async fn run(c: &Context<'_>, op: VolumeOp) -> Result<String> {
             volume_type,
             comment,
         } => {
-            let request = CreateVolumeRequestContent {
-                catalog_name: full_name.catalog,
-                schema_name: full_name.schema,
-                name: full_name.name,
-                volume_type,
-                comment,
-                storage_location,
-            };
             let info = c
                 .client
-                .create_volume(&request)
+                .create_volume(
+                    full_name.catalog,
+                    full_name.schema,
+                    full_name.name,
+                    volume_type,
+                )
+                .with_comment(comment)
+                .with_storage_location(storage_location)
                 .await
                 .map_err(upstream("createVolume"))?;
             Ok(c.shaped(&models::VOLUME, &serde_json::to_value(&info)?))
@@ -107,7 +106,9 @@ pub async fn run(c: &Context<'_>, op: VolumeOp) -> Result<String> {
         } => {
             let list = c
                 .client
-                .list_volumes(&catalog, &schema, &paging.into())
+                .list_volumes(catalog, schema)
+                .with_max_results(paging.max_results)
+                .with_page_token(paging.page_token)
                 .await
                 .map_err(upstream("listVolumes"))?;
             Ok(c.shaped_list(&models::VOLUME, &serde_json::to_value(&list)?, "volumes"))
@@ -115,7 +116,8 @@ pub async fn run(c: &Context<'_>, op: VolumeOp) -> Result<String> {
         VolumeOp::Get { full_name } => {
             let info = c
                 .client
-                .get_volume(&full_name)
+                .volume(full_name)
+                .get()
                 .await
                 .map_err(upstream("getVolume"))?;
             Ok(c.shaped(&models::VOLUME, &serde_json::to_value(&info)?))
@@ -125,17 +127,20 @@ pub async fn run(c: &Context<'_>, op: VolumeOp) -> Result<String> {
             new_name,
             comment,
         } => {
-            let request = UpdateVolumeRequestContent { comment, new_name };
             let info = c
                 .client
-                .update_volume(&full_name, &request)
+                .volume(full_name)
+                .update()
+                .with_comment(comment)
+                .with_new_name(new_name)
                 .await
                 .map_err(upstream("updateVolume"))?;
             Ok(c.shaped(&models::VOLUME, &serde_json::to_value(&info)?))
         }
         VolumeOp::Delete { full_name } => {
             c.client
-                .delete_volume(&full_name)
+                .volume(full_name)
+                .delete()
                 .await
                 .map_err(upstream("deleteVolume"))?;
             Ok(String::new())

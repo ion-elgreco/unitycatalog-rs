@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 from _helpers import Calls, unique
 
-from unitycatalog import Client, UcError
+from unitycatalog import Client, UnityCatalogError
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -33,10 +33,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 @dataclass(frozen=True)
 class Server:
     address: str
-    """The address of the server, such as `http://127.0.0.1:8080`: engines add
-    the path of the API to it."""
+    """The address of the server, such as `http://127.0.0.1:8080`: `Client`
+    takes it, and engines add the path of the API to it."""
     url: str
-    """The base URL of the API."""
+    """The base URL of the Unity Catalog REST API."""
     token: str
     """A token of the server's `admin`, from `uc-server token`."""
 
@@ -84,7 +84,7 @@ def _wait_for(
         try:
             ready()
             return
-        except (OSError, UcError):
+        except (OSError, UnityCatalogError):
             if process.poll() is not None or time.monotonic() > deadline:
                 raise RuntimeError(
                     f"{name} did not start:\n{log_path.read_text()}"
@@ -118,7 +118,8 @@ def _running_server(root: Path, settings: dict[str, str]) -> Iterator[Server]:
     with log_path.open("w") as log:
         process = subprocess.Popen([binary], cwd=root, env=env, stdout=log, stderr=log)
         try:
-            _wait_for("uc-server", process, log_path, Client(url).metastore_summary)
+            ready = Client(address).get_metastore_summary
+            _wait_for("uc-server", process, log_path, ready)
             token = _output([binary, "token"], env=env, cwd=root).strip()
             yield Server(address=address, url=url, token=token)
         finally:
@@ -181,27 +182,27 @@ def mode(request: pytest.FixtureRequest) -> str:
 @pytest.fixture
 def uc(server: Server, mode: str) -> Calls:
     """An anonymous client, in the mode of the test."""
-    return Calls(Client(server.url), mode)
+    return Calls(Client(server.address), mode)
 
 
 @pytest.fixture
 def admin(server: Server, mode: str) -> Calls:
     """A client signed in as the server's `admin`, in the mode of the test."""
-    return Calls(Client(server.url).with_bearer(server.token), mode)
+    return Calls(Client(server.address, token=server.token), mode)
 
 
 @pytest.fixture
 def catalog(server: Server, tmp_path: Path) -> Iterator[str]:
     """A new catalog with managed storage in a temporary directory."""
-    client = Client(server.url)
+    client = Client(server.address)
     name = unique("catalog")
     client.create_catalog(name, storage_root=tmp_path.as_uri())
     yield name
-    client.delete_catalog(name, force=True)
+    client.catalog(name).delete(force=True)
 
 
 @pytest.fixture
 def schema(server: Server, catalog: str) -> tuple[str, str]:
     """`(catalog, schema)`: a new schema in a new catalog."""
-    Client(server.url).create_schema("default", catalog)
+    Client(server.address).create_schema("default", catalog)
     return catalog, "default"

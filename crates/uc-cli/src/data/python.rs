@@ -3,7 +3,8 @@
 
 use anyhow::{anyhow, bail};
 use serde_json::{Value, json};
-use uc_api::{ColumnTypeName, FunctionInfo};
+use uc_client::models::functions::v1::FunctionInfo;
+use uc_client::models::tables::v1::ColumnTypeName;
 
 use crate::commands::options::wire_name;
 use crate::commands::{Context, upstream};
@@ -16,9 +17,10 @@ pub async fn call_function(
     full_name: &str,
     input_params: &str,
 ) -> anyhow::Result<String> {
-    let function: FunctionInfo = c
+    let function = c
         .client
-        .get_function(full_name)
+        .function(full_name)
+        .get()
         .await
         .map_err(upstream("getFunction"))?;
     let args: Vec<String> = input_params
@@ -31,8 +33,8 @@ pub async fn call_function(
 fn invoke(function: &FunctionInfo, args: &[String]) -> anyhow::Result<String> {
     let parameters = function
         .input_params
-        .as_ref()
-        .and_then(|p| p.parameters.as_deref())
+        .as_option()
+        .map(|p| p.parameters.as_slice())
         .filter(|p| !p.is_empty())
         .ok_or_else(|| anyhow!("Function parameters not found."))?;
     if args.len() < parameters.len() {
@@ -55,22 +57,25 @@ fn invoke(function: &FunctionInfo, args: &[String]) -> anyhow::Result<String> {
         let argument = args
             .get(position)
             .ok_or_else(|| anyhow!("Not enough parameters provided"))?;
-        values.push(match parameter.type_name {
-            ColumnTypeName::Int => json!(
+        values.push(match parameter.type_name.as_known() {
+            Some(ColumnTypeName::Int) => json!(
                 argument
                     .parse::<i32>()
                     .map_err(|_| anyhow!("For input string: \"{argument}\""))?
             ),
-            ColumnTypeName::Double => json!(
+            Some(ColumnTypeName::Double) => json!(
                 argument
                     .parse::<f64>()
                     .map_err(|_| anyhow!("For input string: \"{argument}\""))?
             ),
-            ColumnTypeName::String => json!(argument),
-            other => bail!("Unsupported parameter type: {}", wire_name(&other)),
+            Some(ColumnTypeName::String) => json!(argument),
+            _ => bail!(
+                "Unsupported parameter type: {}",
+                wire_name(&parameter.type_name)
+            ),
         });
     }
-    let name = function.name.as_deref().unwrap_or_default();
+    let name = function.name.as_str();
     let body = function.routine_definition.as_deref().unwrap_or_default();
     let output = std::process::Command::new("python3")
         .arg("-c")

@@ -13,8 +13,8 @@ def test_polars_writes_data_files_into_a_managed_volume(
     server, schema: tuple[str, str]
 ) -> None:
     catalog, schema_name = schema
-    client = Client(server.url)
-    volume = client.create_volume("exports", catalog, schema_name, "MANAGED")
+    client = Client(server.address)
+    volume = client.create_volume(catalog, schema_name, "exports", "MANAGED")
     assert volume.volume_id and volume.storage_location
     # Engines ask for credentials to reach the storage of the volume. A local
     # folder needs none: the answer has only its URL.
@@ -37,8 +37,8 @@ def test_obstore_puts_lists_and_deletes_files_in_an_external_volume(
 ) -> None:
     catalog, schema_name = schema
     folder = tmp_path_factory.mktemp("landing")
-    volume = Client(server.url).create_volume(
-        "landing", catalog, schema_name, "EXTERNAL", storage_location=folder.as_uri()
+    volume = Client(server.address).create_volume(
+        catalog, schema_name, "landing", "EXTERNAL", storage_location=folder.as_uri()
     )
     store = obstore.store.from_url(volume.storage_location)
     obstore.put(store, "2026-10-16/events.json", b'{"event": "signup"}\n')

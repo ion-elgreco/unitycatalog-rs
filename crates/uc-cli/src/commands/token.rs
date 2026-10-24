@@ -1,8 +1,6 @@
 //! `uc token`: create, list and delete personal access tokens.
 
 use clap::Subcommand;
-use uc_api::CreatePat;
-use uc_client::Page;
 
 use super::options::help;
 use super::{Context, Result, upstream};
@@ -33,7 +31,8 @@ pub async fn run(c: &Context<'_>, op: TokenOp) -> Result<String> {
         TokenOp::Create { name, expires_at } => {
             let token = c
                 .client
-                .create_pat(&CreatePat { name, expires_at })
+                .create_token(name)
+                .with_expires_at(expires_at)
                 .await
                 .map_err(upstream("createToken"))?;
             Ok(c.json(&serde_json::to_value(&token)?))
@@ -41,14 +40,15 @@ pub async fn run(c: &Context<'_>, op: TokenOp) -> Result<String> {
         TokenOp::List => {
             let list = c
                 .client
-                .list_pats(&Page::default())
+                .list_tokens()
                 .await
                 .map_err(upstream("listTokens"))?;
             Ok(c.json(&serde_json::to_value(&list.tokens)?))
         }
         TokenOp::Delete { id } => {
             c.client
-                .revoke_pat(&id)
+                .token(id)
+                .delete()
                 .await
                 .map_err(upstream("deleteToken"))?;
             Ok(String::new())

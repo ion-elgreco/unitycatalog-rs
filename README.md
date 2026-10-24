@@ -46,7 +46,7 @@ uc catalog list                      # upstream's bin/uc commands
 ```python
 from unitycatalog import Client
 
-client = Client("http://localhost:8080/api/2.1/unity-catalog/")
+client = Client("http://localhost:8080/")
 print([catalog.name for catalog in client.list_catalogs()])
 ```
 

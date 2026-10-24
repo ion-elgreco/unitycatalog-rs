@@ -5,8 +5,6 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from unitycatalog import Client
-
 
 def unique(prefix: str) -> str:
     """A new name, so that tests do not share objects on the server."""
@@ -14,17 +12,23 @@ def unique(prefix: str) -> str:
 
 
 class Calls:
-    """The methods of a client in one mode: `sync` calls `name`, `async`
-    awaits `name_async` in a new event loop."""
+    """The methods of a client, or of a resource handle such as
+    `client.catalog(name)`, in one mode: `sync` calls `name`, `async` awaits
+    `name_async` in a new event loop. A method without an `_async` twin sends
+    no request, such as `catalog(name)`: the handle that it returns gets the
+    same mode."""
 
-    def __init__(self, client: Client, mode: str) -> None:
-        self.client = client
+    def __init__(self, target: Any, mode: str) -> None:
+        self.target = target
         self.mode = mode
 
     def __getattr__(self, name: str) -> Callable[..., Any]:
+        if not hasattr(self.target, f"{name}_async"):
+            method = getattr(self.target, name)
+            return lambda *args, **kwargs: Calls(method(*args, **kwargs), self.mode)
         if self.mode == "sync":
-            return getattr(self.client, name)
-        method = getattr(self.client, f"{name}_async")
+            return getattr(self.target, name)
+        method = getattr(self.target, f"{name}_async")
 
         def call(*args: Any, **kwargs: Any) -> Any:
             async def run() -> Any:

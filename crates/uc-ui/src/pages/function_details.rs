@@ -1,7 +1,7 @@
 //! Function detail page. Mirrors `pages/FunctionDetails.tsx`.
 
 use leptos::prelude::*;
-use uc_api::FunctionInfo;
+use uc_client::models::functions::v1::FunctionInfo;
 use uc_common::three_part_full_name;
 
 use crate::api;
@@ -30,7 +30,7 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
         let full_name = full_name.clone();
         move || {
             let full_name = full_name.clone();
-            async move { api::client().get_function(&full_name).await }
+            async move { api::client().function(full_name).get().await }
         }
     });
     let delete_open = RwSignal::new(false);
@@ -46,7 +46,7 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
                 let full_name = full_name.clone();
                 move |_| {
                     let full_name = full_name.clone();
-                    async move { api::client().delete_function(&full_name).await }
+                    async move { api::client().function(full_name).delete().await }
                 }
             }
             key=Key::Function(full_name.clone())

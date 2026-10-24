@@ -12,15 +12,20 @@ import argparse
 import json
 from pathlib import Path
 
-from unitycatalog import Client, ColumnInfo, FunctionParameterInfo
-from unitycatalog.types import ColumnTypeName
+from unitycatalog import Client, ColumnTypeName
+from unitycatalog._core.functions import (
+    CreateFunction,
+    FunctionParameterInfo,
+    FunctionParameterInfos,
+)
+from unitycatalog._core.tables import ColumnInfo
 
 # A column type: its type name, its type text and its type in Delta's schema.
 Type = tuple[ColumnTypeName, str, str]
-INT: Type = ("INT", "int", "integer")
-STRING: Type = ("STRING", "string", "string")
-DOUBLE: Type = ("DOUBLE", "double", "double")
-DATE: Type = ("DATE", "date", "date")
+INT: Type = (ColumnTypeName.INT, "int", "integer")
+STRING: Type = (ColumnTypeName.STRING, "string", "string")
+DOUBLE: Type = (ColumnTypeName.DOUBLE, "double", "double")
+DATE: Type = (ColumnTypeName.DATE, "date", "date")
 
 
 def type_json(name: str, json_type: str) -> str:
@@ -50,9 +55,9 @@ def table(
         columns=[
             ColumnInfo(
                 column,
+                type_json(column, json_type),
                 type_name=type_name,
                 type_text=type_text,
-                type_json=type_json(column, json_type),
                 position=position,
                 nullable=True,
             )
@@ -77,31 +82,34 @@ def function(
     definition: str,
 ) -> None:
     """A Python function from one string to a string."""
+    parameters = [
+        FunctionParameterInfo(
+            parameter,
+            "string",
+            "STRING",
+            type_json=type_json(parameter, "string"),
+            position=0,
+        )
+    ]
     client.create_function(
-        name,
-        catalog,
-        schema,
-        "EXTERNAL",
-        input_params=[
-            FunctionParameterInfo(
-                parameter,
-                "string",
-                "STRING",
-                type_json=type_json(parameter, "string"),
-                position=0,
-            )
-        ],
-        data_type="STRING",
-        full_data_type="STRING",
-        routine_definition=definition,
-        external_language="python",
-        parameter_style="S",
-        is_deterministic=True,
-        sql_data_access="NO_SQL",
-        is_null_call=False,
-        security_type="DEFINER",
-        specific_name=name,
-        comment=comment,
+        CreateFunction(
+            name,
+            catalog,
+            schema,
+            "EXTERNAL",
+            "S",
+            "DEFINER",
+            input_params=FunctionParameterInfos(parameters=parameters),
+            data_type="STRING",
+            full_data_type="STRING",
+            routine_definition=definition,
+            external_language="python",
+            is_deterministic=True,
+            sql_data_access="NO_SQL",
+            is_null_call=False,
+            specific_name=name,
+            comment=comment,
+        )
     )
 
 
@@ -169,7 +177,7 @@ def seed(client: Client, root: str) -> None:
         [("as_int", INT), ("as_double", DOUBLE)],
     )
     client.create_volume(
-        "txt_files", "unity", "default", "MANAGED", comment="Text files"
+        "unity", "default", "txt_files", "MANAGED", comment="Text files"
     )
     function(
         client,
@@ -199,7 +207,7 @@ def seed(client: Client, root: str) -> None:
         "Invoices in Europe",
         [("invoice_id", INT), ("order_id", INT), ("total", DOUBLE)],
     )
-    client.create_volume("exports", "sales", "eu", "MANAGED", comment="Monthly exports")
+    client.create_volume("sales", "eu", "exports", "MANAGED", comment="Monthly exports")
     table(client, "sales", "us", "orders", "Orders in the US", orders)
     function(
         client,
@@ -220,7 +228,7 @@ def seed(client: Client, root: str) -> None:
         [("customer", STRING), ("orders", INT), ("spend", DOUBLE)],
     )
     client.create_volume(
-        "raw", "ml", "features", "MANAGED", comment="Raw feature files"
+        "ml", "features", "raw", "MANAGED", comment="Raw feature files"
     )
     model(
         client,
@@ -251,15 +259,15 @@ def main() -> None:
         "storage", type=Path, help="the folder of the catalogs' managed data"
     )
     args = parser.parse_args()
-    client = Client(f"{args.server.rstrip('/')}/api/2.1/unity-catalog/")
-    existing = sorted(c.name or "" for c in client.list_catalogs())
+    client = Client(args.server)
+    existing = sorted(c.name for c in client.list_catalogs())
     if existing:
         print(
             f"The server has catalogs, so it gets no dummy data: {', '.join(existing)}."
         )
         return
     seed(client, args.storage.resolve().as_uri())
-    catalogs = ", ".join(sorted(c.name or "" for c in client.list_catalogs()))
+    catalogs = ", ".join(sorted(c.name for c in client.list_catalogs()))
     print(f"The demo data is in place. Catalogs: {catalogs}.")
 
 

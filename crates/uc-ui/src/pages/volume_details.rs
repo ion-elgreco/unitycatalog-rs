@@ -1,8 +1,8 @@
 //! Volume detail page. Mirrors `pages/VolumeDetails.tsx`.
 
 use leptos::prelude::*;
-use uc_api::{UpdateVolumeRequestContent, VolumeInfo};
-use uc_common::{three_part_full_name, wire_name};
+use uc_client::models::volumes::v1::VolumeInfo;
+use uc_common::three_part_full_name;
 
 use crate::api;
 use crate::components::icons::FolderOutlined;
@@ -12,7 +12,7 @@ use crate::components::{
 use crate::kind::Kind;
 use crate::layout::{Breadcrumb, DetailsLayout};
 use crate::load::{Key, field, use_cache, use_load};
-use crate::util::{format_timestamp, route_params};
+use crate::util::{enum_name, format_timestamp, route_params};
 
 #[component]
 pub fn VolumeDetails() -> impl IntoView {
@@ -30,7 +30,7 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
         let full_name = full_name.clone();
         move || {
             let full_name = full_name.clone();
-            async move { api::client().get_volume(&full_name).await }
+            async move { api::client().volume(full_name).get().await }
         }
     });
     let cache = use_cache();
@@ -40,11 +40,11 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
         move |comment| {
             let full_name = full_name.clone();
             async move {
-                let request = UpdateVolumeRequestContent {
-                    comment: Some(comment),
-                    new_name: None,
-                };
-                let updated = api::client().update_volume(&full_name, &request).await?;
+                let updated = api::client()
+                    .volume(&full_name)
+                    .update()
+                    .with_comment(comment)
+                    .await?;
                 cache.set(Key::Volume(full_name), updated);
                 Ok(())
             }
@@ -62,7 +62,7 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
                 let full_name = full_name.clone();
                 move |_| {
                     let full_name = full_name.clone();
-                    async move { api::client().delete_volume(&full_name).await }
+                    async move { api::client().volume(full_name).delete().await }
                 }
             }
             key=Key::Volume(full_name.clone())
@@ -132,7 +132,7 @@ fn volume_rows(v: &VolumeInfo) -> Vec<MetadataRow> {
         },
         MetadataRow {
             label: "Volume type",
-            value: v.volume_type.as_ref().map(wire_name).unwrap_or_default(),
+            value: enum_name(v.volume_type),
             code: true,
         },
     ]

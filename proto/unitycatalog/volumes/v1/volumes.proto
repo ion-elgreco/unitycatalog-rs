@@ -1,0 +1,142 @@
+syntax = "proto3";
+
+package unitycatalog.volumes.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+
+// The type of a volume.
+enum VolumeType {
+  VOLUME_TYPE_UNSPECIFIED = 0;
+  // A volume whose files Unity Catalog manages, below the managed storage of its schema or
+  // catalog.
+  MANAGED = 1;
+  // A volume whose files are at a storage location that the user gives.
+  EXTERNAL = 2;
+}
+
+// A volume: files in the third layer of the three-level namespace, below a schema.
+message VolumeInfo {
+  option (google.api.resource) = {
+    type: "unitycatalog.io/Volume"
+    pattern: "volumes/{volume}"
+    plural: "volumes"
+    singular: "volume"
+  };
+
+  // Name of the parent catalog.
+  string catalog_name = 1;
+  // Name of the parent schema.
+  string schema_name = 2;
+  // Name of the volume, relative to the parent schema.
+  string name = 3 [(google.api.field_behavior) = IDENTIFIER];
+  // User-provided free-form text description.
+  optional string comment = 4;
+  // Username of the owner of the volume.
+  optional string owner = 5;
+  // Time at which the volume was created, in epoch milliseconds.
+  int64 created_at = 6;
+  // Username of the creator of the volume.
+  optional string created_by = 7;
+  // Time at which the volume was last changed, in epoch milliseconds.
+  int64 updated_at = 8;
+  // Username of the user who last changed the volume.
+  optional string updated_by = 9;
+  // Unique identifier of the volume.
+  string volume_id = 10;
+  // Type of the volume.
+  VolumeType volume_type = 11;
+  // Storage location URL of the volume.
+  string storage_location = 12;
+  // Full name of the volume, in the form `<catalog>.<schema>.<volume>`.
+  string full_name = 13;
+}
+
+message CreateVolumeRequestContent {
+  // Name of the parent catalog.
+  string catalog_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema_name = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name of the volume, relative to the parent schema.
+  string name = 3 [(google.api.field_behavior) = REQUIRED];
+  // Type of the volume.
+  VolumeType volume_type = 4 [(google.api.field_behavior) = REQUIRED];
+  // User-provided free-form text description.
+  optional string comment = 5;
+  // Storage location URL of the volume. Required for EXTERNAL volumes; not allowed for MANAGED
+  // volumes.
+  optional string storage_location = 6;
+}
+
+message ListVolumesRequest {
+  // Name of the parent catalog.
+  string catalog_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Name of the parent schema.
+  string schema_name = 2 [(google.api.field_behavior) = REQUIRED];
+  // The maximum number of volumes to return.
+  optional int32 max_results = 3;
+  // Opaque token of the page to return: the `next_page_token` of the page before.
+  optional string page_token = 4;
+}
+
+message ListVolumesResponseContent {
+  // The volumes.
+  repeated VolumeInfo volumes = 1;
+  // Opaque token of the next page. Absent on the last page.
+  optional string next_page_token = 2;
+}
+
+message GetVolumeRequest {
+  // Full name of the volume, in the form `<catalog>.<schema>.<volume>`.
+  string full_name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message UpdateVolumeRequestContent {
+  // Full name of the volume, in the form `<catalog>.<schema>.<volume>`.
+  string full_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // User-provided free-form text description.
+  optional string comment = 2;
+  // New name of the volume, relative to the parent schema.
+  optional string new_name = 3;
+}
+
+message DeleteVolumeRequest {
+  // Full name of the volume, in the form `<catalog>.<schema>.<volume>`.
+  string full_name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Volumes: the files below a schema.
+service VolumesService {
+  // List the volumes of a schema that the caller can see.
+  rpc ListVolumes(ListVolumesRequest) returns (ListVolumesResponseContent) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/volumes"};
+  }
+
+  // Create a volume.
+  rpc CreateVolume(CreateVolumeRequestContent) returns (VolumeInfo) {
+    option (google.api.http) = {
+      post: "/api/2.1/unity-catalog/volumes"
+      body: "*"
+    };
+  }
+
+  // Get a volume.
+  rpc GetVolume(GetVolumeRequest) returns (VolumeInfo) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/volumes/{full_name}"};
+  }
+
+  // Change a volume.
+  rpc UpdateVolume(UpdateVolumeRequestContent) returns (VolumeInfo) {
+    option (google.api.http) = {
+      patch: "/api/2.1/unity-catalog/volumes/{full_name}"
+      body: "*"
+    };
+  }
+
+  // Delete a volume.
+  rpc DeleteVolume(DeleteVolumeRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.1/unity-catalog/volumes/{full_name}"};
+  }
+}

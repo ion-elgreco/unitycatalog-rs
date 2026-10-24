@@ -10,6 +10,7 @@ members = [
     "crates/uc-client",
     "crates/uc-cli",
     "crates/uc-ui",
+    "crates/uc-codegen",
     "python/client",
 ]
 # Skip the Python client (python/client/) from plain `cargo build` / `cargo test` so
@@ -64,6 +65,9 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 # HTTP client
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+# The protobuf runtime of the generated models (`just generate`), with their JSON.
+buffa = { version = "0.7", features = ["json"] }
+buffa-types = { version = "0.7", features = ["json"] }
 url = "2"
 percent-encoding = "2"
 

@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package unitycatalog.health.v1;
+
+import "google/api/annotations.proto";
+
+message GetHealthRequest {}
+
+// The state of the server.
+message HealthResponse {
+  // `ok`: the server answers requests.
+  string status = 1;
+}
+
+message GetVersionRequest {}
+
+// The server and its versions.
+message VersionResponse {
+  // Name of the server: `unitycatalog-rs`.
+  string server = 1;
+  // Version of the server, such as `0.1.0`.
+  string version = 2;
+  // Version of the Unity Catalog API that the server implements: `2.1`.
+  string api_version = 3;
+}
+
+// Probes of the server, at the root of the server. They need no sign-in.
+service HealthService {
+  // Check that the server answers. The database is not asked.
+  rpc GetHealth(GetHealthRequest) returns (HealthResponse) {
+    option (google.api.http) = {get: "/healthz"};
+  }
+
+  // Get the version of the server.
+  rpc GetVersion(GetVersionRequest) returns (VersionResponse) {
+    option (google.api.http) = {get: "/version"};
+  }
+}
