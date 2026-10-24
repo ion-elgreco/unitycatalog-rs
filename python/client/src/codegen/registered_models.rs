@@ -66,9 +66,11 @@ impl PyRegisteredModelClient {
         comment: Option<String>,
         new_name: Option<String>,
     ) -> PyUnityCatalogResult<PyRegisteredModelInfo> {
-        let mut request = self.client.update();
-        request = request.with_comment(comment);
-        request = request.with_new_name(new_name);
+        let request = self
+            .client
+            .update()
+            .with_comment(comment)
+            .with_new_name(new_name);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -85,9 +87,11 @@ impl PyRegisteredModelClient {
         comment: Option<String>,
         new_name: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRegisteredModelInfo>> {
-        let mut request = self.client.update();
-        request = request.with_comment(comment);
-        request = request.with_new_name(new_name);
+        let request = self
+            .client
+            .update()
+            .with_comment(comment)
+            .with_new_name(new_name);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -104,8 +108,7 @@ impl PyRegisteredModelClient {
     ///     force: Delete the model versions of the registered model too.
     #[pyo3(signature = (*, force = None))]
     pub fn delete(&self, py: Python, force: Option<bool>) -> PyUnityCatalogResult<()> {
-        let mut request = self.client.delete();
-        request = request.with_force(force);
+        let request = self.client.delete().with_force(force);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -123,8 +126,7 @@ impl PyRegisteredModelClient {
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
     > {
-        let mut request = self.client.delete();
-        request = request.with_force(force);
+        let request = self.client.delete().with_force(force);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

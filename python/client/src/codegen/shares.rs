@@ -74,25 +74,25 @@ impl PyShareClient {
         add_objects: ::core::option::Option<::std::vec::Vec<PySharedDataObject>>,
         remove_objects: ::core::option::Option<::std::vec::Vec<PySharedDataObject>>,
     ) -> PyUnityCatalogResult<PyShareInfo> {
-        let mut request = self.client.update();
-        request = request.with_comment(comment);
-        request = request.with_new_name(new_name);
-        if let Some(add_objects) = add_objects {
-            request = request.with_add_objects(
+        let request = self
+            .client
+            .update()
+            .with_comment(comment)
+            .with_new_name(new_name)
+            .with_add_objects(
                 add_objects
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
-        }
-        if let Some(remove_objects) = remove_objects {
-            request = request.with_remove_objects(
+            )
+            .with_remove_objects(
                 remove_objects
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -119,25 +119,25 @@ impl PyShareClient {
         add_objects: ::core::option::Option<::std::vec::Vec<PySharedDataObject>>,
         remove_objects: ::core::option::Option<::std::vec::Vec<PySharedDataObject>>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyShareInfo>> {
-        let mut request = self.client.update();
-        request = request.with_comment(comment);
-        request = request.with_new_name(new_name);
-        if let Some(add_objects) = add_objects {
-            request = request.with_add_objects(
+        let request = self
+            .client
+            .update()
+            .with_comment(comment)
+            .with_new_name(new_name)
+            .with_add_objects(
                 add_objects
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
-        }
-        if let Some(remove_objects) = remove_objects {
-            request = request.with_remove_objects(
+            )
+            .with_remove_objects(
                 remove_objects
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

@@ -62,9 +62,11 @@ impl PyVolumeClient {
         comment: Option<String>,
         new_name: Option<String>,
     ) -> PyUnityCatalogResult<PyVolumeInfo> {
-        let mut request = self.client.update();
-        request = request.with_comment(comment);
-        request = request.with_new_name(new_name);
+        let request = self
+            .client
+            .update()
+            .with_comment(comment)
+            .with_new_name(new_name);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -81,9 +83,11 @@ impl PyVolumeClient {
         comment: Option<String>,
         new_name: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyVolumeInfo>> {
-        let mut request = self.client.update();
-        request = request.with_comment(comment);
-        request = request.with_new_name(new_name);
+        let request = self
+            .client
+            .update()
+            .with_comment(comment)
+            .with_new_name(new_name);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

@@ -40,9 +40,11 @@ impl PyTableClient {
         read_streaming_table_as_managed: Option<bool>,
         read_materialized_view_as_managed: Option<bool>,
     ) -> PyUnityCatalogResult<PyTableInfo> {
-        let mut request = self.client.get();
-        request = request.with_read_streaming_table_as_managed(read_streaming_table_as_managed);
-        request = request.with_read_materialized_view_as_managed(read_materialized_view_as_managed);
+        let request = self
+            .client
+            .get()
+            .with_read_streaming_table_as_managed(read_streaming_table_as_managed)
+            .with_read_materialized_view_as_managed(read_materialized_view_as_managed);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -65,9 +67,11 @@ impl PyTableClient {
         read_streaming_table_as_managed: Option<bool>,
         read_materialized_view_as_managed: Option<bool>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyTableInfo>> {
-        let mut request = self.client.get();
-        request = request.with_read_streaming_table_as_managed(read_streaming_table_as_managed);
-        request = request.with_read_materialized_view_as_managed(read_materialized_view_as_managed);
+        let request = self
+            .client
+            .get()
+            .with_read_streaming_table_as_managed(read_streaming_table_as_managed)
+            .with_read_materialized_view_as_managed(read_materialized_view_as_managed);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

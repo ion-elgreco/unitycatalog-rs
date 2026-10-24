@@ -77,11 +77,13 @@ impl PyExternalLocationClient {
         comment: Option<String>,
         credential_name: Option<String>,
     ) -> PyUnityCatalogResult<PyExternalLocationInfo> {
-        let mut request = self.client.update();
-        request = request.with_url(url);
-        request = request.with_new_name(new_name);
-        request = request.with_comment(comment);
-        request = request.with_credential_name(credential_name);
+        let request = self
+            .client
+            .update()
+            .with_url(url)
+            .with_new_name(new_name)
+            .with_comment(comment)
+            .with_credential_name(credential_name);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -108,11 +110,13 @@ impl PyExternalLocationClient {
         comment: Option<String>,
         credential_name: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyExternalLocationInfo>> {
-        let mut request = self.client.update();
-        request = request.with_url(url);
-        request = request.with_new_name(new_name);
-        request = request.with_comment(comment);
-        request = request.with_credential_name(credential_name);
+        let request = self
+            .client
+            .update()
+            .with_url(url)
+            .with_new_name(new_name)
+            .with_comment(comment)
+            .with_credential_name(credential_name);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -129,8 +133,7 @@ impl PyExternalLocationClient {
     ///     force: Delete the external location even when tables, volumes or models use its path.
     #[pyo3(signature = (*, force = None))]
     pub fn delete(&self, py: Python, force: Option<bool>) -> PyUnityCatalogResult<()> {
-        let mut request = self.client.delete();
-        request = request.with_force(force);
+        let request = self.client.delete().with_force(force);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -148,8 +151,7 @@ impl PyExternalLocationClient {
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
     > {
-        let mut request = self.client.delete();
-        request = request.with_force(force);
+        let request = self.client.delete().with_force(force);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

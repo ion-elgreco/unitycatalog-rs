@@ -68,14 +68,12 @@ impl PyRecipientClient {
         add_shares: Option<Vec<String>>,
         remove_shares: Option<Vec<String>>,
     ) -> PyUnityCatalogResult<PyRecipientInfo> {
-        let mut request = self.client.update();
-        request = request.with_comment(comment);
-        if let Some(add_shares) = add_shares {
-            request = request.with_add_shares(add_shares);
-        }
-        if let Some(remove_shares) = remove_shares {
-            request = request.with_remove_shares(remove_shares);
-        }
+        let request = self
+            .client
+            .update()
+            .with_comment(comment)
+            .with_add_shares(add_shares.unwrap_or_default())
+            .with_remove_shares(remove_shares.unwrap_or_default());
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -93,14 +91,12 @@ impl PyRecipientClient {
         add_shares: Option<Vec<String>>,
         remove_shares: Option<Vec<String>>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRecipientInfo>> {
-        let mut request = self.client.update();
-        request = request.with_comment(comment);
-        if let Some(add_shares) = add_shares {
-            request = request.with_add_shares(add_shares);
-        }
-        if let Some(remove_shares) = remove_shares {
-            request = request.with_remove_shares(remove_shares);
-        }
+        let request = self
+            .client
+            .update()
+            .with_comment(comment)
+            .with_add_shares(add_shares.unwrap_or_default())
+            .with_remove_shares(remove_shares.unwrap_or_default());
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

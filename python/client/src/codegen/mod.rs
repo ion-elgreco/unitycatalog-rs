@@ -223,14 +223,16 @@ impl PyClient {
         max_results: Option<i32>,
         page_token: Option<String>,
     ) -> PyUnityCatalogResult<PyListAuditEventsResponse> {
-        let mut request = self.client.list_audit_events();
-        request = request.with_principal(principal);
-        request = request.with_method(method);
-        request = request.with_path_prefix(path_prefix);
-        request = request.with_since(since);
-        request = request.with_until(until);
-        request = request.with_max_results(max_results);
-        request = request.with_page_token(page_token);
+        let request = self
+            .client
+            .list_audit_events()
+            .with_principal(principal)
+            .with_method(method)
+            .with_path_prefix(path_prefix)
+            .with_since(since)
+            .with_until(until)
+            .with_max_results(max_results)
+            .with_page_token(page_token);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -263,14 +265,16 @@ impl PyClient {
         max_results: Option<i32>,
         page_token: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyListAuditEventsResponse>> {
-        let mut request = self.client.list_audit_events();
-        request = request.with_principal(principal);
-        request = request.with_method(method);
-        request = request.with_path_prefix(path_prefix);
-        request = request.with_since(since);
-        request = request.with_until(until);
-        request = request.with_max_results(max_results);
-        request = request.with_page_token(page_token);
+        let request = self
+            .client
+            .list_audit_events()
+            .with_principal(principal)
+            .with_method(method)
+            .with_path_prefix(path_prefix)
+            .with_since(since)
+            .with_until(until)
+            .with_max_results(max_results)
+            .with_page_token(page_token);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -321,15 +325,17 @@ impl PyClient {
         actor_token: Option<String>,
         actor_token_type: Option<String>,
     ) -> PyUnityCatalogResult<PyOAuthTokenExchangeInfo> {
-        let mut request = self.client.exchange_token(
-            grant_type,
-            requested_token_type,
-            subject_token,
-            subject_token_type,
-        );
-        request = request.with_scope(scope);
-        request = request.with_actor_token(actor_token);
-        request = request.with_actor_token_type(actor_token_type);
+        let request = self
+            .client
+            .exchange_token(
+                grant_type,
+                requested_token_type,
+                subject_token,
+                subject_token_type,
+            )
+            .with_scope(scope)
+            .with_actor_token(actor_token)
+            .with_actor_token_type(actor_token_type);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -362,15 +368,17 @@ impl PyClient {
         actor_token: Option<String>,
         actor_token_type: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyOAuthTokenExchangeInfo>> {
-        let mut request = self.client.exchange_token(
-            grant_type,
-            requested_token_type,
-            subject_token,
-            subject_token_type,
-        );
-        request = request.with_scope(scope);
-        request = request.with_actor_token(actor_token);
-        request = request.with_actor_token_type(actor_token_type);
+        let request = self
+            .client
+            .exchange_token(
+                grant_type,
+                requested_token_type,
+                subject_token,
+                subject_token_type,
+            )
+            .with_scope(scope)
+            .with_actor_token(actor_token)
+            .with_actor_token_type(actor_token_type);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -403,9 +411,11 @@ impl PyClient {
         client_id: Option<String>,
         scope: Option<String>,
     ) -> PyUnityCatalogResult<PyTokenResponse> {
-        let mut request = self.client.request_access_token(grant_type, client_secret);
-        request = request.with_client_id(client_id);
-        request = request.with_scope(scope);
+        let request = self
+            .client
+            .request_access_token(grant_type, client_secret)
+            .with_client_id(client_id)
+            .with_scope(scope);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -424,9 +434,11 @@ impl PyClient {
         client_id: Option<String>,
         scope: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyTokenResponse>> {
-        let mut request = self.client.request_access_token(grant_type, client_secret);
-        request = request.with_client_id(client_id);
-        request = request.with_scope(scope);
+        let request = self
+            .client
+            .request_access_token(grant_type, client_secret)
+            .with_client_id(client_id)
+            .with_scope(scope);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -509,8 +521,7 @@ impl PyClient {
         py: Python,
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyCatalogInfo>> {
-        let mut request = self.client.list_catalogs();
-        request = request.with_max_results(max_results);
+        let request = self.client.list_catalogs().with_max_results(max_results);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -537,8 +548,7 @@ impl PyClient {
         max_results: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyCatalogInfo>>>
     {
-        let mut request = self.client.list_catalogs();
-        request = request.with_max_results(max_results);
+        let request = self.client.list_catalogs().with_max_results(max_results);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -577,12 +587,12 @@ impl PyClient {
         properties: Option<HashMap<String, String>>,
         storage_root: Option<String>,
     ) -> PyUnityCatalogResult<PyCatalogInfo> {
-        let mut request = self.client.create_catalog(name);
-        request = request.with_comment(comment);
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
-        request = request.with_storage_root(storage_root);
+        let request = self
+            .client
+            .create_catalog(name)
+            .with_comment(comment)
+            .with_properties(properties.unwrap_or_default())
+            .with_storage_root(storage_root);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -603,12 +613,12 @@ impl PyClient {
         properties: Option<HashMap<String, String>>,
         storage_root: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyCatalogInfo>> {
-        let mut request = self.client.create_catalog(name);
-        request = request.with_comment(comment);
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
-        request = request.with_storage_root(storage_root);
+        let request = self
+            .client
+            .create_catalog(name)
+            .with_comment(comment)
+            .with_properties(properties.unwrap_or_default())
+            .with_storage_root(storage_root);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -634,9 +644,11 @@ impl PyClient {
         max_results: Option<i32>,
         purpose: ::core::option::Option<PyCredentialPurpose>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyCredentialInfo>> {
-        let mut request = self.client.list_credentials();
-        request = request.with_max_results(max_results);
-        request = request.with_purpose(purpose.map(::core::convert::Into::into));
+        let request = self
+            .client
+            .list_credentials()
+            .with_max_results(max_results)
+            .with_purpose(purpose.map(::core::convert::Into::into));
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -664,9 +676,11 @@ impl PyClient {
         purpose: ::core::option::Option<PyCredentialPurpose>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyCredentialInfo>>>
     {
-        let mut request = self.client.list_credentials();
-        request = request.with_max_results(max_results);
-        request = request.with_purpose(purpose.map(::core::convert::Into::into));
+        let request = self
+            .client
+            .list_credentials()
+            .with_max_results(max_results)
+            .with_purpose(purpose.map(::core::convert::Into::into));
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -704,9 +718,11 @@ impl PyClient {
         comment: Option<String>,
         purpose: ::core::option::Option<PyCredentialPurpose>,
     ) -> PyUnityCatalogResult<PyCredentialInfo> {
-        let mut request = self.client.create_credential(name, aws_iam_role.into());
-        request = request.with_comment(comment);
-        request = request.with_purpose(purpose.map(::core::convert::Into::into));
+        let request = self
+            .client
+            .create_credential(name, aws_iam_role.into())
+            .with_comment(comment)
+            .with_purpose(purpose.map(::core::convert::Into::into));
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -725,9 +741,11 @@ impl PyClient {
         comment: Option<String>,
         purpose: ::core::option::Option<PyCredentialPurpose>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyCredentialInfo>> {
-        let mut request = self.client.create_credential(name, aws_iam_role.into());
-        request = request.with_comment(comment);
-        request = request.with_purpose(purpose.map(::core::convert::Into::into));
+        let request = self
+            .client
+            .create_credential(name, aws_iam_role.into())
+            .with_comment(comment)
+            .with_purpose(purpose.map(::core::convert::Into::into));
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -756,8 +774,10 @@ impl PyClient {
         catalog: String,
         protocol_versions: Option<String>,
     ) -> PyUnityCatalogResult<PyDeltaCatalogConfig> {
-        let mut request = self.client.get_delta_config(catalog);
-        request = request.with_protocol_versions(protocol_versions);
+        let request = self
+            .client
+            .get_delta_config(catalog)
+            .with_protocol_versions(protocol_versions);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -774,8 +794,10 @@ impl PyClient {
         catalog: String,
         protocol_versions: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyDeltaCatalogConfig>> {
-        let mut request = self.client.get_delta_config(catalog);
-        request = request.with_protocol_versions(protocol_versions);
+        let request = self
+            .client
+            .get_delta_config(catalog)
+            .with_protocol_versions(protocol_versions);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -893,25 +915,23 @@ impl PyClient {
         domain_metadata: ::core::option::Option<PyDeltaDomainMetadataUpdates>,
         uniform: ::core::option::Option<PyDeltaUniformMetadata>,
     ) -> PyUnityCatalogResult<PyDeltaLoadTableResponse> {
-        let mut request = self.client.create_delta_table(
-            catalog,
-            schema,
-            name,
-            location,
-            table_type.into(),
-            columns.into(),
-            protocol.into(),
-            last_commit_timestamp_ms,
-        );
-        request = request.with_comment(comment);
-        if let Some(partition_columns) = partition_columns {
-            request = request.with_partition_columns(partition_columns);
-        }
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
-        request = request.with_domain_metadata(domain_metadata.map(::core::convert::Into::into));
-        request = request.with_uniform(uniform.map(::core::convert::Into::into));
+        let request = self
+            .client
+            .create_delta_table(
+                catalog,
+                schema,
+                name,
+                location,
+                table_type.into(),
+                columns.into(),
+                protocol.into(),
+                last_commit_timestamp_ms,
+            )
+            .with_comment(comment)
+            .with_partition_columns(partition_columns.unwrap_or_default())
+            .with_properties(properties.unwrap_or_default())
+            .with_domain_metadata(domain_metadata.map(::core::convert::Into::into))
+            .with_uniform(uniform.map(::core::convert::Into::into));
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -956,25 +976,23 @@ impl PyClient {
         domain_metadata: ::core::option::Option<PyDeltaDomainMetadataUpdates>,
         uniform: ::core::option::Option<PyDeltaUniformMetadata>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyDeltaLoadTableResponse>> {
-        let mut request = self.client.create_delta_table(
-            catalog,
-            schema,
-            name,
-            location,
-            table_type.into(),
-            columns.into(),
-            protocol.into(),
-            last_commit_timestamp_ms,
-        );
-        request = request.with_comment(comment);
-        if let Some(partition_columns) = partition_columns {
-            request = request.with_partition_columns(partition_columns);
-        }
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
-        request = request.with_domain_metadata(domain_metadata.map(::core::convert::Into::into));
-        request = request.with_uniform(uniform.map(::core::convert::Into::into));
+        let request = self
+            .client
+            .create_delta_table(
+                catalog,
+                schema,
+                name,
+                location,
+                table_type.into(),
+                columns.into(),
+                protocol.into(),
+                last_commit_timestamp_ms,
+            )
+            .with_comment(comment)
+            .with_partition_columns(partition_columns.unwrap_or_default())
+            .with_properties(properties.unwrap_or_default())
+            .with_domain_metadata(domain_metadata.map(::core::convert::Into::into))
+            .with_uniform(uniform.map(::core::convert::Into::into));
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -1247,10 +1265,10 @@ impl PyClient {
         table_id: String,
         report: ::core::option::Option<PyDeltaMetricsReport>,
     ) -> PyUnityCatalogResult<()> {
-        let mut request = self
+        let request = self
             .client
-            .report_delta_table_metrics(catalog, schema, table, table_id);
-        request = request.with_report(report.map(::core::convert::Into::into));
+            .report_delta_table_metrics(catalog, schema, table, table_id)
+            .with_report(report.map(::core::convert::Into::into));
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -1272,10 +1290,10 @@ impl PyClient {
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
     > {
-        let mut request = self
+        let request = self
             .client
-            .report_delta_table_metrics(catalog, schema, table, table_id);
-        request = request.with_report(report.map(::core::convert::Into::into));
+            .report_delta_table_metrics(catalog, schema, table, table_id)
+            .with_report(report.map(::core::convert::Into::into));
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -1408,11 +1426,13 @@ impl PyClient {
         metadata: ::core::option::Option<PyDeltaMetadata>,
         uniform: ::core::option::Option<PyDeltaUniform>,
     ) -> PyUnityCatalogResult<()> {
-        let mut request = self.client.commit_delta(table_id, table_uri);
-        request = request.with_commit_info(commit_info.map(::core::convert::Into::into));
-        request = request.with_latest_backfilled_version(latest_backfilled_version);
-        request = request.with_metadata(metadata.map(::core::convert::Into::into));
-        request = request.with_uniform(uniform.map(::core::convert::Into::into));
+        let request = self
+            .client
+            .commit_delta(table_id, table_uri)
+            .with_commit_info(commit_info.map(::core::convert::Into::into))
+            .with_latest_backfilled_version(latest_backfilled_version)
+            .with_metadata(metadata.map(::core::convert::Into::into))
+            .with_uniform(uniform.map(::core::convert::Into::into));
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -1445,11 +1465,13 @@ impl PyClient {
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
     > {
-        let mut request = self.client.commit_delta(table_id, table_uri);
-        request = request.with_commit_info(commit_info.map(::core::convert::Into::into));
-        request = request.with_latest_backfilled_version(latest_backfilled_version);
-        request = request.with_metadata(metadata.map(::core::convert::Into::into));
-        request = request.with_uniform(uniform.map(::core::convert::Into::into));
+        let request = self
+            .client
+            .commit_delta(table_id, table_uri)
+            .with_commit_info(commit_info.map(::core::convert::Into::into))
+            .with_latest_backfilled_version(latest_backfilled_version)
+            .with_metadata(metadata.map(::core::convert::Into::into))
+            .with_uniform(uniform.map(::core::convert::Into::into));
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -1482,9 +1504,11 @@ impl PyClient {
         table_uri: Option<String>,
         end_version: Option<i64>,
     ) -> PyUnityCatalogResult<PyDeltaGetCommitsResponse> {
-        let mut request = self.client.get_delta_commits(table_id, start_version);
-        request = request.with_table_uri(table_uri);
-        request = request.with_end_version(end_version);
+        let request = self
+            .client
+            .get_delta_commits(table_id, start_version)
+            .with_table_uri(table_uri)
+            .with_end_version(end_version);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -1505,9 +1529,11 @@ impl PyClient {
         table_uri: Option<String>,
         end_version: Option<i64>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyDeltaGetCommitsResponse>> {
-        let mut request = self.client.get_delta_commits(table_id, start_version);
-        request = request.with_table_uri(table_uri);
-        request = request.with_end_version(end_version);
+        let request = self
+            .client
+            .get_delta_commits(table_id, start_version)
+            .with_table_uri(table_uri)
+            .with_end_version(end_version);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -1531,8 +1557,10 @@ impl PyClient {
         py: Python,
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyExternalLocationInfo>> {
-        let mut request = self.client.list_external_locations();
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_external_locations()
+            .with_max_results(max_results);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -1560,8 +1588,10 @@ impl PyClient {
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyExternalLocationInfo>>,
     > {
-        let mut request = self.client.list_external_locations();
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_external_locations()
+            .with_max_results(max_results);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -1598,10 +1628,10 @@ impl PyClient {
         credential_name: String,
         comment: Option<String>,
     ) -> PyUnityCatalogResult<PyExternalLocationInfo> {
-        let mut request = self
+        let request = self
             .client
-            .create_external_location(name, url, credential_name);
-        request = request.with_comment(comment);
+            .create_external_location(name, url, credential_name)
+            .with_comment(comment);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -1620,10 +1650,10 @@ impl PyClient {
         credential_name: String,
         comment: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyExternalLocationInfo>> {
-        let mut request = self
+        let request = self
             .client
-            .create_external_location(name, url, credential_name);
-        request = request.with_comment(comment);
+            .create_external_location(name, url, credential_name)
+            .with_comment(comment);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -1651,8 +1681,10 @@ impl PyClient {
         schema_name: String,
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyFunctionInfo>> {
-        let mut request = self.client.list_functions(catalog_name, schema_name);
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_functions(catalog_name, schema_name)
+            .with_max_results(max_results);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -1681,8 +1713,10 @@ impl PyClient {
         max_results: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyFunctionInfo>>>
     {
-        let mut request = self.client.list_functions(catalog_name, schema_name);
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_functions(catalog_name, schema_name)
+            .with_max_results(max_results);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -1863,10 +1897,12 @@ impl PyClient {
         page_token: Option<String>,
         page_size: Option<i32>,
     ) -> PyUnityCatalogResult<PyIcebergListNamespacesResponse> {
-        let mut request = self.client.list_iceberg_namespaces(catalog);
-        request = request.with_parent(parent);
-        request = request.with_page_token(page_token);
-        request = request.with_page_size(page_size);
+        let request = self
+            .client
+            .list_iceberg_namespaces(catalog)
+            .with_parent(parent)
+            .with_page_token(page_token)
+            .with_page_size(page_size);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -1886,10 +1922,12 @@ impl PyClient {
         page_size: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyIcebergListNamespacesResponse>>
     {
-        let mut request = self.client.list_iceberg_namespaces(catalog);
-        request = request.with_parent(parent);
-        request = request.with_page_token(page_token);
-        request = request.with_page_size(page_size);
+        let request = self
+            .client
+            .list_iceberg_namespaces(catalog)
+            .with_parent(parent)
+            .with_page_token(page_token)
+            .with_page_size(page_size);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -1916,10 +1954,10 @@ impl PyClient {
         namespace: Vec<String>,
         properties: Option<HashMap<String, String>>,
     ) -> PyUnityCatalogResult<PyIcebergNamespaceResponse> {
-        let mut request = self.client.create_iceberg_namespace(catalog, namespace);
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
+        let request = self
+            .client
+            .create_iceberg_namespace(catalog, namespace)
+            .with_properties(properties.unwrap_or_default());
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -1938,10 +1976,10 @@ impl PyClient {
         properties: Option<HashMap<String, String>>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyIcebergNamespaceResponse>>
     {
-        let mut request = self.client.create_iceberg_namespace(catalog, namespace);
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
+        let request = self
+            .client
+            .create_iceberg_namespace(catalog, namespace)
+            .with_properties(properties.unwrap_or_default());
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -2083,15 +2121,11 @@ impl PyClient {
         removals: Option<Vec<String>>,
         updates: Option<HashMap<String, String>>,
     ) -> PyUnityCatalogResult<PyIcebergUpdateNamespacePropertiesResponse> {
-        let mut request = self
+        let request = self
             .client
-            .update_iceberg_namespace_properties(catalog, namespace);
-        if let Some(removals) = removals {
-            request = request.with_removals(removals);
-        }
-        if let Some(updates) = updates {
-            request = request.with_updates(updates);
-        }
+            .update_iceberg_namespace_properties(catalog, namespace)
+            .with_removals(removals.unwrap_or_default())
+            .with_updates(updates.unwrap_or_default());
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -2112,15 +2146,11 @@ impl PyClient {
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, PyIcebergUpdateNamespacePropertiesResponse>,
     > {
-        let mut request = self
+        let request = self
             .client
-            .update_iceberg_namespace_properties(catalog, namespace);
-        if let Some(removals) = removals {
-            request = request.with_removals(removals);
-        }
-        if let Some(updates) = updates {
-            request = request.with_updates(updates);
-        }
+            .update_iceberg_namespace_properties(catalog, namespace)
+            .with_removals(removals.unwrap_or_default())
+            .with_updates(updates.unwrap_or_default());
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -2151,9 +2181,11 @@ impl PyClient {
         page_token: Option<String>,
         page_size: Option<i32>,
     ) -> PyUnityCatalogResult<PyIcebergListTablesResponse> {
-        let mut request = self.client.list_iceberg_tables(catalog, namespace);
-        request = request.with_page_token(page_token);
-        request = request.with_page_size(page_size);
+        let request = self
+            .client
+            .list_iceberg_tables(catalog, namespace)
+            .with_page_token(page_token)
+            .with_page_size(page_size);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -2173,9 +2205,11 @@ impl PyClient {
         page_size: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyIcebergListTablesResponse>>
     {
-        let mut request = self.client.list_iceberg_tables(catalog, namespace);
-        request = request.with_page_token(page_token);
-        request = request.with_page_size(page_size);
+        let request = self
+            .client
+            .list_iceberg_tables(catalog, namespace)
+            .with_page_token(page_token)
+            .with_page_size(page_size);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -2229,16 +2263,14 @@ impl PyClient {
         stage_create: Option<bool>,
         properties: Option<HashMap<String, String>>,
     ) -> PyUnityCatalogResult<PyIcebergLoadTableResponse> {
-        let mut request = self
+        let request = self
             .client
-            .create_iceberg_table(catalog, namespace, name, schema.into());
-        request = request.with_location(location);
-        request = request.with_partition_spec(partition_spec.map(::core::convert::Into::into));
-        request = request.with_write_order(write_order.map(::core::convert::Into::into));
-        request = request.with_stage_create(stage_create);
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
+            .create_iceberg_table(catalog, namespace, name, schema.into())
+            .with_location(location)
+            .with_partition_spec(partition_spec.map(::core::convert::Into::into))
+            .with_write_order(write_order.map(::core::convert::Into::into))
+            .with_stage_create(stage_create)
+            .with_properties(properties.unwrap_or_default());
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -2276,16 +2308,14 @@ impl PyClient {
         properties: Option<HashMap<String, String>>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyIcebergLoadTableResponse>>
     {
-        let mut request = self
+        let request = self
             .client
-            .create_iceberg_table(catalog, namespace, name, schema.into());
-        request = request.with_location(location);
-        request = request.with_partition_spec(partition_spec.map(::core::convert::Into::into));
-        request = request.with_write_order(write_order.map(::core::convert::Into::into));
-        request = request.with_stage_create(stage_create);
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
+            .create_iceberg_table(catalog, namespace, name, schema.into())
+            .with_location(location)
+            .with_partition_spec(partition_spec.map(::core::convert::Into::into))
+            .with_write_order(write_order.map(::core::convert::Into::into))
+            .with_stage_create(stage_create)
+            .with_properties(properties.unwrap_or_default());
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -2313,8 +2343,10 @@ impl PyClient {
         table: String,
         snapshots: Option<String>,
     ) -> PyUnityCatalogResult<PyIcebergLoadTableResponse> {
-        let mut request = self.client.load_iceberg_table(catalog, namespace, table);
-        request = request.with_snapshots(snapshots);
+        let request = self
+            .client
+            .load_iceberg_table(catalog, namespace, table)
+            .with_snapshots(snapshots);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -2334,8 +2366,10 @@ impl PyClient {
         snapshots: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyIcebergLoadTableResponse>>
     {
-        let mut request = self.client.load_iceberg_table(catalog, namespace, table);
-        request = request.with_snapshots(snapshots);
+        let request = self
+            .client
+            .load_iceberg_table(catalog, namespace, table)
+            .with_snapshots(snapshots);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -2415,24 +2449,24 @@ impl PyClient {
         requirements: ::core::option::Option<::std::vec::Vec<PyIcebergTableRequirement>>,
         updates: ::core::option::Option<::std::vec::Vec<PyIcebergTableUpdate>>,
     ) -> PyUnityCatalogResult<PyIcebergLoadTableResponse> {
-        let mut request = self.client.commit_iceberg_table(catalog, namespace, table);
-        request = request.with_identifier(identifier.map(::core::convert::Into::into));
-        if let Some(requirements) = requirements {
-            request = request.with_requirements(
+        let request = self
+            .client
+            .commit_iceberg_table(catalog, namespace, table)
+            .with_identifier(identifier.map(::core::convert::Into::into))
+            .with_requirements(
                 requirements
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
-        }
-        if let Some(updates) = updates {
-            request = request.with_updates(
+            )
+            .with_updates(
                 updates
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -2464,24 +2498,24 @@ impl PyClient {
         updates: ::core::option::Option<::std::vec::Vec<PyIcebergTableUpdate>>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyIcebergLoadTableResponse>>
     {
-        let mut request = self.client.commit_iceberg_table(catalog, namespace, table);
-        request = request.with_identifier(identifier.map(::core::convert::Into::into));
-        if let Some(requirements) = requirements {
-            request = request.with_requirements(
+        let request = self
+            .client
+            .commit_iceberg_table(catalog, namespace, table)
+            .with_identifier(identifier.map(::core::convert::Into::into))
+            .with_requirements(
                 requirements
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
-        }
-        if let Some(updates) = updates {
-            request = request.with_updates(
+            )
+            .with_updates(
                 updates
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -2506,8 +2540,10 @@ impl PyClient {
         table: String,
         purge_requested: Option<bool>,
     ) -> PyUnityCatalogResult<()> {
-        let mut request = self.client.drop_iceberg_table(catalog, namespace, table);
-        request = request.with_purge_requested(purge_requested);
+        let request = self
+            .client
+            .drop_iceberg_table(catalog, namespace, table)
+            .with_purge_requested(purge_requested);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -2528,8 +2564,10 @@ impl PyClient {
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
     > {
-        let mut request = self.client.drop_iceberg_table(catalog, namespace, table);
-        request = request.with_purge_requested(purge_requested);
+        let request = self
+            .client
+            .drop_iceberg_table(catalog, namespace, table)
+            .with_purge_requested(purge_requested);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -2639,29 +2677,19 @@ impl PyClient {
         metrics: ::core::option::Option<::pyo3::Bound<'_, ::pyo3::PyAny>>,
         metadata: Option<HashMap<String, String>>,
     ) -> PyUnityCatalogResult<()> {
-        let mut request =
-            self.client
-                .report_iceberg_metrics(catalog, namespace, table, report_type);
-        request = request.with_table_name(table_name);
-        request = request.with_snapshot_id(snapshot_id);
-        if let Some(filter) = filter {
-            request = request.with_filter(json_value_from_py(&filter)?);
-        }
-        request = request.with_schema_id(schema_id);
-        if let Some(projected_field_ids) = projected_field_ids {
-            request = request.with_projected_field_ids(projected_field_ids);
-        }
-        if let Some(projected_field_names) = projected_field_names {
-            request = request.with_projected_field_names(projected_field_names);
-        }
-        request = request.with_sequence_number(sequence_number);
-        request = request.with_operation(operation);
-        if let Some(metrics) = metrics {
-            request = request.with_metrics(json_struct_from_py(&metrics)?);
-        }
-        if let Some(metadata) = metadata {
-            request = request.with_metadata(metadata);
-        }
+        let request = self
+            .client
+            .report_iceberg_metrics(catalog, namespace, table, report_type)
+            .with_table_name(table_name)
+            .with_snapshot_id(snapshot_id)
+            .with_filter(filter.as_ref().map(json_value_from_py).transpose()?)
+            .with_schema_id(schema_id)
+            .with_projected_field_ids(projected_field_ids.unwrap_or_default())
+            .with_projected_field_names(projected_field_names.unwrap_or_default())
+            .with_sequence_number(sequence_number)
+            .with_operation(operation)
+            .with_metrics(metrics.as_ref().map(json_struct_from_py).transpose()?)
+            .with_metadata(metadata.unwrap_or_default());
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -2710,29 +2738,19 @@ impl PyClient {
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
     > {
-        let mut request =
-            self.client
-                .report_iceberg_metrics(catalog, namespace, table, report_type);
-        request = request.with_table_name(table_name);
-        request = request.with_snapshot_id(snapshot_id);
-        if let Some(filter) = filter {
-            request = request.with_filter(json_value_from_py(&filter)?);
-        }
-        request = request.with_schema_id(schema_id);
-        if let Some(projected_field_ids) = projected_field_ids {
-            request = request.with_projected_field_ids(projected_field_ids);
-        }
-        if let Some(projected_field_names) = projected_field_names {
-            request = request.with_projected_field_names(projected_field_names);
-        }
-        request = request.with_sequence_number(sequence_number);
-        request = request.with_operation(operation);
-        if let Some(metrics) = metrics {
-            request = request.with_metrics(json_struct_from_py(&metrics)?);
-        }
-        if let Some(metadata) = metadata {
-            request = request.with_metadata(metadata);
-        }
+        let request = self
+            .client
+            .report_iceberg_metrics(catalog, namespace, table, report_type)
+            .with_table_name(table_name)
+            .with_snapshot_id(snapshot_id)
+            .with_filter(filter.as_ref().map(json_value_from_py).transpose()?)
+            .with_schema_id(schema_id)
+            .with_projected_field_ids(projected_field_ids.unwrap_or_default())
+            .with_projected_field_names(projected_field_names.unwrap_or_default())
+            .with_sequence_number(sequence_number)
+            .with_operation(operation)
+            .with_metrics(metrics.as_ref().map(json_struct_from_py).transpose()?)
+            .with_metadata(metadata.unwrap_or_default());
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -2879,8 +2897,10 @@ impl PyClient {
         full_name: String,
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyModelVersionInfo>> {
-        let mut request = self.client.list_model_versions(full_name);
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_model_versions(full_name)
+            .with_max_results(max_results);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -2909,8 +2929,10 @@ impl PyClient {
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyModelVersionInfo>>,
     > {
-        let mut request = self.client.list_model_versions(full_name);
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_model_versions(full_name)
+            .with_max_results(max_results);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -2963,11 +2985,11 @@ impl PyClient {
         run_id: Option<String>,
         comment: Option<String>,
     ) -> PyUnityCatalogResult<PyModelVersionInfo> {
-        let mut request =
-            self.client
-                .create_model_version(model_name, catalog_name, schema_name, source);
-        request = request.with_run_id(run_id);
-        request = request.with_comment(comment);
+        let request = self
+            .client
+            .create_model_version(model_name, catalog_name, schema_name, source)
+            .with_run_id(run_id)
+            .with_comment(comment);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -2998,11 +3020,11 @@ impl PyClient {
         run_id: Option<String>,
         comment: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyModelVersionInfo>> {
-        let mut request =
-            self.client
-                .create_model_version(model_name, catalog_name, schema_name, source);
-        request = request.with_run_id(run_id);
-        request = request.with_comment(comment);
+        let request = self
+            .client
+            .create_model_version(model_name, catalog_name, schema_name, source)
+            .with_run_id(run_id)
+            .with_comment(comment);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -3194,8 +3216,10 @@ impl PyClient {
         full_name: String,
         principal: Option<String>,
     ) -> PyUnityCatalogResult<PyPermissionsList> {
-        let mut request = self.client.get_permissions(securable_type, full_name);
-        request = request.with_principal(principal);
+        let request = self
+            .client
+            .get_permissions(securable_type, full_name)
+            .with_principal(principal);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -3213,8 +3237,10 @@ impl PyClient {
         full_name: String,
         principal: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyPermissionsList>> {
-        let mut request = self.client.get_permissions(securable_type, full_name);
-        request = request.with_principal(principal);
+        let request = self
+            .client
+            .get_permissions(securable_type, full_name)
+            .with_principal(principal);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -3297,8 +3323,7 @@ impl PyClient {
         py: Python,
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyRecipientInfo>> {
-        let mut request = self.client.list_recipients();
-        request = request.with_max_results(max_results);
+        let request = self.client.list_recipients().with_max_results(max_results);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -3325,8 +3350,7 @@ impl PyClient {
         max_results: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyRecipientInfo>>>
     {
-        let mut request = self.client.list_recipients();
-        request = request.with_max_results(max_results);
+        let request = self.client.list_recipients().with_max_results(max_results);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -3363,10 +3387,11 @@ impl PyClient {
         authentication_type: ::core::option::Option<PyAuthenticationType>,
         comment: Option<String>,
     ) -> PyUnityCatalogResult<PyRecipientInfo> {
-        let mut request = self.client.create_recipient(name);
-        request =
-            request.with_authentication_type(authentication_type.map(::core::convert::Into::into));
-        request = request.with_comment(comment);
+        let request = self
+            .client
+            .create_recipient(name)
+            .with_authentication_type(authentication_type.map(::core::convert::Into::into))
+            .with_comment(comment);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -3384,10 +3409,11 @@ impl PyClient {
         authentication_type: ::core::option::Option<PyAuthenticationType>,
         comment: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRecipientInfo>> {
-        let mut request = self.client.create_recipient(name);
-        request =
-            request.with_authentication_type(authentication_type.map(::core::convert::Into::into));
-        request = request.with_comment(comment);
+        let request = self
+            .client
+            .create_recipient(name)
+            .with_authentication_type(authentication_type.map(::core::convert::Into::into))
+            .with_comment(comment);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -3415,10 +3441,12 @@ impl PyClient {
         schema_name: Option<String>,
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyRegisteredModelInfo>> {
-        let mut request = self.client.list_registered_models();
-        request = request.with_catalog_name(catalog_name);
-        request = request.with_schema_name(schema_name);
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_registered_models()
+            .with_catalog_name(catalog_name)
+            .with_schema_name(schema_name)
+            .with_max_results(max_results);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -3448,10 +3476,12 @@ impl PyClient {
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyRegisteredModelInfo>>,
     > {
-        let mut request = self.client.list_registered_models();
-        request = request.with_catalog_name(catalog_name);
-        request = request.with_schema_name(schema_name);
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_registered_models()
+            .with_catalog_name(catalog_name)
+            .with_schema_name(schema_name)
+            .with_max_results(max_results);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -3490,10 +3520,10 @@ impl PyClient {
         schema_name: String,
         comment: Option<String>,
     ) -> PyUnityCatalogResult<PyRegisteredModelInfo> {
-        let mut request = self
+        let request = self
             .client
-            .create_registered_model(name, catalog_name, schema_name);
-        request = request.with_comment(comment);
+            .create_registered_model(name, catalog_name, schema_name)
+            .with_comment(comment);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -3512,10 +3542,10 @@ impl PyClient {
         schema_name: String,
         comment: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRegisteredModelInfo>> {
-        let mut request = self
+        let request = self
             .client
-            .create_registered_model(name, catalog_name, schema_name);
-        request = request.with_comment(comment);
+            .create_registered_model(name, catalog_name, schema_name)
+            .with_comment(comment);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -3541,8 +3571,10 @@ impl PyClient {
         catalog_name: String,
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PySchemaInfo>> {
-        let mut request = self.client.list_schemas(catalog_name);
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_schemas(catalog_name)
+            .with_max_results(max_results);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -3570,8 +3602,10 @@ impl PyClient {
         max_results: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PySchemaInfo>>>
     {
-        let mut request = self.client.list_schemas(catalog_name);
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_schemas(catalog_name)
+            .with_max_results(max_results);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -3620,12 +3654,12 @@ impl PyClient {
         properties: Option<HashMap<String, String>>,
         storage_root: Option<String>,
     ) -> PyUnityCatalogResult<PySchemaInfo> {
-        let mut request = self.client.create_schema(name, catalog_name);
-        request = request.with_comment(comment);
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
-        request = request.with_storage_root(storage_root);
+        let request = self
+            .client
+            .create_schema(name, catalog_name)
+            .with_comment(comment)
+            .with_properties(properties.unwrap_or_default())
+            .with_storage_root(storage_root);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -3654,12 +3688,12 @@ impl PyClient {
         properties: Option<HashMap<String, String>>,
         storage_root: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PySchemaInfo>> {
-        let mut request = self.client.create_schema(name, catalog_name);
-        request = request.with_comment(comment);
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
-        request = request.with_storage_root(storage_root);
+        let request = self
+            .client
+            .create_schema(name, catalog_name)
+            .with_comment(comment)
+            .with_properties(properties.unwrap_or_default())
+            .with_storage_root(storage_root);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -3687,10 +3721,12 @@ impl PyClient {
         start_index: Option<i32>,
         count: Option<i32>,
     ) -> PyUnityCatalogResult<PyListScimUsersResponse> {
-        let mut request = self.client.list_users();
-        request = request.with_filter(filter);
-        request = request.with_start_index(start_index);
-        request = request.with_count(count);
+        let request = self
+            .client
+            .list_users()
+            .with_filter(filter)
+            .with_start_index(start_index)
+            .with_count(count);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -3708,10 +3744,12 @@ impl PyClient {
         start_index: Option<i32>,
         count: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyListScimUsersResponse>> {
-        let mut request = self.client.list_users();
-        request = request.with_filter(filter);
-        request = request.with_start_index(start_index);
-        request = request.with_count(count);
+        let request = self
+            .client
+            .list_users()
+            .with_filter(filter)
+            .with_start_index(start_index)
+            .with_count(count);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -3755,26 +3793,26 @@ impl PyClient {
         emails: ::core::option::Option<::std::vec::Vec<PyScimEmail>>,
         photos: ::core::option::Option<::std::vec::Vec<PyScimPhoto>>,
     ) -> PyUnityCatalogResult<PyScimUser> {
-        let mut request = self.client.create_user();
-        request = request.with_external_id(external_id);
-        request = request.with_display_name(display_name);
-        request = request.with_active(active);
-        if let Some(emails) = emails {
-            request = request.with_emails(
+        let request = self
+            .client
+            .create_user()
+            .with_external_id(external_id)
+            .with_display_name(display_name)
+            .with_active(active)
+            .with_emails(
                 emails
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
-        }
-        if let Some(photos) = photos {
-            request = request.with_photos(
+            )
+            .with_photos(
                 photos
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -3803,26 +3841,26 @@ impl PyClient {
         emails: ::core::option::Option<::std::vec::Vec<PyScimEmail>>,
         photos: ::core::option::Option<::std::vec::Vec<PyScimPhoto>>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimUser>> {
-        let mut request = self.client.create_user();
-        request = request.with_external_id(external_id);
-        request = request.with_display_name(display_name);
-        request = request.with_active(active);
-        if let Some(emails) = emails {
-            request = request.with_emails(
+        let request = self
+            .client
+            .create_user()
+            .with_external_id(external_id)
+            .with_display_name(display_name)
+            .with_active(active)
+            .with_emails(
                 emails
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
-        }
-        if let Some(photos) = photos {
-            request = request.with_photos(
+            )
+            .with_photos(
                 photos
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -3902,26 +3940,26 @@ impl PyClient {
         emails: ::core::option::Option<::std::vec::Vec<PyScimEmail>>,
         photos: ::core::option::Option<::std::vec::Vec<PyScimPhoto>>,
     ) -> PyUnityCatalogResult<PyScimUser> {
-        let mut request = self.client.replace_user(id);
-        request = request.with_external_id(external_id);
-        request = request.with_display_name(display_name);
-        request = request.with_active(active);
-        if let Some(emails) = emails {
-            request = request.with_emails(
+        let request = self
+            .client
+            .replace_user(id)
+            .with_external_id(external_id)
+            .with_display_name(display_name)
+            .with_active(active)
+            .with_emails(
                 emails
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
-        }
-        if let Some(photos) = photos {
-            request = request.with_photos(
+            )
+            .with_photos(
                 photos
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -3952,26 +3990,26 @@ impl PyClient {
         emails: ::core::option::Option<::std::vec::Vec<PyScimEmail>>,
         photos: ::core::option::Option<::std::vec::Vec<PyScimPhoto>>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimUser>> {
-        let mut request = self.client.replace_user(id);
-        request = request.with_external_id(external_id);
-        request = request.with_display_name(display_name);
-        request = request.with_active(active);
-        if let Some(emails) = emails {
-            request = request.with_emails(
+        let request = self
+            .client
+            .replace_user(id)
+            .with_external_id(external_id)
+            .with_display_name(display_name)
+            .with_active(active)
+            .with_emails(
                 emails
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
-        }
-        if let Some(photos) = photos {
-            request = request.with_photos(
+            )
+            .with_photos(
                 photos
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -3997,16 +4035,16 @@ impl PyClient {
         operations: ::std::vec::Vec<PyScimPatchOperation>,
         schemas: Option<Vec<String>>,
     ) -> PyUnityCatalogResult<()> {
-        let mut request = self.client.patch_user(
-            id,
-            operations
-                .into_iter()
-                .map(::core::convert::Into::into)
-                .collect(),
-        );
-        if let Some(schemas) = schemas {
-            request = request.with_schemas(schemas);
-        }
+        let request = self
+            .client
+            .patch_user(
+                id,
+                operations
+                    .into_iter()
+                    .map(::core::convert::Into::into)
+                    .collect(),
+            )
+            .with_schemas(schemas.unwrap_or_default());
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -4026,16 +4064,16 @@ impl PyClient {
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
     > {
-        let mut request = self.client.patch_user(
-            id,
-            operations
-                .into_iter()
-                .map(::core::convert::Into::into)
-                .collect(),
-        );
-        if let Some(schemas) = schemas {
-            request = request.with_schemas(schemas);
-        }
+        let request = self
+            .client
+            .patch_user(
+                id,
+                operations
+                    .into_iter()
+                    .map(::core::convert::Into::into)
+                    .collect(),
+            )
+            .with_schemas(schemas.unwrap_or_default());
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -4125,10 +4163,12 @@ impl PyClient {
         start_index: Option<i32>,
         count: Option<i32>,
     ) -> PyUnityCatalogResult<PyListScimGroupsResponse> {
-        let mut request = self.client.list_groups();
-        request = request.with_filter(filter);
-        request = request.with_start_index(start_index);
-        request = request.with_count(count);
+        let request = self
+            .client
+            .list_groups()
+            .with_filter(filter)
+            .with_start_index(start_index)
+            .with_count(count);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -4146,10 +4186,12 @@ impl PyClient {
         start_index: Option<i32>,
         count: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyListScimGroupsResponse>> {
-        let mut request = self.client.list_groups();
-        request = request.with_filter(filter);
-        request = request.with_start_index(start_index);
-        request = request.with_count(count);
+        let request = self
+            .client
+            .list_groups()
+            .with_filter(filter)
+            .with_start_index(start_index)
+            .with_count(count);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -4178,18 +4220,17 @@ impl PyClient {
         schemas: Option<Vec<String>>,
         members: ::core::option::Option<::std::vec::Vec<PyScimGroupMember>>,
     ) -> PyUnityCatalogResult<PyScimGroup> {
-        let mut request = self.client.create_group(display_name);
-        if let Some(schemas) = schemas {
-            request = request.with_schemas(schemas);
-        }
-        if let Some(members) = members {
-            request = request.with_members(
+        let request = self
+            .client
+            .create_group(display_name)
+            .with_schemas(schemas.unwrap_or_default())
+            .with_members(
                 members
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -4207,18 +4248,17 @@ impl PyClient {
         schemas: Option<Vec<String>>,
         members: ::core::option::Option<::std::vec::Vec<PyScimGroupMember>>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimGroup>> {
-        let mut request = self.client.create_group(display_name);
-        if let Some(schemas) = schemas {
-            request = request.with_schemas(schemas);
-        }
-        if let Some(members) = members {
-            request = request.with_members(
+        let request = self
+            .client
+            .create_group(display_name)
+            .with_schemas(schemas.unwrap_or_default())
+            .with_members(
                 members
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -4281,18 +4321,17 @@ impl PyClient {
         schemas: Option<Vec<String>>,
         members: ::core::option::Option<::std::vec::Vec<PyScimGroupMember>>,
     ) -> PyUnityCatalogResult<PyScimGroup> {
-        let mut request = self.client.replace_group(id, display_name);
-        if let Some(schemas) = schemas {
-            request = request.with_schemas(schemas);
-        }
-        if let Some(members) = members {
-            request = request.with_members(
+        let request = self
+            .client
+            .replace_group(id, display_name)
+            .with_schemas(schemas.unwrap_or_default())
+            .with_members(
                 members
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -4311,18 +4350,17 @@ impl PyClient {
         schemas: Option<Vec<String>>,
         members: ::core::option::Option<::std::vec::Vec<PyScimGroupMember>>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimGroup>> {
-        let mut request = self.client.replace_group(id, display_name);
-        if let Some(schemas) = schemas {
-            request = request.with_schemas(schemas);
-        }
-        if let Some(members) = members {
-            request = request.with_members(
+        let request = self
+            .client
+            .replace_group(id, display_name)
+            .with_schemas(schemas.unwrap_or_default())
+            .with_members(
                 members
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -4351,16 +4389,16 @@ impl PyClient {
         operations: ::std::vec::Vec<PyScimPatchOperation>,
         schemas: Option<Vec<String>>,
     ) -> PyUnityCatalogResult<PyScimGroup> {
-        let mut request = self.client.patch_group(
-            id,
-            operations
-                .into_iter()
-                .map(::core::convert::Into::into)
-                .collect(),
-        );
-        if let Some(schemas) = schemas {
-            request = request.with_schemas(schemas);
-        }
+        let request = self
+            .client
+            .patch_group(
+                id,
+                operations
+                    .into_iter()
+                    .map(::core::convert::Into::into)
+                    .collect(),
+            )
+            .with_schemas(schemas.unwrap_or_default());
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -4378,16 +4416,16 @@ impl PyClient {
         operations: ::std::vec::Vec<PyScimPatchOperation>,
         schemas: Option<Vec<String>>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimGroup>> {
-        let mut request = self.client.patch_group(
-            id,
-            operations
-                .into_iter()
-                .map(::core::convert::Into::into)
-                .collect(),
-        );
-        if let Some(schemas) = schemas {
-            request = request.with_schemas(schemas);
-        }
+        let request = self
+            .client
+            .patch_group(
+                id,
+                operations
+                    .into_iter()
+                    .map(::core::convert::Into::into)
+                    .collect(),
+            )
+            .with_schemas(schemas.unwrap_or_default());
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -4448,19 +4486,18 @@ impl PyClient {
         fail_on_errors: Option<i32>,
         operations: ::core::option::Option<::std::vec::Vec<PyScimBulkOp>>,
     ) -> PyUnityCatalogResult<PyScimBulkResponse> {
-        let mut request = self.client.scim_bulk();
-        if let Some(schemas) = schemas {
-            request = request.with_schemas(schemas);
-        }
-        request = request.with_fail_on_errors(fail_on_errors);
-        if let Some(operations) = operations {
-            request = request.with_operations(
+        let request = self
+            .client
+            .scim_bulk()
+            .with_schemas(schemas.unwrap_or_default())
+            .with_fail_on_errors(fail_on_errors)
+            .with_operations(
                 operations
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -4478,19 +4515,18 @@ impl PyClient {
         fail_on_errors: Option<i32>,
         operations: ::core::option::Option<::std::vec::Vec<PyScimBulkOp>>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimBulkResponse>> {
-        let mut request = self.client.scim_bulk();
-        if let Some(schemas) = schemas {
-            request = request.with_schemas(schemas);
-        }
-        request = request.with_fail_on_errors(fail_on_errors);
-        if let Some(operations) = operations {
-            request = request.with_operations(
+        let request = self
+            .client
+            .scim_bulk()
+            .with_schemas(schemas.unwrap_or_default())
+            .with_fail_on_errors(fail_on_errors)
+            .with_operations(
                 operations
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        }
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -4612,8 +4648,7 @@ impl PyClient {
         py: Python,
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyShareInfo>> {
-        let mut request = self.client.list_shares();
-        request = request.with_max_results(max_results);
+        let request = self.client.list_shares().with_max_results(max_results);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -4640,8 +4675,7 @@ impl PyClient {
         max_results: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyShareInfo>>>
     {
-        let mut request = self.client.list_shares();
-        request = request.with_max_results(max_results);
+        let request = self.client.list_shares().with_max_results(max_results);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -4674,8 +4708,7 @@ impl PyClient {
         name: String,
         comment: Option<String>,
     ) -> PyUnityCatalogResult<PyShareInfo> {
-        let mut request = self.client.create_share(name);
-        request = request.with_comment(comment);
+        let request = self.client.create_share(name).with_comment(comment);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -4692,8 +4725,7 @@ impl PyClient {
         name: String,
         comment: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyShareInfo>> {
-        let mut request = self.client.create_share(name);
-        request = request.with_comment(comment);
+        let request = self.client.create_share(name).with_comment(comment);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -5068,8 +5100,10 @@ impl PyClient {
         schema_name: String,
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyTableInfo>> {
-        let mut request = self.client.list_tables(catalog_name, schema_name);
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_tables(catalog_name, schema_name)
+            .with_max_results(max_results);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -5098,8 +5132,10 @@ impl PyClient {
         max_results: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyTableInfo>>>
     {
-        let mut request = self.client.list_tables(catalog_name, schema_name);
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_tables(catalog_name, schema_name)
+            .with_max_results(max_results);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -5168,27 +5204,22 @@ impl PyClient {
         view_definition: Option<String>,
         view_dependencies: ::core::option::Option<PyDependencyList>,
     ) -> PyUnityCatalogResult<PyTableInfo> {
-        let mut request =
-            self.client
-                .create_table(name, catalog_name, schema_name, table_type.into());
-        if let Some(columns) = columns {
-            request = request.with_columns(
+        let request = self
+            .client
+            .create_table(name, catalog_name, schema_name, table_type.into())
+            .with_columns(
                 columns
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
-        }
-        request =
-            request.with_data_source_format(data_source_format.map(::core::convert::Into::into));
-        request = request.with_storage_location(storage_location);
-        request = request.with_comment(comment);
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
-        request = request.with_view_definition(view_definition);
-        request =
-            request.with_view_dependencies(view_dependencies.map(::core::convert::Into::into));
+            )
+            .with_data_source_format(data_source_format.map(::core::convert::Into::into))
+            .with_storage_location(storage_location)
+            .with_comment(comment)
+            .with_properties(properties.unwrap_or_default())
+            .with_view_definition(view_definition)
+            .with_view_dependencies(view_dependencies.map(::core::convert::Into::into));
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -5229,27 +5260,22 @@ impl PyClient {
         view_definition: Option<String>,
         view_dependencies: ::core::option::Option<PyDependencyList>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyTableInfo>> {
-        let mut request =
-            self.client
-                .create_table(name, catalog_name, schema_name, table_type.into());
-        if let Some(columns) = columns {
-            request = request.with_columns(
+        let request = self
+            .client
+            .create_table(name, catalog_name, schema_name, table_type.into())
+            .with_columns(
                 columns
+                    .unwrap_or_default()
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
-        }
-        request =
-            request.with_data_source_format(data_source_format.map(::core::convert::Into::into));
-        request = request.with_storage_location(storage_location);
-        request = request.with_comment(comment);
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
-        request = request.with_view_definition(view_definition);
-        request =
-            request.with_view_dependencies(view_dependencies.map(::core::convert::Into::into));
+            )
+            .with_data_source_format(data_source_format.map(::core::convert::Into::into))
+            .with_storage_location(storage_location)
+            .with_comment(comment)
+            .with_properties(properties.unwrap_or_default())
+            .with_view_definition(view_definition)
+            .with_view_dependencies(view_dependencies.map(::core::convert::Into::into));
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -5482,8 +5508,7 @@ impl PyClient {
         py: Python,
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyPatInfo>> {
-        let mut request = self.client.list_tokens();
-        request = request.with_max_results(max_results);
+        let request = self.client.list_tokens().with_max_results(max_results);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -5510,8 +5535,7 @@ impl PyClient {
         max_results: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyPatInfo>>>
     {
-        let mut request = self.client.list_tokens();
-        request = request.with_max_results(max_results);
+        let request = self.client.list_tokens().with_max_results(max_results);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -5547,8 +5571,7 @@ impl PyClient {
         name: String,
         expires_at: Option<i64>,
     ) -> PyUnityCatalogResult<PyPatInfo> {
-        let mut request = self.client.create_token(name);
-        request = request.with_expires_at(expires_at);
+        let request = self.client.create_token(name).with_expires_at(expires_at);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -5565,8 +5588,7 @@ impl PyClient {
         name: String,
         expires_at: Option<i64>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyPatInfo>> {
-        let mut request = self.client.create_token(name);
-        request = request.with_expires_at(expires_at);
+        let request = self.client.create_token(name).with_expires_at(expires_at);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -5594,8 +5616,10 @@ impl PyClient {
         schema_name: String,
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyVolumeInfo>> {
-        let mut request = self.client.list_volumes(catalog_name, schema_name);
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_volumes(catalog_name, schema_name)
+            .with_max_results(max_results);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -5624,8 +5648,10 @@ impl PyClient {
         max_results: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyVolumeInfo>>>
     {
-        let mut request = self.client.list_volumes(catalog_name, schema_name);
-        request = request.with_max_results(max_results);
+        let request = self
+            .client
+            .list_volumes(catalog_name, schema_name)
+            .with_max_results(max_results);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -5677,11 +5703,11 @@ impl PyClient {
         comment: Option<String>,
         storage_location: Option<String>,
     ) -> PyUnityCatalogResult<PyVolumeInfo> {
-        let mut request =
-            self.client
-                .create_volume(catalog_name, schema_name, name, volume_type.into());
-        request = request.with_comment(comment);
-        request = request.with_storage_location(storage_location);
+        let request = self
+            .client
+            .create_volume(catalog_name, schema_name, name, volume_type.into())
+            .with_comment(comment)
+            .with_storage_location(storage_location);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -5712,11 +5738,11 @@ impl PyClient {
         comment: Option<String>,
         storage_location: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyVolumeInfo>> {
-        let mut request =
-            self.client
-                .create_volume(catalog_name, schema_name, name, volume_type.into());
-        request = request.with_comment(comment);
-        request = request.with_storage_location(storage_location);
+        let request = self
+            .client
+            .create_volume(catalog_name, schema_name, name, volume_type.into())
+            .with_comment(comment)
+            .with_storage_location(storage_location);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

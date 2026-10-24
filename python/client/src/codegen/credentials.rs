@@ -64,10 +64,12 @@ impl PyCredentialClient {
         aws_iam_role: ::core::option::Option<PyAwsIamRoleRequest>,
         new_name: Option<String>,
     ) -> PyUnityCatalogResult<PyCredentialInfo> {
-        let mut request = self.client.update();
-        request = request.with_comment(comment);
-        request = request.with_aws_iam_role(aws_iam_role.map(::core::convert::Into::into));
-        request = request.with_new_name(new_name);
+        let request = self
+            .client
+            .update()
+            .with_comment(comment)
+            .with_aws_iam_role(aws_iam_role.map(::core::convert::Into::into))
+            .with_new_name(new_name);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -85,10 +87,12 @@ impl PyCredentialClient {
         aws_iam_role: ::core::option::Option<PyAwsIamRoleRequest>,
         new_name: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyCredentialInfo>> {
-        let mut request = self.client.update();
-        request = request.with_comment(comment);
-        request = request.with_aws_iam_role(aws_iam_role.map(::core::convert::Into::into));
-        request = request.with_new_name(new_name);
+        let request = self
+            .client
+            .update()
+            .with_comment(comment)
+            .with_aws_iam_role(aws_iam_role.map(::core::convert::Into::into))
+            .with_new_name(new_name);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -105,8 +109,7 @@ impl PyCredentialClient {
     ///     force: Delete the credential even when external locations use it.
     #[pyo3(signature = (*, force = None))]
     pub fn delete(&self, py: Python, force: Option<bool>) -> PyUnityCatalogResult<()> {
-        let mut request = self.client.delete();
-        request = request.with_force(force);
+        let request = self.client.delete().with_force(force);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -124,8 +127,7 @@ impl PyCredentialClient {
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
     > {
-        let mut request = self.client.delete();
-        request = request.with_force(force);
+        let request = self.client.delete().with_force(force);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

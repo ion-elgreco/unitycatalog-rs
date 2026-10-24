@@ -66,12 +66,12 @@ impl PySchemaClient {
         properties: Option<HashMap<String, String>>,
         new_name: Option<String>,
     ) -> PyUnityCatalogResult<PySchemaInfo> {
-        let mut request = self.client.update();
-        request = request.with_comment(comment);
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
-        request = request.with_new_name(new_name);
+        let request = self
+            .client
+            .update()
+            .with_comment(comment)
+            .with_properties(properties.unwrap_or_default())
+            .with_new_name(new_name);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -89,12 +89,12 @@ impl PySchemaClient {
         properties: Option<HashMap<String, String>>,
         new_name: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PySchemaInfo>> {
-        let mut request = self.client.update();
-        request = request.with_comment(comment);
-        if let Some(properties) = properties {
-            request = request.with_properties(properties);
-        }
-        request = request.with_new_name(new_name);
+        let request = self
+            .client
+            .update()
+            .with_comment(comment)
+            .with_properties(properties.unwrap_or_default())
+            .with_new_name(new_name);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -111,8 +111,7 @@ impl PySchemaClient {
     ///     force: Delete the tables, volumes, functions and models of the schema too.
     #[pyo3(signature = (*, force = None))]
     pub fn delete(&self, py: Python, force: Option<bool>) -> PyUnityCatalogResult<()> {
-        let mut request = self.client.delete();
-        request = request.with_force(force);
+        let request = self.client.delete().with_force(force);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -130,8 +129,7 @@ impl PySchemaClient {
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
     > {
-        let mut request = self.client.delete();
-        request = request.with_force(force);
+        let request = self.client.delete().with_force(force);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
