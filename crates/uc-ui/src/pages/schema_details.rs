@@ -90,10 +90,13 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
         });
         async move { saving.await.map(|_| ()) }
     };
-    let refresh = Callback::new(move |_| {
+    // The schema, and the list of the kind shown.
+    let reload = Signal::derive(move || {
         let (catalog, schema, full_name) = names.get_value();
-        cache.changed(Key::Schema(full_name));
-        cache.changed(Key::Entries(catalog, schema, kind.get_untracked()));
+        vec![
+            Key::Schema(full_name),
+            Key::Entries(catalog, schema, kind.get()),
+        ]
     });
     let new_object = move |_| {
         new_kind.set(kind.get_untracked());
@@ -105,7 +108,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
             icon=schema_icon()
             name=full_name.clone()
             badges=vec!["Schema".to_string()]
-            on_refresh=refresh
+            reload
             actions=view! {
                 <EditMetadata name=schema.clone() comment properties=props save=save_metadata/>
                 <button type="button" class="uc-btn uc-btn--sm" on:click=new_object>

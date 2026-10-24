@@ -62,14 +62,14 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
             Ok(())
         }
     };
-    let refresh = Callback::new(move |_| cache.changed(Key::Table(name.get_value())));
+    let reload = vec![Key::Table(full_name.clone())];
 
     view! {
         <EntityHeader
             icon=Kind::Tables.icon()
             name=full_name.clone()
             badges
-            on_refresh=refresh
+            reload
             actions=view! { <DeleteButton open=delete_open when=manages/> }.into_any()
         />
         <div class="uc-page">

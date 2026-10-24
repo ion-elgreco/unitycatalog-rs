@@ -78,10 +78,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
         });
         async move { saving.await.map(|_| ()) }
     };
-    let refresh = Callback::new(move |_| {
-        cache.changed(Key::Catalog(name.get_value()));
-        cache.changed(Key::Schemas(name.get_value()));
-    });
+    let reload = vec![Key::Catalog(catalog.clone()), Key::Schemas(catalog.clone())];
 
     let schema_rows = move || {
         let empty = Empty::new(
@@ -117,7 +114,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
             icon=catalog_icon()
             name=catalog.clone()
             badges=vec!["Catalog".to_string()]
-            on_refresh=refresh
+            reload
             actions=view! {
                 <EditMetadata name=catalog.clone() comment properties=props save=save_metadata/>
                 <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>

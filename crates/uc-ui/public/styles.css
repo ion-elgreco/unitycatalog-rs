@@ -873,6 +873,16 @@ pre,
   to { transform: rotate(360deg); }
 }
 
+/* The Reload button of a page: it turns while the page loads again, and
+   is red when the load failed. */
+.uc-reload.is-busy svg { animation: uc-spin 1s linear infinite; }
+
+.uc-reload.is-failed,
+.uc-reload.is-failed:hover {
+  border-color: color-mix(in srgb, var(--destructive) 45%, var(--border));
+  color: var(--destructive);
+}
+
 /* ---------- Cards ---------- */
 
 .uc-card {

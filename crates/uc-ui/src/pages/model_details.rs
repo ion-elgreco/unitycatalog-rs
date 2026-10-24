@@ -95,11 +95,10 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
         });
         async move { saving.await.map(|_| ()) }
     };
-    let refresh = Callback::new(move |_| {
-        let (_, _, _, full_name) = names.get_value();
-        cache.changed(Key::Model(full_name.clone()));
-        cache.changed(Key::Versions(full_name));
-    });
+    let reload = vec![
+        Key::Model(full_name.clone()),
+        Key::Versions(full_name.clone()),
+    ];
 
     let version_rows = move || {
         let empty = Empty::new(
@@ -149,7 +148,7 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
             icon=Kind::Models.icon()
             name=full_name.clone()
             badges=vec!["Model".to_string()]
-            on_refresh=refresh
+            reload
             actions=view! {
                 <EditMetadata name=model.clone() comment save=save_metadata/>
                 <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>

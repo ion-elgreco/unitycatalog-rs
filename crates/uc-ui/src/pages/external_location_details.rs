@@ -59,14 +59,14 @@ fn LocationPage(name: String) -> impl IntoView {
             Ok(())
         }
     };
-    let refresh = Callback::new(move |_| cache.changed(Key::ExternalLocation(key.get_value())));
+    let reload = vec![Key::ExternalLocation(name.clone())];
 
     view! {
         <EntityHeader
             icon=Section::ExternalLocations.icon()
             name=name.clone()
             badges=vec!["External location".to_string()]
-            on_refresh=refresh
+            reload
             actions=view! {
                 <EditLocation name=name.clone() url credential comment/>
                 <DeleteButton open=delete_open when=manages/>

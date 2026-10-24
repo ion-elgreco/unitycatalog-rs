@@ -56,10 +56,7 @@ fn CredentialPage(name: String) -> impl IntoView {
             Ok(())
         }
     };
-    let refresh = Callback::new(move |_| {
-        cache.changed(Key::Credential(key.get_value()));
-        cache.changed(Key::ExternalLocations);
-    });
+    let reload = vec![Key::Credential(name.clone()), Key::ExternalLocations];
     // The external locations bound to it, among the ones the user may see.
     let bound = Signal::derive(move || {
         locations.with(|locations| match locations {
@@ -111,7 +108,7 @@ fn CredentialPage(name: String) -> impl IntoView {
             icon=Section::Credentials.icon()
             name=name.clone()
             badges=vec!["Credential".to_string()]
-            on_refresh=refresh
+            reload
             actions=view! {
                 <EditCredential name=name.clone() role comment/>
                 <DeleteButton open=delete_open when=manages/>

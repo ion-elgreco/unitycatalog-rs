@@ -81,17 +81,14 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
         });
         async move { saving.await.map(|_| ()) }
     };
-    let refresh = Callback::new(move |_| {
-        let (_, _, full_name) = names.get_value();
-        cache.changed(Key::Volume(full_name));
-    });
+    let reload = vec![Key::Volume(full_name.clone())];
 
     view! {
         <EntityHeader
             icon=Kind::Volumes.icon()
             name=full_name.clone()
             badges
-            on_refresh=refresh
+            reload
             actions=view! {
                 <EditMetadata name=volume.clone() comment save=save_metadata/>
                 <DeleteButton open=delete_open when=manages/>

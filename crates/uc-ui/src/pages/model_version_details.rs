@@ -98,10 +98,7 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
             finalizing.set(false);
         });
     };
-    let refresh = Callback::new(move |_| {
-        let (_, _, _, full_name) = names.get_value();
-        cache.changed(Key::Version(full_name, number));
-    });
+    let reload = vec![Key::Version(full_name.clone(), number)];
 
     let actions = view! {
         <Show when=move || pending.get()>
@@ -123,7 +120,7 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
             icon
             name=format!("{model} · v{version}")
             badges
-            on_refresh=refresh
+            reload
             actions
         />
         <div class="uc-page">

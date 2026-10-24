@@ -3,10 +3,17 @@
 //! the icon, the name, its type badges, a button that loads the object
 //! again, and the page's actions.
 
+use std::time::Duration;
+
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 
 use super::icons::{ChevronRight, Notebook, RefreshCw};
+use crate::load::{Key, use_cache};
 use crate::util::{Route, catalog_href, schema_href};
+
+/// One turn of the Reload icon, as `.uc-spin` turns it.
+const TURN: Duration = Duration::from_secs(1);
 
 /// The path: "Catalog > catalog > schema > name", or, outside the
 /// catalogs, "Credentials > name". Each part but the last, which is the
@@ -83,9 +90,10 @@ pub fn EntityHeader(
     /// Such as "MANAGED" and "DELTA" for a table.
     #[prop(into, optional)]
     badges: Signal<Vec<String>>,
-    /// Load the object again.
+    /// What the Reload button loads again: the object, and the lists the
+    /// page shows. None hides the button.
     #[prop(into, optional)]
-    on_refresh: Option<Callback<()>>,
+    reload: Option<Signal<Vec<Key>>>,
     #[prop(optional)] actions: Option<AnyView>,
 ) -> impl IntoView {
     view! {
@@ -101,23 +109,53 @@ pub fn EntityHeader(
                             .map(|badge| view! { <span class="uc-badge uc-badge--type">{badge}</span> })
                             .collect_view()
                     }}
-                    {on_refresh
-                        .map(|on_refresh| {
-                            view! {
-                                <button
-                                    type="button"
-                                    class="uc-btn uc-btn--outline uc-btn--icon uc-btn--sm"
-                                    title="Reload"
-                                    aria-label="Reload"
-                                    on:click=move |_| on_refresh.run(())
-                                >
-                                    <RefreshCw/>
-                                </button>
-                            }
-                        })}
+                    {reload.map(|keys| view! { <ReloadButton keys/> })}
                 </div>
                 {actions.map(|actions| view! { <div class="uc-entity__actions">{actions}</div> })}
             </div>
         </div>
+    }
+}
+
+/// Loads `keys` again. The icon turns while they load, at least one turn
+/// for a click, and turns red when the last load failed, with the reason
+/// in its title. The page keeps what it shows meanwhile.
+#[component]
+fn ReloadButton(keys: Signal<Vec<Key>>) -> impl IntoView {
+    let cache = use_cache();
+    let progress = Signal::derive(move || cache.progress(&keys.get()));
+    let turning = RwSignal::new(false);
+    let reload = move |_| {
+        for key in keys.get_untracked() {
+            cache.changed(key);
+        }
+        turning.set(true);
+        spawn_local(async move {
+            gloo_timers::future::sleep(TURN).await;
+            // Only when the page is still there.
+            let _ = turning.try_set(false);
+        });
+    };
+    let busy = move || turning.get() || progress.with(|p| p.loading);
+    let failed = move || progress.with(|p| p.failure.is_some());
+    let title = move || {
+        progress.with(|p| match &p.failure {
+            Some(failure) => format!("Reload failed: {failure}"),
+            None => "Reload".to_string(),
+        })
+    };
+    view! {
+        <button
+            type="button"
+            class="uc-btn uc-btn--outline uc-btn--icon uc-btn--sm uc-reload"
+            class:is-busy=busy
+            class:is-failed=failed
+            aria-busy=move || if busy() { "true" } else { "false" }
+            title=title
+            aria-label=title
+            on:click=reload
+        >
+            <RefreshCw/>
+        </button>
     }
 }

@@ -12,7 +12,7 @@ use crate::components::{
     MetaRow, PermissionsCard, Tabs,
 };
 use crate::kind::Kind;
-use crate::load::{Key, field, use_cache, use_load};
+use crate::load::{Key, field, use_load};
 use crate::util::{enum_name, format_timestamp, or_dash, pretty_json, route_params};
 
 #[component]
@@ -32,7 +32,6 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
         let full_name = name.get_value();
         async move { api::client().function(full_name).get().await }
     });
-    let cache = use_cache();
     let delete_open = RwSignal::new(false);
     let owner = field(info, |f: &FunctionInfo| f.owner.clone());
     let manages = use_manages(owner);
@@ -62,7 +61,7 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
     let definition = field(info, |f: &FunctionInfo| {
         f.routine_definition.clone().unwrap_or_default()
     });
-    let refresh = Callback::new(move |_| cache.changed(Key::Function(name.get_value())));
+    let reload = vec![Key::Function(full_name.clone())];
 
     let parameters_title = move || format!("Input parameters ({})", parameters.with(Vec::len));
     let parameter_rows = move || {
@@ -114,7 +113,7 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
             icon=Kind::Functions.icon()
             name=full_name.clone()
             badges
-            on_refresh=refresh
+            reload
             actions=view! { <DeleteButton open=delete_open when=manages/> }.into_any()
         />
         <div class="uc-page">

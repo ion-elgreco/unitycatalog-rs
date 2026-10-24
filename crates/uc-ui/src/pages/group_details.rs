@@ -46,10 +46,7 @@ fn GroupPage(name: String) -> impl IntoView {
     let members = Signal::derive(move || {
         info.with(|g| g.ready().map(|g| g.members.clone()).unwrap_or_default())
     });
-    let refresh = Callback::new(move |_| {
-        cache.changed(Key::Group(key.get_value()));
-        cache.changed(Key::Users);
-    });
+    let reload = vec![Key::Group(name.clone()), Key::Users];
     // Save the group with `members`; the page shows the server's answer.
     let set_members = move |members: Vec<ScimGroupMember>| {
         let Some(group) = info.with_untracked(|g| g.ready().cloned()) else {
@@ -239,7 +236,7 @@ fn GroupPage(name: String) -> impl IntoView {
             icon=Section::Groups.icon()
             name=name.clone()
             badges=vec!["Group".to_string()]
-            on_refresh=refresh
+            reload
             actions=view! { <DeleteButton open=delete_open when=admin/> }.into_any()
         />
         <div class="uc-page">
