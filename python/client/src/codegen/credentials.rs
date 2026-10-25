@@ -51,12 +51,15 @@ impl PyCredentialClient {
     ///
     /// Args:
     ///     comment: User-provided free-form text description.
-    ///     aws_iam_role: New AWS IAM role of the credential. The role gets a new external ID. Give at most
-    ///                   one of `aws_iam_role`, `azure_service_principal` and `azure_managed_identity`: it
-    ///                   replaces the identity of the credential.
+    ///     aws_iam_role: New AWS IAM role of the credential. The role gets a new external ID. Give at
+    ///                   most one of `aws_iam_role`, `azure_service_principal`, `azure_managed_identity`,
+    ///                   `gcp_service_account` and `gcp_service_account_key`: it replaces the identity of
+    ///                   the credential.
     ///     new_name: New name of the credential.
     ///     azure_service_principal: New Azure service principal of the credential.
     ///     azure_managed_identity: New Azure managed identity of the credential.
+    ///     gcp_service_account: New GCP service account of the credential.
+    ///     gcp_service_account_key: New GCP service account key of the credential.
     ///
     /// Returns:
     ///     A credential that gives access to storage or to external services.
@@ -67,7 +70,9 @@ impl PyCredentialClient {
             aws_iam_role = None,
             new_name = None,
             azure_service_principal = None,
-            azure_managed_identity = None
+            azure_managed_identity = None,
+            gcp_service_account = None,
+            gcp_service_account_key = None
         )
     )]
     pub fn update(
@@ -78,6 +83,8 @@ impl PyCredentialClient {
         new_name: Option<String>,
         azure_service_principal: ::core::option::Option<PyAzureServicePrincipalRequest>,
         azure_managed_identity: ::core::option::Option<PyAzureManagedIdentity>,
+        gcp_service_account: ::core::option::Option<PyGcpServiceAccount>,
+        gcp_service_account_key: ::core::option::Option<PyGcpServiceAccountKeyRequest>,
     ) -> PyUnityCatalogResult<PyCredentialInfo> {
         let request = self
             .client
@@ -86,7 +93,9 @@ impl PyCredentialClient {
             .with_aws_iam_role(aws_iam_role.map(::core::convert::Into::into))
             .with_new_name(new_name)
             .with_azure_service_principal(azure_service_principal.map(::core::convert::Into::into))
-            .with_azure_managed_identity(azure_managed_identity.map(::core::convert::Into::into));
+            .with_azure_managed_identity(azure_managed_identity.map(::core::convert::Into::into))
+            .with_gcp_service_account(gcp_service_account.map(::core::convert::Into::into))
+            .with_gcp_service_account_key(gcp_service_account_key.map(::core::convert::Into::into));
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -103,7 +112,9 @@ impl PyCredentialClient {
             aws_iam_role = None,
             new_name = None,
             azure_service_principal = None,
-            azure_managed_identity = None
+            azure_managed_identity = None,
+            gcp_service_account = None,
+            gcp_service_account_key = None
         )
     )]
     pub fn update_async<'py>(
@@ -114,6 +125,8 @@ impl PyCredentialClient {
         new_name: Option<String>,
         azure_service_principal: ::core::option::Option<PyAzureServicePrincipalRequest>,
         azure_managed_identity: ::core::option::Option<PyAzureManagedIdentity>,
+        gcp_service_account: ::core::option::Option<PyGcpServiceAccount>,
+        gcp_service_account_key: ::core::option::Option<PyGcpServiceAccountKeyRequest>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyCredentialInfo>> {
         let request = self
             .client
@@ -122,7 +135,9 @@ impl PyCredentialClient {
             .with_aws_iam_role(aws_iam_role.map(::core::convert::Into::into))
             .with_new_name(new_name)
             .with_azure_service_principal(azure_service_principal.map(::core::convert::Into::into))
-            .with_azure_managed_identity(azure_managed_identity.map(::core::convert::Into::into));
+            .with_azure_managed_identity(azure_managed_identity.map(::core::convert::Into::into))
+            .with_gcp_service_account(gcp_service_account.map(::core::convert::Into::into))
+            .with_gcp_service_account_key(gcp_service_account_key.map(::core::convert::Into::into));
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

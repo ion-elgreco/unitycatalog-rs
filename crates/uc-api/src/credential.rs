@@ -53,6 +53,29 @@ pub struct AzureManagedIdentity {
     pub managed_identity_id: Option<String>,
 }
 
+/// The server's own GCP identity, or the service account `email` that the
+/// server impersonates.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct GcpServiceAccount {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct GcpServiceAccountKeyRequest {
+    /// The JSON key file of the service account.
+    pub json_key: String,
+}
+
+/// A GCP service account key, without the key.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct GcpServiceAccountKeyResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub private_key_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct AwsCredentials {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -119,10 +142,15 @@ pub struct CredentialInfo {
     pub azure_service_principal: Option<AzureServicePrincipalResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub azure_managed_identity: Option<AzureManagedIdentity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gcp_service_account: Option<GcpServiceAccount>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gcp_service_account_key: Option<GcpServiceAccountKeyResponse>,
 }
 
-/// A credential has exactly one of `aws_iam_role`, `azure_service_principal`
-/// and `azure_managed_identity`.
+/// A credential has exactly one of `aws_iam_role`, `azure_service_principal`,
+/// `azure_managed_identity`, `gcp_service_account` and
+/// `gcp_service_account_key`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CreateCredentialRequest {
     pub name: String,
@@ -136,6 +164,10 @@ pub struct CreateCredentialRequest {
     pub azure_service_principal: Option<AzureServicePrincipalRequest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub azure_managed_identity: Option<AzureManagedIdentity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gcp_service_account: Option<GcpServiceAccount>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gcp_service_account_key: Option<GcpServiceAccountKeyRequest>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
@@ -149,12 +181,16 @@ pub struct UpdateCredentialRequest {
     pub aws_iam_role: Option<AwsIamRoleRequest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_name: Option<String>,
-    /// With `aws_iam_role` and `azure_managed_identity`: at most one, which
+    /// With `aws_iam_role` and the other identities: at most one, which
     /// replaces the identity of the credential.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub azure_service_principal: Option<AzureServicePrincipalRequest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub azure_managed_identity: Option<AzureManagedIdentity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gcp_service_account: Option<GcpServiceAccount>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gcp_service_account_key: Option<GcpServiceAccountKeyRequest>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]

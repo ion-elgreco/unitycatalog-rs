@@ -649,8 +649,11 @@ async fn gcp_downscopes_the_server_token() {
         json!({ "accessBoundary": { "accessBoundaryRules": [{
         "availableResource": "//storage.googleapis.com/projects/_/buckets/gbucket",
         "availablePermissions": ["inRole:roles/storage.objectViewer"],
-        "availabilityCondition": { "expression": "resource.name.startsWith(\"projects/_/buckets/gbucket/objects/tables/t1\") || \
-            api.getAttribute('storage.googleapis.com/objectListPrefix', '').startsWith(\"tables/t1\")" },
+        // The path and the objects under it, not those of `tables/t10`.
+        "availabilityCondition": { "expression": "resource.name == \"projects/_/buckets/gbucket/objects/tables/t1\" || \
+            resource.name.startsWith(\"projects/_/buckets/gbucket/objects/tables/t1/\") || \
+            api.getAttribute('storage.googleapis.com/objectListPrefix', '') == \"tables/t1\" || \
+            api.getAttribute('storage.googleapis.com/objectListPrefix', '').startsWith(\"tables/t1/\")" },
     }] } })
     );
     ok(vend(&app, "gs://gbucket/tables/t1", "PATH_READ_WRITE").await).await;
@@ -658,7 +661,10 @@ async fn gcp_downscopes_the_server_token() {
         serde_json::from_str(&exchanges.lock().unwrap()[1].form()["options"]).unwrap();
     assert_eq!(
         options["accessBoundary"]["accessBoundaryRules"][0]["availablePermissions"],
-        json!(["inRole:roles/storage.objectAdmin"])
+        json!([
+            "inRole:roles/storage.objectViewer",
+            "inRole:roles/storage.legacyBucketWriter"
+        ])
     );
 
     // Upstream's testing generator.
@@ -679,27 +685,127 @@ async fn gcp_downscopes_the_server_token() {
         err["message"],
         "Unknown GCS storage configuration for gs://nope."
     );
-    // No credential reaches GCS yet, so no external location covers it.
-    let mut credential = aws_role();
-    credential["name"] = json!("aws");
-    assert_status(
-        post(&app, "/credentials", credential).await,
-        StatusCode::OK,
-        "credential",
+}
+
+/// A JSON key of a new service account, whose token endpoint is `token_uri`.
+fn service_account_key(email: &str, token_uri: &str) -> Value {
+    let private_key = RsaPrivateKey::new(&mut rand::rngs::OsRng, 2048).unwrap();
+    json!({
+        "type": "service_account",
+        "client_email": email,
+        "private_key_id": "kid",
+        "private_key": private_key.to_pkcs8_pem(rsa::pkcs8::LineEnding::LF).unwrap().as_str(),
+        "token_uri": format!("{token_uri}/token"),
+    })
+}
+
+/// The `iss` claim of a JWT bearer grant.
+fn issuer(seen: &Seen) -> Value {
+    use base64::Engine;
+    let assertion = seen.form()["assertion"].clone();
+    let payload = assertion.split('.').nth(1).unwrap();
+    let claims: Value = serde_json::from_slice(
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(payload)
+            .unwrap(),
     )
-    .await;
-    let location = json!({ "name": "el", "url": "gs://gbucket/el", "credential_name": "aws" });
-    let err = assert_error(
-        post(&app, "/external-locations", location).await,
-        StatusCode::BAD_REQUEST,
-        "INVALID_ARGUMENT",
-    )
-    .await;
-    assert_eq!(
-        err["message"],
-        "Credential aws cannot reach gs://gbucket/el: it needs a GCP identity, which credentials \
-         cannot have yet."
+    .unwrap();
+    claims["iss"].clone()
+}
+
+/// A GCP credential's token, downscoped at STS: of its service account key,
+/// or of the server's own identity, which impersonates the credential's
+/// service account. A `gcs.*` entry's identity impersonates its
+/// `service_account`.
+#[tokio::test]
+async fn gcp_credentials_downscope_their_identity() {
+    let token = |value: &str| json!({ "access_token": value, "expires_in": 3600 }).to_string();
+    let (metadata, own_tokens) = mock("application/json", token("own")).await;
+    let (token_uri, sign_ins) = mock("application/json", token("keyed")).await;
+    let impersonated =
+        json!({ "accessToken": "impersonated", "expireTime": "2030-01-01T00:00:00Z" });
+    let (iam, impersonations) = mock("application/json", impersonated.to_string()).await;
+    let (sts, exchanges) = mock("application/json", token("downscoped")).await;
+    let settings = r#"
+        [gcs.lake]
+        bucket = "gs://lake"
+        service_account = "lake@p.iam.gserviceaccount.com"
+    "#;
+    let endpoints = Endpoints {
+        gcp_sts: Some(format!("{sts}/v1/token")),
+        gcp_metadata: Some(metadata),
+        gcp_iam: Some(iam),
+        ..Default::default()
+    };
+    let app = app(settings, endpoints).await;
+    let subject = |n: usize| exchanges.lock().unwrap()[n].form()["subject_token"].clone();
+
+    // A service account that the server's own identity impersonates.
+    let email = "data@p.iam.gserviceaccount.com";
+    let identity = json!({ "gcp_service_account": { "email": email } });
+    let credential = external_location(&app, "sa", "gs://gb/sa", identity).await;
+    assert_eq!(credential["gcp_service_account"], json!({ "email": email }));
+    let body = ok(vend(&app, "gs://gb/sa/t1", "PATH_READ").await).await;
+    assert_eq!(body["gcp_oauth_token"]["oauth_token"], "downscoped");
+    let own = own_tokens.lock().unwrap()[0].clone();
+    assert!(
+        own.path
+            .starts_with("/computeMetadata/v1/instance/service-accounts/default/token?"),
+        "{}",
+        own.path
     );
+    assert_eq!(own.headers["metadata-flavor"], "Google");
+    let impersonation = impersonations.lock().unwrap()[0].clone();
+    assert_eq!(
+        impersonation.path,
+        format!("/v1/projects/-/serviceAccounts/{email}:generateAccessToken")
+    );
+    assert_eq!(impersonation.headers["authorization"], "Bearer own");
+    assert_eq!(
+        serde_json::from_str::<Value>(&impersonation.body).unwrap(),
+        json!({ "scope": ["https://www.googleapis.com/auth/cloud-platform"] })
+    );
+    assert_eq!(subject(0), "impersonated");
+    let options: Value =
+        serde_json::from_str(&exchanges.lock().unwrap()[0].form()["options"]).unwrap();
+    assert_eq!(
+        options["accessBoundary"]["accessBoundaryRules"][0]["availableResource"],
+        "//storage.googleapis.com/projects/_/buckets/gb"
+    );
+
+    // Without an email: the server's own identity.
+    let identity = json!({ "gcp_service_account": {} });
+    let credential = external_location(&app, "own", "gs://gb/own", identity).await;
+    assert_eq!(credential["gcp_service_account"], json!({}));
+    ok(vend(&app, "gs://gb/own/t1", "PATH_READ").await).await;
+    assert_eq!(subject(1), "own");
+    assert_eq!(impersonations.lock().unwrap().len(), 1);
+
+    // A service account key: its own token, by a JWT bearer grant.
+    let key = service_account_key("key@p.iam.gserviceaccount.com", &token_uri);
+    let identity = json!({ "gcp_service_account_key": { "json_key": key.to_string() } });
+    let credential = external_location(&app, "key", "gs://gb/key", identity).await;
+    assert_eq!(
+        credential["gcp_service_account_key"],
+        json!({ "email": "key@p.iam.gserviceaccount.com", "private_key_id": "kid" })
+    );
+    ok(vend(&app, "gs://gb/key/t1", "PATH_READ_WRITE").await).await;
+    let sign_in = sign_ins.lock().unwrap()[0].clone();
+    assert_eq!(sign_in.path, "/token");
+    assert_eq!(issuer(&sign_in), "key@p.iam.gserviceaccount.com");
+    assert_eq!(subject(2), "keyed");
+
+    // Without an external location: the bucket's entry.
+    ok(vend(&app, "gs://lake/tables/t1", "PATH_READ").await).await;
+    let impersonation = impersonations.lock().unwrap()[1].clone();
+    assert!(
+        impersonation
+            .path
+            .contains("/serviceAccounts/lake@p.iam.gserviceaccount.com:"),
+        "{}",
+        impersonation.path
+    );
+    assert_eq!(subject(3), "impersonated");
 }
 
 /// Upstream `CloudCredentialVendor`: local paths vend nothing.

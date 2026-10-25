@@ -84,7 +84,7 @@ impl Identity {
             return Ok(Self::ServicePrincipal {
                 tenant_id: principal.directory_id.clone().unwrap_or_default(),
                 client_id: principal.application_id.clone().unwrap_or_default(),
-                client_secret: credential.client_secret.clone().unwrap_or_default(),
+                client_secret: credential.secret.clone().unwrap_or_default(),
             });
         }
         match &info.azure_managed_identity {

@@ -182,6 +182,12 @@ unless `managed_identity` is `true`.
 | `managed_identity_id` | `UC_ADLS_<NAME>_MANAGED_IDENTITY_ID` | With `managed_identity`: the resource ID of a user-assigned identity, from the instance metadata service. |
 | `test_mode` | `UC_ADLS_<NAME>_TEST_MODE` | With a service principal: give fake SAS tokens, for tests. |
 
+## `[gcp]`
+
+| Key | Variable | Default | Description |
+| --- | --- | --- | --- |
+| `endpoint` | `UC_GCP_ENDPOINT` | Google | The STS and IAM Credentials API of a GCP emulator, such as Floci: `http://` or `https://`. |
+
 ## `[gcs.<name>]`
 
 The credentials of one GCS bucket.
@@ -190,6 +196,7 @@ The credentials of one GCS bucket.
 | --- | --- | --- |
 | `bucket` | `UC_GCS_<NAME>_BUCKET` | The bucket: `gs://bucket`. Required. |
 | `json_key_file` | `UC_GCS_<NAME>_JSON_KEY_FILE` | A service account's JSON key; without it, Google's Application Default Credentials. |
+| `service_account` | `UC_GCS_<NAME>_SERVICE_ACCOUNT` | The email of a service account that the key or the default credentials impersonate. |
 | `credential_generator` | `UC_GCS_<NAME>_CREDENTIAL_GENERATOR` | A test generator of tokens, for tests. |
 
 ## `[ui]`

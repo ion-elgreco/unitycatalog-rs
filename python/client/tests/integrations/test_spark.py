@@ -1,21 +1,24 @@
 """Spark uses the server as upstream's users do: Delta tables and views through
 upstream's connector (`UCSingleCatalog`) and delta-spark, and Iceberg tables
-through Iceberg's REST catalog. On S3, Spark writes with the credentials that
-the server vends.
+through Iceberg's REST catalog. On S3 and GCS, Spark writes with the
+credentials that the server vends.
 
 Skipped without PySpark (`just test-spark` adds it) or Java. The jars follow
 the version of PySpark: Spark 4.2 has the view catalog API, with which the
 connector creates and drops views; Iceberg has no runtime for 4.2 yet."""
 
 import json
+import os
 import shutil
 import typing
+import urllib.request
 from pathlib import Path
 
 import pytest
 from _helpers import unique
 
 from unitycatalog import Client, NotFoundError
+from unitycatalog.credentials import GcpServiceAccountKeyRequest
 from unitycatalog.tables import ColumnInfo
 
 pyspark = pytest.importorskip("pyspark")
@@ -28,6 +31,16 @@ SPARK = ".".join(pyspark.__version__.split(".")[:2])
 # runtime for it, if any.
 HADOOP = {"4.1": "3.4.2", "4.2": "3.5.0"}
 ICEBERG = {"4.1": "1.12.0"}
+# Google's GCS file system, as upstream's connector tests it.
+GCS_CONNECTOR = "3.0.2"
+# Hadoop's defaults of the sizes of `fs.gs.*`, in MiB.
+GCS_SIZES = {
+    "block.size": 64,
+    "rewrite.max.chunk.size": 512,
+    "outputstream.buffer.size": 8,
+    "inputstream.inplace.seek.limit": 8,
+    "inputstream.min.range.request.size": 2,
+}
 if SPARK not in HADOOP:
     pytest.skip(f"no jars for Spark {SPARK}", allow_module_level=True)
 
@@ -39,10 +52,27 @@ iceberg = pytest.mark.skipif(
 )
 
 
+def gcs_connector() -> str:
+    """The shaded jar of the GCS connector, in Spark's Ivy folder, which CI
+    keeps. Spark's packages cannot name it: it has a classifier."""
+    name = f"gcs-connector-{GCS_CONNECTOR}-shaded.jar"
+    jar = Path.home() / ".ivy2.5.2" / "jars" / f"com.google.cloud.bigdataoss_{name}"
+    if not jar.exists():
+        jar.parent.mkdir(parents=True, exist_ok=True)
+        maven = "https://repo1.maven.org/maven2/com/google/cloud/bigdataoss"
+        part = jar.with_suffix(".part")
+        urllib.request.urlretrieve(
+            f"{maven}/gcs-connector/{GCS_CONNECTOR}/{name}", part
+        )
+        part.rename(jar)
+    return str(jar)
+
+
 @pytest.fixture(scope="module")
 def spark(s3: str) -> typing.Iterator[typing.Any]:
     """A local Spark with delta-spark, upstream's connector and Iceberg's
-    runtime; `s3://` paths are in moto's S3."""
+    runtime; `s3://` paths are in moto's S3, and `gs://` paths in floci-gcp,
+    if any."""
     packages = [
         f"io.delta:delta-spark_{SPARK}_2.13:4.4.1",
         f"io.unitycatalog:unitycatalog-spark_{SPARK}_2.13:0.7.0",
@@ -56,7 +86,7 @@ def spark(s3: str) -> typing.Iterator[typing.Any]:
         extensions.append(
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
         )
-    session = (
+    builder = (
         sql.SparkSession.builder.master("local[2]")
         .appName("uc-tests")
         .config("spark.jars.packages", ",".join(packages))
@@ -75,8 +105,27 @@ def spark(s3: str) -> typing.Iterator[typing.Any]:
         .config("spark.hadoop.fs.s3a.endpoint.region", "us-east-1")
         .config("spark.hadoop.fs.s3a.path.style.access", "true")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
-        .getOrCreate()
     )
+    if gcs := os.environ.get("UC_TEST_FLOCI_GCP_URL"):
+        # Google's file system, whose token providers upstream's connector
+        # has, not Hadoop's own, its default since Hadoop 3.4.
+        builder = (
+            builder.config("spark.jars", gcs_connector())
+            .config(
+                "spark.hadoop.fs.gs.impl",
+                "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem",
+            )
+            .config(
+                "spark.hadoop.fs.AbstractFileSystem.gs.impl",
+                "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS",
+            )
+            .config("spark.hadoop.fs.gs.storage.root.url", gcs.rstrip("/") + "/")
+        )
+        # Hadoop 3.5 gives these sizes with units ("64m"), which Google's
+        # file system cannot read.
+        for key, mib in GCS_SIZES.items():
+            builder = builder.config(f"spark.hadoop.fs.gs.{key}", str(mib << 20))
+    session = builder.getOrCreate()
     session.sparkContext.setLogLevel("ERROR")
     yield session
     session.stop()
@@ -220,6 +269,41 @@ def test_spark_writes_and_reads_delta_tables_on_s3(spark, s3_server) -> None:
     assert rows(spark, f"SELECT * FROM {managed} ORDER BY id") == [(2,), (3,)]
     location = client.table(managed).get().storage_location
     assert location and location.startswith(f"s3://uc-test/{catalog}/")
+
+
+@pytest.mark.xfail(
+    reason="floci-gcp 0.11.0 refuses `==` in the access boundaries that the server "
+    "sends, and adds `/` to prefixes, so Delta cannot check a table's folder",
+    strict=False,
+)
+def test_spark_writes_and_reads_delta_tables_on_gcs(spark, gcs, gcs_server) -> None:
+    """An external table under an external location, whose credential is a
+    service account key, and a managed table under the bucket's `[gcs]`
+    entry. floci-gcp checks the access boundary of each vended token."""
+    client = Client(gcs_server.address)
+    catalog = unique("catalog")
+    client.create_catalog(catalog, storage_root=f"gs://uc-test/{catalog}")
+    client.create_schema("default", catalog)
+    key = GcpServiceAccountKeyRequest(gcs.json_key)
+    client.create_credential(catalog, gcp_service_account_key=key)
+    lake = f"gs://uc-test/external/{catalog}"
+    client.create_external_location(catalog, lake, catalog)
+    attach(spark, gcs_server, catalog)
+    external = f"{catalog}.default.orders"
+    orders(spark, external, f"{lake}/orders")
+    managed = f"{catalog}.default.events"
+    spark.sql(f"CREATE TABLE {managed} (id INT) USING DELTA")
+    spark.sql(f"INSERT INTO {managed} SELECT id FROM {external} WHERE id > 1")
+    assert rows(spark, f"SELECT * FROM {managed} ORDER BY id") == [(2,), (3,)]
+    location = client.table(managed).get().storage_location
+    assert location and location.startswith(f"gs://uc-test/{catalog}/")
+    # The files are in floci-gcp.
+    listed = (
+        f"{gcs.url}/storage/v1/b/uc-test/o?prefix=external/{catalog}/orders/_delta_log/"
+    )
+    with urllib.request.urlopen(listed) as answer:
+        names = [item["name"] for item in json.load(answer).get("items", [])]
+    assert f"external/{catalog}/orders/_delta_log/00000000000000000000.json" in names
 
 
 @iceberg

@@ -17,6 +17,9 @@ __all__ = [
     "CredentialClient",
     "CredentialInfo",
     "GcpOauthToken",
+    "GcpServiceAccount",
+    "GcpServiceAccountKeyRequest",
+    "GcpServiceAccountKeyResponse",
     "ListCredentialsResponse",
     "TemporaryCredentials",
 ]
@@ -185,18 +188,23 @@ class CredentialClient:
         new_name: typing.Optional[builtins.str] = None,
         azure_service_principal: typing.Optional[AzureServicePrincipalRequest] = None,
         azure_managed_identity: typing.Optional[AzureManagedIdentity] = None,
+        gcp_service_account: typing.Optional[GcpServiceAccount] = None,
+        gcp_service_account_key: typing.Optional[GcpServiceAccountKeyRequest] = None,
     ) -> CredentialInfo:
         r"""
         Change a credential.
 
         Args:
             comment: User-provided free-form text description.
-            aws_iam_role: New AWS IAM role of the credential. The role gets a new external ID. Give at most
-                          one of `aws_iam_role`, `azure_service_principal` and `azure_managed_identity`: it
-                          replaces the identity of the credential.
+            aws_iam_role: New AWS IAM role of the credential. The role gets a new external ID. Give at
+                          most one of `aws_iam_role`, `azure_service_principal`, `azure_managed_identity`,
+                          `gcp_service_account` and `gcp_service_account_key`: it replaces the identity of
+                          the credential.
             new_name: New name of the credential.
             azure_service_principal: New Azure service principal of the credential.
             azure_managed_identity: New Azure managed identity of the credential.
+            gcp_service_account: New GCP service account of the credential.
+            gcp_service_account_key: New GCP service account key of the credential.
 
         Returns:
             A credential that gives access to storage or to external services.
@@ -209,6 +217,8 @@ class CredentialClient:
         new_name: typing.Optional[builtins.str] = None,
         azure_service_principal: typing.Optional[AzureServicePrincipalRequest] = None,
         azure_managed_identity: typing.Optional[AzureManagedIdentity] = None,
+        gcp_service_account: typing.Optional[GcpServiceAccount] = None,
+        gcp_service_account_key: typing.Optional[GcpServiceAccountKeyRequest] = None,
     ) -> asyncio.Future[CredentialInfo]:
         r"""
         Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -297,6 +307,16 @@ class CredentialInfo:
         r"""
         The Azure managed identity of the credential.
         """
+    @property
+    def gcp_service_account(self) -> typing.Optional[GcpServiceAccount]:
+        r"""
+        The GCP service account of the credential.
+        """
+    @property
+    def gcp_service_account_key(self) -> typing.Optional[GcpServiceAccountKeyResponse]:
+        r"""
+        The GCP service account key of the credential.
+        """
     def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
     def __repr__(self) -> builtins.str: ...
 
@@ -309,6 +329,57 @@ class GcpOauthToken:
     def oauth_token(self) -> builtins.str:
         r"""
         The OAuth token.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
+class GcpServiceAccount:
+    r"""
+    The GCP service account of a credential: the server's own identity, or a service account that
+    the server impersonates.
+    """
+    @property
+    def email(self) -> typing.Optional[builtins.str]:
+        r"""
+        Email of the service account that the server impersonates. The server's identity needs the
+        role Service Account Token Creator on it. Absent: the server's own identity, from Application
+        Default Credentials or the metadata server.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(
+        cls, *, email: typing.Optional[builtins.str] = None
+    ) -> GcpServiceAccount: ...
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
+class GcpServiceAccountKeyRequest:
+    r"""
+    The GCP service account key of a new or changed credential.
+    """
+    @property
+    def json_key(self) -> builtins.str:
+        r"""
+        The JSON key file of the service account. The server stores it and never returns it.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(cls, json_key: builtins.str) -> GcpServiceAccountKeyRequest: ...
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
+class GcpServiceAccountKeyResponse:
+    r"""
+    The GCP service account key of a credential. The key is not returned.
+    """
+    @property
+    def email(self) -> builtins.str:
+        r"""
+        Email of the service account.
+        """
+    @property
+    def private_key_id(self) -> builtins.str:
+        r"""
+        ID of the key.
         """
     def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
     def __repr__(self) -> builtins.str: ...

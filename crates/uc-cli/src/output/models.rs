@@ -199,6 +199,10 @@ static AZURE_SERVICE_PRINCIPAL: Model = Model(&[("directory_id", P), ("applicati
 
 static AZURE_MANAGED_IDENTITY: Model = Model(&[("managed_identity_id", P)]);
 
+static GCP_SERVICE_ACCOUNT: Model = Model(&[("email", P)]);
+
+static GCP_SERVICE_ACCOUNT_KEY: Model = Model(&[("email", P), ("private_key_id", P)]);
+
 pub static CREDENTIAL: Model = Model(&[
     ("name", P),
     ("aws_iam_role", O(&AWS_IAM_ROLE)),
@@ -213,6 +217,8 @@ pub static CREDENTIAL: Model = Model(&[
     ("purpose", P),
     ("azure_service_principal", O(&AZURE_SERVICE_PRINCIPAL)),
     ("azure_managed_identity", O(&AZURE_MANAGED_IDENTITY)),
+    ("gcp_service_account", O(&GCP_SERVICE_ACCOUNT)),
+    ("gcp_service_account_key", O(&GCP_SERVICE_ACCOUNT_KEY)),
 ]);
 
 pub static EXTERNAL_LOCATION: Model = Model(&[

@@ -307,6 +307,24 @@ tests:
           content: {name: UC_ADLS_ENTRY0_CLIENT_SECRET}
           any: true
 
+  - it: gives a GCS bucket the pod's identity, which may impersonate, without a Secret
+    set:
+      storage.credentials.gcs:
+        - bucketPath: gs://bucket
+          serviceAccount: uc@p.iam.gserviceaccount.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_GCS_ENTRY0_SERVICE_ACCOUNT, value: uc@p.iam.gserviceaccount.com}
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_GCS_ENTRY0_JSON_KEY_FILE}
+          any: true
+      - notContains:
+          path: spec.template.spec.volumes
+          content: {name: gcs-0}
+          any: true
+
   - it: drops the probes that are turned off and keeps the given ones
     set:
       server.deployment.enableStartupProbe: false

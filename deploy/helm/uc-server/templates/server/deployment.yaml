@@ -195,8 +195,14 @@ spec:
             {{- range $index, $config := .Values.storage.credentials.gcs }}
             - name: UC_GCS_ENTRY{{ $index }}_BUCKET
               value: {{ $config.bucketPath | quote }}
+            {{- if $config.credentialsSecretName }}
             - name: UC_GCS_ENTRY{{ $index }}_JSON_KEY_FILE
               value: /etc/uc/gcs/{{ $index }}/jsonKey
+            {{- end }}
+            {{- with $config.serviceAccount }}
+            - name: UC_GCS_ENTRY{{ $index }}_SERVICE_ACCOUNT
+              value: {{ . | quote }}
+            {{- end }}
             {{- end }}
             {{- range $k, $v := $d.env }}
             - name: {{ $k }}
@@ -244,9 +250,11 @@ spec:
             - name: tmp
               mountPath: /tmp
             {{- range $index, $config := .Values.storage.credentials.gcs }}
+            {{- if $config.credentialsSecretName }}
             - name: gcs-{{ $index }}
               mountPath: /etc/uc/gcs/{{ $index }}
               readOnly: true
+            {{- end }}
             {{- end }}
             {{- with $d.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
@@ -291,9 +299,11 @@ spec:
         - name: tmp
           emptyDir: {}
         {{- range $index, $config := .Values.storage.credentials.gcs }}
+        {{- if $config.credentialsSecretName }}
         - name: gcs-{{ $index }}
           secret:
             secretName: {{ $config.credentialsSecretName | quote }}
+        {{- end }}
         {{- end }}
         {{- with $d.extraVolumes }}
         {{- toYaml . | nindent 8 }}

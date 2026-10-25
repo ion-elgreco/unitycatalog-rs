@@ -2935,6 +2935,26 @@ impl PyCredentialInfo {
             .map(PyAzureManagedIdentity::from)
     }
 
+    /// The GCP service account of the credential.
+    #[getter]
+    fn gcp_service_account(&self) -> ::core::option::Option<PyGcpServiceAccount> {
+        self.0
+            .gcp_service_account
+            .clone()
+            .into_option()
+            .map(PyGcpServiceAccount::from)
+    }
+
+    /// The GCP service account key of the credential.
+    #[getter]
+    fn gcp_service_account_key(&self) -> ::core::option::Option<PyGcpServiceAccountKeyResponse> {
+        self.0
+            .gcp_service_account_key
+            .clone()
+            .into_option()
+            .map(PyGcpServiceAccountKeyResponse::from)
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -2952,6 +2972,8 @@ impl PyCredentialInfo {
                 ("purpose", false),
                 ("azure_service_principal", false),
                 ("azure_managed_identity", false),
+                ("gcp_service_account", false),
+                ("gcp_service_account_key", false),
             ],
         )
     }
@@ -3003,6 +3025,160 @@ impl ::core::convert::From<super::credentials::v1::GcpOauthToken> for PyGcpOauth
 
 impl ::core::convert::From<PyGcpOauthToken> for super::credentials::v1::GcpOauthToken {
     fn from(value: PyGcpOauthToken) -> Self {
+        value.0
+    }
+}
+
+/// The GCP service account of a credential: the server's own identity, or a service account that
+/// the server impersonates.
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
+    name = "GcpServiceAccount",
+    eq,
+    frozen,
+    module = "unitycatalog._core.credentials",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyGcpServiceAccount(pub super::credentials::v1::GcpServiceAccount);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PyGcpServiceAccount {
+    #[new]
+    #[pyo3(signature = (*, email = None))]
+    fn new(email: ::core::option::Option<::std::string::String>) -> Self {
+        let mut inner =
+            <super::credentials::v1::GcpServiceAccount as ::core::default::Default>::default();
+        {
+            let value = email;
+            inner.email = value;
+        }
+        Self(inner)
+    }
+
+    /// Email of the service account that the server impersonates. The server's identity needs the
+    /// role Service Account Token Creator on it. Absent: the server's own identity, from Application
+    /// Default Credentials or the metadata server.
+    #[getter]
+    fn email(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.email.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(slf.as_any(), &[("email", false)])
+    }
+}
+
+impl ::core::convert::From<super::credentials::v1::GcpServiceAccount> for PyGcpServiceAccount {
+    fn from(value: super::credentials::v1::GcpServiceAccount) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyGcpServiceAccount> for super::credentials::v1::GcpServiceAccount {
+    fn from(value: PyGcpServiceAccount) -> Self {
+        value.0
+    }
+}
+
+/// The GCP service account key of a new or changed credential.
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
+    name = "GcpServiceAccountKeyRequest",
+    eq,
+    frozen,
+    module = "unitycatalog._core.credentials",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyGcpServiceAccountKeyRequest(pub super::credentials::v1::GcpServiceAccountKeyRequest);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PyGcpServiceAccountKeyRequest {
+    #[new]
+    #[pyo3(signature = (json_key))]
+    fn new(json_key: ::std::string::String) -> Self {
+        let mut inner = <super::credentials::v1::GcpServiceAccountKeyRequest as ::core::default::Default>::default();
+        {
+            let value = json_key;
+            inner.json_key = value;
+        }
+        Self(inner)
+    }
+
+    /// The JSON key file of the service account. The server stores it and never returns it.
+    #[getter]
+    fn json_key(&self) -> ::std::string::String {
+        self.0.json_key.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(slf.as_any(), &[("json_key", true)])
+    }
+}
+
+impl ::core::convert::From<super::credentials::v1::GcpServiceAccountKeyRequest>
+    for PyGcpServiceAccountKeyRequest
+{
+    fn from(value: super::credentials::v1::GcpServiceAccountKeyRequest) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyGcpServiceAccountKeyRequest>
+    for super::credentials::v1::GcpServiceAccountKeyRequest
+{
+    fn from(value: PyGcpServiceAccountKeyRequest) -> Self {
+        value.0
+    }
+}
+
+/// The GCP service account key of a credential. The key is not returned.
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
+    name = "GcpServiceAccountKeyResponse",
+    eq,
+    frozen,
+    module = "unitycatalog._core.credentials",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyGcpServiceAccountKeyResponse(pub super::credentials::v1::GcpServiceAccountKeyResponse);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PyGcpServiceAccountKeyResponse {
+    /// Email of the service account.
+    #[getter]
+    fn email(&self) -> ::std::string::String {
+        self.0.email.clone()
+    }
+
+    /// ID of the key.
+    #[getter]
+    fn private_key_id(&self) -> ::std::string::String {
+        self.0.private_key_id.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(slf.as_any(), &[("email", false), ("private_key_id", false)])
+    }
+}
+
+impl ::core::convert::From<super::credentials::v1::GcpServiceAccountKeyResponse>
+    for PyGcpServiceAccountKeyResponse
+{
+    fn from(value: super::credentials::v1::GcpServiceAccountKeyResponse) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyGcpServiceAccountKeyResponse>
+    for super::credentials::v1::GcpServiceAccountKeyResponse
+{
+    fn from(value: PyGcpServiceAccountKeyResponse) -> Self {
         value.0
     }
 }

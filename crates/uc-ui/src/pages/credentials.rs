@@ -8,7 +8,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use uc_client::models::credentials::v1::{
     AwsIamRoleRequest, AzureManagedIdentity, AzureServicePrincipalRequest, CredentialInfo,
-    CredentialPurpose,
+    CredentialPurpose, GcpServiceAccount, GcpServiceAccountKeyRequest,
 };
 
 use crate::api;
@@ -24,13 +24,17 @@ pub enum IdentityKind {
     AwsIamRole,
     AzureServicePrincipal,
     AzureManagedIdentity,
+    GcpServiceAccount,
+    GcpServiceAccountKey,
 }
 
 impl IdentityKind {
-    const ALL: [IdentityKind; 3] = [
+    const ALL: [IdentityKind; 5] = [
         Self::AwsIamRole,
         Self::AzureServicePrincipal,
         Self::AzureManagedIdentity,
+        Self::GcpServiceAccount,
+        Self::GcpServiceAccountKey,
     ];
 
     pub fn text(self) -> &'static str {
@@ -38,6 +42,8 @@ impl IdentityKind {
             Self::AwsIamRole => "AWS IAM role",
             Self::AzureServicePrincipal => "Azure service principal",
             Self::AzureManagedIdentity => "Azure managed identity",
+            Self::GcpServiceAccount => "GCP service account",
+            Self::GcpServiceAccountKey => "GCP service account key",
         }
     }
 
@@ -49,6 +55,10 @@ impl IdentityKind {
             Some(Self::AzureServicePrincipal)
         } else if c.azure_managed_identity.is_set() {
             Some(Self::AzureManagedIdentity)
+        } else if c.gcp_service_account.is_set() {
+            Some(Self::GcpServiceAccount)
+        } else if c.gcp_service_account_key.is_set() {
+            Some(Self::GcpServiceAccountKey)
         } else {
             None
         }
@@ -56,8 +66,9 @@ impl IdentityKind {
 }
 
 /// What names a credential's identity: the ARN of its AWS IAM role, the
-/// application ID of its service principal, or the resource ID of its
-/// managed identity. A managed identity without one is the server's own.
+/// application ID of its service principal, the resource ID of its managed
+/// identity, or the email of its GCP service account. A managed identity or
+/// service account without one is the server's own.
 pub fn identity_name(c: &CredentialInfo) -> Option<String> {
     let name = match IdentityKind::of(c)? {
         IdentityKind::AwsIamRole => c.aws_iam_role.as_option()?.role_arn.clone(),
@@ -71,13 +82,17 @@ pub fn identity_name(c: &CredentialInfo) -> Option<String> {
             .as_option()?
             .managed_identity_id
             .clone()?,
+        IdentityKind::GcpServiceAccount => c.gcp_service_account.as_option()?.email.clone()?,
+        IdentityKind::GcpServiceAccountKey => c.gcp_service_account_key.as_option()?.email.clone(),
     };
     (!name.is_empty()).then_some(name)
 }
 
-/// The server's own identity: a managed identity without a resource ID.
+/// The server's own identity: a managed identity without a resource ID, or
+/// a GCP service account without an email.
 fn servers_own(c: &CredentialInfo) -> bool {
-    c.azure_managed_identity.is_set() && identity_name(c).is_none()
+    (c.azure_managed_identity.is_set() || c.gcp_service_account.is_set())
+        && identity_name(c).is_none()
 }
 
 /// A credential's identity, as a request sends it.
@@ -85,6 +100,8 @@ pub enum Identity {
     AwsIamRole(AwsIamRoleRequest),
     AzureServicePrincipal(AzureServicePrincipalRequest),
     AzureManagedIdentity(AzureManagedIdentity),
+    GcpServiceAccount(GcpServiceAccount),
+    GcpServiceAccountKey(GcpServiceAccountKeyRequest),
 }
 
 /// The identity fields of a dialog.
@@ -96,6 +113,8 @@ pub struct IdentityForm {
     application_id: RwSignal<String>,
     client_secret: RwSignal<String>,
     managed_identity_id: RwSignal<String>,
+    email: RwSignal<String>,
+    json_key: RwSignal<String>,
 }
 
 impl Default for IdentityForm {
@@ -107,13 +126,15 @@ impl Default for IdentityForm {
             application_id: RwSignal::new(String::new()),
             client_secret: RwSignal::new(String::new()),
             managed_identity_id: RwSignal::new(String::new()),
+            email: RwSignal::new(String::new()),
+            json_key: RwSignal::new(String::new()),
         }
     }
 }
 
 impl IdentityForm {
-    /// The identity of `c`. The client secret stays empty: the server
-    /// does not return it.
+    /// The identity of `c`. The client secret and the JSON key stay empty:
+    /// the server does not return them.
     pub fn fill(&self, c: &CredentialInfo) {
         self.clear();
         self.kind
@@ -129,6 +150,9 @@ impl IdentityForm {
             self.managed_identity_id
                 .set(identity.managed_identity_id.clone().unwrap_or_default());
         }
+        if let Some(account) = c.gcp_service_account.as_option() {
+            self.email.set(account.email.clone().unwrap_or_default());
+        }
     }
 
     pub fn clear(&self) {
@@ -139,6 +163,8 @@ impl IdentityForm {
             self.application_id,
             self.client_secret,
             self.managed_identity_id,
+            self.email,
+            self.json_key,
         ] {
             text.set(String::new());
         }
@@ -178,12 +204,25 @@ impl IdentityForm {
                     ..Default::default()
                 })
             }
+            IdentityKind::GcpServiceAccount => {
+                let email = Self::text(self.email);
+                Identity::GcpServiceAccount(GcpServiceAccount {
+                    email: (!email.is_empty()).then_some(email),
+                    ..Default::default()
+                })
+            }
+            IdentityKind::GcpServiceAccountKey => {
+                Identity::GcpServiceAccountKey(GcpServiceAccountKeyRequest {
+                    json_key: required(self.json_key, "JSON key is required")?,
+                    ..Default::default()
+                })
+            }
         })
     }
 
     /// The identity that an edit of `current` sends: none when the fields
     /// hold `current`'s identity. A service principal changes only with its
-    /// client secret.
+    /// client secret, a service account key only with a new key.
     pub fn change(&self, current: &CredentialInfo) -> Result<Option<Identity>, &'static str> {
         let kind = self.kind.get_untracked();
         let unchanged = IdentityKind::of(current) == Some(kind)
@@ -206,6 +245,11 @@ impl IdentityForm {
                             == Self::text(self.managed_identity_id)
                     })
                 }
+                IdentityKind::GcpServiceAccount => current
+                    .gcp_service_account
+                    .as_option()
+                    .is_some_and(|a| a.email.clone().unwrap_or_default() == Self::text(self.email)),
+                IdentityKind::GcpServiceAccountKey => Self::text(self.json_key).is_empty(),
             };
         match unchanged {
             true => Ok(None),
@@ -273,6 +317,35 @@ pub fn IdentityFields(form: IdentityForm, id: &'static str) -> impl IntoView {
                     />
                     <p class="uc-hint">
                         "Empty: the server's own Azure identity. Else a user-assigned identity of the server's VM."
+                    </p>
+                }
+                    .into_any()
+            }
+            IdentityKind::GcpServiceAccount => {
+                view! {
+                    <TextField
+                        id=format!("{id}-email")
+                        label="Service account email"
+                        value=form.email
+                        placeholder="unity-catalog@my-project.iam.gserviceaccount.com"
+                    />
+                    <p class="uc-hint">
+                        "Empty: the server's own GCP identity. Else a service account that the server impersonates: the server's identity needs the role Service Account Token Creator on it."
+                    </p>
+                }
+                    .into_any()
+            }
+            IdentityKind::GcpServiceAccountKey => {
+                view! {
+                    <TextField
+                        id=format!("{id}-key")
+                        label="JSON key"
+                        value=form.json_key
+                        autocomplete="off"
+                        secret=true
+                    />
+                    <p class="uc-hint">
+                        "Paste the service account's JSON key file. The server keeps the key and never shows it."
                     </p>
                 }
                     .into_any()
@@ -354,7 +427,7 @@ pub fn Credentials() -> impl IntoView {
                 </button>
             </div>
             <p class="uc-muted">
-                "A storage credential holds the cloud identity that the server uses to reach storage: an AWS IAM role that it assumes, or an Azure service principal or managed identity that it signs in as. Each external location is bound to one."
+                "A storage credential holds the cloud identity that the server uses to reach storage: an AWS IAM role that it assumes, an Azure service principal or managed identity that it signs in as, or a GCP service account or service account key. Each external location is bound to one."
             </p>
             <ListLayout
                 data=credentials
@@ -407,6 +480,8 @@ fn CreateCredential(open: RwSignal<bool>) -> impl IntoView {
                 create.with_azure_service_principal(principal)
             }
             Identity::AzureManagedIdentity(managed) => create.with_azure_managed_identity(managed),
+            Identity::GcpServiceAccount(account) => create.with_gcp_service_account(account),
+            Identity::GcpServiceAccountKey(key) => create.with_gcp_service_account_key(key),
         };
         busy.set(true);
         spawn_local(async move {
