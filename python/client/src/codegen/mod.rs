@@ -85,6 +85,7 @@ impl PyClient {
             Some(token) => Client::new_with_token(base_url, token),
             None => Client::new_unauthenticated(base_url),
         };
+        let client = client.with_user_agent(concat!("unitycatalog-rs/", env!("CARGO_PKG_VERSION")));
         Ok(Self { client })
     }
 

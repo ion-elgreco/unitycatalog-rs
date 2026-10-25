@@ -72,10 +72,11 @@ pub fn token(
 /// API's path, as the TUI shows the server.
 pub fn client(url: &str, token: Option<&str>) -> anyhow::Result<Client> {
     let root = root(url)?;
-    Ok(match token {
+    let client = match token {
         Some(token) => Client::new_with_token(root, token),
         None => Client::new_unauthenticated(root),
-    })
+    };
+    Ok(client.with_user_agent(concat!("uc/", env!("CARGO_PKG_VERSION"))))
 }
 
 /// The root of the server at `url`, which the API's paths start from.
