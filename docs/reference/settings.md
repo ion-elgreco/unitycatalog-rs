@@ -104,14 +104,92 @@ The variables of these tables include the cloud or the name: `UC_IDENTITY_AWS_SE
 `[locations.analytics]`. A name has only lowercase letters and digits, and at least one letter:
 the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list index.
 
-```toml
-[identity.aws]
-region = "us-east-1"
+### Examples per cloud
 
-[locations.analytics]
-url = "s3://analytics"
-aws_iam_role_arn = "arn:aws:iam::123456789012:role/uc"
-```
+Each example has the server's identity, two locations and the managed roots. One location uses
+the server's own identity (`true`). The other is a bucket or container that another identity
+reaches. The managed roots are under the first location.
+
+=== "AWS S3"
+
+    ```toml
+    # The server's AWS identity. Here it comes from the environment, such as
+    # the IAM role of its pod (IRSA); arn names that role.
+    [identity.aws]
+    region = "eu-west-1"
+    arn = "arn:aws:iam::111111111111:role/uc-server"
+
+    # A bucket of the server's own account: the server assumes its own role.
+    [locations.lake]
+    url = "s3://acme-lake"
+    aws_iam_role_arn = true
+
+    # A bucket of another account: a role there, which trusts the server's role.
+    [locations.partner]
+    url = "s3://partner-data"
+    region = "us-east-1"
+    aws_iam_role_arn = "arn:aws:iam::222222222222:role/uc-partner"
+
+    # Managed tables and models without a catalog or schema root, in the bucket
+    # of [locations.lake].
+    [storage]
+    tables_root = "s3://acme-lake/managed/tables"
+    models_root = "s3://acme-lake/managed/models"
+    ```
+
+=== "Google Cloud Storage"
+
+    ```toml
+    # The server's GCP identity: a service account key. Without it, Application
+    # Default Credentials, such as GKE Workload Identity.
+    [identity.gcp]
+    json_key_file = "/etc/uc/gcp/uc-server.json"
+
+    # A bucket that the server's own service account can reach.
+    [locations.lake]
+    url = "gs://acme-lake"
+    gcp_service_account = true
+
+    # A bucket of another project: its service account, which the server's
+    # account impersonates (Service Account Token Creator on that account).
+    [locations.partner]
+    url = "gs://partner-data"
+    gcp_service_account = "uc-partner@partner-project.iam.gserviceaccount.com"
+
+    # Managed tables and models without a catalog or schema root, in the bucket
+    # of [locations.lake].
+    [storage]
+    tables_root = "gs://acme-lake/managed/tables"
+    models_root = "gs://acme-lake/managed/models"
+    ```
+
+=== "Azure Data Lake Storage"
+
+    ```toml
+    # The server's Azure identity: a user-assigned managed identity of its VM.
+    # Without it, the identity of the environment, such as AKS workload identity.
+    [identity.azure]
+    managed_identity_id = "/subscriptions/<subscription>/resourceGroups/uc/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uc-server"
+
+    # A container that the server's own identity can reach (Storage Blob Data
+    # Contributor on the storage account).
+    [locations.lake]
+    url = "abfss://lake@acmelake.dfs.core.windows.net"
+    azure_managed_identity = true
+
+    # A container in another storage account: a service principal of its own.
+    [locations.partner]
+    url = "abfss://data@partnerdata.dfs.core.windows.net"
+    azure_directory_id = "<tenant id>"
+    azure_application_id = "<client id>"
+    azure_client_secret = "<client secret>"
+
+    # Managed tables and models without a catalog or schema root, in the
+    # container of [locations.lake].
+    [storage]
+    tables_root = "abfss://lake@acmelake.dfs.core.windows.net/managed/tables"
+    models_root = "abfss://lake@acmelake.dfs.core.windows.net/managed/models"
+    ```
 
 [Cloud storage](../server/cloud-storage.md) tells how the server uses them.
 
