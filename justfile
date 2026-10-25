@@ -17,6 +17,9 @@ image := "unitycatalog-rs:dev"
 # The upstream Java server that `just test-upstream` runs: its latest release.
 upstream_image := "unitycatalog/unitycatalog:v0.7.0"
 
+# The Azure emulator that `just test-azure` and CI run: Floci AZ, with ADLS Gen2.
+floci_az_image := "floci/floci-az:0.15.0"
+
 # mike, which publishes a version of the docs site: zensical's fork of it
 # (squidfunk/mike), at a fixed commit.
 mike := "git+https://github.com/squidfunk/mike.git@2d4ad799442f4592db8ad53b179bfb33db8c69ac"
@@ -136,6 +139,16 @@ test-upstream:
     url=http://127.0.0.1:18183
     curl -fs --retry 60 --retry-all-errors --retry-delay 1 "$url/api/2.1/unity-catalog/catalogs" > /dev/null
     cd python/client && UC_TEST_SERVER_URL="$url" uv run --no-sync pytest tests
+
+# Run the Azure tests of the server (crates/uc-server/tests/azure_emulator.rs) against Floci AZ, a local Azure emulator, in Docker (floci_az_image): credentials of service principals and managed identities, with SAS tokens that the emulator checks
+test-azure:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    id=$(docker run -d -p 127.0.0.1:14577:4577 {{ floci_az_image }})
+    trap 'status=$?; [ $status -eq 0 ] || docker logs "$id"; docker rm -f -v "$id" > /dev/null; exit $status' EXIT
+    url=http://127.0.0.1:14577
+    curl -fs --retry 60 --retry-all-errors --retry-delay 1 "$url/metadata/identity/oauth2/token?resource=https://storage.azure.com" -H "Metadata: true" > /dev/null
+    UC_TEST_FLOCI_AZ_URL="$url" cargo test --profile {{ profile }} -p uc-server --test azure_emulator
 
 # Run the Spark tests (python/client/tests/integrations/test_spark.py) with PySpark `spark`, 4.1.x or 4.2.x, against a uc-server of this repository; needs Java 17 or 21 and the client in .venv (just develop-client). Spark downloads its jars into ~/.ivy2.5.2
 test-spark spark="4.2.0":
