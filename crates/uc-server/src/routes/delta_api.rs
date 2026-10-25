@@ -76,11 +76,43 @@ pub async fn error_layer(req: Request, next: Next) -> Response {
     (status, axum::Json(body)).into_response()
 }
 
-/// `protocol-versions` is accepted and ignored: 1.0 is the only protocol
-/// version.
+/// The only protocol version of the Delta API that the server implements.
+const PROTOCOL_VERSION: &str = "1.0";
+
 #[derive(Debug, Deserialize)]
 pub struct ConfigParams {
     pub catalog: Option<String>,
+    #[serde(rename = "protocol-versions")]
+    pub protocol_versions: Option<String>,
+}
+
+/// The protocol version for the client's `protocol-versions`: its highest
+/// version per major version, such as `1.1,2.3`. Any 1.x covers 1.0.
+fn negotiate(versions: Option<&str>) -> Result<&'static str, Error> {
+    let supported = format!("Server supports protocol versions: {PROTOCOL_VERSION}.");
+    let Some(versions) = versions.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Err(Error::invalid_argument(format!(
+            "Must supply the protocol-versions parameter. {supported}"
+        )));
+    };
+    let majors: Option<Vec<u32>> = versions
+        .split(',')
+        .map(|entry| {
+            let (major, minor) = entry.trim().split_once('.')?;
+            minor.parse::<u32>().ok()?;
+            major.parse().ok()
+        })
+        .collect();
+    match majors {
+        Some(majors) if majors.contains(&1) => Ok(PROTOCOL_VERSION),
+        Some(_) => Err(Error::invalid_argument(format!(
+            "No mutually supported protocol version: client supports \"{versions}\". {supported}"
+        ))),
+        None => Err(Error::invalid_argument(format!(
+            "Invalid protocol-versions parameter \"{versions}\": expected <major>.<minor> per \
+             major version. {supported}"
+        ))),
+    }
 }
 
 #[utoipa::path(
@@ -91,6 +123,7 @@ pub struct ConfigParams {
     ),
     responses(
         (status = 200, body = DeltaCatalogConfig),
+        (status = 400, body = DeltaErrorResponse),
         (status = 404, body = DeltaErrorResponse),
     ),
     tag = "DeltaConfiguration",
@@ -103,6 +136,7 @@ pub async fn get_config(
     let catalog = params.catalog.filter(|c| !c.is_empty()).ok_or_else(|| {
         Error::invalid_argument("Must supply a proper catalog in catalog parameter.")
     })?;
+    let protocol_version = negotiate(params.protocol_versions.as_deref())?;
     let lineage = authz::lineage(&state, SecurableType::Catalog, &catalog).await?;
     let access = authz::Access::load(&state, &principal.username).await?;
     access.check(authz::rules::get_catalog(&access, &lineage))?;
@@ -111,7 +145,7 @@ pub async fn get_config(
             .iter()
             .map(|e| e.replace("{catalog}", &catalog))
             .collect(),
-        protocol_version: "1.0".to_string(),
+        protocol_version: protocol_version.to_string(),
     }))
 }
 
