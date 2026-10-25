@@ -1,16 +1,20 @@
 //! GCP credentials, after upstream `GcpCredentialVendor`.
 //!
-//! Each bucket is configured by `gcs.*.N`. The server's credential (the
-//! entry's service account key file, else Application Default Credentials:
-//! `GOOGLE_APPLICATION_CREDENTIALS`, gcloud's file or the metadata server)
-//! is exchanged at Google STS for a token downscoped to the locations:
-//! `storage.objectViewer` for reads, `storage.objectAdmin` for writes.
-//! Upstream's `TestingCredentialGenerator` gives a fixed token. External
-//! locations are not supported for GCP yet, as upstream.
+//! Under an external location, the token is the storage credential's: of
+//! its service account key, or of the server's own identity, which
+//! impersonates the credential's service account when it has one. Else the
+//! bucket's `[gcs.<name>]` entry gives it: the entry's key file, else the
+//! server's own identity, which impersonates the entry's `service_account`
+//! when it has one. The server's own identity comes from Application
+//! Default Credentials: `GOOGLE_APPLICATION_CREDENTIALS`, gcloud's file or
+//! the metadata server. Google STS exchanges the token for one downscoped
+//! to the locations: `storage.objectViewer` for reads, and
+//! `storage.legacyBucketWriter` too for writes. Upstream's
+//! `TestingCredentialGenerator` gives a fixed token.
 //!
 //! The server's token does not come from `object_store`: for a service
 //! account key it is a self-signed JWT, not the OAuth access token that
-//! STS exchanges.
+//! STS exchanges, and `object_store` cannot impersonate.
 
 use std::collections::HashMap;
 
@@ -20,7 +24,7 @@ use serde_json::{Value, json};
 use uc_api::{GcpOauthToken, TemporaryCredentials};
 use uc_common::{Error, NormalizedUrl, Result, now_epoch_millis};
 
-use super::CredentialContext;
+use super::{CredentialContext, StorageCredential};
 use crate::http::outbound::SendOnIo;
 
 const CLOUD_PLATFORM: &str = "https://www.googleapis.com/auth/cloud-platform";
@@ -33,6 +37,9 @@ const TESTING_EXPIRATION: i64 = 253_370_790_000_000;
 pub struct GcsConfig {
     pub bucket_path: String,
     pub json_key_file_path: Option<String>,
+    /// The email of a service account that the entry's key, else the
+    /// server's own identity, impersonates.
+    pub service_account: Option<String>,
     /// Only upstream's `TestingCredentialGenerator` is known.
     pub credential_generator: Option<String>,
 }
@@ -42,6 +49,10 @@ pub struct GcpVendor {
     http: reqwest::Client,
     sts: String,
     metadata: String,
+    /// Whether Application Default Credentials look for a file before the
+    /// metadata server: not with a test's metadata server.
+    credentials_files: bool,
+    iam: String,
 }
 
 /// A token and when it expires (epoch milliseconds), if known.
@@ -57,52 +68,40 @@ impl GcpVendor {
             http: reqwest::Client::new(),
             sts: "https://sts.googleapis.com/v1/token".to_string(),
             metadata: "http://metadata.google.internal".to_string(),
+            credentials_files: true,
+            iam: "https://iamcredentials.googleapis.com".to_string(),
         }
     }
 
-    /// STS and metadata endpoints, for tests.
-    pub fn with_endpoints(mut self, sts: Option<String>, metadata: Option<String>) -> Self {
+    /// STS, metadata and IAM Credentials endpoints, for tests. A metadata
+    /// server gives the server's own identity, whatever the files of
+    /// Application Default Credentials.
+    pub fn with_endpoints(
+        mut self,
+        sts: Option<String>,
+        metadata: Option<String>,
+        iam: Option<String>,
+    ) -> Self {
         if let Some(sts) = sts {
             self.sts = sts;
         }
         if let Some(metadata) = metadata {
             self.metadata = metadata;
+            self.credentials_files = false;
+        }
+        if let Some(iam) = iam {
+            self.iam = iam;
         }
         self
     }
 
     pub async fn vend(&self, ctx: &CredentialContext) -> Result<TemporaryCredentials> {
-        if ctx.credential.is_some() {
-            return Err(Error::unimplemented(
-                "Storage credential/external location for GCP is not supported yet.",
-            ));
-        }
-        let config = self.buckets.get(&ctx.storage_base).ok_or_else(|| {
-            Error::failed_precondition(format!(
-                "Unknown GCS storage configuration for {}.",
-                ctx.storage_base
-            ))
-        })?;
-        let token = match config.credential_generator.as_deref() {
-            Some(generator) if generator.ends_with("TestingCredentialGenerator") => Token {
-                value: config
-                    .json_key_file_path
-                    .clone()
-                    .unwrap_or_else(|| format!("testing://{}", config.bucket_path)),
-                expires_at: Some(TESTING_EXPIRATION),
-            },
-            Some(generator) => {
-                return Err(Error::internal(format!(
-                    "Unable to instantiate GCS credentials generator {generator}"
-                )));
-            }
-            None => {
-                let source = self
-                    .source_token(config.json_key_file_path.as_deref())
-                    .await
-                    .map_err(|_| Error::failed_precondition("GCS credentials not found."))?;
+        let token = match &ctx.credential {
+            Some(credential) => {
+                let source = self.credential_token(credential).await?;
                 self.downscope(&source, ctx).await?
             }
+            None => self.bucket_token(ctx).await?,
         };
         Ok(TemporaryCredentials {
             gcp_oauth_token: Some(GcpOauthToken {
@@ -113,11 +112,67 @@ impl GcpVendor {
         })
     }
 
+    /// The token of a storage credential's identity.
+    async fn credential_token(&self, credential: &StorageCredential) -> Result<Token> {
+        let info = &credential.info;
+        if info.gcp_service_account_key.is_some() {
+            let key: Value = serde_json::from_str(credential.secret.as_deref().unwrap_or_default())
+                .map_err(|e| Error::failed_precondition(format!("service account key: {e}")))?;
+            return self.service_account_token(&key).await;
+        }
+        let Some(account) = &info.gcp_service_account else {
+            return Err(Error::failed_precondition(
+                "The storage credential has no GCP identity.",
+            ));
+        };
+        let own = self.source_token(None).await.map_err(|e| {
+            Error::failed_precondition(format!("The server's GCP identity: {}", e.message()))
+        })?;
+        match &account.email {
+            Some(email) => self.impersonate(&own, email).await,
+            None => Ok(own),
+        }
+    }
+
+    /// The downscoped token of the bucket's `[gcs.<name>]` entry.
+    async fn bucket_token(&self, ctx: &CredentialContext) -> Result<Token> {
+        let config = self.buckets.get(&ctx.storage_base).ok_or_else(|| {
+            Error::failed_precondition(format!(
+                "Unknown GCS storage configuration for {}.",
+                ctx.storage_base
+            ))
+        })?;
+        match config.credential_generator.as_deref() {
+            Some(generator) if generator.ends_with("TestingCredentialGenerator") => Ok(Token {
+                value: config
+                    .json_key_file_path
+                    .clone()
+                    .unwrap_or_else(|| format!("testing://{}", config.bucket_path)),
+                expires_at: Some(TESTING_EXPIRATION),
+            }),
+            Some(generator) => Err(Error::internal(format!(
+                "Unable to instantiate GCS credentials generator {generator}"
+            ))),
+            None => {
+                let mut source = self
+                    .source_token(config.json_key_file_path.as_deref())
+                    .await
+                    .map_err(|_| Error::failed_precondition("GCS credentials not found."))?;
+                if let Some(email) = &config.service_account {
+                    source = self.impersonate(&source, email).await?;
+                }
+                self.downscope(&source, ctx).await
+            }
+        }
+    }
+
     /// The key file, else Application Default Credentials.
     async fn source_token(&self, key_file: Option<&str>) -> Result<Token> {
-        let file = key_file
-            .map(str::to_string)
-            .or_else(default_credentials_file);
+        let file = key_file.map(str::to_string).or_else(|| {
+            self.credentials_files
+                .then(default_credentials_file)
+                .flatten()
+        });
         let Some(file) = file else {
             return self.metadata_token().await;
         };
@@ -195,6 +250,39 @@ impl GcpVendor {
         token_response(response).await
     }
 
+    /// IAM Credentials `generateAccessToken`: a token of the service account
+    /// `email`, which the identity of `source` impersonates. That identity
+    /// needs the role Service Account Token Creator on the account.
+    async fn impersonate(&self, source: &Token, email: &str) -> Result<Token> {
+        let url = format!(
+            "{}/v1/projects/-/serviceAccounts/{email}:generateAccessToken",
+            self.iam
+        );
+        let failed = |reason: String| {
+            Error::failed_precondition(format!("Impersonation of {email} failed: {reason}"))
+        };
+        let response = self
+            .http
+            .post(url)
+            .bearer_auth(&source.value)
+            .json(&json!({ "scope": [CLOUD_PLATFORM] }))
+            .send_on_io()
+            .await
+            .map_err(|e| failed(e.to_string()))?;
+        let status = response.status();
+        let body: Value = response.json().await.map_err(|e| failed(e.to_string()))?;
+        match body["accessToken"].as_str() {
+            Some(value) if status.is_success() => Ok(Token {
+                value: value.to_string(),
+                expires_at: body["expireTime"]
+                    .as_str()
+                    .and_then(|time| chrono::DateTime::parse_from_rfc3339(time).ok())
+                    .map(|time| time.timestamp_millis()),
+            }),
+            _ => Err(failed(format!("({status}) {body}"))),
+        }
+    }
+
     async fn token_request(&self, url: &str, form: &[(&str, &str)]) -> Result<Token> {
         let response = self
             .http
@@ -209,9 +297,14 @@ impl GcpVendor {
     /// Upstream `downscopeGcpCreds`: Google STS exchanges the token for one
     /// limited by a credential access boundary.
     async fn downscope(&self, source: &Token, ctx: &CredentialContext) -> Result<Token> {
-        let role = match ctx.writes() {
-            true => "inRole:roles/storage.objectAdmin",
-            false => "inRole:roles/storage.objectViewer",
+        // Fewer permissions than upstream's `storage.objectAdmin`: no object
+        // metadata and ACL changes, which table clients do not need.
+        let roles: &[&str] = match ctx.writes() {
+            true => &[
+                "inRole:roles/storage.objectViewer",
+                "inRole:roles/storage.legacyBucketWriter",
+            ],
+            false => &["inRole:roles/storage.objectViewer"],
         };
         let rules: Vec<Value> = ctx
             .locations
@@ -219,16 +312,10 @@ impl GcpVendor {
             .map(|location| {
                 let bucket = location.storage_base().as_str().trim_start_matches("gs://").to_string();
                 let path = location.path().trim_start_matches('/').to_string();
-                let object = cel_string(&format!("projects/_/buckets/{bucket}/objects/{path}"));
-                let expression = format!(
-                    "resource.name.startsWith({object}) || \
-                     api.getAttribute('storage.googleapis.com/objectListPrefix', '').startsWith({})",
-                    cel_string(&path)
-                );
                 json!({
                     "availableResource": format!("//storage.googleapis.com/projects/_/buckets/{bucket}"),
-                    "availablePermissions": [role],
-                    "availabilityCondition": { "expression": expression },
+                    "availablePermissions": roles,
+                    "availabilityCondition": { "expression": within(&bucket, &path) },
                 })
             })
             .collect();
@@ -303,6 +390,24 @@ fn default_credentials_file() -> Option<String> {
     };
     let file = config.join("application_default_credentials.json");
     file.exists().then(|| file.to_string_lossy().into_owned())
+}
+
+/// The CEL condition of the objects at `path` of `bucket`: the object
+/// `path` itself, which Hadoop's GCS connector reads to check a folder, the
+/// objects under `path/`, and the lists of their names. Not a sibling with
+/// the same start, such as `t10` for `t1`, as upstream's `startsWith(path)`
+/// allows.
+fn within(bucket: &str, path: &str) -> String {
+    let object = format!("projects/_/buckets/{bucket}/objects/{path}");
+    let list = "api.getAttribute('storage.googleapis.com/objectListPrefix', '')";
+    format!(
+        "resource.name == {} || resource.name.startsWith({}) || {list} == {} || \
+         {list}.startsWith({})",
+        cel_string(&object),
+        cel_string(&format!("{object}/")),
+        cel_string(path),
+        cel_string(&format!("{path}/")),
+    )
 }
 
 /// Upstream `celStringLiteral`: a double-quoted CEL string.

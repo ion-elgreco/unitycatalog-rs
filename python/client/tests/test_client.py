@@ -1,6 +1,7 @@
 """Each method of the client against a uc-server, as `name` and `name_async`."""
 
 import asyncio
+import json
 import time
 
 import pytest
@@ -21,6 +22,8 @@ from unitycatalog.credentials import (
     AwsIamRoleRequest,
     AzureManagedIdentity,
     AzureServicePrincipalRequest,
+    GcpServiceAccount,
+    GcpServiceAccountKeyRequest,
 )
 from unitycatalog.delta import DeltaCommitInfo
 from unitycatalog.functions import (
@@ -361,6 +364,33 @@ def test_azure_credentials(uc: Calls) -> None:
         uc.credential(name).update(
             aws_iam_role=AwsIamRoleRequest("arn:aws:iam::123456789012:role/uc")
         )
+    uc.external_location(name).delete()
+    uc.credential(name).delete()
+
+
+def test_gcp_credentials(uc: Calls) -> None:
+    name = unique("credential")
+    json_key = json.dumps(
+        {
+            "type": "service_account",
+            "client_email": "uc@p.iam.gserviceaccount.com",
+            "private_key_id": "kid",
+            "private_key": "PRIVATE",
+        }
+    )
+    credential = uc.create_credential(
+        name, gcp_service_account_key=GcpServiceAccountKeyRequest(json_key)
+    )
+    assert credential.gcp_service_account_key is not None
+    assert credential.gcp_service_account_key.email == "uc@p.iam.gserviceaccount.com"
+    assert credential.gcp_service_account_key.private_key_id == "kid"
+    uc.create_external_location(name, f"gs://bucket/{name}", name)
+
+    email = "data@p.iam.gserviceaccount.com"
+    account = GcpServiceAccount(email=email)
+    updated = uc.credential(name).update(gcp_service_account=account)
+    assert updated.gcp_service_account_key is None
+    assert updated.gcp_service_account == account
     uc.external_location(name).delete()
     uc.credential(name).delete()
 

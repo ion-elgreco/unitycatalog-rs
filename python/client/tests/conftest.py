@@ -12,14 +12,20 @@ upstream Java server (`just test-upstream`). Then only the tests marked
 The tests in integrations/ use engines (polars, deltalake, obstore and
 pyiceberg) from the `integrations` dependency group. A module whose engine
 is not installed is skipped. For S3 they have `s3_server`, a second server that vends
-credentials for a bucket of moto, a local S3 and STS.
+credentials for a bucket of moto, a local S3 and STS. For GCS they have `gcs_server`, which
+vends credentials for a bucket of floci-gcp, a local GCP emulator
+(`UC_TEST_FLOCI_GCP_URL`); without it, they are skipped.
 """
 
+import base64
+import json
 import os
 import socket
 import subprocess
 import sys
 import time
+import typing
+import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -75,6 +81,20 @@ def _free_port() -> int:
 def _request(url: str, method: str = "GET") -> None:
     with urllib.request.urlopen(urllib.request.Request(url, method=method)):
         pass
+
+
+def _post(url: str, body: dict[str, object]) -> dict[str, typing.Any]:
+    """The JSON answer to a POST of `body`; 409 (it exists) gives `{}`."""
+    request = urllib.request.Request(
+        url, json.dumps(body).encode(), {"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(request) as answer:
+            return json.load(answer)
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            return {}
+        raise
 
 
 def _wait_for(
@@ -199,6 +219,50 @@ def s3_server(tmp_path_factory: pytest.TempPathFactory, s3: str) -> Iterator[Ser
         "UC_S3_TEST_SECRET_KEY": "testing",
     }
     with _running_server(tmp_path_factory.mktemp("uc-server-s3"), settings) as server:
+        yield server
+
+
+@dataclass(frozen=True)
+class Gcs:
+    url: str
+    """The URL of floci-gcp: its GCS, OAuth, IAM Credentials and STS APIs."""
+    json_key: str
+    """The JSON key of a service account, whose token endpoint is floci-gcp's."""
+
+
+@pytest.fixture(scope="session")
+def gcs() -> Gcs:
+    """floci-gcp, with the bucket `uc-test`. It checks the access boundaries
+    of downscoped tokens, not the signatures of service account keys."""
+    url = os.environ.get("UC_TEST_FLOCI_GCP_URL", "").rstrip("/")
+    if not url:
+        pytest.skip("needs floci-gcp: UC_TEST_FLOCI_GCP_URL")
+    _post(f"{url}/storage/v1/b?project=floci-local", {"name": "uc-test"})
+    accounts = f"{url}/v1/projects/floci-local/serviceAccounts"
+    _post(accounts, {"accountId": "uc-server"})
+    email = "uc-server@floci-local.iam.gserviceaccount.com"
+    key = _post(f"{accounts}/{email}/keys", {})
+    json_key = json.loads(base64.b64decode(key["privateKeyData"]))
+    json_key["token_uri"] = f"{url}/token"
+    # floci-gcp labels its PKCS #8 key as PKCS #1; Google's keys say PRIVATE KEY.
+    json_key["private_key"] = json_key["private_key"].replace("RSA PRIVATE", "PRIVATE")
+    return Gcs(url=url, json_key=json.dumps(json_key))
+
+
+@pytest.fixture(scope="session")
+def gcs_server(tmp_path_factory: pytest.TempPathFactory, gcs: Gcs) -> Iterator[Server]:
+    """A uc-server that vends credentials for the bucket `uc-test` of `gcs`:
+    the service account's token, downscoped at floci-gcp's STS
+    (`gcp.endpoint`, `[gcs.test]`)."""
+    root = tmp_path_factory.mktemp("uc-server-gcs")
+    key_file = root / "key.json"
+    key_file.write_text(gcs.json_key)
+    settings = {
+        "UC_GCP_ENDPOINT": gcs.url,
+        "UC_GCS_TEST_BUCKET": "gs://uc-test",
+        "UC_GCS_TEST_JSON_KEY_FILE": str(key_file),
+    }
+    with _running_server(root, settings) as server:
         yield server
 
 

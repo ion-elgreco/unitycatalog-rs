@@ -26,9 +26,14 @@ storage:
     # - storageAccountName: otheraccount
     #   managedIdentity: true
     adls: []
-    # -- Per-bucket GCS credentials. The secret has `jsonKey`.
+    # -- Per-bucket GCS credentials: a service account key, in a secret with
+    # `jsonKey`; else the pod's own GCP identity, such as GKE Workload
+    # Identity (see `serviceAccount.annotations`). With `serviceAccount`, that
+    # identity impersonates the service account of this email.
     # - bucketPath: gs://my-bucket
     #   credentialsSecretName: my-bucket-secret
+    # - bucketPath: gs://other-bucket
+    #   serviceAccount: unity-catalog@my-project.iam.gserviceaccount.com
     gcs: []
 
 auth:

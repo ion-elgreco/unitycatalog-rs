@@ -118,7 +118,8 @@ impl CreateCredentialBuilder {
     }
 
     /// The AWS IAM role of the credential. A credential has exactly one of `aws_iam_role`,
-    /// `azure_service_principal` and `azure_managed_identity`.
+    /// `azure_service_principal`, `azure_managed_identity`, `gcp_service_account` and
+    /// `gcp_service_account_key`.
     pub fn with_aws_iam_role(mut self, aws_iam_role: impl Into<Option<AwsIamRoleRequest>>) -> Self {
         self.request.aws_iam_role = {
             let aws_iam_role: ::core::option::Option<_> = aws_iam_role.into();
@@ -153,6 +154,30 @@ impl CreateCredentialBuilder {
         self.request.azure_managed_identity = {
             let azure_managed_identity: ::core::option::Option<_> = azure_managed_identity.into();
             buffa::MessageField::from(azure_managed_identity)
+        };
+        self
+    }
+
+    /// The GCP service account of the credential.
+    pub fn with_gcp_service_account(
+        mut self,
+        gcp_service_account: impl Into<Option<GcpServiceAccount>>,
+    ) -> Self {
+        self.request.gcp_service_account = {
+            let gcp_service_account: ::core::option::Option<_> = gcp_service_account.into();
+            buffa::MessageField::from(gcp_service_account)
+        };
+        self
+    }
+
+    /// The GCP service account key of the credential.
+    pub fn with_gcp_service_account_key(
+        mut self,
+        gcp_service_account_key: impl Into<Option<GcpServiceAccountKeyRequest>>,
+    ) -> Self {
+        self.request.gcp_service_account_key = {
+            let gcp_service_account_key: ::core::option::Option<_> = gcp_service_account_key.into();
+            buffa::MessageField::from(gcp_service_account_key)
         };
         self
     }
@@ -220,8 +245,8 @@ impl UpdateCredentialBuilder {
     }
 
     /// New AWS IAM role of the credential. The role gets a new external ID. Give at most one of
-    /// `aws_iam_role`, `azure_service_principal` and `azure_managed_identity`: it replaces the
-    /// identity of the credential.
+    /// `aws_iam_role`, `azure_service_principal`, `azure_managed_identity`, `gcp_service_account`
+    /// and `gcp_service_account_key`: it replaces the identity of the credential.
     pub fn with_aws_iam_role(mut self, aws_iam_role: impl Into<Option<AwsIamRoleRequest>>) -> Self {
         self.request.aws_iam_role = {
             let aws_iam_role: ::core::option::Option<_> = aws_iam_role.into();
@@ -256,6 +281,30 @@ impl UpdateCredentialBuilder {
         self.request.azure_managed_identity = {
             let azure_managed_identity: ::core::option::Option<_> = azure_managed_identity.into();
             buffa::MessageField::from(azure_managed_identity)
+        };
+        self
+    }
+
+    /// New GCP service account of the credential.
+    pub fn with_gcp_service_account(
+        mut self,
+        gcp_service_account: impl Into<Option<GcpServiceAccount>>,
+    ) -> Self {
+        self.request.gcp_service_account = {
+            let gcp_service_account: ::core::option::Option<_> = gcp_service_account.into();
+            buffa::MessageField::from(gcp_service_account)
+        };
+        self
+    }
+
+    /// New GCP service account key of the credential.
+    pub fn with_gcp_service_account_key(
+        mut self,
+        gcp_service_account_key: impl Into<Option<GcpServiceAccountKeyRequest>>,
+    ) -> Self {
+        self.request.gcp_service_account_key = {
+            let gcp_service_account_key: ::core::option::Option<_> = gcp_service_account_key.into();
+            buffa::MessageField::from(gcp_service_account_key)
         };
         self
     }

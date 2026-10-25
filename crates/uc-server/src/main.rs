@@ -255,6 +255,7 @@ async fn run(options: options::Options) -> Result<(), String> {
         adls = storage.adls.len(),
         gcs = storage.gcs.len(),
         s3_endpoint = storage.s3_store.as_ref().map(|s| s.endpoint.as_str()),
+        gcp_endpoint = storage.gcp_endpoint.as_deref(),
         "credential vending configured"
     );
     for (bucket, s3) in &storage.s3 {

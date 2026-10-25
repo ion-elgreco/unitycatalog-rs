@@ -41,7 +41,8 @@ use serde::{Deserialize, Deserializer};
 /// The groups of `uc.toml`; a variable of another group (`UC_CONFIG`,
 /// `UC_TEST_POSTGRES_URL`) is not a setting.
 const GROUPS: &[&str] = &[
-    "server", "db", "auth", "storage", "tables", "aws", "s3", "adls", "gcs", "ui", "log", "cli",
+    "server", "db", "auth", "storage", "tables", "aws", "s3", "adls", "gcp", "gcs", "ui", "log",
+    "cli",
 ];
 
 /// The groups of named tables: `UC_S3_<NAME>_<KEY>`.
@@ -63,6 +64,7 @@ pub struct Settings {
     pub s3: BTreeMap<String, S3>,
     /// Credentials of Azure storage accounts, by name.
     pub adls: BTreeMap<String, Adls>,
+    pub gcp: Gcp,
     /// Credentials of GCS buckets, by name.
     pub gcs: BTreeMap<String, Gcs>,
     pub ui: Ui,
@@ -376,6 +378,15 @@ pub struct Adls {
     pub test_mode: bool,
 }
 
+/// `[gcp]`: Google Cloud, for the credentials of GCS.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Gcp {
+    /// The STS and IAM Credentials API of a GCP emulator, such as Floci, in
+    /// place of Google's (http or https).
+    pub endpoint: Option<String>,
+}
+
 /// `[gcs.<name>]`: the credentials of a GCS bucket.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -384,6 +395,8 @@ pub struct Gcs {
     pub bucket: Option<String>,
     /// A service account's JSON key; without one, the default credentials.
     pub json_key_file: Option<String>,
+    /// The email of a service account that the credentials impersonate.
+    pub service_account: Option<String>,
     /// A test generator of tokens, for tests.
     pub credential_generator: Option<String>,
 }
@@ -656,6 +669,10 @@ mod tests {
                 ("UC_ADLS_LAKE_ACCOUNT", "lake"),
                 ("UC_ADLS_LAKE_MANAGED_IDENTITY", "true"),
                 ("UC_ADLS_LAKE_MANAGED_IDENTITY_ID", "/subscriptions/s/uc"),
+                (
+                    "UC_GCS_LAKE_SERVICE_ACCOUNT",
+                    "uc@p.iam.gserviceaccount.com",
+                ),
                 ("UC_DB_PASSWORD", ""),
                 ("UC_TEST_POSTGRES_URL", "postgresql://not/a/setting"),
             ],
@@ -676,6 +693,10 @@ mod tests {
         assert_eq!(
             adls.managed_identity_id.as_deref(),
             Some("/subscriptions/s/uc")
+        );
+        assert_eq!(
+            settings.gcs["lake"].service_account.as_deref(),
+            Some("uc@p.iam.gserviceaccount.com")
         );
         // An empty variable counts as unset.
         assert_eq!(settings.db.password, None);

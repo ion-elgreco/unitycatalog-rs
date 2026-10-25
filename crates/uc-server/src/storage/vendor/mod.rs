@@ -2,8 +2,9 @@
 //! `CloudCredentialVendor`.
 //!
 //! Credentials for a path come from the storage credential of the external
-//! location that covers it (an AWS role, an Azure service principal or an
-//! Azure managed identity) or, without one, from the per-bucket settings
+//! location that covers it (an AWS role, an Azure service principal, an
+//! Azure managed identity, a GCP service account or a GCP service account
+//! key) or, without one, from the per-bucket settings
 //! (`[s3.<name>]`, `[adls.<name>]`, `[gcs.<name>]`). The
 //! vendor is chosen by the path's scheme: AWS STS for `s3`, an Azure user
 //! delegation SAS for `abfs`/`abfss`, a downscoped GCP token for `gs`, and
@@ -61,12 +62,12 @@ pub struct CredentialContext {
     pub credential: Option<StorageCredential>,
 }
 
-/// A storage credential, with the client secret of its Azure service
-/// principal, if any.
+/// A storage credential, with its secret, if any: the client secret of its
+/// Azure service principal, or its GCP service account key.
 #[derive(Debug, Clone)]
 pub struct StorageCredential {
     pub info: CredentialInfo,
-    pub client_secret: Option<String>,
+    pub secret: Option<String>,
 }
 
 impl CredentialContext {
@@ -165,11 +166,8 @@ pub async fn credential_for_url(
     let name = location
         .credential_name
         .ok_or_else(|| Error::internal("external_location row missing credential_name"))?;
-    let (info, client_secret) = metastore.credentials().get_with_secret(&name).await?;
-    Ok(Some(StorageCredential {
-        info,
-        client_secret,
-    }))
+    let (info, secret) = metastore.credentials().get_with_secret(&name).await?;
+    Ok(Some(StorageCredential { info, secret }))
 }
 
 /// The per-bucket and master configuration of the settings.
@@ -184,6 +182,9 @@ pub struct StorageConfig {
     pub s3: HashMap<NormalizedUrl, aws::S3Config>,
     /// `[adls.<name>]`, by storage account name.
     pub adls: HashMap<String, azure::AdlsConfig>,
+    /// `gcp.endpoint`: a GCP emulator in place of Google's STS and IAM
+    /// Credentials.
+    pub gcp_endpoint: Option<String>,
     /// `[gcs.<name>]`, by bucket (`gs://bucket`).
     pub gcs: HashMap<NormalizedUrl, gcp::GcsConfig>,
 }
@@ -208,19 +209,24 @@ impl StorageConfig {
             secret_key: settings.aws.secret_key.clone(),
             ..Default::default()
         };
-        let s3_store = match settings.aws.endpoint.as_deref().map(str::trim) {
-            None | Some("") => None,
+        let endpoint = |value: &Option<String>, key: &str| match value.as_deref().map(str::trim) {
+            None | Some("") => Ok(None),
+            Some(url) if url.starts_with("http://") || url.starts_with("https://") => {
+                Ok(Some(url.trim_end_matches('/').to_string()))
+            }
+            Some(url) => Err(settings::invalid(
+                key,
+                url,
+                "Expected an http or https URL.",
+            )),
+        };
+        let gcp_endpoint = endpoint(&settings.gcp.endpoint, "gcp.endpoint")?;
+        let s3_store = match endpoint(&settings.aws.endpoint, "aws.endpoint")? {
+            None => None,
             Some(endpoint) => {
-                if !(endpoint.starts_with("http://") || endpoint.starts_with("https://")) {
-                    return Err(settings::invalid(
-                        "aws.endpoint",
-                        endpoint,
-                        "Expected an http or https URL.",
-                    ));
-                }
                 let region = settings.aws.region.clone();
                 Some(aws::S3Store {
-                    endpoint: endpoint.trim_end_matches('/').to_string(),
+                    endpoint,
                     region: region.unwrap_or_else(|| "us-east-1".into()),
                 })
             }
@@ -272,6 +278,7 @@ impl StorageConfig {
             let config = gcp::GcsConfig {
                 bucket_path: path.clone(),
                 json_key_file_path: entry.json_key_file.clone(),
+                service_account: entry.service_account.clone(),
                 credential_generator: entry.credential_generator.clone(),
             };
             gcs.insert(bucket(&path, format!("gcs.{name}.bucket"))?, config);
@@ -281,6 +288,7 @@ impl StorageConfig {
             s3_store,
             s3,
             adls,
+            gcp_endpoint,
             gcs,
         })
     }
@@ -298,7 +306,14 @@ impl CloudVendor {
         Self {
             aws: aws::AwsVendor::new(config.aws_master, config.s3, config.s3_store),
             azure: azure::AzureVendor::new(config.adls),
-            gcp: gcp::GcpVendor::new(config.gcs),
+            gcp: match config.gcp_endpoint {
+                Some(url) => gcp::GcpVendor::new(config.gcs).with_endpoints(
+                    Some(format!("{url}/v1/token")),
+                    None,
+                    Some(url),
+                ),
+                None => gcp::GcpVendor::new(config.gcs),
+            },
         }
     }
 
@@ -312,9 +327,9 @@ impl CloudVendor {
             endpoints.azure_blob,
             endpoints.azure_msi,
         );
-        self.gcp = self
-            .gcp
-            .with_endpoints(endpoints.gcp_sts, endpoints.gcp_metadata);
+        self.gcp =
+            self.gcp
+                .with_endpoints(endpoints.gcp_sts, endpoints.gcp_metadata, endpoints.gcp_iam);
         self
     }
 }
@@ -330,6 +345,8 @@ pub struct Endpoints {
     pub azure_msi: Option<String>,
     pub gcp_sts: Option<String>,
     pub gcp_metadata: Option<String>,
+    /// Replaces `https://iamcredentials.googleapis.com`.
+    pub gcp_iam: Option<String>,
 }
 
 #[async_trait]
