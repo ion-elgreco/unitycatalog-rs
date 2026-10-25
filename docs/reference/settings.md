@@ -51,18 +51,60 @@ defaults apply.
 
 ## Cloud identities and locations
 
-Three kinds of setup decide how the server reaches cloud storage:
+Clients read and write table data in cloud storage with short-lived credentials that the server
+gives them. Three parts decide these credentials. Each part has one job:
 
-| | Where you set it | What it is |
+| Part | Its job | Who sets it, and where |
 | --- | --- | --- |
-| `[identity.<cloud>]` | `uc.toml`, `UC_IDENTITY_*` variables | The identity that the server signs in to AWS, Azure or GCP with. When it is not set, the server uses the credentials of the machine or pod where it runs, such as environment variables, the pod's service account or the VM's identity. |
-| External location and storage credential | `uc external_location create` and `uc credential create`, the web UI or the API. The metastore keeps them. | A URL and the identity that reaches it, with an owner and grants. |
-| `[locations.<name>]` | `uc.toml`, `UC_LOCATIONS_*` variables | A URL and the identity that reaches it, without an owner or grants. It is not an external location: `uc external_location list` does not show it. |
+| `[identity.<cloud>]` | How the server signs in to AWS, Azure or GCP. | The admin, in `uc.toml` or `UC_IDENTITY_*` variables. When it is not set, the server uses the credentials of the machine or pod where it runs. |
+| External location | Which identity reaches a path, and which users may use it. | Users with the privilege, with `uc external_location create`, the web UI or the API. |
+| `[locations.<name>]` | Which identity reaches a path. It has no owner and no grants. | The admin, in `uc.toml` or `UC_LOCATIONS_*` variables. It is not an external location. |
 
-When a client asks for credentials for a path, the server first finds the identity for the
-path: (1) the storage credential of the external location that covers it, else (2) the identity of
-the `[locations.<name>]` that covers it. Then (3) it signs in with its own identity to get
-temporary credentials of that identity:
+### Which location serves a path
+
+It depends on who wrote the path:
+
+- **A user wrote the path** in the web UI, the CLI or the API: the location of an external table
+  or volume, or the `storage_root` of a catalog or schema. With authorization on, the path must be
+  under an external location, so that the server can check that the user may use it.
+- **The admin wrote the path** in `uc.toml`: `storage.tables_root` and `storage.models_root`. The
+  managed tables and models of a catalog and schema without a `storage_root` go there. A
+  `[locations.<name>]` can serve these paths, and so can an external location.
+
+With authorization off, the server checks no users, so a `[locations.<name>]` can serve any path.
+
+Both kinds of path can be in use at the same time. In this example, the catalog `main` has no
+`storage_root`, so its managed tables go under `s3://acme-lake/managed`, and `[locations.lake]`
+serves them. A user made the catalog `sales` with the storage root `s3://sales/data`, so that path
+needs the external location `sales`.
+
+```toml
+[identity.aws]
+arn = "arn:aws:iam::111111111111:role/uc-server"
+
+[storage]
+tables_root = "s3://acme-lake/managed"
+
+[locations.lake]
+url = "s3://acme-lake"
+aws_iam_role_arn = true
+```
+
+```bash
+uc catalog create --name main
+uc credential create --name sales \
+  --aws_iam_role_arn arn:aws:iam::222222222222:role/uc-sales
+uc external_location create --name sales --url s3://sales --credential_name sales
+uc catalog create --name sales --storage_root s3://sales/data
+```
+
+### How the server gets the credentials
+
+For a path, the server takes the identity of the external location that covers the path, else the
+identity of the `[locations.<name>]` that covers it. When several `[locations.<name>]` cover a
+path, the one with the longest URL wins: for `s3://lake/tables/t1`, `s3://lake/tables` wins over
+`s3://lake`. Then the server signs in with `[identity.<cloud>]` and gets credentials of that
+identity. They last one hour and allow only that path and operation.
 
 ```mermaid
 flowchart TD
@@ -84,7 +126,8 @@ flowchart TD
     identity --> temporary
 ```
 
-What the server does for each identity:
+
+What the server does for each kind of identity:
 
 | Identity of the location | The server |
 | --- | --- |
@@ -94,13 +137,7 @@ What the server does for each identity:
 | GCP service account | uses the token of `[identity.gcp]`, or impersonates the service account as `[identity.gcp]`. |
 | GCP service account key | signs in with the key. |
 
-- **Authorization off:** a `[locations.<name>]` serves any path that no external location covers.
-- **Authorization on:** a `[locations.<name>]` serves only `storage.tables_root` and
-  `storage.models_root`. Every other path needs an external location, because only an external
-  location has grants that the server can check.
-
-When several `[locations.<name>]` cover a path, the longest URL wins: for `s3://lake/tables/t1`,
-`s3://lake/tables` wins over `s3://lake`.
+### Variables
 
 The variables of these tables include the cloud or the name: `UC_IDENTITY_AWS_SECRET_KEY` is
 `secret_key` in `[identity.aws]`, and `UC_LOCATIONS_ANALYTICS_URL` is `url` in
@@ -318,11 +355,10 @@ credentials, or the metadata server, such as GKE Workload Identity.
 ## `[locations.<name>]`
 
 A URL and the identity that reaches the paths under it, for paths that no external location
-covers. With authorization on, it gives credentials only for the managed tables and models under
-`storage.tables_root` and `storage.models_root`; see
-[Cloud identities and locations](#cloud-identities-and-locations). The URL's scheme picks the
-cloud, and an entry holds exactly one identity of that cloud. When several entries cover a path,
-the one with the longest URL wins.
+covers. With authorization on, it serves only the paths that the admin wrote, `storage.tables_root`
+and `storage.models_root`; see [Which location serves a path](#which-location-serves-a-path). The
+URL's scheme picks the cloud, and an entry holds exactly one identity of that cloud. When several
+entries cover a path, the one with the longest URL wins.
 
 | Key | Variable | Cloud | Description |
 | --- | --- | --- | --- |
