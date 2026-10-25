@@ -28,6 +28,8 @@ pub mod __buffa {
         reg.register_json_any(super::__LIST_TABLES_REQUEST_JSON_ANY);
         reg.register_json_any(super::__LIST_TABLES_RESPONSE_JSON_ANY);
         reg.register_json_any(super::__GET_TABLE_REQUEST_JSON_ANY);
+        reg.register_json_any(super::__UPDATE_COLUMN_JSON_ANY);
+        reg.register_json_any(super::__UPDATE_TABLE_JSON_ANY);
         reg.register_json_any(super::__DELETE_TABLE_REQUEST_JSON_ANY);
         reg.register_json_any(super::__STAGING_TABLE_INFO_JSON_ANY);
         reg.register_json_any(super::__CREATE_STAGING_TABLE_JSON_ANY);

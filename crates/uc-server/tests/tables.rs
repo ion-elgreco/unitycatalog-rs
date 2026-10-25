@@ -78,6 +78,34 @@ async fn create_get_list_delete_table(#[future(awt)] seeded: Router) {
     assert_eq!(json_body(resp).await["tables"].as_array().unwrap().len(), 1);
 
     let resp = seeded
+        .clone()
+        .oneshot(req_json(
+            Method::PATCH,
+            "/tables/main.default.users",
+            json!({
+                "comment": "edited",
+                "columns": [{ "name": "email", "comment": "The primary email" }],
+            }),
+        ))
+        .await
+        .unwrap();
+    let updated = json_body(assert_status(resp, StatusCode::OK, "patch").await).await;
+    assert_eq!(updated["comment"], "edited");
+    assert_eq!(updated["columns"][0]["comment"], Value::Null);
+    assert_eq!(updated["columns"][1]["comment"], "The primary email");
+
+    let resp = seeded
+        .clone()
+        .oneshot(req_json(
+            Method::PATCH,
+            "/tables/main.default.users",
+            json!({ "columns": [{ "name": "nope", "comment": "" }] }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    let resp = seeded
         .oneshot(req(Method::DELETE, "/tables/main.default.users"))
         .await
         .unwrap();

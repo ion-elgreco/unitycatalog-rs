@@ -1,45 +1,54 @@
-//! "Create …" with a name and a comment, as upstream's `Create*Modal`.
-//! After the call, a toast, the list that gained the object loads again,
-//! and the UI goes to the object's page. Cancel empties the form, as
-//! antd's `destroyOnClose`; a failed call keeps it, so it can be fixed.
+//! "Create …" for a catalog or a schema, with a name, a comment and, for a
+//! catalog, a storage root, as the console's `EntityFormDialog`. After the
+//! call, a toast, and the list that gained the object loads again. Cancel
+//! empties the form; a failed call keeps it, so it can be fixed.
 
 use std::future::Future;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use leptos_router::hooks::use_navigate;
 
+use super::field::TextField;
 use crate::api;
 use crate::components::{Modal, use_notify};
 use crate::load::{Key, use_cache};
+
+/// What the form holds.
+pub struct NewObject {
+    pub name: String,
+    pub comment: Option<String>,
+    /// The storage root, when the form has the field and it is filled.
+    pub location: Option<String>,
+}
 
 #[component]
 pub fn CreateModal<F, Fut>(
     open: RwSignal<bool>,
     /// What is created, such as "catalog".
     noun: &'static str,
-    /// A line above the fields.
+    /// With a "Storage root" field.
     #[prop(optional)]
-    hint: Option<&'static str>,
-    /// Create the object `name`, with a comment; the page to go to then.
+    storage_root: bool,
+    /// Create the object.
     create: F,
     /// The list that gains the object.
     list: Key,
 ) -> impl IntoView
 where
-    F: Fn(String, Option<String>) -> Fut + Clone + Send + Sync + 'static,
-    Fut: Future<Output = api::Result<String>> + 'static,
+    F: Fn(NewObject) -> Fut + Clone + Send + Sync + 'static,
+    Fut: Future<Output = api::Result<()>> + 'static,
 {
     let name = RwSignal::new(String::new());
     let comment = RwSignal::new(String::new());
+    let root = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let notify = use_notify();
     let cache = use_cache();
-    let navigate = use_navigate();
     let close = move || {
         open.set(false);
         name.set(String::new());
         comment.set(String::new());
+        root.set(String::new());
     };
     let on_ok = move || {
         let new_name = name.get_untracked().trim().to_string();
@@ -48,22 +57,26 @@ where
             return;
         }
         let text = comment.get_untracked();
+        let location = root.get_untracked().trim().to_string();
+        let form = NewObject {
+            name: new_name,
+            comment: (!text.is_empty()).then_some(text),
+            location: (!location.is_empty()).then_some(location),
+        };
         let create = create.clone();
         let list = list.clone();
-        let navigate = navigate.clone();
         busy.set(true);
         spawn_local(async move {
-            match create(new_name.clone(), (!text.is_empty()).then_some(text)).await {
-                Ok(page) => {
-                    notify.success(format!("{new_name} {noun} successfully created"));
+            match create(form).await {
+                Ok(()) => {
+                    notify.success(format!("Create {noun} complete"));
                     cache.changed(list);
                     // Only when the user is still on the page.
                     if busy.try_get_untracked().is_some() {
                         close();
-                        navigate(&page, Default::default());
                     }
                 }
-                Err(e) => notify.failed(&e, &format!("Failed to create {noun}")),
+                Err(e) => notify.failed(&e, &format!("Create {noun} failed")),
             }
             busy.set(false);
         });
@@ -77,27 +90,19 @@ where
             on_cancel=move || close()
             on_ok
         >
-            {hint.map(|hint| view! { <p class="uc-text-secondary">{hint}</p> })}
-            <div class="uc-form-item">
-                <label>
-                    <span class="req">"*"</span>
-                    "Name"
-                </label>
-                <input
-                    class="uc-input"
-                    type="text"
-                    prop:value=move || name.get()
-                    on:input=move |e| name.set(event_target_value(&e))
-                />
-            </div>
-            <div class="uc-form-item">
-                <label>"Comment"</label>
-                <textarea
-                    class="uc-textarea"
-                    prop:value=move || comment.get()
-                    on:input=move |e| comment.set(event_target_value(&e))
-                />
-            </div>
+            <TextField id="uc-create-name" label="Name" value=name required=true/>
+            <TextField id="uc-create-comment" label="Comment" value=comment/>
+            {storage_root
+                .then(|| {
+                    view! {
+                        <TextField
+                            id="uc-create-location"
+                            label="Storage root"
+                            value=root
+                            placeholder="s3://bucket/path"
+                        />
+                    }
+                })}
         </Modal>
     }
 }

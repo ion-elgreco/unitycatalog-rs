@@ -89,6 +89,26 @@ impl TableServiceClient {
         })?)
     }
 
+    /// Change the comments of a table and its columns.
+    pub async fn update_table(&self, request: &UpdateTable) -> Result<TableInfo> {
+        let formatted_path = format!(
+            "api/2.1/unity-catalog/tables/{}",
+            encode_path_value(&request.full_name, false)
+        );
+        let url = self.base_url.join(&formatted_path)?;
+        let mut body = request.clone();
+        body.full_name = Default::default();
+        let response = self.client.patch(url).json(&body).send().await?;
+        if !response.status().is_success() {
+            return Err(crate::codegen::error::parse_error_response(response).await);
+        }
+        let result = response.bytes().await?;
+        let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
+    }
+
     /// Delete a table.
     pub async fn delete_table(&self, request: &DeleteTableRequest) -> Result<()> {
         let formatted_path = format!(

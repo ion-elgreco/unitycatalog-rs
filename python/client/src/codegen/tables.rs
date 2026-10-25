@@ -82,6 +82,61 @@ impl PyTableClient {
         })
     }
 
+    /// Change the comments of a table and its columns.
+    ///
+    /// Args:
+    ///     comment: User-provided free-form text description.
+    ///     columns: Columns that get a new comment; the others keep theirs.
+    ///
+    /// Returns:
+    ///     A table: data in the third layer of the three-level namespace, below a schema.
+    #[pyo3(signature = (*, comment = None, columns = None))]
+    pub fn update(
+        &self,
+        py: Python,
+        comment: Option<String>,
+        columns: ::core::option::Option<::std::vec::Vec<PyUpdateColumn>>,
+    ) -> PyUnityCatalogResult<PyTableInfo> {
+        let request = self.client.update().with_comment(comment).with_columns(
+            columns
+                .unwrap_or_default()
+                .into_iter()
+                .map(::core::convert::Into::into)
+                .collect::<::std::vec::Vec<_>>(),
+        );
+        let runtime = crate::codegen::runtime::rt();
+        py.detach(|| {
+            #[allow(clippy::let_unit_value)]
+            let result = runtime.block_on(request.into_future())?;
+            Ok::<_, PyUnityCatalogError>(PyTableInfo::from(result))
+        })
+    }
+
+    /// Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (*, comment = None, columns = None))]
+    pub fn update_async<'py>(
+        &self,
+        py: Python<'py>,
+        comment: Option<String>,
+        columns: ::core::option::Option<::std::vec::Vec<PyUpdateColumn>>,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyTableInfo>> {
+        let request = self.client.update().with_comment(comment).with_columns(
+            columns
+                .unwrap_or_default()
+                .into_iter()
+                .map(::core::convert::Into::into)
+                .collect::<::std::vec::Vec<_>>(),
+        );
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(PyTableInfo::from(result))
+        })
+    }
+
     /// Delete a table.
     pub fn delete(&self, py: Python) -> PyUnityCatalogResult<()> {
         let request = self.client.delete();

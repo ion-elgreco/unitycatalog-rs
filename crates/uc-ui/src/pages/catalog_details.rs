@@ -1,22 +1,26 @@
-//! A catalog's page, as upstream's `pages/CatalogDetails.tsx`: its
-//! description, its schemas and its details, the action menu, and the
-//! "Create Schema" button.
+//! A catalog's page, as the console's `CatalogDetails`: its description and
+//! schemas, its details, its grants; "Edit" (its name, comment and
+//! properties), "Create schema" and "Delete".
 
 use leptos::prelude::*;
-use leptos_router::hooks::use_navigate;
 use uc_client::models::catalogs::v1::CatalogInfo;
-use uc_client::models::schemas::v1::SchemaInfo;
+use uc_common::SecurableType;
 
 use crate::api;
-use crate::components::icons::{DatabaseOutlined, ProductOutlined};
+use crate::auth::use_manages;
+use crate::components::edit_modal::Changes;
+use crate::components::icons::Plus;
 use crate::components::{
-    ActionDropdown, CreateModal, DeleteModal, Description, Loaded, MenuIcon, MenuItem,
-    MetadataList, MetadataRow,
+    Card, CreateModal, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata, Empty,
+    EntityHeader, Loaded, MetaRow, NewObject, ObjectRow, PermissionsCard, Tabs, counted,
+    loaded_list, properties,
 };
 use crate::contents::Holder;
-use crate::layout::{Breadcrumb, Column, DetailsLayout, ListLayout};
+use crate::kind::{catalog_icon, schema_icon};
 use crate::load::{Key, field, use_cache, use_load};
-use crate::util::{format_timestamp, route_params};
+use crate::util::{
+    catalog_href, format_timestamp, or_dash, pretty_json, route_params, schema_href,
+};
 
 #[component]
 pub fn CatalogDetails() -> impl IntoView {
@@ -29,62 +33,129 @@ pub fn CatalogDetails() -> impl IntoView {
 
 #[component]
 fn CatalogPage(catalog: String) -> impl IntoView {
-    let info = use_load(Key::Catalog(catalog.clone()), {
-        let catalog = catalog.clone();
-        move || {
-            let catalog = catalog.clone();
-            async move { api::client().catalog(catalog).get().await }
-        }
+    let name = StoredValue::new(catalog.clone());
+    let info = use_load(Key::Catalog(catalog.clone()), move || {
+        let catalog = name.get_value();
+        async move { api::client().catalog(catalog).get().await }
     });
-    let schemas = use_load(Key::Schemas(catalog.clone()), {
-        let catalog = catalog.clone();
-        move || {
-            let catalog = catalog.clone();
-            async move { api::schemas(&catalog).await }
-        }
+    let schemas = use_load(Key::Schemas(catalog.clone()), move || {
+        let catalog = name.get_value();
+        async move { api::schemas(&catalog).await }
     });
     let cache = use_cache();
     let delete_open = RwSignal::new(false);
     let create_open = RwSignal::new(false);
-    let navigate = use_navigate();
-    let on_row_click = Callback::new({
-        let catalog = catalog.clone();
-        move |schema: SchemaInfo| {
-            navigate(
-                &format!("/data/{catalog}/{}", schema.name),
-                Default::default(),
-            );
-        }
+    let owner = field(info, |c: &CatalogInfo| c.owner.clone());
+    let manages = use_manages(owner);
+    let comment = field(info, |c: &CatalogInfo| {
+        c.comment.clone().unwrap_or_default()
     });
-    let save = {
-        let catalog = catalog.clone();
-        move |comment| {
-            let catalog = catalog.clone();
-            async move {
-                let updated = api::client()
-                    .catalog(&catalog)
-                    .update()
-                    .with_comment(comment)
-                    .await?;
-                cache.set(Key::Catalog(catalog), updated);
-                Ok(())
-            }
+    let props = field(info, |c: &CatalogInfo| properties(&c.properties));
+
+    let save_metadata = move |changes: Changes| {
+        let catalog = name.get_value();
+        async move {
+            let updated = api::client()
+                .catalog(&catalog)
+                .update()
+                .with_comment(changes.comment)
+                .with_properties(changes.properties.unwrap_or_default())
+                .with_new_name(changes.new_name.clone())
+                .await?;
+            let page = changes.new_name.as_deref().map(catalog_href);
+            let renamed = changes
+                .new_name
+                .map(|new_name| (Key::Catalog(new_name), Key::Catalogs));
+            cache.edited(Key::Catalog(catalog), updated, renamed);
+            Ok(page)
         }
     };
+    let save_comment = move |comment: String| {
+        let saving = save_metadata(Changes {
+            new_name: None,
+            comment: Some(comment),
+            properties: None,
+        });
+        async move { saving.await.map(|_| ()) }
+    };
+    let reload = vec![Key::Catalog(catalog.clone()), Key::Schemas(catalog.clone())];
 
-    let modals = view! {
+    let schema_rows = move || {
+        let empty = Empty::new(
+            "No schemas.",
+            "A schema groups the tables, volumes, functions and models of a catalog. Click Create schema to make one.",
+        );
+        loaded_list(schemas.get(), empty, |list| {
+            let catalog = name.get_value();
+            view! {
+                <div class="uc-rows">
+                    {list
+                        .into_iter()
+                        .map(|s| {
+                            let schema = s.name;
+                            view! {
+                                <ObjectRow
+                                    icon=schema_icon()
+                                    name=schema.clone()
+                                    href=schema_href(&catalog, &schema)
+                                    comment=s.comment
+                                />
+                            }
+                        })
+                        .collect_view()}
+                </div>
+            }
+            .into_any()
+        })
+    };
+
+    view! {
+        <EntityHeader
+            icon=catalog_icon()
+            name=catalog.clone()
+            badges=vec!["Catalog".to_string()]
+            reload
+            actions=view! {
+                <EditMetadata name=catalog.clone() comment properties=props save=save_metadata/>
+                <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>
+                    <Plus/>
+                    "Create schema"
+                </button>
+                <DeleteButton open=delete_open when=manages/>
+            }
+                .into_any()
+        />
+        <div class="uc-page">
+            <Loaded state=info>
+                <Tabs
+                    overview=move || {
+                        view! {
+                            <DescriptionCard comment noun="catalog" save=save_comment/>
+                            <Card title=counted("Schemas", schemas)>{schema_rows}</Card>
+                        }
+                    }
+                    details=move || {
+                        view! {
+                            <DetailsTab
+                                rows=field(info, catalog_rows)
+                                properties=props
+                                json=field(info, pretty_json)
+                            />
+                        }
+                    }
+                    permissions=move || {
+                        view! { <PermissionsCard kind=SecurableType::Catalog full_name=name.get_value() owner/> }
+                    }
+                />
+            </Loaded>
+        </div>
         <DeleteModal
             open=delete_open
             noun="catalog"
-            question="Are you sure you want to delete the catalog"
             name=catalog.clone()
-            label=format!("{catalog} catalog")
-            delete={
-                let catalog = catalog.clone();
-                move |force| {
-                    let catalog = catalog.clone();
-                    async move { api::client().catalog(catalog).delete().with_force(force).await }
-                }
+            delete=move |force| {
+                let catalog = name.get_value();
+                async move { api::client().catalog(catalog).delete().with_force(force).await }
             }
             key=Key::Catalog(catalog.clone())
             list=Key::Catalogs
@@ -94,121 +165,29 @@ fn CatalogPage(catalog: String) -> impl IntoView {
         <CreateModal
             open=create_open
             noun="schema"
-            hint="Create schema description"
-            create={
-                let catalog = catalog.clone();
-                move |name, comment| {
-                    let catalog = catalog.clone();
-                    async move {
-                        let schema = api::client()
-                            .create_schema(name, &catalog)
-                            .with_comment(comment)
-                            .await?;
-                        Ok(format!("/data/{catalog}/{}", schema.name))
-                    }
+            create=move |form: NewObject| {
+                let catalog = name.get_value();
+                async move {
+                    api::client()
+                        .create_schema(form.name, catalog)
+                        .with_comment(form.comment)
+                        .with_storage_root(form.location)
+                        .await?;
+                    Ok(())
                 }
             }
             list=Key::Schemas(catalog.clone())
         />
-    };
-
-    view! {
-        <DetailsLayout
-            title=view! {
-                <div class="uc-flex uc-justify-between uc-items-start uc-gap-md">
-                    <h3 class="uc-title-3">
-                        <ProductOutlined/>
-                        " "
-                        {catalog.clone()}
-                    </h3>
-                    <Show when=move || info.with(|i| i.ready().is_some())>
-                        <div class="uc-flex uc-gap-md">
-                            <ActionDropdown items=vec![
-                                MenuItem {
-                                    label: "Delete Catalog",
-                                    icon: MenuIcon::Delete,
-                                    on_click: Callback::new(move |_| delete_open.set(true)),
-                                },
-                            ]/>
-                            <button
-                                class="uc-btn uc-btn--primary"
-                                on:click=move |_| create_open.set(true)
-                            >
-                                "Create Schema"
-                            </button>
-                        </div>
-                    </Show>
-                </div>
-            }
-                .into_any()
-            breadcrumbs=vec![Breadcrumb::link("Catalogs", "/"), Breadcrumb::current(catalog.clone())]
-        >
-            <Loaded state=info>
-                <div class="uc-flex-col uc-gap-md">
-                    <Description
-                        comment=field(info, |c: &CatalogInfo| c.comment.clone().unwrap_or_default())
-                        noun="catalog"
-                        hint="Catalog description"
-                        label=format!("{catalog} catalog")
-                        save=save.clone()
-                    />
-                    <ListLayout
-                        title=view! { <h4 class="uc-title-4">"Schemas"</h4> }.into_any()
-                        data=schemas
-                        columns=schema_columns()
-                        on_row_click
-                    />
-                </div>
-                <aside>
-                    <MetadataList title="Catalog details" rows=field(info, catalog_rows)/>
-                </aside>
-            </Loaded>
-        </DetailsLayout>
-        {modals}
     }
 }
 
-fn schema_columns() -> Vec<Column<SchemaInfo>> {
+fn catalog_rows(c: &CatalogInfo) -> Vec<MetaRow> {
     vec![
-        Column {
-            title: "Name",
-            width: "60%",
-            center: false,
-            render: Box::new(|s: &SchemaInfo| {
-                view! {
-                    <span class="uc-name">
-                        <DatabaseOutlined/>
-                        " "
-                        {s.name.clone()}
-                    </span>
-                }
-                .into_any()
-            }),
-            search_key: Some(Box::new(|s: &SchemaInfo| s.name.clone())),
-        },
-        Column {
-            title: "Created At",
-            width: "40%",
-            center: false,
-            render: Box::new(|s: &SchemaInfo| {
-                view! { <span>{format_timestamp(s.created_at)}</span> }.into_any()
-            }),
-            search_key: None,
-        },
-    ]
-}
-
-fn catalog_rows(c: &CatalogInfo) -> Vec<MetadataRow> {
-    vec![
-        MetadataRow {
-            label: "Created at",
-            value: format_timestamp(c.created_at),
-            code: false,
-        },
-        MetadataRow {
-            label: "Updated at",
-            value: format_timestamp(c.updated_at),
-            code: false,
-        },
+        MetaRow::new("Owner", or_dash(c.owner.clone())),
+        MetaRow::new("Created at", format_timestamp(c.created_at)),
+        MetaRow::new("Updated at", format_timestamp(c.updated_at)),
+        MetaRow::mono("Catalog ID", or_dash(c.id.clone())),
+        MetaRow::mono("Storage root", or_dash(c.storage_root.clone())),
+        MetaRow::new("Comment", or_dash(c.comment.clone())),
     ]
 }

@@ -36,6 +36,11 @@ impl TableClient {
         GetTableBuilder::new(self.client.clone(), &self.table_name)
     }
 
+    /// Change the comments of a table and its columns.
+    pub fn update(&self) -> UpdateTableBuilder {
+        UpdateTableBuilder::new(self.client.clone(), &self.table_name)
+    }
+
     /// Delete a table.
     pub fn delete(&self) -> DeleteTableBuilder {
         DeleteTableBuilder::new(self.client.clone(), &self.table_name)

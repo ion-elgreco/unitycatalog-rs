@@ -42,6 +42,7 @@ from unitycatalog.tables import (
     Dependency,
     DependencyList,
     TableDependency,
+    UpdateColumn,
 )
 
 
@@ -148,6 +149,34 @@ def test_tables_and_views(uc: Calls, schema: tuple[str, str]) -> None:
     uc.table(f"{catalog}.{schema_name}.v").delete()
     uc.table(full_name).delete()
     assert uc.list_tables(catalog, schema_name) == []
+
+
+def test_table_comments(uc: Calls, schema: tuple[str, str]) -> None:
+    """Upstream has no table update."""
+    catalog, schema_name = schema
+    column = ColumnInfo(
+        "id",
+        '{"name":"id","type":"long","nullable":true,"metadata":{}}',
+        type_text="bigint",
+        type_name="LONG",
+        position=0,
+    )
+    staging = uc.create_staging_table("t", catalog, schema_name)
+    uc.create_table(
+        "t",
+        catalog,
+        schema_name,
+        "MANAGED",
+        columns=[column],
+        data_source_format="DELTA",
+        storage_location=staging.staging_location,
+        properties={"io.unitycatalog.tableId": staging.id},
+    )
+    updated = uc.table(f"{catalog}.{schema_name}.t").update(
+        comment="users", columns=[UpdateColumn("id", "primary key")]
+    )
+    assert updated.comment == "users"
+    assert updated.columns[0].comment == "primary key"
 
 
 @pytest.mark.upstream

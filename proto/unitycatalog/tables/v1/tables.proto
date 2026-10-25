@@ -219,6 +219,24 @@ message GetTableRequest {
   optional bool read_materialized_view_as_managed = 3;
 }
 
+// A new comment for a column of a table.
+message UpdateColumn {
+  // Name of the column.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // New comment of the column. Empty clears it.
+  string comment = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// New comments for a table and its columns. Upstream's API has no table update.
+message UpdateTable {
+  // Full name of the table, in the form `<catalog>.<schema>.<table>`.
+  string full_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // User-provided free-form text description.
+  optional string comment = 2;
+  // Columns that get a new comment; the others keep theirs.
+  repeated UpdateColumn columns = 3;
+}
+
 message DeleteTableRequest {
   // Full name of the table, in the form `<catalog>.<schema>.<table>`.
   string full_name = 1 [(google.api.field_behavior) = REQUIRED];
@@ -267,6 +285,14 @@ service TablesService {
   // Get a table.
   rpc GetTable(GetTableRequest) returns (TableInfo) {
     option (google.api.http) = {get: "/api/2.1/unity-catalog/tables/{full_name}"};
+  }
+
+  // Change the comments of a table and its columns.
+  rpc UpdateTable(.unitycatalog.tables.v1.UpdateTable) returns (TableInfo) {
+    option (google.api.http) = {
+      patch: "/api/2.1/unity-catalog/tables/{full_name}"
+      body: "*"
+    };
   }
 
   // Delete a table.

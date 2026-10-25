@@ -13918,6 +13918,65 @@ impl ::core::convert::From<PyTableInfo> for super::tables::v1::TableInfo {
     }
 }
 
+/// A new comment for a column of a table.
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
+    name = "UpdateColumn",
+    eq,
+    frozen,
+    module = "unitycatalog._core.tables",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyUpdateColumn(pub super::tables::v1::UpdateColumn);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PyUpdateColumn {
+    #[new]
+    #[pyo3(signature = (name, comment))]
+    fn new(name: ::std::string::String, comment: ::std::string::String) -> Self {
+        let mut inner = <super::tables::v1::UpdateColumn as ::core::default::Default>::default();
+        {
+            let value = name;
+            inner.name = value;
+        }
+        {
+            let value = comment;
+            inner.comment = value;
+        }
+        Self(inner)
+    }
+
+    /// Name of the column.
+    #[getter]
+    fn name(&self) -> ::std::string::String {
+        self.0.name.clone()
+    }
+
+    /// New comment of the column. Empty clears it.
+    #[getter]
+    fn comment(&self) -> ::std::string::String {
+        self.0.comment.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(slf.as_any(), &[("name", false), ("comment", false)])
+    }
+}
+
+impl ::core::convert::From<super::tables::v1::UpdateColumn> for PyUpdateColumn {
+    fn from(value: super::tables::v1::UpdateColumn) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyUpdateColumn> for super::tables::v1::UpdateColumn {
+    fn from(value: PyUpdateColumn) -> Self {
+        value.0
+    }
+}
+
 #[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListPatsResponse",

@@ -11,6 +11,7 @@ from unitycatalog._core.tables import (
     TableClient,
     TableDependency,
     TableInfo,
+    UpdateColumn,
 )
 from unitycatalog._enums import (
     ColumnTypeName,
@@ -31,4 +32,5 @@ __all__ = [
     "TableDependency",
     "TableInfo",
     "TableType",
+    "UpdateColumn",
 ]

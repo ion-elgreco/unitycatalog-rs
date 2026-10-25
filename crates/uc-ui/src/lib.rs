@@ -1,8 +1,11 @@
-//! The web UI, in Leptos 0.7, as upstream's React/antd UI.
+//! The web UI, in Leptos 0.7, after upstream's new console (`ui-new`,
+//! React with shadcn/ui).
 //!
-//! It has the routes, pages, layouts and behavior of
-//! https://github.com/unitycatalog/unitycatalog/tree/main/ui, and calls the
-//! server with this workspace's `uc-client`.
+//! It has the layout, pages and behavior of
+//! https://github.com/unitycatalog/unitycatalog/tree/main/ui-new, calls the
+//! server with this workspace's `uc-client`, and adds what that console
+//! leaves out: grants, temporary credentials, column comments and access
+//! tokens.
 
 pub mod api;
 pub mod app;
@@ -13,6 +16,7 @@ pub mod kind;
 pub mod layout;
 pub mod load;
 pub mod pages;
+pub mod theme;
 pub mod util;
 
 use leptos::mount::mount_to_body;

@@ -8,6 +8,7 @@ use uc_client::models::credentials::v1::{
 };
 use uc_client::models::tables::v1::{
     ColumnTypeName, DataSourceFormat, Dependency, DependencyList, TableDependency, TableType,
+    UpdateColumn,
 };
 use uc_client::models::volumes::v1::VolumeType;
 
@@ -58,6 +59,21 @@ async fn managed_tables() {
         .await
         .unwrap();
     assert_eq!(fetched, table);
+
+    let edited = uc
+        .table("c.s.t")
+        .update()
+        .with_comment("people".to_string())
+        .with_columns([UpdateColumn {
+            name: "email".into(),
+            comment: "primary email".into(),
+            ..Default::default()
+        }])
+        .await
+        .unwrap();
+    assert_eq!(edited.comment.as_deref(), Some("people"));
+    assert_eq!(edited.columns[1].comment.as_deref(), Some("primary email"));
+    assert_eq!(edited.columns[0].comment, None);
 
     uc.table("c.s.t").delete().await.unwrap();
     rejected(uc.table("c.s.t").get().await, 404, "TABLE_NOT_FOUND");

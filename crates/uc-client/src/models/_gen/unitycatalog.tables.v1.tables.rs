@@ -3937,6 +3937,410 @@ pub const __GET_TABLE_REQUEST_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
         is_wkt: false,
     };
 
+/// A new comment for a column of a table.
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct UpdateColumn {
+    /// Name of the column.
+    ///
+    /// Field 1: `name`
+    #[serde(
+        rename = "name",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub name: ::buffa::alloc::string::String,
+    /// New comment of the column. Empty clears it.
+    ///
+    /// Field 2: `comment`
+    #[serde(
+        rename = "comment",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub comment: ::buffa::alloc::string::String,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for UpdateColumn {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("UpdateColumn")
+            .field("name", &self.name)
+            .field("comment", &self.comment)
+            .finish()
+    }
+}
+
+impl UpdateColumn {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str = "type.googleapis.com/unitycatalog.tables.v1.UpdateColumn";
+}
+
+impl ::buffa::DefaultInstance for UpdateColumn {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<UpdateColumn> =
+            ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for UpdateColumn {
+    const PACKAGE: &'static str = "unitycatalog.tables.v1";
+    const NAME: &'static str = "UpdateColumn";
+    const FULL_NAME: &'static str = "unitycatalog.tables.v1.UpdateColumn";
+    const TYPE_URL: &'static str = "type.googleapis.com/unitycatalog.tables.v1.UpdateColumn";
+}
+
+impl ::buffa::Message for UpdateColumn {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if !self.name.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.name) as u32;
+        }
+        if !self.comment.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.comment) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, _cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if !self.name.is_empty() {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.name, buf);
+        }
+        if !self.comment.is_empty() {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.comment, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.name, buf)?;
+            }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.comment, buf)?;
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.name.clear();
+        self.comment.clear();
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for UpdateColumn {
+    const PROTO_FQN: &'static str = "unitycatalog.tables.v1.UpdateColumn";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for UpdateColumn {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __UPDATE_COLUMN_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.tables.v1.UpdateColumn",
+        to_json: ::buffa::type_registry::any_to_json::<UpdateColumn>,
+        from_json: ::buffa::type_registry::any_from_json::<UpdateColumn>,
+        is_wkt: false,
+    };
+
+/// New comments for a table and its columns. Upstream's API has no table update.
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct UpdateTable {
+    /// Full name of the table, in the form `<catalog>.<schema>.<table>`.
+    ///
+    /// Field 1: `full_name`
+    #[serde(
+        rename = "full_name",
+        alias = "fullName",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub full_name: ::buffa::alloc::string::String,
+    /// User-provided free-form text description.
+    ///
+    /// Field 2: `comment`
+    #[serde(
+        rename = "comment",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub comment: ::core::option::Option<::buffa::alloc::string::String>,
+    /// Columns that get a new comment; the others keep theirs.
+    ///
+    /// Field 3: `columns`
+    #[serde(
+        rename = "columns",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+        deserialize_with = "::buffa::json_helpers::null_as_default"
+    )]
+    pub columns: ::buffa::alloc::vec::Vec<UpdateColumn>,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for UpdateTable {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("UpdateTable")
+            .field("full_name", &self.full_name)
+            .field("comment", &self.comment)
+            .field("columns", &self.columns)
+            .finish()
+    }
+}
+
+impl UpdateTable {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str = "type.googleapis.com/unitycatalog.tables.v1.UpdateTable";
+}
+
+impl UpdateTable {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::comment`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_comment(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.comment = Some(value.into());
+        self
+    }
+}
+
+impl ::buffa::DefaultInstance for UpdateTable {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<UpdateTable> = ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for UpdateTable {
+    const PACKAGE: &'static str = "unitycatalog.tables.v1";
+    const NAME: &'static str = "UpdateTable";
+    const FULL_NAME: &'static str = "unitycatalog.tables.v1.UpdateTable";
+    const TYPE_URL: &'static str = "type.googleapis.com/unitycatalog.tables.v1.UpdateTable";
+}
+
+impl ::buffa::Message for UpdateTable {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if !self.full_name.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.full_name) as u32;
+        }
+        if let Some(ref v) = self.comment {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        for v in &self.columns {
+            let __slot = __cache.reserve();
+            let inner_size = v.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, __cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if !self.full_name.is_empty() {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.full_name, buf);
+        }
+        if let Some(ref v) = self.comment {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        for v in &self.columns {
+            ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            v.write_to(__cache, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.full_name, buf)?;
+            }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.comment
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            3u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 3u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                let mut elem = ::core::default::Default::default();
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                self.columns.push(elem);
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.full_name.clear();
+        self.comment = ::core::option::Option::None;
+        self.columns.clear();
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for UpdateTable {
+    const PROTO_FQN: &'static str = "unitycatalog.tables.v1.UpdateTable";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for UpdateTable {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __UPDATE_TABLE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.tables.v1.UpdateTable",
+        to_json: ::buffa::type_registry::any_to_json::<UpdateTable>,
+        from_json: ::buffa::type_registry::any_from_json::<UpdateTable>,
+        is_wkt: false,
+    };
+
 #[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct DeleteTableRequest {

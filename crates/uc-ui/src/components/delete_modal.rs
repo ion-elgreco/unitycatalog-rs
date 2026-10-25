@@ -1,12 +1,15 @@
-//! "Delete …" in a detail page's menu, as upstream's `Delete*Modal`: a
-//! question, then the call. After it, a toast, the list that lost the
-//! object loads again, and the UI goes to the parent page.
+//! "Delete" in a detail page's actions, as the console's
+//! `OwnerDeleteAction`: a dialog that asks for the object's name, then the
+//! call. After it, a toast, the list that lost the object loads again, and
+//! the UI goes to the parent page.
 //!
 //! The server deletes a catalog, schema or model only when it holds
-//! nothing, unless the call sets `force`; upstream's UI never sets it. Here
-//! an admin (see [`crate::auth::Session::is_admin`]) gets a box that sets
-//! it, in two steps: with the box on, the dialog counts what goes with the
-//! object, and Delete asks again, in a second dialog over the first.
+//! nothing, unless the call sets `force`; the console never sets it. Here,
+//! for an admin (see [`crate::auth::Session::is_admin`]), the dialog counts
+//! what the object holds when it opens. An object that holds something
+//! gets a box that sets `force`: the delete waits for it, and asks again,
+//! in a second dialog over the first. An object that holds nothing gets
+//! neither.
 
 use std::future::Future;
 
@@ -14,6 +17,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 
+use super::icons::Trash2;
 use crate::api;
 use crate::auth::use_auth;
 use crate::components::{Modal, use_notify};
@@ -25,13 +29,8 @@ pub fn DeleteModal<F, Fut>(
     open: RwSignal<bool>,
     /// What is deleted, such as "catalog".
     noun: &'static str,
-    /// The question, before the name: upstream's text, such as "Are you
-    /// sure you want to delete the catalog".
-    question: &'static str,
-    /// The name in the question.
+    /// The name to type, as the console asks for it: the object's own.
     name: String,
-    /// The subject of the toast, such as "main catalog".
-    label: String,
     /// Delete the object; with `force`, also what it holds.
     delete: F,
     /// The object, which the UI forgets.
@@ -56,7 +55,9 @@ where
 {
     let busy = RwSignal::new(false);
     let forced = RwSignal::new(false);
-    // What goes with the object: counted when the box goes on. A newer
+    // The name as typed: the delete waits for the whole of it.
+    let typed = RwSignal::new(String::new());
+    // What goes with the object: counted when the dialog opens. A newer
     // count wins.
     let counted: RwSignal<Option<Load<Contents>>> = RwSignal::new(None);
     let counts = StoredValue::new(0u64);
@@ -67,6 +68,7 @@ where
     let auth = use_auth();
     let navigate = use_navigate();
     let holder = StoredValue::new(holder);
+    let expected = StoredValue::new(name.clone());
     let can_force =
         move || holder.with_value(Option::is_some) && auth.session.with(|s| s.is_admin());
     let close = move || {
@@ -74,9 +76,10 @@ where
         confirming.set(false);
         forced.set(false);
         counted.set(None);
+        typed.set(String::new());
     };
     let count = move || {
-        if counted.get_untracked().is_some() {
+        if counted.get_untracked().is_some() || !untrack(can_force) {
             return;
         }
         let Some(holder) = holder.get_value() else {
@@ -98,7 +101,6 @@ where
     };
     let run = move |force: bool| {
         let delete = delete.clone();
-        let label = label.clone();
         let key = key.clone();
         let list = list.clone();
         let then = then.clone();
@@ -111,7 +113,7 @@ where
         spawn_local(async move {
             match delete(force).await {
                 Ok(()) => {
-                    notify.success(format!("{label} successfully deleted"));
+                    notify.success(format!("{noun} deleted"));
                     if let Some(list) = list {
                         cache.changed(list);
                     }
@@ -130,6 +132,11 @@ where
             busy.set(false);
         });
     };
+    Effect::new(move |_| {
+        if open.get() {
+            count();
+        }
+    });
     // The first step: without the box, the delete; with it, the second
     // step.
     let on_ok = {
@@ -140,6 +147,17 @@ where
         }
     };
     let counting = move || matches!(counted.get(), Some(Load::Loading));
+    // What the count found: something, which the delete takes only with
+    // the box on, or nothing.
+    let holds = move || {
+        counted
+            .with(|c| matches!(c, Some(Load::Ready(contents)) if *contents != Contents::default()))
+    };
+    let empty = move || {
+        counted
+            .with(|c| matches!(c, Some(Load::Ready(contents)) if *contents == Contents::default()))
+    };
+    let named = move || typed.with(|typed| expected.with_value(|name| typed == name));
     // The second step, by what the count found.
     let summary = {
         let name = name.clone();
@@ -156,91 +174,120 @@ where
             format!("This deletes {what} {name}{held}. {data}")
         }
     };
+    let prompt = format!("Enter {name} to confirm");
     view! {
         <Modal
             open
-            title=format!("Delete {noun}")
-            ok_text="Delete"
+            title=format!("Delete {noun}?")
+            ok_text="Delete permanently"
+            busy_text="Deleting…"
             danger=true
             busy=Signal::derive(move || busy.get() && !confirming.get())
             disabled=Signal::derive(move || {
-                (blocked.get().is_some() && !forced.get()) || (forced.get() && counting())
+                !named()
+                    || counting()
+                    || (holds() && !forced.get())
+                    || (blocked.get().is_some() && !forced.get() && !empty())
             })
             on_cancel=move || close()
             on_ok
         >
             {
                 let name = name.clone();
-                move || match (blocked.get(), forced.get()) {
-                    (Some(reason), false) => view! { <span>{reason}</span> }.into_any(),
+                move || match (blocked.get(), forced.get() || empty()) {
+                    (Some(reason), false) => view! { <p class="uc-muted">{reason}</p> }.into_any(),
                     _ => {
                         view! {
-                            <span>{question}</span>
-                            <span class="uc-text-strong">{format!(" {name}")}</span>
-                            <span>"? This operation cannot be undone."</span>
+                            <p class="uc-muted">
+                                "This cannot be undone. Enter "
+                                <strong>{name.clone()}</strong>
+                                " to confirm."
+                            </p>
                         }
                             .into_any()
                     }
                 }
             }
-            {move || {
-                can_force()
-                    .then(|| {
-                        let label = holder.with_value(|h| h.as_ref().map(Holder::force_label));
-                        view! {
-                            <label class="uc-checkbox">
-                                <input
-                                    type="checkbox"
-                                    prop:checked=move || forced.get()
-                                    on:change=move |e| {
-                                        let on = event_target_checked(&e);
-                                        forced.set(on);
-                                        if on {
-                                            count();
-                                        }
-                                    }
-                                />
-                                <span>{label}</span>
-                            </label>
-                        }
-                    })
-            }}
-            {move || forced.get().then(|| view! { <ForceNote counted holder/> })}
+            <input
+                class="uc-input"
+                type="text"
+                aria-label=prompt.clone()
+                autocomplete="off"
+                prop:value=move || typed.get()
+                on:input=move |e| typed.set(event_target_value(&e))
+            />
+            {move || can_force().then(|| view! { <ForceChoice counted holder forced/> })}
         </Modal>
         <Modal
             open=confirming
             title="Are you sure?"
             ok_text="Delete everything"
+            busy_text="Deleting…"
             danger=true
             busy
             on_cancel=move || confirming.set(false)
             on_ok=move || run(true)
         >
             <p>{summary.clone()}</p>
-            <p class="uc-text-strong">"This operation cannot be undone."</p>
+            <p class="uc-strong">"This cannot be undone."</p>
         </Modal>
     }
 }
 
-/// The first step's count, under the box: what the delete takes along.
+/// "Delete" in a page's actions, for those who manage the object (`when`):
+/// it opens the modal.
 #[component]
-fn ForceNote(
+pub fn DeleteButton(open: RwSignal<bool>, when: Memo<bool>) -> impl IntoView {
+    view! {
+        <Show when=move || when.get()>
+            <button
+                type="button"
+                class="uc-btn uc-btn--destructive uc-btn--sm"
+                on:click=move |_| open.set(true)
+            >
+                <Trash2/>
+                "Delete"
+            </button>
+        </Show>
+    }
+}
+
+/// The first step's count, and the box that deletes what it found too.
+/// Nothing for an object that holds nothing.
+#[component]
+fn ForceChoice(
     counted: RwSignal<Option<Load<Contents>>>,
     holder: StoredValue<Option<Holder>>,
+    forced: RwSignal<bool>,
 ) -> impl IntoView {
     let what = holder.with_value(|h| h.as_ref().map(Holder::noun).unwrap_or("it"));
+    let label = holder.with_value(|h| h.as_ref().map(Holder::force_label).unwrap_or_default());
     move || {
-        let text = match counted.get() {
-            None | Some(Load::Loading) => format!("Counting what {what} holds…"),
+        let note = match counted.get() {
+            None | Some(Load::Loading) => {
+                let text = format!("Counting what {what} holds…");
+                return view! { <p class="uc-hint">{text}</p> }.into_any();
+            }
             Some(Load::Ready(contents)) => match contents.describe() {
-                Some(text) => format!("This also deletes {text}."),
-                None => format!("{} holds nothing else.", capitalized(what)),
+                Some(text) => format!("{} holds {text}.", capitalized(what)),
+                None => return ().into_any(),
             },
             Some(Load::Failed(message)) => {
                 format!("The UI could not count what {what} holds: {message}")
             }
         };
-        view! { <p class="uc-force-note">{text}</p> }
+        view! {
+            <p class="uc-hint">{note}</p>
+            <label class="uc-checkbox">
+                <input
+                    type="checkbox"
+                    prop:checked=move || forced.get()
+                    on:change=move |e| forced.set(event_target_checked(&e))
+                />
+                <span>{label}</span>
+            </label>
+        }
+        .into_any()
     }
 }
 

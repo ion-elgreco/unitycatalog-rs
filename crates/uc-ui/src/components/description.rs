@@ -1,24 +1,35 @@
-//! An object's description and its "Edit description" modal, as upstream's
-//! `DescriptionBox` with an `Edit*DescriptionModal`.
+//! An object's comment, as the console's `DescriptionCard`, with its
+//! "Edit" button and dialog.
 
 use std::future::Future;
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use super::icons::EditOutlined;
+use super::card::Card;
+use super::field::TextArea;
+use super::icons::Pencil;
 use crate::api;
 use crate::components::{Modal, use_notify};
 
+/// The comment, else "No description provided.".
 #[component]
-pub fn Description<F, Fut>(
+pub fn Description(#[prop(into)] comment: Signal<String>) -> impl IntoView {
+    view! {
+        <Show
+            when=move || comment.with(|c| !c.is_empty())
+            fallback=|| view! { <p class="uc-empty">"No description provided."</p> }
+        >
+            <p class="uc-prewrap">{move || comment.get()}</p>
+        </Show>
+    }
+}
+
+#[component]
+pub fn DescriptionCard<F, Fut>(
     #[prop(into)] comment: Signal<String>,
     /// What is described, such as "catalog".
     noun: &'static str,
-    /// The line above the field, such as "Catalog description".
-    hint: &'static str,
-    /// The subject of the toast, such as "main catalog".
-    label: String,
     /// Save a new comment.
     save: F,
 ) -> impl IntoView
@@ -36,13 +47,12 @@ where
     };
     let on_ok = move || {
         let save = save.clone();
-        let label = label.clone();
         let value = text.get_untracked();
         busy.set(true);
         spawn_local(async move {
             match save(value).await {
                 Ok(()) => {
-                    notify.success(format!("{label} successfully updated"));
+                    notify.success("Description updated");
                     open.set(false);
                 }
                 Err(e) => notify.failed(&e, &format!("Failed to update {noun}")),
@@ -50,24 +60,19 @@ where
             busy.set(false);
         });
     };
-    let has_comment = move || comment.with(|c| !c.is_empty());
     view! {
-        <div>
-            <h5 class="uc-title-5">
-                "Description "
-                <Show when=has_comment>
-                    <button type="button" class="uc-icon-btn" title="Edit description" on:click=edit>
-                        <EditOutlined/>
-                    </button>
-                </Show>
-            </h5>
-            <div class="uc-text-secondary uc-pre-wrap">{move || comment.get()}</div>
-            <Show when=move || !has_comment()>
-                <button type="button" class="uc-btn" on:click=edit>
-                    "Add description"
+        <Card
+            title="Description"
+            actions=view! {
+                <button type="button" class="uc-btn uc-btn--outline uc-btn--sm" on:click=edit>
+                    <Pencil/>
+                    "Edit"
                 </button>
-            </Show>
-        </div>
+            }
+                .into_any()
+        >
+            <Description comment/>
+        </Card>
         <Modal
             open
             title="Edit description"
@@ -76,14 +81,7 @@ where
             on_cancel=move || open.set(false)
             on_ok
         >
-            <p class="uc-text-secondary">{hint}</p>
-            <div class="uc-form-item">
-                <textarea
-                    class="uc-textarea"
-                    prop:value=move || text.get()
-                    on:input=move |e| text.set(event_target_value(&e))
-                />
-            </div>
+            <TextArea id="uc-description" label="Description" value=text/>
         </Modal>
     }
 }

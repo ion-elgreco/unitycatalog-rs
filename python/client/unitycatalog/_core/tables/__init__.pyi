@@ -16,6 +16,7 @@ __all__ = [
     "TableClient",
     "TableDependency",
     "TableInfo",
+    "UpdateColumn",
 ]
 
 @typing.final
@@ -232,6 +233,31 @@ class TableClient:
         r"""
         Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
+    def update(
+        self,
+        *,
+        comment: typing.Optional[builtins.str] = None,
+        columns: typing.Optional[typing.Sequence[UpdateColumn]] = None,
+    ) -> TableInfo:
+        r"""
+        Change the comments of a table and its columns.
+
+        Args:
+            comment: User-provided free-form text description.
+            columns: Columns that get a new comment; the others keep theirs.
+
+        Returns:
+            A table: data in the third layer of the three-level namespace, below a schema.
+        """
+    def update_async(
+        self,
+        *,
+        comment: typing.Optional[builtins.str] = None,
+        columns: typing.Optional[typing.Sequence[UpdateColumn]] = None,
+    ) -> asyncio.Future[TableInfo]:
+        r"""
+        Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
     def delete(self) -> None:
         r"""
         Delete a table.
@@ -346,4 +372,23 @@ class TableInfo:
         The tables and functions that a view-like table reads.
         """
     def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
+class UpdateColumn:
+    r"""
+    A new comment for a column of a table.
+    """
+    @property
+    def name(self) -> builtins.str:
+        r"""
+        Name of the column.
+        """
+    @property
+    def comment(self) -> builtins.str:
+        r"""
+        New comment of the column. Empty clears it.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(cls, name: builtins.str, comment: builtins.str) -> UpdateColumn: ...
     def __repr__(self) -> builtins.str: ...

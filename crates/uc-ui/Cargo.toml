@@ -21,6 +21,9 @@ futures.workspace = true
 leptos = { version = "0.7", features = ["csr"] }
 leptos_router = "0.7"
 gloo-timers = { version = "0.3", features = ["futures"] }
+percent-encoding = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 wasm-bindgen = "=0.2.121"
 js-sys = "=0.3.98"
 wasm-bindgen-futures = "=0.4.71"
@@ -43,6 +46,7 @@ web-sys = { version = "=0.3.98", features = [
     "Navigator",
     "Node",
     "NodeList",
+    "Storage",
     "VisibilityState",
     "Window",
 ] }

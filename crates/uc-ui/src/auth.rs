@@ -6,8 +6,8 @@
 //! through the auth proxy in front of it.
 //!
 //! A session can end while the page is open, so the UI asks again when the
-//! window gets the focus, as upstream does, and when a call fails with 401
-//! or 403 ([`check_again`]).
+//! window gets the focus, and when a call fails with 401 or 403
+//! ([`check_again`]).
 //!
 //! `GET /auth/mode` says how the browser signs in, and where "Log out"
 //! goes: the login page and the profile menu show only what works. The UI
@@ -100,6 +100,22 @@ impl Session {
         match self {
             Session::User(user) => Some(user.as_ref()),
             _ => None,
+        }
+    }
+
+    /// The signed-in user's principal, as the server names owners and
+    /// grantees: their email.
+    pub fn principal(&self) -> Option<&str> {
+        self.user().map(|user| user.user_name.as_str())
+    }
+
+    /// Whether the user may manage `owner`'s object: its owner, or an
+    /// admin. Without a user, authorization is off.
+    pub fn manages(&self, owner: Option<&str>) -> bool {
+        match self {
+            Session::User(user) => self.is_admin() || owner == Some(user.user_name.as_str()),
+            Session::Anonymous => true,
+            Session::Unknown | Session::SignedOut | Session::Denied(_) => false,
         }
     }
 
@@ -201,6 +217,16 @@ pub fn provide_auth() {
 
 pub fn use_auth() -> Auth {
     expect_context::<Auth>()
+}
+
+/// Whether the user may manage the object of `owner`: its owner, or an
+/// admin (see [`Session::manages`]).
+pub fn use_manages(owner: Signal<Option<String>>) -> Memo<bool> {
+    let auth = use_auth();
+    Memo::new(move |_| {
+        auth.session
+            .with(|s| owner.with(|o| s.manages(o.as_deref())))
+    })
 }
 
 /// A call failed with 401 or 403: the session may have ended, so ask the

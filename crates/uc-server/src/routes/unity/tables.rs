@@ -2,7 +2,9 @@ use crate::http::extract::{Json, Path, Query};
 use axum::{extract::State, http::StatusCode};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-use uc_api::{CreateStagingTable, CreateTable, ListTablesResponse, StagingTableInfo, TableInfo};
+use uc_api::{
+    CreateStagingTable, CreateTable, ListTablesResponse, StagingTableInfo, TableInfo, UpdateTable,
+};
 use uc_common::{
     PageToken, SchemaScopedListParams as ListTablesParams, SecurableType, schema_full_name,
 };
@@ -122,6 +124,40 @@ pub async fn get_table(
 }
 
 #[utoipa::path(
+    patch,
+    path = "/tables/{full_name}",
+    params(("full_name" = String, Path)),
+    request_body = UpdateTable,
+    responses(
+        (status = 200, body = TableInfo),
+        (status = 404, description = "Table or column not found"),
+    ),
+    tag = "Tables",
+)]
+pub async fn update_table(
+    State(state): State<AppState>,
+    principal: Principal,
+    Path(full_name): Path<String>,
+    Json(req): Json<UpdateTable>,
+) -> ApiResult<Json<TableInfo>> {
+    authz::check(
+        &state,
+        &principal.username,
+        SecurableType::Table,
+        &full_name,
+        rules::own_child,
+    )
+    .await?;
+    Ok(Json(
+        state
+            .metastore
+            .tables()
+            .update(&full_name, req, principal.actor())
+            .await?,
+    ))
+}
+
+#[utoipa::path(
     delete,
     path = "/tables/{full_name}",
     params(("full_name" = String, Path)),
@@ -188,7 +224,7 @@ pub async fn create_staging_table(
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(create_table, list_tables))
-        .routes(routes!(get_table, delete_table))
+        .routes(routes!(get_table, update_table, delete_table))
 }
 
 pub fn staging_router() -> OpenApiRouter<AppState> {

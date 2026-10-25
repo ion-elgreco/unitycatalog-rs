@@ -11,10 +11,12 @@
 //!   ([`Cache::changed`], [`Cache::set`], [`Cache::forget`]): the views
 //!   that show them load them again at once.
 //! - A load that fails without an answer, or with 408, 429 or 5xx, is
-//!   tried 3 more times, after 1, 2 and 4 s, as react-query's default
-//!   retry. Other failures show at once: a 404 does not pass.
+//!   tried 3 more times, after 1, 2 and 4 s (the console does not retry).
+//!   Other failures show at once: a 404 does not pass.
 //! - One load runs per value, for all its views. While a value loads again,
-//!   and after a failed load, its views keep what they show.
+//!   and after a failed load, its views keep what they show; a page's
+//!   Reload button says that it loads, and why it failed
+//!   ([`Cache::progress`]).
 //!
 //! A load runs in a task that no page owns. Its answer goes into the cache,
 //! and from there into the signals of the views; a view's signal is
@@ -29,6 +31,7 @@ use std::time::Duration;
 use leptos::ev;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use uc_common::SecurableType;
 
 use crate::api;
 use crate::kind::Kind;
@@ -49,6 +52,15 @@ impl<T> Load<T> {
             _ => None,
         }
     }
+}
+
+/// Whether a value loads, and why its last load failed: what a Reload
+/// button shows.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Progress {
+    pub loading: bool,
+    /// The server's message, else what failed.
+    pub failure: Option<String>,
 }
 
 /// A part of a loaded value, as a signal: `U::default()` while the value
@@ -82,13 +94,23 @@ pub enum Key {
     /// The versions of a registered model, by its full name.
     Versions(String),
     Version(String, i64),
+    /// The grants on a securable, by its full name.
+    Permissions(SecurableType, String),
     /// The signed-in user's access tokens.
     Tokens,
+    Credentials,
+    Credential(String),
+    ExternalLocations,
+    ExternalLocation(String),
+    Users,
+    Groups,
+    /// A group, by its id.
+    Group(String),
 }
 
 impl Key {
     /// What the UI says when the load fails and the server's answer has no
-    /// message: upstream's `errorMessage`.
+    /// message: the old console's `errorMessage` texts.
     fn failure(&self) -> &'static str {
         match self {
             Key::Catalogs => "Failed to fetch catalogs",
@@ -105,7 +127,15 @@ impl Key {
             Key::Model(_) => "Failed to fetch model",
             Key::Versions(_) => "Failed to list model versions",
             Key::Version(..) => "Failed to fetch model version",
+            Key::Permissions(..) => "Failed to fetch permissions",
             Key::Tokens => "Failed to list access tokens",
+            Key::Credentials => "Failed to list credentials",
+            Key::Credential(_) => "Failed to fetch credential",
+            Key::ExternalLocations => "Failed to list external locations",
+            Key::ExternalLocation(_) => "Failed to fetch external location",
+            Key::Users => "Failed to list users",
+            Key::Groups => "Failed to list groups",
+            Key::Group(_) => "Failed to fetch group",
         }
     }
 }
@@ -127,6 +157,7 @@ struct Entry {
     running: Option<u64>,
     /// The views of the value check it again when this fires.
     check: ArcTrigger,
+    progress: ArcRwSignal<Progress>,
 }
 
 impl Entry {
@@ -135,7 +166,15 @@ impl Entry {
             value: ArcRwSignal::new(Load::Loading),
             running: None,
             check: ArcTrigger::new(),
+            progress: ArcRwSignal::new(Progress::default()),
         }
+    }
+}
+
+/// A load was dropped: none runs until the next one starts.
+fn not_loading(progress: &ArcRwSignal<Progress>) {
+    if progress.with_untracked(|p| p.loading) {
+        progress.update(|p| p.loading = false);
     }
 }
 
@@ -150,31 +189,69 @@ pub struct Cache {
 impl Cache {
     /// `key` gained or lost an item, or changed: its views load it again.
     pub fn changed(&self, key: Key) {
-        let check = self.with_entry(&key, |entry| {
+        let (check, progress) = self.with_entry(&key, |entry| {
             // An answer that the change may have outdated is dropped.
             entry.running = None;
-            entry.check.clone()
+            (entry.check.clone(), entry.progress.clone())
         });
+        not_loading(&progress);
         check.notify();
     }
 
     /// `key`'s new value, from the answer of an edit.
     pub fn set<T: Send + Sync + 'static>(&self, key: Key, value: T) {
-        let signal = self.with_entry(&key, |entry| {
+        let (signal, progress) = self.with_entry(&key, |entry| {
             entry.running = None;
-            entry.value.clone()
+            (entry.value.clone(), entry.progress.clone())
         });
         signal.set(Load::Ready(Arc::new(value)));
+        progress.set(Progress::default());
+    }
+
+    /// `key`'s new value, from the answer of an edit that may have renamed
+    /// the object: then `renamed` is its key now and the list that names
+    /// it, which loads again.
+    pub fn edited<T: Send + Sync + 'static>(
+        &self,
+        key: Key,
+        value: T,
+        renamed: Option<(Key, Key)>,
+    ) {
+        match renamed {
+            Some((new_key, list)) => {
+                self.forget(key);
+                self.changed(list);
+                self.set(new_key, value);
+            }
+            None => self.set(key, value),
+        }
     }
 
     /// `key` is gone, such as a deleted object: a view of it loads it
     /// again.
     pub fn forget(&self, key: Key) {
-        let signal = self.with_entry(&key, |entry| {
+        let (signal, progress) = self.with_entry(&key, |entry| {
             entry.running = None;
-            entry.value.clone()
+            (entry.value.clone(), entry.progress.clone())
         });
         signal.set(Load::Loading);
+        progress.set(Progress::default());
+    }
+
+    /// How the loads of `keys` go, together: whether one runs, and the
+    /// first failure. A view that calls it follows them.
+    pub fn progress(&self, keys: &[Key]) -> Progress {
+        keys.iter()
+            .map(|key| self.with_entry(key, |entry| entry.progress.clone()))
+            .fold(Progress::default(), |mut all, progress| {
+                progress.with(|p| {
+                    all.loading |= p.loading;
+                    if all.failure.is_none() {
+                        all.failure = p.failure.clone();
+                    }
+                });
+                all
+            })
     }
 
     /// Each value with a view loads again.
@@ -205,14 +282,15 @@ impl Cache {
         let number = self.loads.get_value();
         let start = self.with_entry(key, |entry| {
             if entry.running.is_some() {
-                return false;
+                return None;
             }
             entry.running = Some(number);
-            true
+            Some(entry.progress.clone())
         });
-        if !start {
+        let Some(progress) = start else {
             return;
-        }
+        };
+        progress.update(|p| p.loading = true);
         let cache = *self;
         let key = key.clone();
         spawn_local(async move {
@@ -227,16 +305,24 @@ impl Cache {
             let Some(signal) = current else {
                 return;
             };
-            match answer {
-                Ok(value) => signal.set(Load::Ready(Arc::new(value))),
+            let failure = match answer {
+                Ok(value) => {
+                    signal.set(Load::Ready(Arc::new(value)));
+                    None
+                }
                 // Upstream keeps showing the value it has.
                 Err(e) => {
                     let message = api::failure(&e, key.failure());
                     if signal.with_untracked(|v| v.ready().is_none()) {
-                        signal.set(Load::Failed(message));
+                        signal.set(Load::Failed(message.clone()));
                     }
+                    Some(message)
                 }
-            }
+            };
+            progress.set(Progress {
+                loading: false,
+                failure,
+            });
         });
     }
 }

@@ -1,7 +1,7 @@
-//! What a catalog, schema or registered model holds: what a delete with
-//! `force` removes along with it, as the server cascades it. The UI counts
-//! it with the API's lists ([`uc_client::Contents`]) before an admin
-//! confirms such a delete.
+//! What a catalog, schema, registered model or credential holds: what a
+//! delete with `force` removes along with it, as the server cascades it.
+//! The UI counts it with the API's lists ([`uc_client::Contents`]) before
+//! an admin confirms such a delete.
 
 pub use uc_client::Contents;
 
@@ -18,6 +18,8 @@ pub enum Holder {
     Schema(String, String),
     /// A registered model, by its full name.
     Model(String),
+    /// A credential: it holds the external locations bound to it.
+    Credential(String),
 }
 
 impl Holder {
@@ -29,6 +31,7 @@ impl Holder {
             }
             Holder::Schema(..) => "Also delete its tables, volumes, functions and models",
             Holder::Model(_) => "Also delete its versions",
+            Holder::Credential(_) => "Also delete the external locations bound to it",
         }
     }
 
@@ -38,6 +41,7 @@ impl Holder {
             Holder::Catalog(_) => "the catalog",
             Holder::Schema(..) => "the schema",
             Holder::Model(_) => "the model",
+            Holder::Credential(_) => "the credential",
         }
     }
 
@@ -48,6 +52,7 @@ impl Holder {
                 "The data of managed tables and volumes, and of models, goes too."
             }
             Holder::Model(_) => "The data of its versions goes too.",
+            Holder::Credential(_) => "The data at those locations stays.",
         }
     }
 
@@ -60,6 +65,7 @@ impl Holder {
                 .map(|kind| Key::Entries(catalog.clone(), schema.clone(), kind))
                 .collect(),
             Holder::Model(full_name) => vec![Key::Versions(full_name.clone())],
+            Holder::Credential(_) => vec![Key::ExternalLocations],
         }
     }
 
@@ -70,6 +76,7 @@ impl Holder {
             Holder::Catalog(catalog) => client.catalog_contents(&catalog).await,
             Holder::Schema(catalog, schema) => client.schema_contents(&catalog, &schema).await,
             Holder::Model(full_name) => client.model_contents(&full_name).await,
+            Holder::Credential(name) => client.credential_contents(&name).await,
         }
     }
 }

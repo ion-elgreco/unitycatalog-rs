@@ -1,16 +1,28 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-color-mode="auto">
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#171717" />
     <meta
       name="description"
       content="Unity Catalog: browse and manage catalogs, schemas, tables, volumes, functions and models."
     />
     <link rel="manifest" href="/manifest.json" />
     <title>Unity Catalog</title>
+    <script>
+      // The kept color mode, before the first paint: no flash of the other
+      // mode. `theme.rs` keeps the same key.
+      (function () {
+        try {
+          var mode = localStorage.getItem("uc-ui-color-mode");
+          if (mode !== "light" && mode !== "dark" && mode !== "auto") mode = "auto";
+          document.documentElement.dataset.colorMode = mode;
+        } catch (e) {}
+      })();
+    </script>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>

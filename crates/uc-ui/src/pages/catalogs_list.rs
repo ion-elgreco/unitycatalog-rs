@@ -1,64 +1,81 @@
-//! The home page, as upstream's `pages/CatalogsList.tsx`: the list of
-//! catalogs, where a click on a row opens its page, and "Create Catalog".
+//! The home page, as the console's `CatalogsList`: a card per catalog, and
+//! "Create catalog".
 
 use leptos::prelude::*;
-use leptos_router::hooks::use_navigate;
 use uc_client::models::catalogs::v1::CatalogInfo;
 
 use crate::api;
-use crate::components::CreateModal;
-use crate::layout::{Column, ListLayout};
+use crate::components::icons::Plus;
+use crate::components::{CreateModal, Empty, NewObject, loaded_list};
+use crate::kind::catalog_icon;
 use crate::load::{Key, use_load};
-use crate::util::format_timestamp;
+use crate::util::{catalog_href, format_timestamp};
 
 #[component]
 pub fn CatalogsList() -> impl IntoView {
     let catalogs = use_load(Key::Catalogs, api::catalogs);
     let create_open = RwSignal::new(false);
-    let navigate = use_navigate();
-
-    let columns = vec![
-        Column {
-            title: "Name",
-            width: "60%",
-            center: false,
-            render: Box::new(|c: &CatalogInfo| view! { <span>{c.name.clone()}</span> }.into_any()),
-            search_key: Some(Box::new(|c: &CatalogInfo| c.name.clone())),
-        },
-        Column {
-            title: "Created At",
-            width: "40%",
-            center: false,
-            render: Box::new(|c: &CatalogInfo| {
-                view! { <span>{format_timestamp(c.created_at)}</span> }.into_any()
-            }),
-            search_key: None,
-        },
-    ];
-
-    let on_row_click = Callback::new(move |catalog: CatalogInfo| {
-        navigate(&format!("/data/{}", catalog.name), Default::default());
-    });
-
+    let cards = move || {
+        let empty = Empty::new(
+            "No catalogs yet.",
+            "A catalog is the top of the hierarchy: it holds schemas, which hold tables, volumes, functions and models. Click Create catalog to make the first one.",
+        );
+        loaded_list(catalogs.get(), empty, |list| {
+            view! {
+                <div class="uc-grid">
+                    {list.into_iter().map(|c| view! { <CatalogCard catalog=c/> }).collect_view()}
+                </div>
+            }
+            .into_any()
+        })
+    };
     view! {
-        <div class="uc-flex-col uc-gap-md uc-grow">
-            <div class="uc-flex uc-justify-between uc-items-start uc-gap-md">
-                <h2 class="uc-title-2">"Catalogs"</h2>
-                <button class="uc-btn uc-btn--primary" on:click=move |_| create_open.set(true)>
-                    "Create Catalog"
+        <div class="uc-page">
+            <div class="uc-between">
+                <h1 class="uc-page__title">"Catalogs"</h1>
+                <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>
+                    <Plus/>
+                    "Create catalog"
                 </button>
             </div>
-            <ListLayout data=catalogs columns on_row_click/>
+            {cards}
             <CreateModal
                 open=create_open
                 noun="catalog"
-                hint="Create catalog description"
-                create=|name, comment| async move {
-                    let catalog = api::client().create_catalog(name).with_comment(comment).await?;
-                    Ok(format!("/data/{}", catalog.name))
+                storage_root=true
+                create=|form: NewObject| async move {
+                    api::client()
+                        .create_catalog(form.name)
+                        .with_comment(form.comment)
+                        .with_storage_root(form.location)
+                        .await?;
+                    Ok(())
                 }
                 list=Key::Catalogs
             />
         </div>
+    }
+}
+
+#[component]
+fn CatalogCard(catalog: CatalogInfo) -> impl IntoView {
+    let name = catalog.name;
+    let href = catalog_href(&name);
+    let updated = format_timestamp(match catalog.updated_at {
+        0 => catalog.created_at,
+        at => at,
+    });
+    view! {
+        <a class="uc-card uc-card--link" href=href>
+            <span class="uc-card__name">
+                {catalog_icon()}
+                <span class="uc-truncate">{name}</span>
+            </span>
+            {catalog
+                .comment
+                .filter(|c| !c.is_empty())
+                .map(|comment| view! { <p class="uc-card__comment">{comment}</p> })}
+            <p class="uc-small">{format!("Updated {updated}")}</p>
+        </a>
     }
 }

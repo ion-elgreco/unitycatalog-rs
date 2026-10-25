@@ -9,13 +9,19 @@ use std::cmp::Reverse;
 
 use futures::TryStreamExt;
 use uc_client::Client;
+use uc_client::error::ApiError;
 use uc_client::models::catalogs::v1::CatalogInfo;
+use uc_client::models::credentials::v1::CredentialInfo;
+use uc_client::models::external_locations::v1::ExternalLocationInfo;
 use uc_client::models::functions::v1::FunctionInfo;
 use uc_client::models::models::v1::{ModelVersionInfo, RegisteredModelInfo};
+use uc_client::models::permissions::v1::{PermissionsChange, PermissionsList, PrivilegeAssignment};
 use uc_client::models::schemas::v1::SchemaInfo;
+use uc_client::models::scim::v1::{ScimGroup, ScimUser};
 use uc_client::models::tables::v1::TableInfo;
 use uc_client::models::tokens::v1::PatInfo;
 use uc_client::models::volumes::v1::VolumeInfo;
+use uc_common::SecurableType;
 
 pub use uc_client::error::{Error, Result};
 
@@ -108,6 +114,107 @@ pub async fn model_versions(full_name: &str) -> Result<Vec<ModelVersionInfo>> {
         .into_stream()
         .try_collect()
         .await
+}
+
+/// The grants on a securable, by principal, as the server lets the caller
+/// see them: all of them for the admin and the owners, else the caller's
+/// own.
+pub async fn permissions(kind: SecurableType, full_name: &str) -> Result<Vec<PrivilegeAssignment>> {
+    let list = client().get_permissions(kind.as_str(), full_name).await?;
+    Ok(list.privilege_assignments)
+}
+
+/// Grant and revoke privileges of one principal: the grants afterwards.
+pub async fn change_permissions(
+    kind: SecurableType,
+    full_name: &str,
+    principal: String,
+    add: Vec<String>,
+    remove: Vec<String>,
+) -> Result<PermissionsList> {
+    let change = PermissionsChange {
+        principal,
+        add,
+        remove,
+        ..Default::default()
+    };
+    client()
+        .update_permissions(kind.as_str(), full_name, vec![change])
+        .await
+}
+
+pub async fn credentials() -> Result<Vec<CredentialInfo>> {
+    client()
+        .list_credentials()
+        .into_stream()
+        .try_collect()
+        .await
+}
+
+pub async fn external_locations() -> Result<Vec<ExternalLocationInfo>> {
+    client()
+        .list_external_locations()
+        .into_stream()
+        .try_collect()
+        .await
+}
+
+/// The rows of a SCIM page.
+const SCIM_PAGE: i32 = 100;
+
+/// Every user, by SCIM's pages of `startIndex` and `count`: the list ends
+/// with a page that is short.
+pub async fn users() -> Result<Vec<ScimUser>> {
+    let client = client();
+    let mut users = Vec::new();
+    loop {
+        let page = client
+            .list_users()
+            .with_start_index(users.len() as i32 + 1)
+            .with_count(SCIM_PAGE)
+            .await?;
+        let n = page.resources.len();
+        users.extend(page.resources);
+        if n < SCIM_PAGE as usize {
+            return Ok(users);
+        }
+    }
+}
+
+/// Every group, as [`users`].
+pub async fn groups() -> Result<Vec<ScimGroup>> {
+    let client = client();
+    let mut groups = Vec::new();
+    loop {
+        let page = client
+            .list_groups()
+            .with_start_index(groups.len() as i32 + 1)
+            .with_count(SCIM_PAGE)
+            .await?;
+        let n = page.resources.len();
+        groups.extend(page.resources);
+        if n < SCIM_PAGE as usize {
+            return Ok(groups);
+        }
+    }
+}
+
+/// The group named `name`, from the list: the server has no call by
+/// name. A 404, as the server would answer, for none.
+pub async fn group(name: &str) -> Result<ScimGroup> {
+    groups()
+        .await?
+        .into_iter()
+        .find(|group| group.display_name == name)
+        .ok_or_else(|| {
+            Error::Api(ApiError {
+                status: 404,
+                code: Some("NOT_FOUND".into()),
+                message: format!("Group '{name}' not found"),
+                details: Vec::new(),
+                body: String::new(),
+            })
+        })
 }
 
 /// The signed-in user's access tokens, the newest first.

@@ -4,32 +4,27 @@ use uc_common::EpochMillis;
 use wasm_bindgen::JsValue;
 
 thread_local! {
-    /// Upstream's `Intl.DateTimeFormat`, made once.
+    /// The console's `Date.toLocaleString()`, as an `Intl.DateTimeFormat`
+    /// made once: the browser's language, and the date and the time in
+    /// numbers.
     static FORMAT: Function = {
         let options = Object::new();
-        for (key, value) in [
-            ("year", "numeric"),
-            ("month", "2-digit"),
-            ("day", "2-digit"),
-            ("hour", "2-digit"),
-            ("minute", "2-digit"),
-            ("second", "2-digit"),
-        ] {
-            let _ = Reflect::set(&options, &key.into(), &value.into());
+        for key in ["year", "month", "day", "hour", "minute", "second"] {
+            let _ = Reflect::set(&options, &key.into(), &"numeric".into());
         }
-        let _ = Reflect::set(&options, &"hour12".into(), &false.into());
-        let locales = Array::of1(&"en-US".into());
-        Intl::DateTimeFormat::new(&locales, &options).format()
+        let language = web_sys::window()
+            .and_then(|w| w.navigator().language())
+            .unwrap_or_else(|| "en-US".into());
+        Intl::DateTimeFormat::new(&Array::of1(&language.into()), &options).format()
     };
 }
 
-/// Upstream's `formatTimestamp`: an epoch-millis time in the browser's
-/// time zone, as `en-US` numbers, such as `10/15/2026, 17:27:41`. Empty for
-/// 0, a time that the server did not send, as upstream's pages show a
-/// missing value.
+/// The console's `formatTimestamp`: `Date.toLocaleString()`, such as
+/// `6/5/2026, 7:14:51 PM`. A dash for 0, a time that the server did not
+/// send, as the console's pages show a missing value.
 pub fn format_timestamp(ms: EpochMillis) -> String {
     if ms == 0 {
-        return String::new();
+        return "—".into();
     }
     let date = Date::new(&JsValue::from_f64(ms as f64));
     FORMAT
@@ -37,6 +32,20 @@ pub fn format_timestamp(ms: EpochMillis) -> String {
         .ok()
         .and_then(|text| text.as_string())
         .unwrap_or_default()
+}
+
+/// `value`, else a dash: also for an empty one, which the server did not
+/// send.
+pub fn or_dash(value: impl Into<Option<String>>) -> String {
+    match value.into() {
+        Some(value) if !value.is_empty() => value,
+        _ => "—".into(),
+    }
+}
+
+/// An object as the server sent it, for the "Raw JSON" card.
+pub fn pretty_json<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_default()
 }
 
 /// The name of an enum value as the server sends it, such as `MANAGED`.

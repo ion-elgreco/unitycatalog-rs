@@ -1,14 +1,12 @@
 //! What a schema holds: tables, volumes, functions and registered models.
-//! They are the tabs of the schema page and the rows under a schema in the
-//! sidebar.
+//! They are the groups under a schema in the tree and the picker on the
+//! schema page.
 
 use leptos::prelude::*;
-use uc_common::EpochMillis;
 
 use crate::api;
-use crate::components::icons::{
-    DeploymentUnitOutlined, FolderOutlined, FunctionOutlined, TableOutlined,
-};
+use crate::components::icons::{Box, Database, FunctionSquare, HardDrive, Notebook, Table};
+use crate::util::schema_href;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
@@ -22,8 +20,7 @@ pub enum Kind {
 #[derive(Clone, Debug)]
 pub struct Entry {
     pub name: String,
-    /// 0 when the server did not send it.
-    pub created_at: EpochMillis,
+    pub comment: Option<String>,
 }
 
 impl Kind {
@@ -52,28 +49,79 @@ impl Kind {
         }
     }
 
-    pub fn icon(self) -> AnyView {
+    /// One object, such as "table"; also the part of an object's URL that
+    /// names its kind.
+    pub fn noun(self) -> &'static str {
         match self {
-            Kind::Tables => view! { <TableOutlined/> }.into_any(),
-            Kind::Volumes => view! { <FolderOutlined/> }.into_any(),
-            Kind::Functions => view! { <FunctionOutlined/> }.into_any(),
-            Kind::Models => view! { <DeploymentUnitOutlined/> }.into_any(),
+            Kind::Tables => "table",
+            Kind::Volumes => "volume",
+            Kind::Functions => "function",
+            Kind::Models => "model",
         }
     }
 
-    /// The schema page, on this kind's tab.
+    /// The kind that the part `segment` of an object's URL names.
+    pub fn from_segment(segment: &str) -> Option<Kind> {
+        Kind::ALL.into_iter().find(|kind| kind.noun() == segment)
+    }
+
+    /// Its name in the "New" dialog's picker.
+    pub fn new_label(self) -> &'static str {
+        match self {
+            Kind::Tables => "Table",
+            Kind::Volumes => "Volume",
+            Kind::Functions => "Function",
+            Kind::Models => "Registered model",
+        }
+    }
+
+    /// The hint under an empty list of this kind: what the objects are,
+    /// and how to make one.
+    pub fn empty_hint(self) -> &'static str {
+        match self {
+            Kind::Tables => {
+                "A table is data in Delta, Parquet or another format, with its columns. Click New to register one: managed under the storage root, or external at a location of yours."
+            }
+            Kind::Volumes => {
+                "A volume is a folder of files that are not a table, such as images or exports. Click New to register one."
+            }
+            Kind::Functions => {
+                "A function is a routine that engines call in their queries. Click New to register a SQL function."
+            }
+            Kind::Models => {
+                "A registered model holds the versions of a machine learning model. Click New to register one; its versions come from MLflow or the API."
+            }
+        }
+    }
+
+    /// The class that colors the kind's icon.
+    fn color(self) -> &'static str {
+        match self {
+            Kind::Tables => "uc-icon--table",
+            Kind::Volumes => "uc-icon--volume",
+            Kind::Functions => "uc-icon--function",
+            Kind::Models => "uc-icon--model",
+        }
+    }
+
+    pub fn icon(self) -> AnyView {
+        let class = self.color();
+        match self {
+            Kind::Tables => view! { <Table class/> }.into_any(),
+            Kind::Volumes => view! { <HardDrive class/> }.into_any(),
+            Kind::Functions => view! { <FunctionSquare class/> }.into_any(),
+            Kind::Models => view! { <Box class/> }.into_any(),
+        }
+    }
+
+    /// The schema page, on this kind.
     pub fn tab_href(self, catalog: &str, schema: &str) -> String {
-        format!("/data/{catalog}/{schema}?tab={}", self.tab())
+        format!("{}?tab={}", schema_href(catalog, schema), self.tab())
     }
 
     /// The page of the object `name` in `catalog.schema`.
     pub fn href(self, catalog: &str, schema: &str, name: &str) -> String {
-        match self {
-            Kind::Tables => format!("/data/{catalog}/{schema}/{name}"),
-            Kind::Volumes => format!("/volumes/{catalog}/{schema}/{name}"),
-            Kind::Functions => format!("/functions/{catalog}/{schema}/{name}"),
-            Kind::Models => format!("/models/{catalog}/{schema}/{name}"),
-        }
+        format!("{}/{}/{name}", schema_href(catalog, schema), self.noun())
     }
 
     /// The objects of this kind in `catalog.schema`.
@@ -82,28 +130,41 @@ impl Kind {
             Kind::Tables => api::tables(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|t| entry(t.name, t.created_at))
+                .map(|t| entry(t.name, t.comment))
                 .collect(),
             Kind::Volumes => api::volumes(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|v| entry(v.name, v.created_at))
+                .map(|v| entry(v.name, v.comment))
                 .collect(),
             Kind::Functions => api::functions(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|f| entry(f.name, f.created_at))
+                .map(|f| entry(f.name, f.comment))
                 .collect(),
             Kind::Models => api::models(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|m| entry(m.name, m.created_at))
+                .map(|m| entry(m.name, m.comment))
                 .collect(),
         };
         Ok(entries)
     }
 }
 
-fn entry(name: String, created_at: EpochMillis) -> Entry {
-    Entry { name, created_at }
+fn entry(name: String, comment: Option<String>) -> Entry {
+    Entry {
+        name,
+        comment: comment.filter(|c| !c.is_empty()),
+    }
+}
+
+/// A catalog's icon, in its color.
+pub fn catalog_icon() -> AnyView {
+    view! { <Notebook class="uc-icon--catalog"/> }.into_any()
+}
+
+/// A schema's icon, in its color.
+pub fn schema_icon() -> AnyView {
+    view! { <Database class="uc-icon--schema"/> }.into_any()
 }

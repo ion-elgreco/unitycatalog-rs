@@ -243,6 +243,49 @@ impl IntoFuture for GetTableBuilder {
     }
 }
 
+/// Builder for updating a table
+pub struct UpdateTableBuilder {
+    client: TableServiceClient,
+    request: UpdateTable,
+}
+
+impl UpdateTableBuilder {
+    /// Create a new builder instance.
+    /// Obtain via the corresponding method on `TableServiceClient`.
+    pub(crate) fn new(client: TableServiceClient, full_name: impl Into<String>) -> Self {
+        let request = UpdateTable {
+            full_name: full_name.into(),
+            ..Default::default()
+        };
+        Self { client, request }
+    }
+
+    /// User-provided free-form text description.
+    pub fn with_comment(mut self, comment: impl Into<Option<String>>) -> Self {
+        self.request.comment = comment.into();
+        self
+    }
+
+    /// Columns that get a new comment; the others keep theirs.
+    pub fn with_columns<I>(mut self, columns: I) -> Self
+    where
+        I: IntoIterator<Item = UpdateColumn>,
+    {
+        self.request.columns = columns.into_iter().collect();
+        self
+    }
+}
+
+impl IntoFuture for UpdateTableBuilder {
+    type Output = Result<TableInfo>;
+    type IntoFuture = BoxFut<'static, Self::Output>;
+    fn into_future(self) -> Self::IntoFuture {
+        let client = self.client;
+        let request = self.request;
+        Box::pin(async move { client.update_table(&request).await })
+    }
+}
+
 /// Builder for deleting a table
 pub struct DeleteTableBuilder {
     client: TableServiceClient,

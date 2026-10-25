@@ -6070,6 +6070,7 @@ pub fn register(module: &::pyo3::Bound<'_, ::pyo3::types::PyModule>) -> ::pyo3::
             PyStagingTableInfo,
             PyTableDependency,
             PyTableInfo,
+            PyUpdateColumn,
             PyTableClient
         ]
     )?;

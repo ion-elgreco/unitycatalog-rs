@@ -2,7 +2,9 @@ pub(crate) mod sql;
 
 use async_trait::async_trait;
 
-use uc_api::{CreateStagingTable, CreateTable, StagingTableInfo, TableInfo, TableType};
+use uc_api::{
+    CreateStagingTable, CreateTable, StagingTableInfo, TableInfo, TableType, UpdateTable,
+};
 use uc_common::{NormalizedUrl, Pagination, Result};
 
 /// Tables through the UC REST API, and the staging tables that MANAGED
@@ -25,6 +27,14 @@ pub trait TableOps: Send + Sync {
     async fn storage_location_by_id(&self, table_id: &str) -> Result<(Option<String>, TableType)>;
 
     async fn delete(&self, full_name: &str) -> Result<()>;
+
+    /// New comments for the table and its columns; `updated_*` change.
+    async fn update(
+        &self,
+        full_name: &str,
+        req: UpdateTable,
+        updated_by: Option<&str>,
+    ) -> Result<TableInfo>;
 
     /// Rename a table within the same schema: its name and `updated_*`
     /// fields change; its id stays.
