@@ -2588,6 +2588,199 @@ impl ::core::convert::From<PyAwsIamRoleResponse> for super::credentials::v1::Aws
     }
 }
 
+/// The Azure managed identity of a credential: the server's own Azure identity.
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
+    name = "AzureManagedIdentity",
+    eq,
+    frozen,
+    module = "unitycatalog._core.credentials",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyAzureManagedIdentity(pub super::credentials::v1::AzureManagedIdentity);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PyAzureManagedIdentity {
+    #[new]
+    #[pyo3(signature = (*, managed_identity_id = None))]
+    fn new(managed_identity_id: ::core::option::Option<::std::string::String>) -> Self {
+        let mut inner =
+            <super::credentials::v1::AzureManagedIdentity as ::core::default::Default>::default();
+        {
+            let value = managed_identity_id;
+            inner.managed_identity_id = value;
+        }
+        Self(inner)
+    }
+
+    /// Azure resource ID of a user-assigned managed identity, which the server gets from the
+    /// instance metadata service. Absent: the identity that the server's environment gives, such as
+    /// AKS workload identity or the managed identity of the VM.
+    #[getter]
+    fn managed_identity_id(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.managed_identity_id.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(slf.as_any(), &[("managed_identity_id", false)])
+    }
+}
+
+impl ::core::convert::From<super::credentials::v1::AzureManagedIdentity>
+    for PyAzureManagedIdentity
+{
+    fn from(value: super::credentials::v1::AzureManagedIdentity) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyAzureManagedIdentity>
+    for super::credentials::v1::AzureManagedIdentity
+{
+    fn from(value: PyAzureManagedIdentity) -> Self {
+        value.0
+    }
+}
+
+/// The Azure service principal of a new or changed credential.
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
+    name = "AzureServicePrincipalRequest",
+    eq,
+    frozen,
+    module = "unitycatalog._core.credentials",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyAzureServicePrincipalRequest(pub super::credentials::v1::AzureServicePrincipalRequest);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PyAzureServicePrincipalRequest {
+    #[new]
+    #[pyo3(signature = (directory_id, application_id, client_secret))]
+    fn new(
+        directory_id: ::std::string::String,
+        application_id: ::std::string::String,
+        client_secret: ::std::string::String,
+    ) -> Self {
+        let mut inner = <super::credentials::v1::AzureServicePrincipalRequest as ::core::default::Default>::default();
+        {
+            let value = directory_id;
+            inner.directory_id = value;
+        }
+        {
+            let value = application_id;
+            inner.application_id = value;
+        }
+        {
+            let value = client_secret;
+            inner.client_secret = value;
+        }
+        Self(inner)
+    }
+
+    /// ID of the Microsoft Entra ID tenant (directory) of the application.
+    #[getter]
+    fn directory_id(&self) -> ::std::string::String {
+        self.0.directory_id.clone()
+    }
+
+    /// Application (client) ID of the service principal.
+    #[getter]
+    fn application_id(&self) -> ::std::string::String {
+        self.0.application_id.clone()
+    }
+
+    /// Client secret of the application. The server stores it and never returns it.
+    #[getter]
+    fn client_secret(&self) -> ::std::string::String {
+        self.0.client_secret.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[
+                ("directory_id", false),
+                ("application_id", false),
+                ("client_secret", true),
+            ],
+        )
+    }
+}
+
+impl ::core::convert::From<super::credentials::v1::AzureServicePrincipalRequest>
+    for PyAzureServicePrincipalRequest
+{
+    fn from(value: super::credentials::v1::AzureServicePrincipalRequest) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyAzureServicePrincipalRequest>
+    for super::credentials::v1::AzureServicePrincipalRequest
+{
+    fn from(value: PyAzureServicePrincipalRequest) -> Self {
+        value.0
+    }
+}
+
+/// The Azure service principal of a credential. The client secret is not returned.
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
+    name = "AzureServicePrincipalResponse",
+    eq,
+    frozen,
+    module = "unitycatalog._core.credentials",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyAzureServicePrincipalResponse(
+    pub super::credentials::v1::AzureServicePrincipalResponse,
+);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PyAzureServicePrincipalResponse {
+    /// ID of the Microsoft Entra ID tenant (directory) of the application.
+    #[getter]
+    fn directory_id(&self) -> ::std::string::String {
+        self.0.directory_id.clone()
+    }
+
+    /// Application (client) ID of the service principal.
+    #[getter]
+    fn application_id(&self) -> ::std::string::String {
+        self.0.application_id.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[("directory_id", false), ("application_id", false)],
+        )
+    }
+}
+
+impl ::core::convert::From<super::credentials::v1::AzureServicePrincipalResponse>
+    for PyAzureServicePrincipalResponse
+{
+    fn from(value: super::credentials::v1::AzureServicePrincipalResponse) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyAzureServicePrincipalResponse>
+    for super::credentials::v1::AzureServicePrincipalResponse
+{
+    fn from(value: PyAzureServicePrincipalResponse) -> Self {
+        value.0
+    }
+}
+
 /// A shared access signature (SAS) for Azure storage, signed with a user delegation key.
 #[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
@@ -2722,6 +2915,26 @@ impl PyCredentialInfo {
             .map(PyCredentialPurpose::from)
     }
 
+    /// The Azure service principal of the credential.
+    #[getter]
+    fn azure_service_principal(&self) -> ::core::option::Option<PyAzureServicePrincipalResponse> {
+        self.0
+            .azure_service_principal
+            .clone()
+            .into_option()
+            .map(PyAzureServicePrincipalResponse::from)
+    }
+
+    /// The Azure managed identity of the credential.
+    #[getter]
+    fn azure_managed_identity(&self) -> ::core::option::Option<PyAzureManagedIdentity> {
+        self.0
+            .azure_managed_identity
+            .clone()
+            .into_option()
+            .map(PyAzureManagedIdentity::from)
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -2737,6 +2950,8 @@ impl PyCredentialInfo {
                 ("updated_at", false),
                 ("updated_by", false),
                 ("purpose", false),
+                ("azure_service_principal", false),
+                ("azure_managed_identity", false),
             ],
         )
     }

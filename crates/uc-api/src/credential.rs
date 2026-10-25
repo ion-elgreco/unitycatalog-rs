@@ -29,6 +29,30 @@ pub struct AwsIamRoleResponse {
     pub external_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct AzureServicePrincipalRequest {
+    pub directory_id: String,
+    pub application_id: String,
+    pub client_secret: String,
+}
+
+/// An Azure service principal, without its client secret.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct AzureServicePrincipalResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub directory_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub application_id: Option<String>,
+}
+
+/// The server's own Azure identity, or the user-assigned managed identity
+/// with the resource ID `managed_identity_id`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct AzureManagedIdentity {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub managed_identity_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct AwsCredentials {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -91,8 +115,14 @@ pub struct CredentialInfo {
     pub updated_by: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub purpose: Option<CredentialPurpose>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub azure_service_principal: Option<AzureServicePrincipalResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub azure_managed_identity: Option<AzureManagedIdentity>,
 }
 
+/// A credential has exactly one of `aws_iam_role`, `azure_service_principal`
+/// and `azure_managed_identity`.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CreateCredentialRequest {
     pub name: String,
@@ -102,6 +132,10 @@ pub struct CreateCredentialRequest {
     pub aws_iam_role: Option<AwsIamRoleRequest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub purpose: Option<CredentialPurpose>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub azure_service_principal: Option<AzureServicePrincipalRequest>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub azure_managed_identity: Option<AzureManagedIdentity>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
@@ -115,6 +149,12 @@ pub struct UpdateCredentialRequest {
     pub aws_iam_role: Option<AwsIamRoleRequest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_name: Option<String>,
+    /// With `aws_iam_role` and `azure_managed_identity`: at most one, which
+    /// replaces the identity of the credential.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub azure_service_principal: Option<AzureServicePrincipalRequest>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub azure_managed_identity: Option<AzureManagedIdentity>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]

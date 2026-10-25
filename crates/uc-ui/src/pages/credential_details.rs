@@ -1,14 +1,14 @@
 //! A credential's page: its description and the external locations bound
-//! to it, its details, its grants; "Edit" (its name, its role and its
+//! to it, its details, its grants; "Edit" (its name, its identity and its
 //! comment) and "Delete".
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
-use uc_client::models::credentials::v1::{AwsIamRoleRequest, CredentialInfo};
+use uc_client::models::credentials::v1::CredentialInfo;
 use uc_common::SecurableType;
 
-use super::credentials::role_arn;
+use super::credentials::{Identity, IdentityFields, IdentityForm, IdentityKind, identity_name};
 use crate::api;
 use crate::auth::use_manages;
 use crate::components::{
@@ -43,7 +43,7 @@ fn CredentialPage(name: String) -> impl IntoView {
     let comment = field(info, |c: &CredentialInfo| {
         c.comment.clone().unwrap_or_default()
     });
-    let role = field(info, |c: &CredentialInfo| role_arn(c).unwrap_or_default());
+    let current = field(info, CredentialInfo::clone);
     let save_comment = move |comment: String| {
         let name = key.get_value();
         async move {
@@ -110,7 +110,7 @@ fn CredentialPage(name: String) -> impl IntoView {
             badges=vec!["Credential".to_string()]
             reload
             actions=view! {
-                <EditCredential name=name.clone() role comment/>
+                <EditCredential name=name.clone() current comment/>
                 <DeleteButton open=delete_open when=manages/>
             }
                 .into_any()
@@ -153,17 +153,17 @@ fn CredentialPage(name: String) -> impl IntoView {
     }
 }
 
-/// "Edit": a new name, role and comment.
+/// "Edit": a new name, identity and comment.
 #[component]
 fn EditCredential(
     name: String,
-    #[prop(into)] role: Signal<String>,
+    #[prop(into)] current: Signal<CredentialInfo>,
     #[prop(into)] comment: Signal<String>,
 ) -> impl IntoView {
     let key = StoredValue::new(name);
     let open = RwSignal::new(false);
     let new_name = RwSignal::new(String::new());
-    let new_role = RwSignal::new(String::new());
+    let identity = IdentityForm::default();
     let new_comment = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let notify = use_notify();
@@ -171,7 +171,7 @@ fn EditCredential(
     let navigate = use_navigate();
     let edit = move |_| {
         new_name.set(key.get_value());
-        new_role.set(role.get_untracked());
+        current.with_untracked(|c| identity.fill(c));
         new_comment.set(comment.get_untracked());
         open.set(true);
     };
@@ -182,26 +182,35 @@ fn EditCredential(
             notify.error("Name is required");
             return;
         }
-        let arn = new_role.get_untracked().trim().to_string();
+        let identity_change = match current.with_untracked(|c| identity.change(c)) {
+            Ok(change) => change,
+            Err(missing) => {
+                notify.error(missing);
+                return;
+            }
+        };
         let text = new_comment.get_untracked();
         let comment_change = (text != comment.get_untracked()).then_some(text);
-        // The API sets a role; it does not unset one.
-        let role_change =
-            (!arn.is_empty() && arn != role.get_untracked()).then_some(AwsIamRoleRequest {
-                role_arn: arn,
-                ..Default::default()
-            });
         let name_change = (renamed != name).then_some(renamed);
         // Nothing to save: the dialog stays, as the console's.
-        if comment_change.is_none() && role_change.is_none() && name_change.is_none() {
+        if comment_change.is_none() && identity_change.is_none() && name_change.is_none() {
             return;
         }
         let update = api::client()
             .credential(&name)
             .update()
             .with_comment(comment_change)
-            .with_aws_iam_role(role_change)
             .with_new_name(name_change.clone());
+        let update = match identity_change {
+            None => update,
+            Some(Identity::AwsIamRole(role)) => update.with_aws_iam_role(role),
+            Some(Identity::AzureServicePrincipal(principal)) => {
+                update.with_azure_service_principal(principal)
+            }
+            Some(Identity::AzureManagedIdentity(managed)) => {
+                update.with_azure_managed_identity(managed)
+            }
+        };
         let navigate = navigate.clone();
         busy.set(true);
         spawn_local(async move {
@@ -239,36 +248,48 @@ fn EditCredential(
             on_ok
         >
             <TextField id="uc-edit-name" label="Name" value=new_name required=true/>
-            <TextField
-                id="uc-edit-role"
-                label="AWS IAM role ARN"
-                value=new_role
-                placeholder="arn:aws:iam::123456789012:role/unity-catalog"
-            />
+            <IdentityFields form=identity id="uc-edit"/>
             <TextField id="uc-edit-comment" label="Comment" value=new_comment/>
         </Modal>
     }
 }
 
 fn credential_rows(c: &CredentialInfo) -> Vec<MetaRow> {
-    let role = c.aws_iam_role.as_option();
-    vec![
+    let mut rows = vec![
         MetaRow::new("Owner", or_dash(c.owner.clone())),
         MetaRow::new("Purpose", or_dash(c.purpose.map(enum_name))),
-        MetaRow::mono(
-            "AWS IAM role ARN",
-            or_dash(role.map(|r| r.role_arn.clone())),
+        MetaRow::new(
+            "Identity",
+            or_dash(IdentityKind::of(c).map(|k| k.text().to_string())),
         ),
-        MetaRow::mono(
-            "Unity Catalog IAM ARN",
-            or_dash(role.and_then(|r| r.unity_catalog_iam_arn.clone())),
-        ),
-        MetaRow::mono("External ID", or_dash(role.map(|r| r.external_id.clone()))),
+    ];
+    if let Some(role) = c.aws_iam_role.as_option() {
+        rows.extend([
+            MetaRow::mono("AWS IAM role ARN", or_dash(role.role_arn.clone())),
+            MetaRow::mono(
+                "Unity Catalog IAM ARN",
+                or_dash(role.unity_catalog_iam_arn.clone()),
+            ),
+            MetaRow::mono("External ID", or_dash(role.external_id.clone())),
+        ]);
+    }
+    if let Some(principal) = c.azure_service_principal.as_option() {
+        rows.extend([
+            MetaRow::mono("Directory ID", or_dash(principal.directory_id.clone())),
+            MetaRow::mono("Application ID", or_dash(principal.application_id.clone())),
+        ]);
+    }
+    if c.azure_managed_identity.is_set() {
+        let id = identity_name(c).unwrap_or_else(|| "The server's own".to_string());
+        rows.push(MetaRow::mono("Managed identity", id));
+    }
+    rows.extend([
         MetaRow::new("Created at", format_timestamp(c.created_at)),
         MetaRow::new("Created by", or_dash(c.created_by.clone())),
         MetaRow::new("Updated at", format_timestamp(c.updated_at)),
         MetaRow::new("Updated by", or_dash(c.updated_by.clone())),
         MetaRow::mono("Credential ID", or_dash(c.id.clone())),
         MetaRow::new("Comment", or_dash(c.comment.clone())),
-    ]
+    ]);
+    rows
 }

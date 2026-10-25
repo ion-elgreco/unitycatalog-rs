@@ -10,6 +10,9 @@ __all__ = [
     "AwsCredentials",
     "AwsIamRoleRequest",
     "AwsIamRoleResponse",
+    "AzureManagedIdentity",
+    "AzureServicePrincipalRequest",
+    "AzureServicePrincipalResponse",
     "AzureUserDelegationSAS",
     "CredentialClient",
     "CredentialInfo",
@@ -81,6 +84,71 @@ class AwsIamRoleResponse:
     def __repr__(self) -> builtins.str: ...
 
 @typing.final
+class AzureManagedIdentity:
+    r"""
+    The Azure managed identity of a credential: the server's own Azure identity.
+    """
+    @property
+    def managed_identity_id(self) -> typing.Optional[builtins.str]:
+        r"""
+        Azure resource ID of a user-assigned managed identity, which the server gets from the
+        instance metadata service. Absent: the identity that the server's environment gives, such as
+        AKS workload identity or the managed identity of the VM.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(
+        cls, *, managed_identity_id: typing.Optional[builtins.str] = None
+    ) -> AzureManagedIdentity: ...
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
+class AzureServicePrincipalRequest:
+    r"""
+    The Azure service principal of a new or changed credential.
+    """
+    @property
+    def directory_id(self) -> builtins.str:
+        r"""
+        ID of the Microsoft Entra ID tenant (directory) of the application.
+        """
+    @property
+    def application_id(self) -> builtins.str:
+        r"""
+        Application (client) ID of the service principal.
+        """
+    @property
+    def client_secret(self) -> builtins.str:
+        r"""
+        Client secret of the application. The server stores it and never returns it.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __new__(
+        cls,
+        directory_id: builtins.str,
+        application_id: builtins.str,
+        client_secret: builtins.str,
+    ) -> AzureServicePrincipalRequest: ...
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
+class AzureServicePrincipalResponse:
+    r"""
+    The Azure service principal of a credential. The client secret is not returned.
+    """
+    @property
+    def directory_id(self) -> builtins.str:
+        r"""
+        ID of the Microsoft Entra ID tenant (directory) of the application.
+        """
+    @property
+    def application_id(self) -> builtins.str:
+        r"""
+        Application (client) ID of the service principal.
+        """
+    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
 class AzureUserDelegationSAS:
     r"""
     A shared access signature (SAS) for Azure storage, signed with a user delegation key.
@@ -115,14 +183,20 @@ class CredentialClient:
         comment: typing.Optional[builtins.str] = None,
         aws_iam_role: typing.Optional[AwsIamRoleRequest] = None,
         new_name: typing.Optional[builtins.str] = None,
+        azure_service_principal: typing.Optional[AzureServicePrincipalRequest] = None,
+        azure_managed_identity: typing.Optional[AzureManagedIdentity] = None,
     ) -> CredentialInfo:
         r"""
         Change a credential.
 
         Args:
             comment: User-provided free-form text description.
-            aws_iam_role: New AWS IAM role of the credential. The role gets a new external ID.
+            aws_iam_role: New AWS IAM role of the credential. The role gets a new external ID. Give at most
+                          one of `aws_iam_role`, `azure_service_principal` and `azure_managed_identity`: it
+                          replaces the identity of the credential.
             new_name: New name of the credential.
+            azure_service_principal: New Azure service principal of the credential.
+            azure_managed_identity: New Azure managed identity of the credential.
 
         Returns:
             A credential that gives access to storage or to external services.
@@ -133,6 +207,8 @@ class CredentialClient:
         comment: typing.Optional[builtins.str] = None,
         aws_iam_role: typing.Optional[AwsIamRoleRequest] = None,
         new_name: typing.Optional[builtins.str] = None,
+        azure_service_principal: typing.Optional[AzureServicePrincipalRequest] = None,
+        azure_managed_identity: typing.Optional[AzureManagedIdentity] = None,
     ) -> asyncio.Future[CredentialInfo]:
         r"""
         Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -210,6 +286,16 @@ class CredentialInfo:
     def purpose(self) -> typing.Optional[_enums.CredentialPurpose]:
         r"""
         What the credential is used for. Absent when the credential was created without one.
+        """
+    @property
+    def azure_service_principal(self) -> typing.Optional[AzureServicePrincipalResponse]:
+        r"""
+        The Azure service principal of the credential.
+        """
+    @property
+    def azure_managed_identity(self) -> typing.Optional[AzureManagedIdentity]:
+        r"""
+        The Azure managed identity of the credential.
         """
     def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
     def __repr__(self) -> builtins.str: ...

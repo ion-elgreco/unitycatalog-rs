@@ -16,6 +16,9 @@ pub fn TextField(
     #[prop(optional)] required: bool,
     #[prop(optional)] placeholder: Option<&'static str>,
     #[prop(optional)] autocomplete: Option<&'static str>,
+    /// Masked, as a password.
+    #[prop(optional)]
+    secret: bool,
 ) -> impl IntoView {
     let for_id = id.clone();
     view! {
@@ -24,7 +27,7 @@ pub fn TextField(
             <input
                 id=id
                 class="uc-input"
-                type="text"
+                type=if secret { "password" } else { "text" }
                 required=required
                 placeholder=placeholder
                 autocomplete=autocomplete

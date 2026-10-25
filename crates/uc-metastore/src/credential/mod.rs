@@ -15,6 +15,11 @@ pub trait CredentialOps: Send + Sync {
 
     async fn get(&self, name: &str) -> Result<CredentialInfo>;
 
+    /// The credential named `name`, and the client secret of its Azure
+    /// service principal, if it has one. Only credential vending reads the
+    /// secret: no answer of the API holds it.
+    async fn get_with_secret(&self, name: &str) -> Result<(CredentialInfo, Option<String>)>;
+
     async fn update(
         &self,
         name: &str,

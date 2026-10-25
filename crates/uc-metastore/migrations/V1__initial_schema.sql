@@ -162,18 +162,25 @@ CREATE TABLE model_version (
     UNIQUE (registered_model_id, version)
 );
 
+-- One identity per credential: an AWS role, an Azure service principal or
+-- an Azure managed identity.
 CREATE TABLE credential (
-    id_string       TEXT PRIMARY KEY,
-    name            TEXT NOT NULL UNIQUE,
-    comment         TEXT,
-    owner           TEXT,
-    purpose         TEXT,
-    aws_role_arn    TEXT,
-    aws_external_id TEXT,
-    created_at      BIGINT NOT NULL,
-    created_by      TEXT,
-    updated_at      BIGINT NOT NULL,
-    updated_by      TEXT
+    id_string                 TEXT PRIMARY KEY,
+    name                      TEXT NOT NULL UNIQUE,
+    comment                   TEXT,
+    owner                     TEXT,
+    purpose                   TEXT,
+    aws_role_arn              TEXT,
+    aws_external_id           TEXT,
+    azure_directory_id        TEXT,
+    azure_application_id      TEXT,
+    azure_client_secret       TEXT,
+    azure_managed_identity    BOOLEAN NOT NULL,
+    azure_managed_identity_id TEXT,
+    created_at                BIGINT NOT NULL,
+    created_by                TEXT,
+    updated_at                BIGINT NOT NULL,
+    updated_by                TEXT
 );
 
 CREATE TABLE external_location (

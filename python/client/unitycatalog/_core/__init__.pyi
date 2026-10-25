@@ -338,20 +338,28 @@ class Client:
     def create_credential(
         self,
         name: builtins.str,
-        aws_iam_role: credentials.AwsIamRoleRequest,
         *,
         comment: typing.Optional[builtins.str] = None,
+        aws_iam_role: typing.Optional[credentials.AwsIamRoleRequest] = None,
         purpose: typing.Optional[_enums.CredentialPurpose | str] = None,
+        azure_service_principal: typing.Optional[
+            credentials.AzureServicePrincipalRequest
+        ] = None,
+        azure_managed_identity: typing.Optional[
+            credentials.AzureManagedIdentity
+        ] = None,
     ) -> credentials.CredentialInfo:
         r"""
         Create a credential.
 
         Args:
             name: Name of the credential.
-            aws_iam_role: The AWS IAM role of the credential: an AWS IAM role is the only kind of
-                          credential.
             comment: User-provided free-form text description.
+            aws_iam_role: The AWS IAM role of the credential. A credential has exactly one of
+                          `aws_iam_role`, `azure_service_principal` and `azure_managed_identity`.
             purpose: What the credential is used for.
+            azure_service_principal: The Azure service principal of the credential.
+            azure_managed_identity: The Azure managed identity of the credential.
 
         Returns:
             A credential that gives access to storage or to external services.
@@ -359,10 +367,16 @@ class Client:
     def create_credential_async(
         self,
         name: builtins.str,
-        aws_iam_role: credentials.AwsIamRoleRequest,
         *,
         comment: typing.Optional[builtins.str] = None,
+        aws_iam_role: typing.Optional[credentials.AwsIamRoleRequest] = None,
         purpose: typing.Optional[_enums.CredentialPurpose | str] = None,
+        azure_service_principal: typing.Optional[
+            credentials.AzureServicePrincipalRequest
+        ] = None,
+        azure_managed_identity: typing.Optional[
+            credentials.AzureManagedIdentity
+        ] = None,
     ) -> asyncio.Future[credentials.CredentialInfo]:
         r"""
         Like `create_credential`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
