@@ -123,7 +123,7 @@ pub fn EntityHeader(
 #[component]
 fn ReloadButton(keys: Signal<Vec<Key>>) -> impl IntoView {
     let cache = use_cache();
-    let progress = Signal::derive(move || cache.progress(&keys.get()));
+    let progress = cache.progress(keys);
     let turning = RwSignal::new(false);
     let reload = move |_| {
         for key in keys.get_untracked() {

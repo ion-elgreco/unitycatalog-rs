@@ -69,8 +69,10 @@ where
     let navigate = use_navigate();
     let holder = StoredValue::new(holder);
     let expected = StoredValue::new(name.clone());
-    let can_force =
-        move || holder.with_value(Option::is_some) && auth.session.with(|s| s.is_admin());
+    // A memo, as `Cache::progress` says: the session outlives the page.
+    let can_force = Memo::new(move |_| {
+        holder.with_value(Option::is_some) && auth.session.with(|s| s.is_admin())
+    });
     let close = move || {
         open.set(false);
         confirming.set(false);
@@ -79,7 +81,7 @@ where
         typed.set(String::new());
     };
     let count = move || {
-        if counted.get_untracked().is_some() || !untrack(can_force) {
+        if counted.get_untracked().is_some() || !can_force.get_untracked() {
             return;
         }
         let Some(holder) = holder.get_value() else {
@@ -141,7 +143,7 @@ where
     // step.
     let on_ok = {
         let run = run.clone();
-        move || match forced.get_untracked() && untrack(can_force) {
+        move || match forced.get_untracked() && can_force.get_untracked() {
             true => confirming.set(true),
             false => run(false),
         }
@@ -216,7 +218,7 @@ where
                 prop:value=move || typed.get()
                 on:input=move |e| typed.set(event_target_value(&e))
             />
-            {move || can_force().then(|| view! { <ForceChoice counted holder forced/> })}
+            {move || can_force.get().then(|| view! { <ForceChoice counted holder forced/> })}
         </Modal>
         <Modal
             open=confirming

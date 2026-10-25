@@ -136,7 +136,8 @@ pub fn PermissionsCard(
     let notify = use_notify();
     let me = Memo::new(move |_| auth.session.with(|s| s.principal().map(str::to_string)));
     let manages = use_manages(owner);
-    let anonymous = move || auth.session.with(|s| matches!(s, Session::Anonymous));
+    // A memo, as `Cache::progress` says: the session outlives the page.
+    let anonymous = Memo::new(move |_| auth.session.with(|s| matches!(s, Session::Anonymous)));
     let is_owner = Memo::new(move |_| me.with(|me| me.is_some() && *me == owner.get()));
     // The user's own grants.
     let mine = Memo::new(move |_| {
@@ -211,7 +212,7 @@ pub fn PermissionsCard(
     });
 
     let own = move || {
-        if anonymous() {
+        if anonymous.get() {
             return view! {
                 <p class="uc-empty">"Authorization is off: everyone may do everything."</p>
             }

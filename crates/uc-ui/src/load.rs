@@ -239,19 +239,32 @@ impl Cache {
     }
 
     /// How the loads of `keys` go, together: whether one runs, and the
-    /// first failure. A view that calls it follows them.
-    pub fn progress(&self, keys: &[Key]) -> Progress {
-        keys.iter()
-            .map(|key| self.with_entry(key, |entry| entry.progress.clone()))
-            .fold(Progress::default(), |mut all, progress| {
-                progress.with(|p| {
-                    all.loading |= p.loading;
-                    if all.failure.is_none() {
-                        all.failure = p.failure.clone();
-                    }
-                });
-                all
+    /// first failure.
+    ///
+    /// The memo belongs to the view that calls this. The cache's signals
+    /// outlive the page, and the router disposes of the old page's signals
+    /// a tick before it removes the old page's elements; the new page's
+    /// loads change the progress in that tick. Through the memo, the
+    /// changes stop with the page: a view that read the progress directly
+    /// would read its own disposed signals and panic, and a panic stops
+    /// the app.
+    pub fn progress(&self, keys: Signal<Vec<Key>>) -> Memo<Progress> {
+        let cache = *self;
+        Memo::new(move |_| {
+            keys.with(|keys| {
+                keys.iter()
+                    .map(|key| cache.with_entry(key, |entry| entry.progress.clone()))
+                    .fold(Progress::default(), |mut all, progress| {
+                        progress.with(|p| {
+                            all.loading |= p.loading;
+                            if all.failure.is_none() {
+                                all.failure = p.failure.clone();
+                            }
+                        });
+                        all
+                    })
             })
+        })
     }
 
     /// Each value with a view loads again.
