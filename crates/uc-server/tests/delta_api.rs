@@ -60,6 +60,59 @@ async fn config_lists_endpoints_for_the_catalog(#[future(awt)] seeded: Router) {
     assert_eq!(err["message"], "Catalog not found: nope");
 }
 
+#[rstest]
+#[tokio::test]
+async fn config_negotiates_the_protocol_version(#[future(awt)] seeded: Router) {
+    // A client of newer minor or other major versions gets 1.0.
+    let resp = seeded
+        .clone()
+        .oneshot(req(
+            Method::GET,
+            "/delta/v1/config?catalog=main&protocol-versions=1.3,2.0",
+        ))
+        .await
+        .unwrap();
+    let config = json_body(assert_status(resp, StatusCode::OK, "config").await).await;
+    assert_eq!(config["protocol-version"], "1.0");
+
+    for (query, message) in [
+        ("", "Must supply the protocol-versions parameter"),
+        (
+            "&protocol-versions=",
+            "Must supply the protocol-versions parameter",
+        ),
+        (
+            "&protocol-versions=1",
+            "Invalid protocol-versions parameter \"1\"",
+        ),
+        (
+            "&protocol-versions=2.0",
+            "No mutually supported protocol version: client supports \"2.0\".",
+        ),
+    ] {
+        let resp = seeded
+            .clone()
+            .oneshot(req(
+                Method::GET,
+                &format!("/delta/v1/config?catalog=main{query}"),
+            ))
+            .await
+            .unwrap();
+        let err = assert_delta_error(
+            resp,
+            StatusCode::BAD_REQUEST,
+            "InvalidParameterValueException",
+        )
+        .await;
+        let err = err["message"].as_str().unwrap();
+        assert!(err.contains(message), "{query}: {err}");
+        assert!(
+            err.ends_with("Server supports protocol versions: 1.0."),
+            "{query}: {err}"
+        );
+    }
+}
+
 async fn external_table(app: &Router, name: &str) -> serde_json::Value {
     let resp = app.clone().oneshot(common::req_json(Method::POST, "/tables", json!({
         "name": name, "catalog_name": "main", "schema_name": "default",
