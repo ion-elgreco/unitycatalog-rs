@@ -3,10 +3,12 @@
 //! schema page.
 
 use leptos::prelude::*;
+use uc_client::models::functions::v1::FunctionInfo;
+use uc_common::EpochMillis;
 
 use crate::api;
 use crate::components::icons::{Box, Database, FunctionSquare, HardDrive, Notebook, Table};
-use crate::util::schema_href;
+use crate::util::{enum_name, or_dash, schema_href};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
@@ -21,6 +23,11 @@ pub enum Kind {
 pub struct Entry {
     pub name: String,
     pub comment: Option<String>,
+    pub owner: Option<String>,
+    pub created_at: EpochMillis,
+    /// The values of the kind's own columns, in the order of
+    /// [`Kind::columns`].
+    pub cells: Vec<String>,
 }
 
 impl Kind {
@@ -72,6 +79,17 @@ impl Kind {
             Kind::Volumes => "Volume",
             Kind::Functions => "Function",
             Kind::Models => "Registered model",
+        }
+    }
+
+    /// The titles of the columns that the schema page shows for this kind
+    /// only, between the name and the owner.
+    pub fn columns(self) -> &'static [&'static str] {
+        match self {
+            Kind::Tables => &["Type", "Format"],
+            Kind::Volumes => &["Type"],
+            Kind::Functions => &["Language", "Returns"],
+            Kind::Models => &[],
         }
     }
 
@@ -130,33 +148,72 @@ impl Kind {
             Kind::Tables => api::tables(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|t| entry(t.name, t.comment))
+                .map(|t| {
+                    let cells = vec![
+                        or_dash(enum_name(t.table_type)),
+                        or_dash(t.data_source_format.map(enum_name)),
+                    ];
+                    entry(t.name, t.comment, t.owner, t.created_at, cells)
+                })
                 .collect(),
             Kind::Volumes => api::volumes(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|v| entry(v.name, v.comment))
+                .map(|v| {
+                    let cells = vec![or_dash(enum_name(v.volume_type))];
+                    entry(v.name, v.comment, v.owner, v.created_at, cells)
+                })
                 .collect(),
             Kind::Functions => api::functions(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|f| entry(f.name, f.comment))
+                .map(|f| {
+                    let cells = vec![
+                        or_dash(function_language(&f)),
+                        or_dash(function_returns(&f)),
+                    ];
+                    entry(f.name, f.comment, f.owner, f.created_at, cells)
+                })
                 .collect(),
             Kind::Models => api::models(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|m| entry(m.name, m.comment))
+                .map(|m| entry(m.name, m.comment, m.owner, m.created_at, Vec::new()))
                 .collect(),
         };
         Ok(entries)
     }
 }
 
-fn entry(name: String, comment: Option<String>) -> Entry {
+fn entry(
+    name: String,
+    comment: Option<String>,
+    owner: Option<String>,
+    created_at: EpochMillis,
+    cells: Vec<String>,
+) -> Entry {
     Entry {
         name,
         comment: comment.filter(|c| !c.is_empty()),
+        owner,
+        created_at,
+        cells,
     }
+}
+
+/// A function's language: the external one, else its routine body, such
+/// as `SQL`.
+pub fn function_language(f: &FunctionInfo) -> Option<String> {
+    f.external_language
+        .clone()
+        .or_else(|| Some(enum_name(f.routine_body)).filter(|body| !body.is_empty()))
+}
+
+/// The type that a function returns.
+pub fn function_returns(f: &FunctionInfo) -> Option<String> {
+    f.full_data_type
+        .clone()
+        .or_else(|| f.data_type.map(enum_name))
 }
 
 /// A catalog's icon, in its color.

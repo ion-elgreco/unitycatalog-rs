@@ -15,8 +15,7 @@ use crate::components::edit_modal::Changes;
 use crate::components::icons::Plus;
 use crate::components::{
     Card, CreateObjectModal, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata,
-    Empty, EntityHeader, Loaded, MetaRow, ObjectRow, PermissionsCard, Tabs, loaded_list,
-    properties,
+    Empty, EntityHeader, Loaded, MetaRow, PermissionsCard, Tabs, loaded_list, properties,
 };
 use crate::contents::Holder;
 use crate::kind::{Kind, schema_icon};
@@ -209,7 +208,9 @@ fn KindPicker(kind: Memo<Kind>, catalog: String, schema: String) -> impl IntoVie
     }
 }
 
-/// The objects of one kind, as rows that link to their pages.
+/// The objects of one kind, as a table: the name, which links to the
+/// object's page, the kind's own columns, the owner, the creation and the
+/// comment.
 #[component]
 fn Entries(kind: Kind, catalog: String, schema: String) -> impl IntoView {
     let names = StoredValue::new((catalog, schema));
@@ -231,20 +232,50 @@ fn Entries(kind: Kind, catalog: String, schema: String) -> impl IntoView {
         loaded_list(entries.get(), empty, |list| {
             let (catalog, schema) = names.get_value();
             view! {
-                <div class="uc-rows">
-                    {list
-                        .into_iter()
-                        .map(|entry| {
-                            view! {
-                                <ObjectRow
-                                    icon=kind.icon()
-                                    name=entry.name.clone()
-                                    href=kind.href(&catalog, &schema, &entry.name)
-                                    comment=None
-                                />
-                            }
-                        })
-                        .collect_view()}
+                <div class="uc-table-wrap">
+                    <table class="uc-table">
+                        <thead>
+                            <tr>
+                                <th>"Name"</th>
+                                {kind
+                                    .columns()
+                                    .iter()
+                                    .map(|title| view! { <th>{*title}</th> })
+                                    .collect_view()}
+                                <th>"Owner"</th>
+                                <th>"Created"</th>
+                                <th>"Comment"</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {list
+                                .into_iter()
+                                .map(|entry| {
+                                    let href = kind.href(&catalog, &schema, &entry.name);
+                                    view! {
+                                        <tr>
+                                            <td class="uc-strong">
+                                                <a class="uc-btn uc-btn--link" href=href>
+                                                    {kind.icon()}
+                                                    {entry.name}
+                                                </a>
+                                            </td>
+                                            {entry
+                                                .cells
+                                                .into_iter()
+                                                .map(|cell| view! { <td class="uc-muted">{cell}</td> })
+                                                .collect_view()}
+                                            <td class="uc-muted">{or_dash(entry.owner)}</td>
+                                            <td class="uc-muted uc-nowrap">
+                                                {format_timestamp(entry.created_at)}
+                                            </td>
+                                            <td class="uc-muted">{or_dash(entry.comment)}</td>
+                                        </tr>
+                                    }
+                                })
+                                .collect_view()}
+                        </tbody>
+                    </table>
                 </div>
             }
             .into_any()
