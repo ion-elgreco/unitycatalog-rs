@@ -2093,14 +2093,14 @@ async fn create_row(
                     .into());
                 }
             };
-            // The API takes a role: without one in the input, its ARN is
-            // empty.
+            // An AWS IAM role: without one in the input, its ARN is empty.
             let role = AwsIamRoleRequest {
                 role_arn: parts.get(2).cloned().unwrap_or_default(),
                 ..Default::default()
             };
             let info = client
-                .create_credential(name, role)
+                .create_credential(name)
+                .with_aws_iam_role(role)
                 .with_purpose(purpose)
                 .await?;
             msg(format!("created credential '{}'", info.name))

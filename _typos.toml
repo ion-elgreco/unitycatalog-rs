@@ -5,6 +5,8 @@ alo = "alo"
 pn = "pn"
 # The TUI crate of the CLI.
 ratatui = "ratatui"
+# Azure Kubernetes Service.
+aks = "aks"
 # Pieces of the test signing key and its JWK in the uc-client auth tests.
 migh = "migh"
 iy = "iy"

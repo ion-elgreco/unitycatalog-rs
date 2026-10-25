@@ -195,6 +195,10 @@ static AWS_IAM_ROLE: Model = Model(&[
     ("external_id", P),
 ]);
 
+static AZURE_SERVICE_PRINCIPAL: Model = Model(&[("directory_id", P), ("application_id", P)]);
+
+static AZURE_MANAGED_IDENTITY: Model = Model(&[("managed_identity_id", P)]);
+
 pub static CREDENTIAL: Model = Model(&[
     ("name", P),
     ("aws_iam_role", O(&AWS_IAM_ROLE)),
@@ -207,6 +211,8 @@ pub static CREDENTIAL: Model = Model(&[
     ("updated_at", P),
     ("updated_by", P),
     ("purpose", P),
+    ("azure_service_principal", O(&AZURE_SERVICE_PRINCIPAL)),
+    ("azure_managed_identity", O(&AZURE_MANAGED_IDENTITY)),
 ]);
 
 pub static EXTERNAL_LOCATION: Model = Model(&[

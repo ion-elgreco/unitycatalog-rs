@@ -161,7 +161,7 @@ def _bad_value(name: str) -> typing.Callable[[], object]:
         ),
         "ColumnTypeName": lambda: ColumnInfo("id", "{}", type_name=BOGUS),
         "CredentialPurpose": lambda: OFFLINE.create_credential(
-            "c", role, purpose=BOGUS
+            "c", aws_iam_role=role, purpose=BOGUS
         ),
         "DataSourceFormat": lambda: OFFLINE.create_table(
             "t", "c", "s", "MANAGED", data_source_format=BOGUS

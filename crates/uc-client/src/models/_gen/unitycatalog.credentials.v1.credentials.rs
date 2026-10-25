@@ -1185,6 +1185,570 @@ pub const __AWS_IAM_ROLE_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry
         is_wkt: false,
     };
 
+/// The Azure service principal of a new or changed credential.
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct AzureServicePrincipalRequest {
+    /// ID of the Microsoft Entra ID tenant (directory) of the application.
+    ///
+    /// Field 1: `directory_id`
+    #[serde(
+        rename = "directory_id",
+        alias = "directoryId",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub directory_id: ::buffa::alloc::string::String,
+    /// Application (client) ID of the service principal.
+    ///
+    /// Field 2: `application_id`
+    #[serde(
+        rename = "application_id",
+        alias = "applicationId",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub application_id: ::buffa::alloc::string::String,
+    /// Client secret of the application. The server stores it and never returns it.
+    ///
+    /// Field 3: `client_secret`
+    #[serde(
+        rename = "client_secret",
+        alias = "clientSecret",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub client_secret: ::buffa::alloc::string::String,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for AzureServicePrincipalRequest {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("AzureServicePrincipalRequest")
+            .field("directory_id", &self.directory_id)
+            .field("application_id", &self.application_id)
+            .field("client_secret", &::core::format_args!("[REDACTED]"))
+            .finish()
+    }
+}
+
+impl AzureServicePrincipalRequest {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.credentials.v1.AzureServicePrincipalRequest";
+}
+
+impl ::buffa::DefaultInstance for AzureServicePrincipalRequest {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<AzureServicePrincipalRequest> =
+            ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for AzureServicePrincipalRequest {
+    const PACKAGE: &'static str = "unitycatalog.credentials.v1";
+    const NAME: &'static str = "AzureServicePrincipalRequest";
+    const FULL_NAME: &'static str = "unitycatalog.credentials.v1.AzureServicePrincipalRequest";
+    const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.credentials.v1.AzureServicePrincipalRequest";
+}
+
+impl ::buffa::Message for AzureServicePrincipalRequest {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if !self.directory_id.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.directory_id) as u32;
+        }
+        if !self.application_id.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.application_id) as u32;
+        }
+        if !self.client_secret.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.client_secret) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, _cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if !self.directory_id.is_empty() {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.directory_id, buf);
+        }
+        if !self.application_id.is_empty() {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.application_id, buf);
+        }
+        if !self.client_secret.is_empty() {
+            ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.client_secret, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.directory_id, buf)?;
+            }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.application_id, buf)?;
+            }
+            3u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 3u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.client_secret, buf)?;
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.directory_id.clear();
+        self.application_id.clear();
+        self.client_secret.clear();
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for AzureServicePrincipalRequest {
+    const PROTO_FQN: &'static str = "unitycatalog.credentials.v1.AzureServicePrincipalRequest";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for AzureServicePrincipalRequest {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __AZURE_SERVICE_PRINCIPAL_REQUEST_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.credentials.v1.AzureServicePrincipalRequest",
+        to_json: ::buffa::type_registry::any_to_json::<AzureServicePrincipalRequest>,
+        from_json: ::buffa::type_registry::any_from_json::<AzureServicePrincipalRequest>,
+        is_wkt: false,
+    };
+
+/// The Azure service principal of a credential. The client secret is not returned.
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct AzureServicePrincipalResponse {
+    /// ID of the Microsoft Entra ID tenant (directory) of the application.
+    ///
+    /// Field 1: `directory_id`
+    #[serde(
+        rename = "directory_id",
+        alias = "directoryId",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub directory_id: ::buffa::alloc::string::String,
+    /// Application (client) ID of the service principal.
+    ///
+    /// Field 2: `application_id`
+    #[serde(
+        rename = "application_id",
+        alias = "applicationId",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub application_id: ::buffa::alloc::string::String,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for AzureServicePrincipalResponse {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("AzureServicePrincipalResponse")
+            .field("directory_id", &self.directory_id)
+            .field("application_id", &self.application_id)
+            .finish()
+    }
+}
+
+impl AzureServicePrincipalResponse {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.credentials.v1.AzureServicePrincipalResponse";
+}
+
+impl ::buffa::DefaultInstance for AzureServicePrincipalResponse {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<AzureServicePrincipalResponse> =
+            ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for AzureServicePrincipalResponse {
+    const PACKAGE: &'static str = "unitycatalog.credentials.v1";
+    const NAME: &'static str = "AzureServicePrincipalResponse";
+    const FULL_NAME: &'static str = "unitycatalog.credentials.v1.AzureServicePrincipalResponse";
+    const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.credentials.v1.AzureServicePrincipalResponse";
+}
+
+impl ::buffa::Message for AzureServicePrincipalResponse {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if !self.directory_id.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.directory_id) as u32;
+        }
+        if !self.application_id.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.application_id) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, _cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if !self.directory_id.is_empty() {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.directory_id, buf);
+        }
+        if !self.application_id.is_empty() {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.application_id, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.directory_id, buf)?;
+            }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.application_id, buf)?;
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.directory_id.clear();
+        self.application_id.clear();
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for AzureServicePrincipalResponse {
+    const PROTO_FQN: &'static str = "unitycatalog.credentials.v1.AzureServicePrincipalResponse";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for AzureServicePrincipalResponse {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __AZURE_SERVICE_PRINCIPAL_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.credentials.v1.AzureServicePrincipalResponse",
+        to_json: ::buffa::type_registry::any_to_json::<AzureServicePrincipalResponse>,
+        from_json: ::buffa::type_registry::any_from_json::<AzureServicePrincipalResponse>,
+        is_wkt: false,
+    };
+
+/// The Azure managed identity of a credential: the server's own Azure identity.
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct AzureManagedIdentity {
+    /// Azure resource ID of a user-assigned managed identity, which the server gets from the
+    /// instance metadata service. Absent: the identity that the server's environment gives, such as
+    /// AKS workload identity or the managed identity of the VM.
+    ///
+    /// Field 1: `managed_identity_id`
+    #[serde(
+        rename = "managed_identity_id",
+        alias = "managedIdentityId",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub managed_identity_id: ::core::option::Option<::buffa::alloc::string::String>,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for AzureManagedIdentity {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("AzureManagedIdentity")
+            .field("managed_identity_id", &self.managed_identity_id)
+            .finish()
+    }
+}
+
+impl AzureManagedIdentity {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.credentials.v1.AzureManagedIdentity";
+}
+
+impl AzureManagedIdentity {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::managed_identity_id`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_managed_identity_id(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.managed_identity_id = Some(value.into());
+        self
+    }
+}
+
+impl ::buffa::DefaultInstance for AzureManagedIdentity {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<AzureManagedIdentity> =
+            ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for AzureManagedIdentity {
+    const PACKAGE: &'static str = "unitycatalog.credentials.v1";
+    const NAME: &'static str = "AzureManagedIdentity";
+    const FULL_NAME: &'static str = "unitycatalog.credentials.v1.AzureManagedIdentity";
+    const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.credentials.v1.AzureManagedIdentity";
+}
+
+impl ::buffa::Message for AzureManagedIdentity {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if let Some(ref v) = self.managed_identity_id {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, _cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let Some(ref v) = self.managed_identity_id {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.managed_identity_id
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.managed_identity_id = ::core::option::Option::None;
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for AzureManagedIdentity {
+    const PROTO_FQN: &'static str = "unitycatalog.credentials.v1.AzureManagedIdentity";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for AzureManagedIdentity {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __AZURE_MANAGED_IDENTITY_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.credentials.v1.AzureManagedIdentity",
+        to_json: ::buffa::type_registry::any_to_json::<AzureManagedIdentity>,
+        from_json: ::buffa::type_registry::any_from_json::<AzureManagedIdentity>,
+        is_wkt: false,
+    };
+
 /// A credential that gives access to storage or to external services.
 #[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -1289,6 +1853,24 @@ pub struct CredentialInfo {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub purpose: ::core::option::Option<::buffa::EnumValue<CredentialPurpose>>,
+    /// The Azure service principal of the credential.
+    ///
+    /// Field 12: `azure_service_principal`
+    #[serde(
+        rename = "azure_service_principal",
+        alias = "azureServicePrincipal",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub azure_service_principal: ::buffa::MessageField<AzureServicePrincipalResponse>,
+    /// The Azure managed identity of the credential.
+    ///
+    /// Field 13: `azure_managed_identity`
+    #[serde(
+        rename = "azure_managed_identity",
+        alias = "azureManagedIdentity",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub azure_managed_identity: ::buffa::MessageField<AzureManagedIdentity>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1308,6 +1890,8 @@ impl ::core::fmt::Debug for CredentialInfo {
             .field("updated_at", &self.updated_at)
             .field("updated_by", &self.updated_by)
             .field("purpose", &self.purpose)
+            .field("azure_service_principal", &self.azure_service_principal)
+            .field("azure_managed_identity", &self.azure_managed_identity)
             .finish()
     }
 }
@@ -1425,6 +2009,18 @@ impl ::buffa::Message for CredentialInfo {
         if let Some(ref v) = self.purpose {
             size += 1u32 + ::buffa::types::int32_encoded_len(v.to_i32()) as u32;
         }
+        if self.azure_service_principal.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.azure_service_principal.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
+        if self.azure_managed_identity.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.azure_managed_identity.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -1484,6 +2080,18 @@ impl ::buffa::Message for CredentialInfo {
         if let Some(ref v) = self.purpose {
             ::buffa::encoding::Tag::new(11u32, ::buffa::encoding::WireType::Varint).encode(buf);
             ::buffa::types::encode_int32(v.to_i32(), buf);
+        }
+        if self.azure_service_principal.is_set() {
+            ::buffa::encoding::Tag::new(12u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.azure_service_principal.write_to(__cache, buf);
+        }
+        if self.azure_managed_identity.is_set() {
+            ::buffa::encoding::Tag::new(13u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.azure_managed_identity.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -1632,6 +2240,34 @@ impl ::buffa::Message for CredentialInfo {
                     ::buffa::types::decode_int32(buf)?,
                 ));
             }
+            12u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 12u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.azure_service_principal.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
+            13u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 13u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.azure_managed_identity.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -1652,6 +2288,8 @@ impl ::buffa::Message for CredentialInfo {
         self.updated_at = 0i64;
         self.updated_by = ::core::option::Option::None;
         self.purpose = ::core::option::Option::None;
+        self.azure_service_principal = ::buffa::MessageField::none();
+        self.azure_managed_identity = ::buffa::MessageField::none();
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -1711,7 +2349,8 @@ pub struct CreateCredentialRequest {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub comment: ::core::option::Option<::buffa::alloc::string::String>,
-    /// The AWS IAM role of the credential: an AWS IAM role is the only kind of credential.
+    /// The AWS IAM role of the credential. A credential has exactly one of `aws_iam_role`,
+    /// `azure_service_principal` and `azure_managed_identity`.
     ///
     /// Field 3: `aws_iam_role`
     #[serde(
@@ -1729,6 +2368,24 @@ pub struct CreateCredentialRequest {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub purpose: ::core::option::Option<::buffa::EnumValue<CredentialPurpose>>,
+    /// The Azure service principal of the credential.
+    ///
+    /// Field 5: `azure_service_principal`
+    #[serde(
+        rename = "azure_service_principal",
+        alias = "azureServicePrincipal",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub azure_service_principal: ::buffa::MessageField<AzureServicePrincipalRequest>,
+    /// The Azure managed identity of the credential.
+    ///
+    /// Field 6: `azure_managed_identity`
+    #[serde(
+        rename = "azure_managed_identity",
+        alias = "azureManagedIdentity",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub azure_managed_identity: ::buffa::MessageField<AzureManagedIdentity>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1741,6 +2398,8 @@ impl ::core::fmt::Debug for CreateCredentialRequest {
             .field("comment", &self.comment)
             .field("aws_iam_role", &self.aws_iam_role)
             .field("purpose", &self.purpose)
+            .field("azure_service_principal", &self.azure_service_principal)
+            .field("azure_managed_identity", &self.azure_managed_identity)
             .finish()
     }
 }
@@ -1814,6 +2473,18 @@ impl ::buffa::Message for CreateCredentialRequest {
         if let Some(ref v) = self.purpose {
             size += 1u32 + ::buffa::types::int32_encoded_len(v.to_i32()) as u32;
         }
+        if self.azure_service_principal.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.azure_service_principal.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
+        if self.azure_managed_identity.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.azure_managed_identity.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -1840,6 +2511,18 @@ impl ::buffa::Message for CreateCredentialRequest {
         if let Some(ref v) = self.purpose {
             ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::Varint).encode(buf);
             ::buffa::types::encode_int32(v.to_i32(), buf);
+        }
+        if self.azure_service_principal.is_set() {
+            ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.azure_service_principal.write_to(__cache, buf);
+        }
+        if self.azure_managed_identity.is_set() {
+            ::buffa::encoding::Tag::new(6u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.azure_managed_identity.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -1906,6 +2589,34 @@ impl ::buffa::Message for CreateCredentialRequest {
                     ::buffa::types::decode_int32(buf)?,
                 ));
             }
+            5u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 5u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.azure_service_principal.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
+            6u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 6u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.azure_managed_identity.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -1919,6 +2630,8 @@ impl ::buffa::Message for CreateCredentialRequest {
         self.comment = ::core::option::Option::None;
         self.aws_iam_role = ::buffa::MessageField::none();
         self.purpose = ::core::option::Option::None;
+        self.azure_service_principal = ::buffa::MessageField::none();
+        self.azure_managed_identity = ::buffa::MessageField::none();
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -2569,7 +3282,9 @@ pub struct UpdateCredentialRequest {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub comment: ::core::option::Option<::buffa::alloc::string::String>,
-    /// New AWS IAM role of the credential. The role gets a new external ID.
+    /// New AWS IAM role of the credential. The role gets a new external ID. Give at most one of
+    /// `aws_iam_role`, `azure_service_principal` and `azure_managed_identity`: it replaces the
+    /// identity of the credential.
     ///
     /// Field 3: `aws_iam_role`
     #[serde(
@@ -2587,6 +3302,24 @@ pub struct UpdateCredentialRequest {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub new_name: ::core::option::Option<::buffa::alloc::string::String>,
+    /// New Azure service principal of the credential.
+    ///
+    /// Field 5: `azure_service_principal`
+    #[serde(
+        rename = "azure_service_principal",
+        alias = "azureServicePrincipal",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub azure_service_principal: ::buffa::MessageField<AzureServicePrincipalRequest>,
+    /// New Azure managed identity of the credential.
+    ///
+    /// Field 6: `azure_managed_identity`
+    #[serde(
+        rename = "azure_managed_identity",
+        alias = "azureManagedIdentity",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub azure_managed_identity: ::buffa::MessageField<AzureManagedIdentity>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -2599,6 +3332,8 @@ impl ::core::fmt::Debug for UpdateCredentialRequest {
             .field("comment", &self.comment)
             .field("aws_iam_role", &self.aws_iam_role)
             .field("new_name", &self.new_name)
+            .field("azure_service_principal", &self.azure_service_principal)
+            .field("azure_managed_identity", &self.azure_managed_identity)
             .finish()
     }
 }
@@ -2672,6 +3407,18 @@ impl ::buffa::Message for UpdateCredentialRequest {
         if let Some(ref v) = self.new_name {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
         }
+        if self.azure_service_principal.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.azure_service_principal.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
+        if self.azure_managed_identity.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.azure_managed_identity.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -2699,6 +3446,18 @@ impl ::buffa::Message for UpdateCredentialRequest {
             ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(v, buf);
+        }
+        if self.azure_service_principal.is_set() {
+            ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.azure_service_principal.write_to(__cache, buf);
+        }
+        if self.azure_managed_identity.is_set() {
+            ::buffa::encoding::Tag::new(6u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.azure_managed_identity.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -2767,6 +3526,34 @@ impl ::buffa::Message for UpdateCredentialRequest {
                     buf,
                 )?;
             }
+            5u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 5u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.azure_service_principal.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
+            6u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 6u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.azure_managed_identity.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -2780,6 +3567,8 @@ impl ::buffa::Message for UpdateCredentialRequest {
         self.comment = ::core::option::Option::None;
         self.aws_iam_role = ::buffa::MessageField::none();
         self.new_name = ::core::option::Option::None;
+        self.azure_service_principal = ::buffa::MessageField::none();
+        self.azure_managed_identity = ::buffa::MessageField::none();
         self.__buffa_unknown_fields.clear();
     }
 }

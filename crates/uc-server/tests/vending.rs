@@ -99,24 +99,28 @@ async fn ok(resp: axum::response::Response) -> Value {
     json_body(assert_status(resp, StatusCode::OK, "vend").await).await
 }
 
-/// Credential `cred` (an AWS role) and external location `el` at `url`.
-async fn external_location(app: &Router, url: &str) -> Value {
+/// The AWS role of a credential.
+fn aws_role() -> Value {
+    json!({ "aws_iam_role": { "role_arn": "arn:aws:iam::123456789012:role/data" } })
+}
+
+/// Credential `name` with `identity`, such as [`aws_role`], and external
+/// location `name` at `url`.
+async fn external_location(app: &Router, name: &str, url: &str, identity: Value) -> Value {
+    let mut body = json!({ "name": name, "purpose": "STORAGE" });
+    body.as_object_mut()
+        .unwrap()
+        .extend(identity.as_object().unwrap().clone());
     let credential = json_body(
         assert_status(
-            post(
-                app,
-                "/credentials",
-                json!({ "name": "cred", "purpose": "STORAGE",
-                "aws_iam_role": { "role_arn": "arn:aws:iam::123456789012:role/data" } }),
-            )
-            .await,
+            post(app, "/credentials", body).await,
             StatusCode::OK,
             "credential",
         )
         .await,
     )
     .await;
-    let location = json!({ "name": "el", "url": url, "credential_name": "cred" });
+    let location = json!({ "name": name, "url": url, "credential_name": name });
     assert_status(
         post(app, "/external-locations", location).await,
         StatusCode::OK,
@@ -162,7 +166,7 @@ async fn s3_under_an_external_location_assumes_its_role() {
         },
     )
     .await;
-    let credential = external_location(&app, "s3://bucket/data").await;
+    let credential = external_location(&app, "el", "s3://bucket/data", aws_role()).await;
 
     let body = ok(vend(&app, "s3://bucket/data/t1", "PATH_READ").await).await;
     assert_eq!(
@@ -225,7 +229,7 @@ async fn s3_compatible_store_gets_sts_calls_without_kms() {
     "#
     );
     let app = app(&settings, Endpoints::default()).await;
-    external_location(&app, "s3://bucket/data").await;
+    external_location(&app, "el", "s3://bucket/data", aws_role()).await;
 
     let body = ok(vend(&app, "s3://bucket/data/t1", "PATH_READ_WRITE").await).await;
     assert_eq!(body["aws_temp_credentials"]["access_key_id"], "ASIAMOCK");
@@ -307,6 +311,12 @@ async fn s3_without_a_location_uses_the_bucket_configuration() {
     assert_eq!(err["message"], "S3 bucket configuration not found.");
 }
 
+/// A user delegation key, as the blob service answers it.
+const DELEGATION_KEY: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?><UserDelegationKey>\
+    <SignedOid>oid</SignedOid><SignedTid>tid</SignedTid><SignedStart>2030-01-01T00:00:00Z</SignedStart>\
+    <SignedExpiry>2030-01-01T01:00:00Z</SignedExpiry><SignedService>b</SignedService>\
+    <SignedVersion>2021-08-06</SignedVersion><Value>c2VjcmV0</Value></UserDelegationKey>";
+
 /// Upstream `AzureCredentialVendor`: the account's service principal gets a
 /// user delegation key and signs a directory SAS for the path.
 #[tokio::test]
@@ -317,11 +327,7 @@ async fn azure_signs_a_user_delegation_sas() {
             .to_string(),
     )
     .await;
-    let key = "<?xml version=\"1.0\" encoding=\"utf-8\"?><UserDelegationKey>\
-        <SignedOid>oid</SignedOid><SignedTid>tid</SignedTid><SignedStart>2030-01-01T00:00:00Z</SignedStart>\
-        <SignedExpiry>2030-01-01T01:00:00Z</SignedExpiry><SignedService>b</SignedService>\
-        <SignedVersion>2021-08-06</SignedVersion><Value>c2VjcmV0</Value></UserDelegationKey>";
-    let (blob, keys) = mock("application/xml", key.to_string()).await;
+    let (blob, keys) = mock("application/xml", DELEGATION_KEY.to_string()).await;
     let settings = r#"
         [adls.acct]
         account = "acct"
@@ -448,22 +454,88 @@ async fn azure_signs_a_user_delegation_sas() {
         err["message"],
         "Azure storage account configuration not found."
     );
-    external_location(&app, "abfss://c@acct.dfs.core.windows.net/el").await;
-    let err = assert_error(
-        vend(
-            &app,
-            "abfss://c@acct.dfs.core.windows.net/el/x",
-            "PATH_READ",
-        )
-        .await,
-        StatusCode::NOT_IMPLEMENTED,
-        "UNIMPLEMENTED",
+
+    // Under an external location, its credential's service principal signs
+    // in.
+    let principal = json!({ "azure_service_principal": {
+        "directory_id": "el-tenant", "application_id": "el-client", "client_secret": "el-secret" } });
+    let url = "abfss://c@acct.dfs.core.windows.net/el";
+    let credential = external_location(&app, "el", url, principal).await;
+    assert_eq!(
+        credential["azure_service_principal"],
+        json!({ "directory_id": "el-tenant", "application_id": "el-client" })
+    );
+    let body = ok(vend(&app, &format!("{url}/x"), "PATH_READ").await).await;
+    let sas = body["azure_user_delegation_sas"]["sas_token"]
+        .as_str()
+        .unwrap();
+    assert!(sas.contains("sp=rl&"), "{sas}");
+    let signed_in = logins.lock().unwrap().last().unwrap().clone();
+    assert_eq!(signed_in.path, "/el-tenant/oauth2/v2.0/token");
+    let form = signed_in.form();
+    assert_eq!(
+        (form["client_id"].as_str(), form["client_secret"].as_str()),
+        ("el-client", "el-secret")
+    );
+    // A location of another account: the credential reaches any.
+    let other = "abfss://c@other.dfs.core.windows.net/el";
+    let location = json!({ "name": "other", "url": other, "credential_name": "el" });
+    assert_status(
+        post(&app, "/external-locations", location).await,
+        StatusCode::OK,
+        "location",
     )
     .await;
+    ok(vend(&app, &format!("{other}/x"), "PATH_READ").await).await;
+}
+
+/// A managed identity is the server's own Azure identity: a user-assigned
+/// one by its resource ID, from the instance metadata service, or else the
+/// identity of the environment.
+#[tokio::test]
+async fn azure_managed_identities_sign_user_delegation_sas() {
+    let token = json!({ "access_token": "msi-token", "expires_on": "4102444800" });
+    let (msi, tokens) = mock("application/json", token.to_string()).await;
+    let (blob, keys) = mock("application/xml", DELEGATION_KEY.to_string()).await;
+    let endpoints = Endpoints {
+        azure_msi: Some(format!("{msi}/metadata/identity/oauth2/token")),
+        azure_blob: Some(blob),
+        ..Default::default()
+    };
+    let app = app("", endpoints).await;
+    let id = "/subscriptions/s/resourceGroups/g/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uc";
+    let url = "abfss://c@acct.dfs.core.windows.net/mi";
+    let identity = json!({ "azure_managed_identity": { "managed_identity_id": id } });
+    let credential = external_location(&app, "mi", url, identity).await;
     assert_eq!(
-        err["message"],
-        "Storage credential/external location for Azure is not supported yet."
+        credential["azure_managed_identity"],
+        json!({ "managed_identity_id": id })
     );
+
+    let body = ok(vend(&app, &format!("{url}/t"), "PATH_READ_WRITE").await).await;
+    let sas = body["azure_user_delegation_sas"]["sas_token"]
+        .as_str()
+        .unwrap();
+    assert!(sas.contains("sp=rwdl&"), "{sas}");
+    let asked = tokens.lock().unwrap()[0].clone();
+    let (path, query) = asked.path.split_once('?').unwrap();
+    assert_eq!(path, "/metadata/identity/oauth2/token");
+    let query: HashMap<String, String> = serde_urlencoded::from_str(query).unwrap();
+    assert_eq!(query["resource"], "https://storage.azure.com");
+    assert_eq!(query["msi_res_id"], id);
+    assert_eq!(asked.headers["metadata"], "true");
+    assert_eq!(
+        keys.lock().unwrap()[0].headers["authorization"],
+        "Bearer msi-token"
+    );
+
+    // Without a resource ID: the environment's identity, here the instance
+    // metadata service's default one.
+    let url = "abfss://c@acct.dfs.core.windows.net/own";
+    external_location(&app, "own", url, json!({ "azure_managed_identity": {} })).await;
+    ok(vend(&app, &format!("{url}/t"), "PATH_READ").await).await;
+    let asked = tokens.lock().unwrap().last().unwrap().clone();
+    assert!(!asked.path.contains("msi_res_id"), "{}", asked.path);
 }
 
 /// Upstream `GcpCredentialVendor`: the bucket's service account token,
@@ -589,16 +661,26 @@ async fn gcp_downscopes_the_server_token() {
         err["message"],
         "Unknown GCS storage configuration for gs://nope."
     );
-    external_location(&app, "gs://gbucket/el").await;
+    // No credential reaches GCS yet, so no external location covers it.
+    let mut credential = aws_role();
+    credential["name"] = json!("aws");
+    assert_status(
+        post(&app, "/credentials", credential).await,
+        StatusCode::OK,
+        "credential",
+    )
+    .await;
+    let location = json!({ "name": "el", "url": "gs://gbucket/el", "credential_name": "aws" });
     let err = assert_error(
-        vend(&app, "gs://gbucket/el/x", "PATH_READ").await,
-        StatusCode::NOT_IMPLEMENTED,
-        "UNIMPLEMENTED",
+        post(&app, "/external-locations", location).await,
+        StatusCode::BAD_REQUEST,
+        "INVALID_ARGUMENT",
     )
     .await;
     assert_eq!(
         err["message"],
-        "Storage credential/external location for GCP is not supported yet."
+        "Credential aws cannot reach gs://gbucket/el: it needs a GCP identity, which credentials \
+         cannot have yet."
     );
 }
 

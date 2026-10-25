@@ -38,6 +38,14 @@ pub mod help {
     pub const URL: &str = "The URL of the external location, such as s3://bucket/path";
     pub const CREDENTIAL_NAME: &str = "The name of the storage credential";
     pub const AWS_IAM_ROLE_ARN: &str = "The ARN of the AWS IAM role of the credential";
+    pub const AZURE_DIRECTORY_ID: &str =
+        "The Microsoft Entra ID tenant (directory) of the credential's Azure service principal";
+    pub const AZURE_APPLICATION_ID: &str =
+        "The application (client) ID of the credential's Azure service principal";
+    pub const AZURE_CLIENT_SECRET: &str =
+        "The client secret of the credential's Azure service principal";
+    pub const AZURE_MANAGED_IDENTITY: &str = "The server's own Azure identity; with a value, \
+        the resource ID of a user-assigned managed identity";
 }
 
 /// `--properties`: a JSON object, whose values that are not strings become

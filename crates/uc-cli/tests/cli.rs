@@ -959,6 +959,57 @@ async fn users_permissions_credentials_and_locations() {
         got["aws_iam_role"]["role_arn"],
         "arn:aws:iam::123456789012:role/uc-test"
     );
+    // Azure: a service principal, whose secret no answer holds, and the
+    // server's own identity. A credential needs one identity.
+    let principal = s
+        .json(&[
+            "credential",
+            "create",
+            "--name",
+            "sp",
+            "--azure_directory_id",
+            "tenant",
+            "--azure_application_id",
+            "app",
+            "--azure_client_secret",
+            "s3cret",
+        ])
+        .await;
+    assert_eq!(
+        principal["azure_service_principal"],
+        json!({ "directory_id": "tenant", "application_id": "app" })
+    );
+    assert!(!principal.to_string().contains("s3cret"));
+    let own = s
+        .json(&[
+            "credential",
+            "update",
+            "--name",
+            "sp",
+            "--azure_managed_identity",
+        ])
+        .await;
+    assert_eq!(
+        own["azure_managed_identity"],
+        json!({ "managed_identity_id": null })
+    );
+    assert_eq!(own["azure_service_principal"], Value::Null);
+    // Usage errors.
+    let (code, _, err) = s.uc(&["credential", "create", "--name", "none"]).await;
+    assert_eq!(code, 2);
+    assert!(err.contains("--aws_iam_role_arn"), "{err}");
+    let half = [
+        "credential",
+        "create",
+        "--name",
+        "half",
+        "--azure_directory_id",
+        "t",
+    ];
+    let (code, _, err) = s.uc(&half).await;
+    assert_eq!(code, 2);
+    assert!(err.contains("--azure_application_id"), "{err}");
+    s.ok(&["credential", "delete", "--name", "sp"]).await;
     let location = s
         .json(&[
             "external_location",

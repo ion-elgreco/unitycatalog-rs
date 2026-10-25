@@ -2,7 +2,8 @@
 //! `CloudCredentialVendor`.
 //!
 //! Credentials for a path come from the storage credential of the external
-//! location that covers it or, without one, from the per-bucket settings
+//! location that covers it (an AWS role, an Azure service principal or an
+//! Azure managed identity) or, without one, from the per-bucket settings
 //! (`[s3.<name>]`, `[adls.<name>]`, `[gcs.<name>]`). The
 //! vendor is chosen by the path's scheme: AWS STS for `s3`, an Azure user
 //! delegation SAS for `abfs`/`abfss`, a downscoped GCP token for `gs`, and
@@ -57,14 +58,22 @@ pub struct CredentialContext {
     pub privileges: Vec<StoragePrivilege>,
     pub locations: Vec<NormalizedUrl>,
     /// The storage credential of the covering external location, if any.
-    pub credential: Option<CredentialInfo>,
+    pub credential: Option<StorageCredential>,
+}
+
+/// A storage credential, with the client secret of its Azure service
+/// principal, if any.
+#[derive(Debug, Clone)]
+pub struct StorageCredential {
+    pub info: CredentialInfo,
+    pub client_secret: Option<String>,
 }
 
 impl CredentialContext {
     pub fn new(
         location: NormalizedUrl,
         privileges: &[StoragePrivilege],
-        credential: Option<CredentialInfo>,
+        credential: Option<StorageCredential>,
     ) -> Self {
         Self {
             scheme: location.scheme(),
@@ -145,7 +154,7 @@ pub(crate) fn xml_text<'a>(xml: &'a str, tag: &str) -> Option<&'a str> {
 pub async fn credential_for_url(
     metastore: &DynMetastore,
     url: &str,
-) -> Result<Option<CredentialInfo>> {
+) -> Result<Option<StorageCredential>> {
     let Some(location) = metastore
         .external_locations()
         .find_by_url_prefix(url)
@@ -156,7 +165,11 @@ pub async fn credential_for_url(
     let name = location
         .credential_name
         .ok_or_else(|| Error::internal("external_location row missing credential_name"))?;
-    Ok(Some(metastore.credentials().get(&name).await?))
+    let (info, client_secret) = metastore.credentials().get_with_secret(&name).await?;
+    Ok(Some(StorageCredential {
+        info,
+        client_secret,
+    }))
 }
 
 /// The per-bucket and master configuration of the settings.
@@ -288,9 +301,11 @@ impl CloudVendor {
         if let Some(sts) = endpoints.aws_sts {
             self.aws = self.aws.with_endpoint(sts);
         }
-        self.azure = self
-            .azure
-            .with_endpoints(endpoints.azure_login, endpoints.azure_blob);
+        self.azure = self.azure.with_endpoints(
+            endpoints.azure_login,
+            endpoints.azure_blob,
+            endpoints.azure_msi,
+        );
         self.gcp = self
             .gcp
             .with_endpoints(endpoints.gcp_sts, endpoints.gcp_metadata);
@@ -305,6 +320,8 @@ pub struct Endpoints {
     pub azure_login: Option<String>,
     /// Replaces `https://{account}.blob.core.windows.net`.
     pub azure_blob: Option<String>,
+    /// Replaces the token endpoint of the instance metadata service.
+    pub azure_msi: Option<String>,
     pub gcp_sts: Option<String>,
     pub gcp_metadata: Option<String>,
 }
@@ -340,6 +357,7 @@ impl CredentialVendor for PlaceholderVendor {
                     access_key_id: None,
                     secret_access_key: None,
                     session_token: credential
+                        .info
                         .aws_iam_role
                         .as_ref()
                         .and_then(|r| r.role_arn.clone()),

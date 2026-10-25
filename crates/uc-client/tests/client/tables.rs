@@ -173,15 +173,13 @@ async fn temporary_credentials_of_local_storage() {
 async fn temporary_credentials_of_cloud_storage() {
     let uc = client().await;
     let role = "arn:aws:iam::123456789012:role/uc";
-    uc.create_credential(
-        "cred",
-        AwsIamRoleRequest {
+    uc.create_credential("cred")
+        .with_aws_iam_role(AwsIamRoleRequest {
             role_arn: role.into(),
             ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
+        })
+        .await
+        .unwrap();
     uc.create_external_location("lake", "s3://bucket/lake", "cred")
         .await
         .unwrap();

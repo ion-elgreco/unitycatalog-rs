@@ -2,7 +2,9 @@
 
 use futures::TryStreamExt;
 
-use uc_client::models::credentials::v1::{AwsIamRoleRequest, CredentialPurpose};
+use uc_client::models::credentials::v1::{
+    AwsIamRoleRequest, AzureManagedIdentity, AzureServicePrincipalRequest, CredentialPurpose,
+};
 use uc_client::models::volumes::v1::VolumeType;
 
 use crate::common::{catalog_and_schema, client, rejected};
@@ -20,7 +22,8 @@ fn role(arn: &str) -> AwsIamRoleRequest {
 async fn credentials() {
     let uc = client().await;
     let credential = uc
-        .create_credential("cred", role(ROLE))
+        .create_credential("cred")
+        .with_aws_iam_role(role(ROLE))
         .with_comment("prod".to_string())
         .with_purpose(CredentialPurpose::Storage)
         .await
@@ -32,7 +35,8 @@ async fn credentials() {
     assert_eq!(aws.role_arn, ROLE);
     assert!(!aws.external_id.is_empty());
     assert_eq!(uc.credential("cred").get().await.unwrap(), credential);
-    uc.create_credential("service", role(ROLE))
+    uc.create_credential("service")
+        .with_aws_iam_role(role(ROLE))
         .with_purpose(CredentialPurpose::ServicePrincipal)
         .await
         .unwrap();
@@ -71,14 +75,79 @@ async fn credentials() {
     rejected(uc.credential("cred2").get().await, 404, "NOT_FOUND");
 }
 
+/// Azure credentials: a service principal, whose secret no answer holds,
+/// and a managed identity. A location takes only a credential that reaches
+/// its storage.
+#[tokio::test]
+async fn azure_credentials() {
+    let uc = client().await;
+    let principal = AzureServicePrincipalRequest {
+        directory_id: "tenant".into(),
+        application_id: "app".into(),
+        client_secret: "secret".into(),
+        ..Default::default()
+    };
+    let credential = uc
+        .create_credential("sp")
+        .with_azure_service_principal(principal)
+        .await
+        .unwrap();
+    let sp = credential.azure_service_principal.as_option().unwrap();
+    assert_eq!(
+        (sp.directory_id.as_str(), sp.application_id.as_str()),
+        ("tenant", "app")
+    );
+    assert!(!credential.aws_iam_role.is_set());
+    let url = "abfss://c@acct.dfs.core.windows.net/lake";
+    uc.create_external_location("lake", url, "sp")
+        .await
+        .unwrap();
+    rejected(
+        uc.create_external_location("s3", "s3://bucket/lake", "sp")
+            .await,
+        400,
+        "INVALID_ARGUMENT",
+    );
+
+    let id = "/subscriptions/s/resourceGroups/g/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uc";
+    let updated = uc
+        .credential("sp")
+        .update()
+        .with_azure_managed_identity(AzureManagedIdentity {
+            managed_identity_id: Some(id.into()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(!updated.azure_service_principal.is_set());
+    let managed = updated.azure_managed_identity.as_option().unwrap();
+    assert_eq!(managed.managed_identity_id.as_deref(), Some(id));
+    // The location's storage needs an Azure identity.
+    rejected(
+        uc.credential("sp")
+            .update()
+            .with_aws_iam_role(role(ROLE))
+            .await,
+        400,
+        "INVALID_ARGUMENT",
+    );
+}
+
 /// A credential that a location uses, and a location that a volume uses,
 /// go only with `force`.
 #[tokio::test]
 async fn external_locations() {
     let uc = client().await;
     let _storage = catalog_and_schema(&uc).await;
-    let credential = uc.create_credential("cred", role(ROLE)).await.unwrap();
-    uc.create_credential("other", role(ROLE)).await.unwrap();
+    let credential = uc
+        .create_credential("cred")
+        .with_aws_iam_role(role(ROLE))
+        .await
+        .unwrap();
+    uc.create_credential("other")
+        .with_aws_iam_role(role(ROLE))
+        .await
+        .unwrap();
     let location = uc
         .create_external_location("loc", "s3://bucket/loc", "cred")
         .with_comment("lake".to_string())

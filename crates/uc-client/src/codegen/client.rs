@@ -407,19 +407,13 @@ impl Client {
     /// # Arguments
     ///
     /// * `name` - Name of the credential.
-    /// * `aws_iam_role` - The AWS IAM role of the credential: an AWS IAM role is the only kind of credential.
-    pub fn create_credential(
-        &self,
-        name: impl Into<String>,
-        aws_iam_role: AwsIamRoleRequest,
-    ) -> CreateCredentialBuilder {
+    pub fn create_credential(&self, name: impl Into<String>) -> CreateCredentialBuilder {
         CreateCredentialBuilder::new(
             crate::codegen::credentials::CredentialServiceClient::new(
                 self.client.clone(),
                 self.base_url.clone(),
             ),
             name,
-            aws_iam_role,
         )
     }
 
