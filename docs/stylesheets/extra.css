@@ -117,7 +117,7 @@
 /* A group row of a settings table: a bold name alone in the first cell, and what the group
    is for in the description. It sets the group off from the settings under it. */
 .md-typeset table:not([class]) tr:has(> td:first-child > strong:only-child) > td {
-  background-color: var(--md-default-fg-color--lightest);
+  background-color: color-mix(in srgb, var(--md-default-fg-color--lightest) 40%, transparent);
   border-top: 0.1rem solid var(--md-default-fg-color--lighter);
   padding-top: 1.2em;
   padding-bottom: 0.6em;
