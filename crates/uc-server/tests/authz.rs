@@ -441,6 +441,13 @@ async fn table_rules() {
         "table_type": "EXTERNAL", "data_source_format": "DELTA", "storage_location": format!("s3://lake/{name}") }),
         )
     };
+    // A path that no external location covers is refused, also for the admin.
+    let resp = w.call(&w.admin, Method::POST, "/tables", table("t1")).await;
+    let err = common::assert_error(resp, StatusCode::FORBIDDEN, "PERMISSION_DENIED").await;
+    assert_eq!(err["message"], "No external location covers s3://lake/t1.");
+    w.external_location("s3://lake").await;
+    w.grant("external_location", "el", ALICE, &["CREATE EXTERNAL TABLE"])
+        .await;
     // Creating: USE CATALOG, and USE SCHEMA + CREATE TABLE.
     for user in ["alice@example.com", "bob@example.com"] {
         w.grant("catalog", "c", user, &["USE CATALOG"]).await;
@@ -531,33 +538,18 @@ async fn volume_rules() {
         "volume_type": "EXTERNAL", "storage_location": location }),
         )
     };
-    // Creating: USE CATALOG, and USE SCHEMA + CREATE VOLUME.
+    // Creating: USE CATALOG, and USE SCHEMA + CREATE VOLUME, and CREATE
+    // EXTERNAL VOLUME on the external location; never inside another table
+    // or volume.
+    let v1 = volume("v1", "s3://el-bucket/data/v1");
     assert_eq!(
-        w.status(
-            &w.alice,
-            Method::POST,
-            "/volumes",
-            volume("v1", "s3://lake/v1")
-        )
-        .await,
+        w.status(&w.alice, Method::POST, "/volumes", v1.clone())
+            .await,
         StatusCode::FORBIDDEN
     );
     w.grant("schema", "c.s", ALICE, &["CREATE VOLUME"]).await;
-    let created = w
-        .ok(
-            &w.alice,
-            Method::POST,
-            "/volumes",
-            volume("v1", "s3://lake/v1"),
-        )
-        .await;
-    assert_eq!(created["owner"], ALICE);
-    let volume_id = created["volume_id"].as_str().unwrap().to_string();
-    // Under an external location, CREATE EXTERNAL VOLUME on it too; never
-    // inside another table or volume.
-    let under_el = volume("v2", "s3://el-bucket/data/v2");
     assert_eq!(
-        w.status(&w.alice, Method::POST, "/volumes", under_el.clone())
+        w.status(&w.alice, Method::POST, "/volumes", v1.clone())
             .await,
         StatusCode::FORBIDDEN
     );
@@ -568,8 +560,28 @@ async fn volume_rules() {
         &["CREATE EXTERNAL VOLUME"],
     )
     .await;
-    w.ok(&w.alice, Method::POST, "/volumes", under_el).await;
-    let inside = volume("v3", "s3://lake/v1/inner");
+    let created = w.ok(&w.alice, Method::POST, "/volumes", v1).await;
+    assert_eq!(created["owner"], ALICE);
+    let volume_id = created["volume_id"].as_str().unwrap().to_string();
+    w.ok(
+        &w.alice,
+        Method::POST,
+        "/volumes",
+        volume("v2", "s3://el-bucket/data/v2"),
+    )
+    .await;
+    // A path that no external location covers is refused, also for the admin.
+    let resp = w
+        .call(
+            &w.admin,
+            Method::POST,
+            "/volumes",
+            volume("v3", "s3://lake/v3"),
+        )
+        .await;
+    let err = common::assert_error(resp, StatusCode::FORBIDDEN, "PERMISSION_DENIED").await;
+    assert_eq!(err["message"], "No external location covers s3://lake/v3.");
+    let inside = volume("v3", "s3://el-bucket/data/v1/inner");
     assert_eq!(
         w.status(&w.alice, Method::POST, "/volumes", inside).await,
         StatusCode::FORBIDDEN
@@ -983,6 +995,17 @@ async fn path_credential_rules() {
         )
         .await;
     common::assert_error(above, StatusCode::FORBIDDEN, "PERMISSION_DENIED").await;
+    // A path that no external location covers is refused, also for the admin.
+    let uncovered = w
+        .call(
+            &w.admin,
+            Method::POST,
+            vend,
+            path("s3://lake/t", "PATH_CREATE_TABLE"),
+        )
+        .await;
+    let err = common::assert_error(uncovered, StatusCode::FORBIDDEN, "PERMISSION_DENIED").await;
+    assert_eq!(err["message"], "No external location covers s3://lake/t.");
 }
 
 #[tokio::test]

@@ -34,6 +34,10 @@ The Delta REST API and the Iceberg REST catalog give credentials with their tabl
 2. Else the settings of the bucket or account: `[s3.<name>]`, `[adls.<name>]` or `[gcs.<name>]`.
 3. Local paths get empty credentials.
 
+With authorization on, an external table or volume, the `storage_root` of a catalog or schema,
+and the credentials of a path need an external location that covers the path, also for admins.
+The settings of a bucket then serve only `storage.tables_root` and `storage.models_root`.
+
 ## AWS S3
 
 With an external location:
