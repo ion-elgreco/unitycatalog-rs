@@ -213,6 +213,7 @@ pub struct ConfigParams {
 
 #[utoipa::path(
     get, path = "/iceberg/v1/config",
+    operation_id = "iceberg_config",
     params(("warehouse" = String, Query, description = "The catalog")),
     responses(
         (status = 200, body = IcebergConfigResponse),
@@ -347,6 +348,7 @@ pub struct ListNamespacesParams {
 
 #[utoipa::path(
     get, path = "/iceberg/v1/catalogs/{catalog}/namespaces",
+    operation_id = "iceberg_list_namespaces",
     params(
         ("catalog" = String, Path),
         ("parent" = Option<String>, Query, description = "Nested namespaces are not supported: a parent has none"),
@@ -399,6 +401,7 @@ pub async fn list_namespaces(
 
 #[utoipa::path(
     post, path = "/iceberg/v1/catalogs/{catalog}/namespaces",
+    operation_id = "iceberg_create_namespace",
     params(("catalog" = String, Path)),
     request_body = IcebergCreateNamespaceRequest,
     responses(
@@ -448,6 +451,7 @@ pub async fn create_namespace(
 
 #[utoipa::path(
     get, path = "/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}",
+    operation_id = "iceberg_get_namespace",
     params(("catalog" = String, Path), ("namespace" = String, Path)),
     responses(
         (status = 200, body = IcebergNamespaceResponse),
@@ -475,6 +479,7 @@ pub async fn get_namespace(
 
 #[utoipa::path(
     head, path = "/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}",
+    operation_id = "iceberg_namespace_exists",
     params(("catalog" = String, Path), ("namespace" = String, Path)),
     responses(
         (status = 204, description = "The namespace exists"),
@@ -493,6 +498,7 @@ pub async fn namespace_exists(
 
 #[utoipa::path(
     delete, path = "/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}",
+    operation_id = "iceberg_drop_namespace",
     params(("catalog" = String, Path), ("namespace" = String, Path)),
     responses(
         (status = 204, description = "Dropped"),
@@ -530,6 +536,7 @@ pub async fn drop_namespace(
 
 #[utoipa::path(
     post, path = "/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/properties",
+    operation_id = "iceberg_update_namespace_properties",
     params(("catalog" = String, Path), ("namespace" = String, Path)),
     request_body = IcebergUpdateNamespacePropertiesRequest,
     responses(

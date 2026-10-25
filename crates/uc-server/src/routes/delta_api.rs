@@ -117,6 +117,7 @@ fn negotiate(versions: Option<&str>) -> Result<&'static str, Error> {
 
 #[utoipa::path(
     get, path = "/delta/v1/config",
+    operation_id = "delta_get_config",
     params(
         ("catalog" = String, Query, description = "Catalog name"),
         ("protocol-versions" = String, Query, description = "Highest supported version per major version"),
@@ -166,6 +167,7 @@ async fn load(
 
 #[utoipa::path(
     get, path = "/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}",
+    operation_id = "delta_load_table",
     params(("catalog" = String, Path), ("schema" = String, Path), ("table" = String, Path)),
     responses(
         (status = 200, body = DeltaLoadTableResponse),
@@ -193,6 +195,7 @@ pub async fn load_table(
 
 #[utoipa::path(
     post, path = "/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}",
+    operation_id = "delta_update_table",
     params(("catalog" = String, Path), ("schema" = String, Path), ("table" = String, Path)),
     request_body = DeltaUpdateTableRequest,
     responses(
@@ -231,6 +234,7 @@ pub async fn update_table(
 
 #[utoipa::path(
     head, path = "/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}",
+    operation_id = "delta_table_exists",
     params(("catalog" = String, Path), ("schema" = String, Path), ("table" = String, Path)),
     responses((status = 204, description = "The table exists"), (status = 404, body = DeltaErrorResponse)),
     tag = "DeltaTables",
@@ -255,6 +259,7 @@ pub async fn table_exists(
 
 #[utoipa::path(
     delete, path = "/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}",
+    operation_id = "delta_delete_table",
     params(("catalog" = String, Path), ("schema" = String, Path), ("table" = String, Path)),
     responses((status = 204, description = "Deleted"), (status = 404, body = DeltaErrorResponse)),
     tag = "DeltaTables",
@@ -279,6 +284,7 @@ pub async fn delete_table(
 
 #[utoipa::path(
     post, path = "/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}/rename",
+    operation_id = "delta_rename_table",
     params(("catalog" = String, Path), ("schema" = String, Path), ("table" = String, Path)),
     request_body = DeltaRenameTableRequest,
     responses(
@@ -317,6 +323,7 @@ pub async fn rename_table(
 
 #[utoipa::path(
     post, path = "/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}/metrics",
+    operation_id = "delta_report_metrics",
     params(("catalog" = String, Path), ("schema" = String, Path), ("table" = String, Path)),
     request_body = DeltaReportMetricsRequest,
     responses((status = 204, description = "Received"), (status = 400, body = DeltaErrorResponse)),
@@ -394,6 +401,7 @@ async fn vend_for(
 
 #[utoipa::path(
     post, path = "/delta/v1/catalogs/{catalog}/schemas/{schema}/staging-tables",
+    operation_id = "delta_create_staging_table",
     params(("catalog" = String, Path), ("schema" = String, Path)),
     request_body = DeltaCreateStagingTableRequest,
     responses(
@@ -463,6 +471,7 @@ pub async fn create_staging_table(
 
 #[utoipa::path(
     post, path = "/delta/v1/catalogs/{catalog}/schemas/{schema}/tables",
+    operation_id = "delta_create_table",
     params(("catalog" = String, Path), ("schema" = String, Path)),
     request_body = DeltaCreateTableRequest,
     responses(
@@ -509,6 +518,7 @@ pub struct OperationParams {
 
 #[utoipa::path(
     get, path = "/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}/credentials",
+    operation_id = "delta_table_credentials",
     params(
         ("catalog" = String, Path), ("schema" = String, Path), ("table" = String, Path),
         ("operation" = DeltaCredentialOperation, Query),
@@ -540,6 +550,7 @@ pub async fn table_credentials(
 
 #[utoipa::path(
     get, path = "/delta/v1/staging-tables/{table_id}/credentials",
+    operation_id = "delta_staging_table_credentials",
     params(("table_id" = String, Path, description = "Staging table UUID")),
     responses((status = 200, body = DeltaCredentialsResponse), (status = 404, body = DeltaErrorResponse)),
     tag = "DeltaTemporaryCredentials",
