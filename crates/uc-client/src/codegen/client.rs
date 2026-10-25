@@ -81,6 +81,12 @@ impl Client {
         )
     }
 
+    /// The same client, sending `user_agent` as the `User-Agent` of every request.
+    pub fn with_user_agent(mut self, user_agent: impl Into<String>) -> Self {
+        self.client = self.client.with_user_agent(user_agent);
+        self
+    }
+
     ///Low-level `admin` client exposing request/response passthrough methods.
     pub fn admin_client(&self) -> crate::codegen::admin::AdminClient {
         crate::codegen::admin::AdminClient::new(self.client.clone(), self.base_url.clone())
