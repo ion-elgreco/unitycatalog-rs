@@ -1,5 +1,5 @@
 use crate::http::extract::{Json, Path, Query};
-use axum::{extract::State, http::StatusCode};
+use axum::extract::State;
 use serde::Deserialize;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -9,7 +9,7 @@ use uc_common::{DeleteParams, PageToken, Pagination, SecurableType};
 use crate::{
     authn::principal::Principal,
     authz::{self, Access, rules, schema_lineage},
-    http::error::ApiResult,
+    http::{EmptyObject, error::ApiResult},
     server::state::AppState,
 };
 
@@ -170,7 +170,7 @@ pub async fn delete_schema(
     principal: Principal,
     Path(full_name): Path<String>,
     Query(params): Query<DeleteParams>,
-) -> ApiResult<StatusCode> {
+) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
         &principal.username,
@@ -184,7 +184,7 @@ pub async fn delete_schema(
         .schemas()
         .delete(&full_name, params.force)
         .await?;
-    Ok(StatusCode::OK)
+    Ok(EmptyObject)
 }
 
 pub fn router() -> OpenApiRouter<AppState> {
