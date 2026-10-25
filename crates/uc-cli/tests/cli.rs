@@ -486,6 +486,33 @@ async fn external_tables_over_a_delta_table() {
     assert!(err.contains("404"), "{err}");
 }
 
+/// Delta Kernel writes no Iceberg or Hudi metadata, so `uc` makes no
+/// UniForm tables.
+#[tokio::test(flavor = "multi_thread")]
+async fn no_uniform_tables() {
+    let s = Server::start().await;
+    s.ok(&["catalog", "create", "--name", "c"]).await;
+    s.ok(&["schema", "create", "--catalog", "c", "--name", "s"])
+        .await;
+    let location = s.path("t");
+    let err = s
+        .fails(&[
+            "table",
+            "create",
+            "--full_name",
+            "c.s.t",
+            "--columns",
+            "id INT",
+            "--storage_location",
+            &location,
+            "--properties",
+            r#"{"delta.universalFormat.enabledFormats": "iceberg"}"#,
+        ])
+        .await;
+    assert!(err.contains("uc cannot create UniForm tables yet"), "{err}");
+    assert!(!std::path::Path::new(&location).exists());
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn volumes_functions_and_models() {
     let s = Server::start().await;
