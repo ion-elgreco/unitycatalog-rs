@@ -4,7 +4,7 @@ The web UI shows the catalogs of a server, and creates, edits and deletes what t
 port of upstream's new console, with grants, temporary credentials, column comments, a page for
 your access tokens, and the pages under **Manage**. `uc-server` serves it at `/`.
 
-<video src="../assets/ui/web-ui.mp4" poster="../../assets/ui/catalogs.png" autoplay loop muted playsinline controls aria-label="Create a catalog, browse to a table, and delete the catalog"></video>
+<video src="../assets/ui/web-ui.mp4" poster="../../assets/ui/catalogs.png" autoplay loop muted playsinline controls aria-label="Sign in with an OpenID Connect provider, create a catalog, browse to a table, delete the catalog, and log out"></video>
 
 ## Open it
 
