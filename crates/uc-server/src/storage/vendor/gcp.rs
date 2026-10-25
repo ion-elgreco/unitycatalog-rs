@@ -138,8 +138,19 @@ impl GcpVendor {
         let own = self
             .source_token(self.key_file.as_deref())
             .await
-            .map_err(|e| {
-                Error::failed_precondition(format!("The server's GCP identity: {}", e.message()))
+            .map_err(|e| match &self.key_file {
+                Some(_) => Error::failed_precondition(format!(
+                    "The server's GCP identity, identity.gcp.json_key_file: {}",
+                    e.message()
+                )),
+                None => Error::failed_precondition(format!(
+                    "The server could not get its GCP identity: set [identity.gcp] \
+                     (UC_IDENTITY_GCP_JSON_KEY_FILE), or run it with an identity in its \
+                     environment (GOOGLE_APPLICATION_CREDENTIALS, gcloud's application default \
+                     credentials, GKE Workload Identity, the service account of the VM). \
+                     Cause: {}",
+                    e.message()
+                )),
             })?;
         match email {
             Some(email) => self.impersonate(&own, email).await,

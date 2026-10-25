@@ -111,6 +111,11 @@ pub trait CredentialVendor: Send + Sync + 'static {
     fn s3_store(&self) -> Option<&aws::S3Store> {
         None
     }
+
+    /// Whether a location of the settings covers `path`.
+    fn covers(&self, _path: &NormalizedUrl) -> bool {
+        false
+    }
 }
 
 pub type DynVendor = Arc<dyn CredentialVendor>;
@@ -305,22 +310,26 @@ impl CloudVendor {
         self
     }
 
+    /// The longest location of the settings that covers `path`.
+    fn covering(&self, path: &NormalizedUrl) -> Option<&Location> {
+        self.locations
+            .iter()
+            .filter(|location| path.is_same_or_under(location.url()))
+            .max_by_key(|location| location.url().as_str().len())
+    }
+
     /// The longest location of the settings that covers the path of `ctx`.
     fn location(&self, ctx: &CredentialContext) -> Result<&Location> {
         let path = ctx
             .locations
             .first()
             .ok_or_else(|| Error::internal("credentials for no path"))?;
-        self.locations
-            .iter()
-            .filter(|location| path.is_same_or_under(location.url()))
-            .max_by_key(|location| location.url().as_str().len())
-            .ok_or_else(|| {
-                Error::failed_precondition(format!(
-                    "No external location and no [locations.<name>] of the settings covers \
+        self.covering(path).ok_or_else(|| {
+            Error::failed_precondition(format!(
+                "No external location and no [locations.<name>] of the settings covers \
                      {path}."
-                ))
-            })
+            ))
+        })
     }
 }
 
@@ -381,6 +390,10 @@ impl CredentialVendor for CloudVendor {
 
     fn s3_store(&self) -> Option<&aws::S3Store> {
         self.aws.store()
+    }
+
+    fn covers(&self, path: &NormalizedUrl) -> bool {
+        self.covering(path).is_some()
     }
 }
 

@@ -108,6 +108,13 @@ impl AwsVendor {
     /// A session of `role` for `ctx`.
     pub async fn vend(&self, ctx: &CredentialContext, role: &Role) -> Result<TemporaryCredentials> {
         let (signer, region) = self.signer()?;
+        let identity = signer.get_credential().await.map_err(|e| {
+            Error::failed_precondition(format!(
+                "The server could not get its AWS identity: set [identity.aws] \
+                 (UC_IDENTITY_AWS_*), or run it with an identity in its environment (AWS_* \
+                 variables, IRSA, EKS Pod Identity, an instance role). Cause: {e}"
+            ))
+        })?;
         let session_policy = policy(
             &ctx.privileges,
             &ctx.locations,
@@ -115,7 +122,7 @@ impl AwsVendor {
             Some(&region),
             self.store.is_none(),
         )?;
-        self.assume_role(&signer, &region, role, &session_policy)
+        self.assume_role(&identity, &region, role, &session_policy)
             .await
             .map_err(|e| Error::internal(format!("AWS AssumeRole of {} failed: {e}", role.arn)))
     }
@@ -123,12 +130,11 @@ impl AwsVendor {
     /// STS `AssumeRole` for an hour, signed by `object_store`.
     async fn assume_role(
         &self,
-        identity: &AwsCredentialProvider,
+        identity: &AwsCredential,
         region: &str,
         role: &Role,
         session_policy: &str,
     ) -> std::result::Result<TemporaryCredentials, String> {
-        let identity = identity.get_credential().await.map_err(|e| e.to_string())?;
         let endpoint = match &self.endpoint {
             Some(endpoint) => format!("{}/", endpoint.trim_end_matches('/')),
             None => {
@@ -156,7 +162,7 @@ impl AwsVendor {
             )
             .body(body.clone().into())
             .map_err(|e| e.to_string())?;
-        AwsAuthorizer::new(&identity, "sts", region).authorize(&mut request, None);
+        AwsAuthorizer::new(identity, "sts", region).authorize(&mut request, None);
         let response = self
             .http
             .post(&endpoint)

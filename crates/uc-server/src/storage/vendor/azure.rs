@@ -313,7 +313,15 @@ impl AzureVendor {
     /// The identity's token for Azure Storage, from `object_store`, which
     /// keeps it until it is about to expire.
     async fn access_token(&self, account: &str, identity: &Identity) -> Result<String> {
-        let failed = |e: String| Error::internal(format!("Azure sign-in failed: {e}"));
+        let failed = |e: String| match identity {
+            // The identity of the environment, without `[identity.azure]`.
+            Identity::Managed(None) => Error::failed_precondition(format!(
+                "The server could not get its Azure identity: set [identity.azure] \
+                 (UC_IDENTITY_AZURE_*), or run it with an identity in its environment (AZURE_* \
+                 variables, AKS workload identity, the managed identity of the VM). Cause: {e}"
+            )),
+            _ => Error::internal(format!("Azure sign-in failed: {e}")),
+        };
         let credential = self
             .sign_in(account, identity)
             .map_err(|e| failed(e.to_string()))?

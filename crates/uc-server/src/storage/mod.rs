@@ -24,7 +24,7 @@ use object_store::{
 };
 
 use uc_api::TemporaryCredentials;
-use uc_common::{ErrorCode, NormalizedUrl, UriScheme};
+use uc_common::{NormalizedUrl, UriScheme};
 use uc_metastore::DynMetastore;
 use uc_storage::runtime::io_handle;
 
@@ -72,16 +72,15 @@ impl ServerStorage {
             return Ok((Arc::new(LocalFileSystem::new()), path));
         }
         let credential = credential_for_url(&self.metastore, location.as_str()).await?;
-        let under_location = credential.is_some();
+        // Neither an external location nor a location of the settings: the
+        // environment's credentials.
+        if credential.is_none() && !self.vendor.covers(location) {
+            let store = build_store(location, None, self.vendor.s3_store())?;
+            return Ok((store, path));
+        }
         let ctx = CredentialContext::new(location.clone(), op.privileges(), credential);
-        let credentials = match self.vendor.vend(&ctx).await {
-            Ok(credentials) => Some(credentials),
-            // Neither an external location nor a bucket configuration: the
-            // environment's credentials.
-            Err(e) if !under_location && e.code() == ErrorCode::FailedPrecondition => None,
-            Err(e) => return Err(e.into()),
-        };
-        let store = build_store(location, credentials.as_ref(), self.vendor.s3_store())?;
+        let credentials = self.vendor.vend(&ctx).await?;
+        let store = build_store(location, Some(&credentials), self.vendor.s3_store())?;
         Ok((store, path))
     }
 }

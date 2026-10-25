@@ -823,6 +823,41 @@ async fn gcp_credentials_downscope_their_identity() {
     assert_eq!(subject(4), "keyed");
 }
 
+/// A location that needs the server's own identity, when the server has
+/// none: a 400 that names the settings to set.
+#[tokio::test]
+async fn a_missing_server_identity_names_its_settings() {
+    // Nothing listens on the metadata server's port.
+    let metadata = {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        format!("http://{}", listener.local_addr().unwrap())
+    };
+    let settings = r#"
+        [locations.lake]
+        url = "gs://lake"
+        gcp_service_account = true
+    "#;
+    let endpoints = Endpoints {
+        gcp_metadata: Some(metadata),
+        ..Default::default()
+    };
+    let app = app(settings, endpoints).await;
+    let err = assert_error(
+        vend(&app, "gs://lake/t", "PATH_READ").await,
+        StatusCode::BAD_REQUEST,
+        "FAILED_PRECONDITION",
+    )
+    .await;
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        message.starts_with(
+            "The server could not get its GCP identity: set [identity.gcp] \
+             (UC_IDENTITY_GCP_JSON_KEY_FILE)"
+        ),
+        "{message}"
+    );
+}
+
 /// Upstream `CloudCredentialVendor`: local paths vend nothing.
 #[tokio::test]
 async fn local_paths_vend_nothing() {
