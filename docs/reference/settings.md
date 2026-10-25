@@ -51,19 +51,58 @@ defaults apply.
 
 ## Cloud identities and locations
 
-Two kinds of tables give the server access to cloud storage:
+Three kinds of setup decide how the server reaches cloud storage:
 
-- `[identity.aws]`, `[identity.azure]` and `[identity.gcp]`: who the server is in each cloud. The
-  server signs in with this identity for each storage credential. Without the table, the server
-  uses the identity of its environment.
-- `[locations.<name>]`: a URL and the identity that reaches it, for paths that no external
-  location covers. The URL's scheme picks the cloud. The identity fields are the same as the
-  options of `uc credential create`.
+| | Where you set it | What it is |
+| --- | --- | --- |
+| `[identity.<cloud>]` | `uc.toml`, `UC_IDENTITY_*` variables | Who the server is in AWS, Azure or GCP. Without it, the identity of the server's environment. |
+| External location and storage credential | `uc external_location create` and `uc credential create`, the web UI or the API. The metastore keeps them. | A URL and the identity that reaches it, with an owner and grants. |
+| `[locations.<name>]` | `uc.toml`, `UC_LOCATIONS_*` variables | A URL and the identity that reaches it, without an owner or grants. It is not an external location: `uc external_location list` does not show it. |
 
-Their variables include the cloud or the name: `UC_IDENTITY_AWS_SECRET_KEY` is `secret_key` in
-`[identity.aws]`, and `UC_LOCATIONS_ANALYTICS_URL` is `url` in `[locations.analytics]`. A name has
-only lowercase letters and digits, and at least one letter: the server reads a name of only
-digits, such as `UC_LOCATIONS_0_URL`, as a list index.
+When a client asks for credentials for a path, the server first finds the identity for the
+path: (1) the storage credential of the external location that covers it, else (2) the identity of
+the `[locations.<name>]` that covers it. Then (3) it signs in with its own identity to get
+temporary credentials of that identity:
+
+```mermaid
+flowchart TD
+    path(["A client asks for<br/>credentials for a path"])
+    subgraph metastore["In the metastore: uc CLI, web UI, API"]
+        external["External location<br/>URL, owner, grants"]
+        credential["Storage credential<br/>an AWS role, or an<br/>Azure or GCP identity"]
+        external -- uses --> credential
+    end
+    subgraph settings["In the settings: uc.toml, UC_* variables"]
+        location["#91;locations.#lt;name#gt;#93;<br/>URL and an AWS role, or<br/>an Azure or GCP identity"]
+        identity["#91;identity.#lt;cloud#gt;#93;<br/>the server's own identity,<br/>else its environment's"]
+    end
+    temporary(["Temporary credentials:<br/>one hour, only this<br/>path and operation"])
+    path -- "1. covered by" --> external
+    path -- "2. else covered by" --> location
+    credential -- "3. signed in by" --> identity
+    location -- "3. signed in by" --> identity
+    identity --> temporary
+```
+
+What the server does for each identity:
+
+| Identity of the location | The server |
+| --- | --- |
+| AWS IAM role | assumes the role as `[identity.aws]`. |
+| Azure service principal | signs in as the service principal. |
+| Azure managed identity | signs in as `[identity.azure]`, or as the user-assigned identity of the resource ID. |
+| GCP service account | uses the token of `[identity.gcp]`, or impersonates the service account as `[identity.gcp]`. |
+| GCP service account key | signs in with the key. |
+
+With authorization on, external tables and volumes, the storage roots of catalogs and schemas,
+and path credentials need an external location. The `[locations.<name>]` entries then serve only
+`storage.tables_root` and `storage.models_root`. Where several locations cover a path, the longest
+URL wins.
+
+The variables of these tables include the cloud or the name: `UC_IDENTITY_AWS_SECRET_KEY` is
+`secret_key` in `[identity.aws]`, and `UC_LOCATIONS_ANALYTICS_URL` is `url` in
+`[locations.analytics]`. A name has only lowercase letters and digits, and at least one letter:
+the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list index.
 
 ```toml
 [identity.aws]
