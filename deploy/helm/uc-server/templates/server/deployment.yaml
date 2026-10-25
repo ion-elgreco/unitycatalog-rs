@@ -153,48 +153,49 @@ spec:
             {{- fail "server.db.type must be file or postgresql" }}
             {{- end }}
             # Cloud credentials, an entry per bucket or account, named by its
-            # index: UC_S3_0_BUCKET is bucket of [s3.0].
+            # index: UC_S3_ENTRY0_BUCKET is bucket of [s3.entry0]. A name is
+            # not a number, which the server would read as a list index.
             {{- range $index, $config := .Values.storage.credentials.s3 }}
-            - name: UC_S3_{{ $index }}_BUCKET
+            - name: UC_S3_ENTRY{{ $index }}_BUCKET
               value: {{ $config.bucketPath | quote }}
             {{- with $config.region }}
-            - name: UC_S3_{{ $index }}_REGION
+            - name: UC_S3_ENTRY{{ $index }}_REGION
               value: {{ . | quote }}
             {{- end }}
             {{- with $config.awsRoleArn }}
-            - name: UC_S3_{{ $index }}_ROLE_ARN
+            - name: UC_S3_ENTRY{{ $index }}_ROLE_ARN
               value: {{ . | quote }}
             {{- end }}
             {{- with $config.credentialsSecretName }}
-            - name: UC_S3_{{ $index }}_ACCESS_KEY
+            - name: UC_S3_ENTRY{{ $index }}_ACCESS_KEY
               valueFrom: {secretKeyRef: {name: {{ . | quote }}, key: accessKey}}
-            - name: UC_S3_{{ $index }}_SECRET_KEY
+            - name: UC_S3_ENTRY{{ $index }}_SECRET_KEY
               valueFrom: {secretKeyRef: {name: {{ . | quote }}, key: secretKey}}
             {{- end }}
             {{- end }}
             {{- range $index, $config := .Values.storage.credentials.adls }}
-            - name: UC_ADLS_{{ $index }}_ACCOUNT
+            - name: UC_ADLS_ENTRY{{ $index }}_ACCOUNT
               value: {{ $config.storageAccountName | quote }}
             {{- if $config.managedIdentity }}
-            - name: UC_ADLS_{{ $index }}_MANAGED_IDENTITY
+            - name: UC_ADLS_ENTRY{{ $index }}_MANAGED_IDENTITY
               value: "true"
             {{- with $config.managedIdentityId }}
-            - name: UC_ADLS_{{ $index }}_MANAGED_IDENTITY_ID
+            - name: UC_ADLS_ENTRY{{ $index }}_MANAGED_IDENTITY_ID
               value: {{ . | quote }}
             {{- end }}
             {{- else }}
-            - name: UC_ADLS_{{ $index }}_TENANT_ID
+            - name: UC_ADLS_ENTRY{{ $index }}_TENANT_ID
               valueFrom: {secretKeyRef: {name: {{ $config.credentialsSecretName | quote }}, key: tenantId}}
-            - name: UC_ADLS_{{ $index }}_CLIENT_ID
+            - name: UC_ADLS_ENTRY{{ $index }}_CLIENT_ID
               valueFrom: {secretKeyRef: {name: {{ $config.credentialsSecretName | quote }}, key: clientId}}
-            - name: UC_ADLS_{{ $index }}_CLIENT_SECRET
+            - name: UC_ADLS_ENTRY{{ $index }}_CLIENT_SECRET
               valueFrom: {secretKeyRef: {name: {{ $config.credentialsSecretName | quote }}, key: clientSecret}}
             {{- end }}
             {{- end }}
             {{- range $index, $config := .Values.storage.credentials.gcs }}
-            - name: UC_GCS_{{ $index }}_BUCKET
+            - name: UC_GCS_ENTRY{{ $index }}_BUCKET
               value: {{ $config.bucketPath | quote }}
-            - name: UC_GCS_{{ $index }}_JSON_KEY_FILE
+            - name: UC_GCS_ENTRY{{ $index }}_JSON_KEY_FILE
               value: /etc/uc/gcs/{{ $index }}/jsonKey
             {{- end }}
             {{- range $k, $v := $d.env }}

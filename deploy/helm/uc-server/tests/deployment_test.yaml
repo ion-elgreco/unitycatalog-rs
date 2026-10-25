@@ -263,7 +263,7 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content:
-            name: UC_S3_0_ACCESS_KEY
+            name: UC_S3_ENTRY0_ACCESS_KEY
             valueFrom:
               secretKeyRef:
                 name: s3-secret
@@ -271,7 +271,7 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content:
-            name: UC_ADLS_0_CLIENT_SECRET
+            name: UC_ADLS_ENTRY0_CLIENT_SECRET
             valueFrom:
               secretKeyRef:
                 name: adls-secret
@@ -298,13 +298,13 @@ tests:
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_ADLS_0_MANAGED_IDENTITY, value: "true"}
+          content: {name: UC_ADLS_ENTRY0_MANAGED_IDENTITY, value: "true"}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_ADLS_0_MANAGED_IDENTITY_ID, value: /subscriptions/s/uc}
+          content: {name: UC_ADLS_ENTRY0_MANAGED_IDENTITY_ID, value: /subscriptions/s/uc}
       - notContains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_ADLS_0_CLIENT_SECRET}
+          content: {name: UC_ADLS_ENTRY0_CLIENT_SECRET}
           any: true
 
   - it: drops the probes that are turned off and keeps the given ones
