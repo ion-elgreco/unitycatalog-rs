@@ -35,16 +35,18 @@ The Delta REST API and the Iceberg REST catalog give credentials with their tabl
    service account or a GCP service account key. It must reach the location's storage: an AWS
    role for `s3://`, an Azure identity for `abfs://` and `abfss://`, a GCP identity for `gs://`.
 2. Else a location of the settings that covers the path, `[locations.<name>]`: a URL and the
-   same kinds of identity. The longest URL wins.
+   same kinds of identity. When several cover the path, the one with the longest URL.
 3. Local paths get empty credentials.
 
 To get credentials for that identity, the server signs in with its own identity: `[identity.aws]`,
 `[identity.azure]` or `[identity.gcp]`. When that is not set, the server uses the credentials of
 the machine or pod where it runs.
 
-With authorization on, an external table or volume, the `storage_root` of a catalog or schema,
-and the credentials of a path need an external location that covers the path, also for admins.
-The locations of the settings then serve only `storage.tables_root` and `storage.models_root`.
+With authorization on, the location of an external table or volume, the `storage_root` of a
+catalog or schema, and the URL of a request for path credentials must be under an external
+location, also for admins: the server checks the user's privileges on it. A `[locations.<name>]`
+has no owner or grants to check, so it then gives credentials only for the managed tables and
+models under `storage.tables_root` and `storage.models_root`.
 
 ## AWS S3
 

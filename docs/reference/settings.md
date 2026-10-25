@@ -94,10 +94,19 @@ What the server does for each identity:
 | GCP service account | uses the token of `[identity.gcp]`, or impersonates the service account as `[identity.gcp]`. |
 | GCP service account key | signs in with the key. |
 
-With authorization on, external tables and volumes, the storage roots of catalogs and schemas,
-and path credentials need an external location. The `[locations.<name>]` entries then serve only
-`storage.tables_root` and `storage.models_root`. Where several locations cover a path, the longest
-URL wins.
+Which of the two can give the identity for a path depends on authorization (`auth.enabled`):
+
+| The path | Authorization off | Authorization on |
+| --- | --- | --- |
+| A path that a user gives: the location of an external table or volume, the `storage_root` of a catalog or schema, or the URL of a request for path credentials | An external location, else a `[locations.<name>]` | Only an external location, also for admins. The server checks the user's privileges on it, such as `CREATE EXTERNAL TABLE`. |
+| A managed table or model under `storage.tables_root` or `storage.models_root` | An external location, else a `[locations.<name>]` | An external location, else a `[locations.<name>]` |
+
+So with authorization on, a `[locations.<name>]` gives credentials only for the managed tables and
+models under `storage.tables_root` and `storage.models_root`. It has no owner or grants for the
+server to check.
+
+When several `[locations.<name>]` cover a path, the server uses the one with the longest URL: for
+`s3://lake/tables/t1`, an entry with `s3://lake/tables` wins over one with `s3://lake`.
 
 The variables of these tables include the cloud or the name: `UC_IDENTITY_AWS_SECRET_KEY` is
 `secret_key` in `[identity.aws]`, and `UC_LOCATIONS_ANALYTICS_URL` is `url` in
@@ -314,10 +323,12 @@ credentials, or the metadata server, such as GKE Workload Identity.
 
 ## `[locations.<name>]`
 
-A URL and the identity that reaches the paths under it, when no external location covers them.
-With authorization on, only `storage.tables_root` and `storage.models_root` use them. The URL's
-scheme picks the cloud, and an entry holds exactly one identity of that cloud. Where several
-locations cover a path, the longest URL wins.
+A URL and the identity that reaches the paths under it, for paths that no external location
+covers. With authorization on, it gives credentials only for the managed tables and models under
+`storage.tables_root` and `storage.models_root`; see
+[Cloud identities and locations](#cloud-identities-and-locations). The URL's scheme picks the
+cloud, and an entry holds exactly one identity of that cloud. When several entries cover a path,
+the one with the longest URL wins.
 
 | Key | Variable | Cloud | Description |
 | --- | --- | --- | --- |
