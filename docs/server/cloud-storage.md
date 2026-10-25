@@ -42,11 +42,9 @@ To get credentials for that identity, the server signs in with its own identity:
 `[identity.azure]` or `[identity.gcp]`. When that is not set, the server uses the credentials of
 the machine or pod where it runs.
 
-With authorization on, the location of an external table or volume, the `storage_root` of a
-catalog or schema, and the URL of a request for path credentials must be under an external
-location, also for admins: the server checks the user's privileges on it. A `[locations.<name>]`
-has no owner or grants to check, so it then gives credentials only for the managed tables and
-models under `storage.tables_root` and `storage.models_root`.
+With authorization on, a `[locations.<name>]` serves only `storage.tables_root` and
+`storage.models_root`. Every other path needs an external location, also for admins, because only
+an external location has grants that the server can check.
 
 ## AWS S3
 

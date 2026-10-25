@@ -94,19 +94,13 @@ What the server does for each identity:
 | GCP service account | uses the token of `[identity.gcp]`, or impersonates the service account as `[identity.gcp]`. |
 | GCP service account key | signs in with the key. |
 
-Which of the two can give the identity for a path depends on authorization (`auth.enabled`):
+- **Authorization off:** a `[locations.<name>]` serves any path that no external location covers.
+- **Authorization on:** a `[locations.<name>]` serves only `storage.tables_root` and
+  `storage.models_root`. Every other path needs an external location, because only an external
+  location has grants that the server can check.
 
-| The path | Authorization off | Authorization on |
-| --- | --- | --- |
-| A path that a user gives: the location of an external table or volume, the `storage_root` of a catalog or schema, or the URL of a request for path credentials | An external location, else a `[locations.<name>]` | Only an external location, also for admins. The server checks the user's privileges on it, such as `CREATE EXTERNAL TABLE`. |
-| A managed table or model under `storage.tables_root` or `storage.models_root` | An external location, else a `[locations.<name>]` | An external location, else a `[locations.<name>]` |
-
-So with authorization on, a `[locations.<name>]` gives credentials only for the managed tables and
-models under `storage.tables_root` and `storage.models_root`. It has no owner or grants for the
-server to check.
-
-When several `[locations.<name>]` cover a path, the server uses the one with the longest URL: for
-`s3://lake/tables/t1`, an entry with `s3://lake/tables` wins over one with `s3://lake`.
+When several `[locations.<name>]` cover a path, the longest URL wins: for `s3://lake/tables/t1`,
+`s3://lake/tables` wins over `s3://lake`.
 
 The variables of these tables include the cloud or the name: `UC_IDENTITY_AWS_SECRET_KEY` is
 `secret_key` in `[identity.aws]`, and `UC_LOCATIONS_ANALYTICS_URL` is `url` in
