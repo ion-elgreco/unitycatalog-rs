@@ -35,8 +35,9 @@ fn emulator() -> Option<String> {
     (!url.is_empty()).then(|| url.to_string())
 }
 
-/// The app with the emulator in place of Azure.
-async fn app(url: &str) -> Router {
+/// The app with the emulator in place of Azure, and the settings
+/// `settings` (uc.toml).
+async fn app(url: &str, settings: &str) -> Router {
     let metastore = SqlMetastore::connect(MetastoreConfig::for_tests())
         .await
         .unwrap();
@@ -46,7 +47,9 @@ async fn app(url: &str) -> Router {
         azure_msi: Some(format!("{url}/metadata/identity/oauth2/token")),
         ..Default::default()
     };
-    let vendor = CloudVendor::new(StorageConfig::default()).with_endpoints(endpoints);
+    let settings = uc_common::settings::Settings::from_toml(settings).unwrap();
+    let config = StorageConfig::from_settings(&settings).unwrap();
+    let vendor = CloudVendor::new(config).with_endpoints(endpoints);
     build_app(AppState::new(metastore).with_vendor(vendor))
 }
 
@@ -59,9 +62,8 @@ async fn post(app: &Router, path: &str, body: Value) -> Value {
     json_body(assert_status(resp, StatusCode::OK, path).await).await
 }
 
-/// A new container, and the URL of its folder `lake` under an external
-/// location whose credential has `identity`.
-async fn lake(url: &str, app: &Router, identity: Value) -> (String, String) {
+/// A new container of the account.
+async fn container(url: &str) -> String {
     let container = format!("uc-{}", uuid::Uuid::new_v4().simple());
     let made = reqwest::Client::new()
         .put(format!("{url}/{ACCOUNT}/{container}?restype=container"))
@@ -70,6 +72,13 @@ async fn lake(url: &str, app: &Router, identity: Value) -> (String, String) {
         .await
         .unwrap();
     assert!(made.status().is_success(), "container: {}", made.status());
+    container
+}
+
+/// A new container, and the URL of its folder `lake` under an external
+/// location whose credential has `identity`.
+async fn lake(url: &str, app: &Router, identity: Value) -> (String, String) {
+    let container = container(url).await;
     let mut credential = json!({ "name": container, "purpose": "STORAGE" });
     credential
         .as_object_mut()
@@ -118,7 +127,7 @@ async fn get(url: &str, container: &str, path: &str, sas: &str) -> (StatusCode, 
 #[tokio::test]
 async fn a_service_principal_vends_a_sas_for_its_path() {
     let Some(url) = emulator() else { return };
-    let app = app(&url).await;
+    let app = app(&url, "").await;
     let principal = json!({ "azure_service_principal": {
         "directory_id": TENANT, "application_id": CLIENT, "client_secret": "secret" } });
     let (container, location) = lake(&url, &app, principal).await;
@@ -167,15 +176,33 @@ async fn arm(url: &str, id: &str, api_version: &str) {
 }
 
 /// The server's own identity, and a user-assigned identity by its resource
-/// ID, from the instance metadata service.
+/// ID, from the instance metadata service: of a credential, or of the
+/// account's `adls.*` entry.
 #[tokio::test]
 async fn managed_identities_vend_a_sas() {
     let Some(url) = emulator() else { return };
-    let app = app(&url).await;
     let group = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/uc";
     arm(&url, group, "2021-04-01").await;
     let id = format!("{group}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uc");
     arm(&url, &id, "2023-01-31").await;
+    let settings = format!(
+        "[adls.dev]\naccount = \"{ACCOUNT}\"\nmanaged_identity = true\nmanaged_identity_id = \"{id}\""
+    );
+    let app = app(&url, &settings).await;
+
+    // A path without an external location: the entry's identity.
+    let bare = container(&url).await;
+    let path = format!("abfss://{bare}@{ACCOUNT}.dfs.core.windows.net/tables/t1");
+    let sas = vend(&app, &path, "PATH_READ_WRITE").await;
+    assert_eq!(
+        put(&url, &bare, "tables/t1/part-0", &sas).await,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        put(&url, &bare, "tables/t2/part-0", &sas).await,
+        StatusCode::FORBIDDEN
+    );
+
     for identity in [
         json!({ "azure_managed_identity": {} }),
         json!({ "azure_managed_identity": { "managed_identity_id": id } }),

@@ -167,8 +167,9 @@ The credentials of one S3 bucket. An entry needs `region` and `role_arn`, or `ac
 
 ## `[adls.<name>]`
 
-The credentials of one Azure storage account: a service principal. All keys but `test_mode` are
-required.
+The credentials of one Azure storage account: a service principal, or the server's managed
+identity. `account` is required, and `tenant_id`, `client_id` and `client_secret` are required
+unless `managed_identity` is `true`.
 
 | Key | Variable | Description |
 | --- | --- | --- |
@@ -176,7 +177,9 @@ required.
 | `tenant_id` | `UC_ADLS_<NAME>_TENANT_ID` | The Entra ID tenant. |
 | `client_id` | `UC_ADLS_<NAME>_CLIENT_ID` | The service principal. |
 | `client_secret` | `UC_ADLS_<NAME>_CLIENT_SECRET` | Its secret. |
-| `test_mode` | `UC_ADLS_<NAME>_TEST_MODE` | Give fake SAS tokens, for tests. |
+| `managed_identity` | `UC_ADLS_<NAME>_MANAGED_IDENTITY` | `true`: the server's own Azure identity, from its environment (AKS workload identity, the managed identity of the VM). |
+| `managed_identity_id` | `UC_ADLS_<NAME>_MANAGED_IDENTITY_ID` | With `managed_identity`: the resource ID of a user-assigned identity, from the instance metadata service. |
+| `test_mode` | `UC_ADLS_<NAME>_TEST_MODE` | With a service principal: give fake SAS tokens, for tests. |
 
 ## `[gcs.<name>]`
 

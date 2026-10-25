@@ -16,10 +16,15 @@ storage:
     #   awsRoleArn: arn:aws:iam::123456789012:role/my-role
     #   credentialsSecretName: my-bucket-secret
     s3: []
-    # -- Per-account ADLS credentials. The secret has `tenantId`,
-    # `clientId` and `clientSecret`.
+    # -- Per-account ADLS credentials: a service principal, whose secret has
+    # `tenantId`, `clientId` and `clientSecret`; or, with `managedIdentity:
+    # true`, the pod's own Azure identity, such as AKS workload identity
+    # (see `serviceAccount.annotations` and `server.deployment.extraPodLabels`),
+    # or the user-assigned identity `managedIdentityId`.
     # - storageAccountName: myaccount
     #   credentialsSecretName: my-storage-secret
+    # - storageAccountName: otheraccount
+    #   managedIdentity: true
     adls: []
     # -- Per-bucket GCS credentials. The secret has `jsonKey`.
     # - bucketPath: gs://my-bucket

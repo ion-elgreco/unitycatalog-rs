@@ -491,7 +491,7 @@ async fn azure_signs_a_user_delegation_sas() {
 
 /// A managed identity is the server's own Azure identity: a user-assigned
 /// one by its resource ID, from the instance metadata service, or else the
-/// identity of the environment.
+/// identity of the environment. A credential or an `adls.*` entry names it.
 #[tokio::test]
 async fn azure_managed_identities_sign_user_delegation_sas() {
     let token = json!({ "access_token": "msi-token", "expires_on": "4102444800" });
@@ -502,7 +502,13 @@ async fn azure_managed_identities_sign_user_delegation_sas() {
         azure_blob: Some(blob),
         ..Default::default()
     };
-    let app = app("", endpoints).await;
+    let settings = r#"
+        [adls.lake]
+        account = "lake"
+        managed_identity = true
+        managed_identity_id = "/subscriptions/s/lake"
+    "#;
+    let app = app(settings, endpoints).await;
     let id = "/subscriptions/s/resourceGroups/g/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uc";
     let url = "abfss://c@acct.dfs.core.windows.net/mi";
     let identity = json!({ "azure_managed_identity": { "managed_identity_id": id } });
@@ -536,6 +542,18 @@ async fn azure_managed_identities_sign_user_delegation_sas() {
     ok(vend(&app, &format!("{url}/t"), "PATH_READ").await).await;
     let asked = tokens.lock().unwrap().last().unwrap().clone();
     assert!(!asked.path.contains("msi_res_id"), "{}", asked.path);
+
+    // Without an external location: the account's entry.
+    let url = "abfss://c@lake.dfs.core.windows.net/tables/t";
+    ok(vend(&app, url, "PATH_READ").await).await;
+    let asked = tokens.lock().unwrap().last().unwrap().clone();
+    assert!(
+        asked
+            .path
+            .contains("msi_res_id=%2Fsubscriptions%2Fs%2Flake"),
+        "{}",
+        asked.path
+    );
 }
 
 /// Upstream `GcpCredentialVendor`: the bucket's service account token,

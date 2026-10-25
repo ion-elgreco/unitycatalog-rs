@@ -1,8 +1,8 @@
 //! Azure credentials, after upstream `AzureCredentialVendor`.
 //!
 //! The identity that signs in to Microsoft Entra ID is the storage
-//! credential's, under an external location, or else the service principal
-//! of the account's `adls.*` entry:
+//! credential's, under an external location, or else the one of the
+//! account's `adls.*` entry:
 //!
 //! - A service principal signs in with its client secret.
 //! - A managed identity is the server's own: the identity of its
@@ -42,12 +42,12 @@ const SAS_VERSION: &str = "2021-08-06";
 /// Upstream's expiration of a test-mode SAS.
 const TEST_MODE_EXPIRATION: i64 = 253_370_790_000_000;
 
-/// Upstream `ADLSStorageConfig`.
+/// Upstream `ADLSStorageConfig`, with a managed identity in place of the
+/// service principal as an option.
 #[derive(Debug, Clone)]
 pub struct AdlsConfig {
-    pub tenant_id: String,
-    pub client_id: String,
-    pub client_secret: String,
+    pub identity: Identity,
+    /// With a service principal: fake SAS tokens.
     pub test_mode: bool,
 }
 
@@ -65,7 +65,7 @@ pub struct AzureVendor {
 
 /// Who signs in to Microsoft Entra ID.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum Identity {
+pub enum Identity {
     ServicePrincipal {
         tenant_id: String,
         client_id: String,
@@ -274,18 +274,17 @@ impl AzureVendor {
                 let config = self.accounts.get(&parts.account_name).ok_or_else(|| {
                     Error::failed_precondition("Azure storage account configuration not found.")
                 })?;
-                if config.test_mode {
-                    let token = format!(
-                        "{}/{}/{}",
-                        config.tenant_id, config.client_id, config.client_secret
-                    );
+                if config.test_mode
+                    && let Identity::ServicePrincipal {
+                        tenant_id,
+                        client_id,
+                        client_secret,
+                    } = &config.identity
+                {
+                    let token = format!("{tenant_id}/{client_id}/{client_secret}");
                     return Ok(vended(token, TEST_MODE_EXPIRATION));
                 }
-                Identity::ServicePrincipal {
-                    tenant_id: config.tenant_id.clone(),
-                    client_id: config.client_id.clone(),
-                    client_secret: config.client_secret.clone(),
-                }
+                config.identity.clone()
             }
         };
         let (sas_token, expiration) = self.delegation_sas(ctx, &parts, &identity).await?;
