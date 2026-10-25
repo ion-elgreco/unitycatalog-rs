@@ -46,6 +46,9 @@ theme:
     - search.highlight
     - search.share
     - toc.follow
+    # "On this page" as a submenu of the page in the navigation, which leaves the width to the
+    # page's tables.
+    - toc.integrate
     - navigation.tabs
     - navigation.tabs.sticky
     - navigation.top

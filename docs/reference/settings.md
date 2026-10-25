@@ -1,19 +1,8 @@
----
-hide:
-  - toc
----
-
 # Settings
 
 `uc-server` and `uc` read the same settings. Each setting is a key in a `[group]` table of
 `uc.toml`, and an environment variable `UC_<GROUP>_<KEY>`: `enabled` in `[auth]` is
 `UC_AUTH_ENABLED`.
-
-The groups: [`[server]`](#server), [`[db]`](#db), [`[auth]`](#auth), [`[storage]`](#storage),
-[`[tables]`](#tables), [`[identity.aws]`](#identityaws), [`[identity.azure]`](#identityazure),
-[`[identity.gcp]`](#identitygcp), [`[locations.<name>]`](#locationsname), [`[ui]`](#ui),
-[`[log]`](#log) and [`[cli]`](#cli).
-[Cloud storage](../server/cloud-storage.md) tells how the cloud groups work together.
 
 ```toml
 # uc.toml
