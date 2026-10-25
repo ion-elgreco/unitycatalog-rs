@@ -137,6 +137,11 @@ test-upstream:
     curl -fs --retry 60 --retry-all-errors --retry-delay 1 "$url/api/2.1/unity-catalog/catalogs" > /dev/null
     cd python/client && UC_TEST_SERVER_URL="$url" uv run --no-sync pytest tests
 
+# Run the Spark tests (python/client/tests/integrations/test_spark.py) with PySpark `spark`, 4.1.x or 4.2.x, against a uc-server of this repository; needs Java 17 or 21 and the client in .venv (just develop-client). Spark downloads its jars into ~/.ivy2.5.2
+test-spark spark="4.2.0":
+    cargo build -p uc-server --profile {{ profile }}
+    cd python/client && UC_TEST_SERVER_BIN='{{ uc_server }}' uv run --no-sync --with 'pyspark=={{ spark }}' pytest tests/integrations/test_spark.py
+
 # Build the wheels of the four Python packages, and run `uc dev`, `uc web` and the client from them, as `pip install 'unitycatalog-rs[all]'` installs them
 test-packages: wasm-dev
     #!/usr/bin/env bash
