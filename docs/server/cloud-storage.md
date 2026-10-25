@@ -28,144 +28,209 @@ credentials = client.generate_temporary_table_credentials(table.table_id, "READ"
 
 The Delta REST API and the Iceberg REST catalog give credentials with their tables.
 
-## Where the credentials come from
+## Identities and locations
 
-1. An external location that covers the path: its storage credential. A credential holds one
-   identity: an AWS IAM role, an Azure service principal, an Azure managed identity, a GCP
-   service account or a GCP service account key. It must reach the location's storage: an AWS
-   role for `s3://`, an Azure identity for `abfs://` and `abfss://`, a GCP identity for `gs://`.
-2. Else a location of the settings that covers the path, `[locations.<name>]`: a URL and the
-   same kinds of identity. When several cover the path, the one with the longest URL.
-3. Local paths get empty credentials.
+| Part | Its job | Who sets it |
+| --- | --- | --- |
+| `[identity.<cloud>]` | How the server signs in to AWS, Azure or GCP. When it is not set, the server uses the credentials of the machine or pod where it runs. | The admin, in the [settings](../reference/settings.md#identityaws) |
+| External location | A URL and the identity that reaches it, with an owner and grants. | Users, with `uc external_location create`, the web UI or the API |
+| `[locations.<name>]` | A URL and the identity that reaches it, without an owner or grants. | The admin, in the [settings](../reference/settings.md#locationsname) |
 
-To get credentials for that identity, the server signs in with its own identity: `[identity.aws]`,
-`[identity.azure]` or `[identity.gcp]`. When that is not set, the server uses the credentials of
-the machine or pod where it runs.
+For a path, the server takes the identity of the external location that covers the path, else of
+the `[locations.<name>]` that covers it; of several, the longest URL wins. Then it signs in with
+`[identity.<cloud>]` and gets credentials of that identity. Local paths get empty credentials.
 
-With authorization on, a path that a user wrote, such as the location of an external table or the
-`storage_root` of a catalog, must be under an external location, also for admins: the server
-checks that the user may use it. A `[locations.<name>]` then serves only the paths that the admin
-wrote in the settings, `storage.tables_root` and `storage.models_root`. See
-[Which location serves a path](../reference/settings.md#which-location-serves-a-path).
-
-## AWS S3
-
-With an external location:
-
-```bash
-uc credential create --name analytics \
-  --aws_iam_role_arn arn:aws:iam::123456789012:role/uc-analytics
-uc external_location create --name analytics \
-  --url s3://analytics/data --credential_name analytics
+```mermaid
+flowchart TD
+    path(["A client asks for<br/>credentials for a path"])
+    subgraph metastore["In the metastore: uc CLI, web UI, API"]
+        external["External location<br/>URL, owner, grants"]
+        credential["Storage credential<br/>an AWS role, or an<br/>Azure or GCP identity"]
+        external -- uses --> credential
+    end
+    subgraph settings["In the settings: uc.toml, UC_* variables"]
+        location["#91;locations.#lt;name#gt;#93;<br/>URL and an AWS role, or<br/>an Azure or GCP identity"]
+        identity["#91;identity.#lt;cloud#gt;#93;<br/>the identity the server<br/>signs in with; else the<br/>credentials of the pod<br/>or machine it runs on"]
+    end
+    temporary(["Temporary credentials:<br/>one hour, only this<br/>path and operation"])
+    path -- "1. covered by" --> external
+    path -- "2. else covered by" --> location
+    credential -- "3. signed in by" --> identity
+    location -- "3. signed in by" --> identity
+    identity --> temporary
 ```
 
-The answer of `uc credential create` has an `external_id`. In AWS, let the server's identity
-assume the role with that external id, in the role's trust policy. The server's identity is
-`[identity.aws]`, else the environment: the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
-variables, the role of a Kubernetes service account, an ECS task role, EKS Pod Identity or an
-instance role. AWS profiles in `~/.aws` are not read. Set `identity.aws.arn` to its ARN, and the
-answers show it as `unity_catalog_iam_arn`.
+### Which location serves a path
 
-Or, without an external location, give the role of a bucket in the settings:
+- **A path that a user wrote**, such as the location of an external table or the `storage_root`
+  of a catalog: with authorization on, it must be under an external location, so that the server
+  can check the user's privileges on it.
+- **A path that the admin wrote** in the settings, `storage.tables_root` and
+  `storage.models_root`: a `[locations.<name>]` can serve it, and so can an external location.
 
-```toml
-[locations.analytics]
-url = "s3://analytics"
-region = "us-east-1"
-aws_iam_role_arn = "arn:aws:iam::123456789012:role/uc-analytics"
-```
+With authorization off, a `[locations.<name>]` can serve any path.
 
-With `aws_iam_role_arn = true`, the server assumes its own role, `identity.aws.arn`, with a
-session policy for the path. That role's trust policy must allow the role itself.
+For example, a catalog made with `--storage_root s3://sales/data` needs an external location on
+`s3://sales`. A catalog without a storage root puts its managed tables under `tables_root`, which a
+`[locations.<name>]` can serve.
 
-For an S3-compatible store, such as MinIO or RustFS, set `identity.aws.endpoint` to its URL.
+## Per cloud
 
-## Azure Data Lake Storage
+Each tab sets up a bucket or container in two ways: as an external location with the CLI, and in
+the settings, with the server's identity, a location that uses it (`true`), a location with an
+identity of its own, and the managed roots.
 
-The server signs in to Microsoft Entra ID, gets a user delegation key, and signs SAS tokens with
-it. Give the identity that signs in a data role on the storage account, such as Storage Blob Data
-Contributor.
+=== "AWS S3"
 
-With an external location, the credential is a service principal or a managed identity:
+    The server's identity assumes an IAM role, with a session policy for the path and the
+    operation.
 
-```bash
-uc credential create --name lake --azure_directory_id <tenant id> \
-  --azure_application_id <client id> --azure_client_secret <client secret>
-uc external_location create --name lake \
-  --url abfss://data@mylake.dfs.core.windows.net/lake --credential_name lake
-```
+    With an external location:
 
-- A service principal: the server signs in as the app. The server keeps the client secret in its
-  database, and no answer of the API contains it. Backups contain it.
-- A managed identity (`--azure_managed_identity`): the server's own Azure identity:
-  `[identity.azure]`, else its environment: AKS workload identity, the `AZURE_CLIENT_ID`,
-  `AZURE_TENANT_ID` and `AZURE_CLIENT_SECRET` variables, or the managed identity of the VM or App
-  Service. With a resource ID (`--azure_managed_identity <resource id>`), the server uses that
-  user-assigned managed identity of its VM, through the instance metadata service.
+    ```bash
+    uc credential create --name analytics \
+      --aws_iam_role_arn arn:aws:iam::123456789012:role/uc-analytics
+    uc external_location create --name analytics \
+      --url s3://analytics/data --credential_name analytics
+    ```
 
-Or, without an external location, give the identity of the container in the settings: a service
-principal,
+    In the settings:
 
-```toml
-[locations.lake]
-url = "abfss://data@mylake.dfs.core.windows.net"
-azure_directory_id = "<tenant id>"
-azure_application_id = "<client id>"
-azure_client_secret = "<client secret>"
-```
+    ```toml
+    # The identity that the server signs in to AWS with. No keys are set, so
+    # the server uses the IAM role of its pod (IRSA); arn names that role.
+    [identity.aws]
+    region = "eu-west-1"
+    arn = "arn:aws:iam::111111111111:role/uc-server"
 
-or the server's own identity, with no secret:
+    # A bucket of the server's own account: the server assumes its own role.
+    [locations.lake]
+    url = "s3://acme-lake"
+    aws_iam_role_arn = true
 
-```toml
-[locations.lake]
-url = "abfss://data@mylake.dfs.core.windows.net"
-azure_managed_identity = true  # or the resource ID of a user-assigned identity
-```
+    # A bucket of another account: a role there, which trusts the server's role.
+    [locations.partner]
+    url = "s3://partner-data"
+    region = "us-east-1"
+    aws_iam_role_arn = "arn:aws:iam::222222222222:role/uc-partner"
 
-On AKS, give the server's pod workload identity with the Helm chart's `serviceAccount.annotations`
-(`azure.workload.identity/client-id`) and `server.deployment.extraPodLabels`
-(`azure.workload.identity/use: "true"`).
+    # Where managed tables and models go when their catalog and schema have no
+    # storage root: here in the bucket of [locations.lake].
+    [storage]
+    tables_root = "s3://acme-lake/managed/tables"
+    models_root = "s3://acme-lake/managed/models"
+    ```
 
-## Google Cloud Storage
+    - The role must trust the server's identity. The role of a storage credential must also
+      require its `external_id`, which `uc credential create` shows.
+    - `aws_iam_role_arn = true` assumes the server's own role, `identity.aws.arn`. Its trust
+      policy must allow the role itself.
+    - Storage credentials show `identity.aws.arn` as `unity_catalog_iam_arn`.
+    - For an S3-compatible store, such as MinIO or RustFS, set `identity.aws.endpoint`.
+    - The server does not read AWS profiles in `~/.aws`.
 
-The server gets a token of a GCP identity, and Google STS limits the token to the path and the
-operation. Give that identity the Storage Object Admin role on the bucket.
+=== "Azure Data Lake Storage"
 
-With an external location, the credential is a service account or a service account key:
+    The server signs in to Microsoft Entra ID, gets a user delegation key, and signs a SAS for the
+    path. The identity that signs in needs a data role on the storage account, such as Storage
+    Blob Data Contributor.
 
-```bash
-uc credential create --name models \
-  --gcp_service_account unity-catalog@my-project.iam.gserviceaccount.com
-uc external_location create --name models \
-  --url gs://models/registry --credential_name models
-```
+    With an external location:
 
-- A service account (`--gcp_service_account <email>`): the server's own identity impersonates the
-  service account. Give the server's identity the Service Account Token Creator role on the
-  service account. The server stores no secret.
-- Without an email (`--gcp_service_account`): the server's own identity: the key file of
-  `[identity.gcp]`, else Google's Application Default Credentials: the
-  `GOOGLE_APPLICATION_CREDENTIALS` file, gcloud's application default credentials, or the
-  metadata server, such as GKE Workload Identity or the service account of the VM.
-- A service account key (`--gcp_service_account_key <file>`): the JSON key file. The server keeps
-  the key in its database, and no answer of the API contains it. Backups contain it.
+    ```bash
+    uc credential create --name lake --azure_directory_id <tenant id> \
+      --azure_application_id <client id> --azure_client_secret <client secret>
+    uc external_location create --name lake \
+      --url abfss://data@mylake.dfs.core.windows.net/lake --credential_name lake
+    ```
 
-Or, without an external location, give the identity of the bucket in the settings: a JSON key
-file, or a service account that the server's own identity impersonates (`true` for the server's
-own identity).
+    In the settings:
 
-```toml
-[locations.models]
-url = "gs://models"
-gcp_service_account_key = "/etc/uc/gcs-key.json"
+    ```toml
+    # The identity that the server signs in to Azure with: a user-assigned
+    # managed identity of its VM. When it is not set, the server uses the
+    # credentials of the machine or pod where it runs, such as AKS workload
+    # identity.
+    [identity.azure]
+    managed_identity_id = "/subscriptions/<subscription>/resourceGroups/uc/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uc-server"
 
-[locations.archive]
-url = "gs://archive"
-gcp_service_account = "unity-catalog@my-project.iam.gserviceaccount.com"
-```
+    # A container that the server's own identity can reach (Storage Blob Data
+    # Contributor on the storage account).
+    [locations.lake]
+    url = "abfss://lake@acmelake.dfs.core.windows.net"
+    azure_managed_identity = true
 
-On GKE, give the server's pod Workload Identity with the Helm chart's `serviceAccount.annotations`
-(`iam.gke.io/gcp-service-account`).
+    # A container in another storage account: a service principal of its own.
+    [locations.partner]
+    url = "abfss://data@partnerdata.dfs.core.windows.net"
+    azure_directory_id = "<tenant id>"
+    azure_application_id = "<client id>"
+    azure_client_secret = "<client secret>"
+
+    # Where managed tables and models go when their catalog and schema have no
+    # storage root: here in the container of [locations.lake].
+    [storage]
+    tables_root = "abfss://lake@acmelake.dfs.core.windows.net/managed/tables"
+    models_root = "abfss://lake@acmelake.dfs.core.windows.net/managed/models"
+    ```
+
+    - A service principal signs in with its secret. The server keeps the secret in its database.
+      No answer of the API shows it, but backups contain it.
+    - `azure_managed_identity = true`, or `--azure_managed_identity` without a value, is the
+      server's own identity. With a resource ID, the server uses that user-assigned identity of
+      its VM.
+    - On AKS, give the server's pod workload identity with the Helm chart's
+      `serviceAccount.annotations` (`azure.workload.identity/client-id`) and
+      `server.deployment.extraPodLabels` (`azure.workload.identity/use: "true"`).
+
+=== "Google Cloud Storage"
+
+    The server gets a token of a GCP identity, and Google STS limits the token to the path and the
+    operation. That identity needs the Storage Object Admin role on the bucket.
+
+    With an external location:
+
+    ```bash
+    uc credential create --name models \
+      --gcp_service_account unity-catalog@my-project.iam.gserviceaccount.com
+    uc external_location create --name models \
+      --url gs://models/registry --credential_name models
+    ```
+
+    In the settings:
+
+    ```toml
+    # The identity that the server signs in to GCP with: a service account key.
+    # When it is not set, the server uses the credentials of the machine or
+    # pod where it runs, such as GKE Workload Identity.
+    [identity.gcp]
+    json_key_file = "/etc/uc/gcp/uc-server.json"
+
+    # A bucket that the server's own service account can reach.
+    [locations.lake]
+    url = "gs://acme-lake"
+    gcp_service_account = true
+
+    # A bucket of another project: its service account, which the server's
+    # account impersonates (Service Account Token Creator on that account).
+    [locations.partner]
+    url = "gs://partner-data"
+    gcp_service_account = "uc-partner@partner-project.iam.gserviceaccount.com"
+
+    # Where managed tables and models go when their catalog and schema have no
+    # storage root: here in the bucket of [locations.lake].
+    [storage]
+    tables_root = "gs://acme-lake/managed/tables"
+    models_root = "gs://acme-lake/managed/models"
+    ```
+
+    - With an email, the server's identity impersonates that service account, and needs the
+      Service Account Token Creator role on it. `true`, or `--gcp_service_account` without an
+      email, is the server's own identity.
+    - With a service account key, the server keeps the key in its database. No answer of the API
+      shows it, but backups contain it.
+    - On GKE, give the server's pod Workload Identity with the Helm chart's
+      `serviceAccount.annotations` (`iam.gke.io/gcp-service-account`).
 
 ## Dropped data
 

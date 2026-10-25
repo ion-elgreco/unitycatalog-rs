@@ -13,8 +13,7 @@ The groups: [`[server]`](#server), [`[db]`](#db), [`[auth]`](#auth), [`[storage]
 [`[tables]`](#tables), [`[identity.aws]`](#identityaws), [`[identity.azure]`](#identityazure),
 [`[identity.gcp]`](#identitygcp), [`[locations.<name>]`](#locationsname), [`[ui]`](#ui),
 [`[log]`](#log) and [`[cli]`](#cli).
-[Cloud identities and locations](#cloud-identities-and-locations) tells how the cloud groups work
-together.
+[Cloud storage](../server/cloud-storage.md) tells how the cloud groups work together.
 
 ```toml
 # uc.toml
@@ -63,190 +62,15 @@ defaults apply.
 
 ## Cloud identities and locations
 
-Clients read and write table data in cloud storage with short-lived credentials that the server
-gives them. Three parts decide these credentials. Each part has one job:
-
-| Part | Its job | Who sets it, and where |
-| --- | --- | --- |
-| `[identity.<cloud>]` | How the server signs in to AWS, Azure or GCP. | The admin, in `uc.toml` or `UC_IDENTITY_*` variables. When it is not set, the server uses the credentials of the machine or pod where it runs. |
-| External location | Which identity reaches a path, and which users may use it. | Users with the privilege, with `uc external_location create`, the web UI or the API. |
-| `[locations.<name>]` | Which identity reaches a path. It has no owner and no grants. | The admin, in `uc.toml` or `UC_LOCATIONS_*` variables. It is not an external location. |
-
-### Which location serves a path
-
-It depends on who wrote the path:
-
-- **A user wrote the path** in the web UI, the CLI or the API: the location of an external table
-  or volume, or the `storage_root` of a catalog or schema. With authorization on, the path must be
-  under an external location, so that the server can check that the user may use it.
-- **The admin wrote the path** in `uc.toml`: `storage.tables_root` and `storage.models_root`. The
-  managed tables and models of a catalog and schema without a `storage_root` go there. A
-  `[locations.<name>]` can serve these paths, and so can an external location.
-
-With authorization off, the server checks no users, so a `[locations.<name>]` can serve any path.
-
-Both kinds of path can be in use at the same time. In this example, the catalog `main` has no
-`storage_root`, so its managed tables go under `s3://acme-lake/managed`, and `[locations.lake]`
-serves them. A user made the catalog `sales` with the storage root `s3://sales/data`, so that path
-needs the external location `sales`.
-
-```toml
-[identity.aws]
-arn = "arn:aws:iam::111111111111:role/uc-server"
-
-[storage]
-tables_root = "s3://acme-lake/managed"
-
-[locations.lake]
-url = "s3://acme-lake"
-aws_iam_role_arn = true
-```
-
-```bash
-uc catalog create --name main
-uc credential create --name sales \
-  --aws_iam_role_arn arn:aws:iam::222222222222:role/uc-sales
-uc external_location create --name sales --url s3://sales --credential_name sales
-uc catalog create --name sales --storage_root s3://sales/data
-```
-
-### How the server gets the credentials
-
-For a path, the server takes the identity of the external location that covers the path, else the
-identity of the `[locations.<name>]` that covers it. When several `[locations.<name>]` cover a
-path, the one with the longest URL wins: for `s3://lake/tables/t1`, `s3://lake/tables` wins over
-`s3://lake`. Then the server signs in with `[identity.<cloud>]` and gets credentials of that
-identity. They last one hour and allow only that path and operation.
-
-```mermaid
-flowchart TD
-    path(["A client asks for<br/>credentials for a path"])
-    subgraph metastore["In the metastore: uc CLI, web UI, API"]
-        external["External location<br/>URL, owner, grants"]
-        credential["Storage credential<br/>an AWS role, or an<br/>Azure or GCP identity"]
-        external -- uses --> credential
-    end
-    subgraph settings["In the settings: uc.toml, UC_* variables"]
-        location["#91;locations.#lt;name#gt;#93;<br/>URL and an AWS role, or<br/>an Azure or GCP identity"]
-        identity["#91;identity.#lt;cloud#gt;#93;<br/>the identity the server<br/>signs in with; else the<br/>credentials of the pod<br/>or machine it runs on"]
-    end
-    temporary(["Temporary credentials:<br/>one hour, only this<br/>path and operation"])
-    path -- "1. covered by" --> external
-    path -- "2. else covered by" --> location
-    credential -- "3. signed in by" --> identity
-    location -- "3. signed in by" --> identity
-    identity --> temporary
-```
-
-
-What the server does for each kind of identity:
-
-| Identity of the location | The server |
-| --- | --- |
-| AWS IAM role | assumes the role as `[identity.aws]`; for `aws_iam_role_arn = true`, its own role `identity.aws.arn`. |
-| Azure service principal | signs in as the service principal. |
-| Azure managed identity | signs in as `[identity.azure]`, or as the user-assigned identity of the resource ID. |
-| GCP service account | uses the token of `[identity.gcp]`, or impersonates the service account as `[identity.gcp]`. |
-| GCP service account key | signs in with the key. |
-
-### Variables
+`[identity.<cloud>]` is how the server signs in to AWS, Azure or GCP. A `[locations.<name>]` gives
+the paths under its URL an identity, when no external location covers them.
+[Cloud storage](../server/cloud-storage.md) tells how they work with external locations, with
+examples per cloud.
 
 The variables of these tables include the cloud or the name: `UC_IDENTITY_AWS_SECRET_KEY` is
 `secret_key` in `[identity.aws]`, and `UC_LOCATIONS_ANALYTICS_URL` is `url` in
 `[locations.analytics]`. A name has only lowercase letters and digits, and at least one letter:
 the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list index.
-
-### Examples per cloud
-
-Each example has the server's identity, two locations and the managed roots. One location uses
-the server's own identity (`true`). The other is a bucket or container that another identity
-reaches. The managed roots are under the first location.
-
-=== "AWS S3"
-
-    ```toml
-    # The identity that the server signs in to AWS with. No keys are set, so
-    # the server uses the IAM role of its pod (IRSA); arn names that role.
-    [identity.aws]
-    region = "eu-west-1"
-    arn = "arn:aws:iam::111111111111:role/uc-server"
-
-    # A bucket of the server's own account: the server assumes its own role.
-    [locations.lake]
-    url = "s3://acme-lake"
-    aws_iam_role_arn = true
-
-    # A bucket of another account: a role there, which trusts the server's role.
-    [locations.partner]
-    url = "s3://partner-data"
-    region = "us-east-1"
-    aws_iam_role_arn = "arn:aws:iam::222222222222:role/uc-partner"
-
-    # Where managed tables and models go when their catalog and schema have no
-    # storage root: here in the bucket of [locations.lake].
-    [storage]
-    tables_root = "s3://acme-lake/managed/tables"
-    models_root = "s3://acme-lake/managed/models"
-    ```
-
-=== "Google Cloud Storage"
-
-    ```toml
-    # The identity that the server signs in to GCP with: a service account key.
-    # When it is not set, the server uses the credentials of the machine or
-    # pod where it runs, such as GKE Workload Identity.
-    [identity.gcp]
-    json_key_file = "/etc/uc/gcp/uc-server.json"
-
-    # A bucket that the server's own service account can reach.
-    [locations.lake]
-    url = "gs://acme-lake"
-    gcp_service_account = true
-
-    # A bucket of another project: its service account, which the server's
-    # account impersonates (Service Account Token Creator on that account).
-    [locations.partner]
-    url = "gs://partner-data"
-    gcp_service_account = "uc-partner@partner-project.iam.gserviceaccount.com"
-
-    # Where managed tables and models go when their catalog and schema have no
-    # storage root: here in the bucket of [locations.lake].
-    [storage]
-    tables_root = "gs://acme-lake/managed/tables"
-    models_root = "gs://acme-lake/managed/models"
-    ```
-
-=== "Azure Data Lake Storage"
-
-    ```toml
-    # The identity that the server signs in to Azure with: a user-assigned
-    # managed identity of its VM. When it is not set, the server uses the
-    # credentials of the machine or pod where it runs, such as AKS workload
-    # identity.
-    [identity.azure]
-    managed_identity_id = "/subscriptions/<subscription>/resourceGroups/uc/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uc-server"
-
-    # A container that the server's own identity can reach (Storage Blob Data
-    # Contributor on the storage account).
-    [locations.lake]
-    url = "abfss://lake@acmelake.dfs.core.windows.net"
-    azure_managed_identity = true
-
-    # A container in another storage account: a service principal of its own.
-    [locations.partner]
-    url = "abfss://data@partnerdata.dfs.core.windows.net"
-    azure_directory_id = "<tenant id>"
-    azure_application_id = "<client id>"
-    azure_client_secret = "<client secret>"
-
-    # Where managed tables and models go when their catalog and schema have no
-    # storage root: here in the container of [locations.lake].
-    [storage]
-    tables_root = "abfss://lake@acmelake.dfs.core.windows.net/managed/tables"
-    models_root = "abfss://lake@acmelake.dfs.core.windows.net/managed/models"
-    ```
-
-[Cloud storage](../server/cloud-storage.md) tells how the server uses them.
 
 <!-- The settings tables: their variables do not break inside a name (extra.css). -->
 <div class="uc-settings" markdown>
@@ -351,7 +175,7 @@ instance role.
 | `secret_key` | `UC_IDENTITY_AWS_SECRET_KEY` | the credentials where the server runs | The secret key. |
 | `region` | `UC_IDENTITY_AWS_REGION` | `AWS_REGION`, else `AWS_DEFAULT_REGION`, else `us-east-1` | The region of the STS calls. |
 | `arn` | `UC_IDENTITY_AWS_ARN` | none | The ARN of this identity, shown as `unity_catalog_iam_arn` on storage credentials, for the trust policies of their roles. A role here is also the one of `aws_iam_role_arn = true`; its trust policy must then allow the role itself. |
-| `endpoint` | `UC_IDENTITY_AWS_ENDPOINT` | AWS | The S3 and STS API of an S3-compatible store, such as MinIO or RustFS: `http://` or `https://`. uc's table and volume commands use it too. See [Cloud storage](../server/cloud-storage.md#aws-s3). |
+| `endpoint` | `UC_IDENTITY_AWS_ENDPOINT` | AWS | The S3 and STS API of an S3-compatible store, such as MinIO or RustFS: `http://` or `https://`. uc's table and volume commands use it too. See [Cloud storage](../server/cloud-storage.md#per-cloud). |
 
 ## `[identity.azure]`
 
@@ -383,9 +207,10 @@ credentials, or the metadata server, such as GKE Workload Identity.
 
 A URL and the identity that reaches the paths under it, for paths that no external location
 covers. With authorization on, it serves only the paths that the admin wrote, `storage.tables_root`
-and `storage.models_root`; see [Which location serves a path](#which-location-serves-a-path). The
-URL's scheme picks the cloud, and an entry holds exactly one identity of that cloud. When several
-entries cover a path, the one with the longest URL wins.
+and `storage.models_root`; see
+[Which location serves a path](../server/cloud-storage.md#which-location-serves-a-path). The URL's
+scheme picks the cloud, and an entry holds exactly one identity of that cloud. When several entries
+cover a path, the one with the longest URL wins.
 
 | Setting | Variable | Cloud | Description |
 | --- | --- | --- | --- |
