@@ -1,8 +1,9 @@
 //! Object storage with the server's own credentials. Upstream
 //! `FileOperations`: local paths need none; cloud paths use credentials
-//! vended for the operation (from the covering external location or the
-//! bucket's configuration), or else the server's environment credentials.
-//! S3 paths go to the S3-compatible store of `aws.endpoint`, if any.
+//! vended for the operation (from the covering external location or
+//! location of the settings), or else the server's environment credentials.
+//! S3 paths go to the S3-compatible store of `identity.aws.endpoint`, if
+//! any.
 
 pub mod cleanup;
 pub mod s3_region;
@@ -225,7 +226,7 @@ mod tests {
         assert!(same_content(&store, &p("a"), &p("missing")).await.is_err());
     }
 
-    /// With `aws.endpoint`, S3 requests go to the store, path-style.
+    /// With `identity.aws.endpoint`, S3 requests go to the store, path-style.
     #[tokio::test]
     async fn s3_paths_go_to_the_store() {
         let seen = Arc::new(std::sync::Mutex::new(Vec::new()));

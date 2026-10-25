@@ -46,11 +46,11 @@ pub struct ServerConfig {
     pub io_threads: usize,
     /// `storage.cleanup_*`.
     pub cleanup: crate::storage::cleanup::CleanupConfig,
-    /// `[aws]`, `[s3.*]`, `[adls.*]` and `[gcs.*]`: the credentials of paths
-    /// without an external location.
+    /// `[identity]` and `[locations]`: the server's cloud identities, and
+    /// the identities of paths without an external location.
     pub credentials: crate::storage::vendor::StorageConfig,
-    /// `aws.master_role_arn`.
-    pub aws_master_role_arn: Option<String>,
+    /// `identity.aws.arn`.
+    pub aws_identity_arn: Option<String>,
     /// `[auth]`: sign-in, privilege checks and the web UI's sign-in
     /// ([`Self::sign_in`]).
     pub auth: uc_common::settings::Auth,
@@ -73,7 +73,7 @@ impl ServerConfig {
             auth,
             storage,
             tables,
-            aws,
+            identity,
             ui,
             log,
             file,
@@ -146,7 +146,7 @@ impl ServerConfig {
             io_threads: server.io_threads,
             cleanup,
             credentials,
-            aws_master_role_arn: aws.master_role_arn.clone(),
+            aws_identity_arn: identity.aws.arn.clone(),
             auth: auth.clone(),
             file: file.clone(),
         })

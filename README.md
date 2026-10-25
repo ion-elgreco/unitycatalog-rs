@@ -85,10 +85,12 @@ enabled = true
 allowed_issuers = ["https://accounts.google.com"]
 signing_key_file = "/etc/uc/signing-key.pem"  # the key of its tokens; default a new one in memory
 
-[s3.analytics]                     # a bucket's credentials, for paths without an external location
-bucket = "s3://analytics"
+[identity.aws]                     # the server's AWS identity; default the environment's
 region = "us-east-1"
-role_arn = "arn:aws:iam::123456789012:role/uc"
+
+[locations.analytics]              # a URL and its identity, for paths without an external location
+url = "s3://analytics"
+aws_iam_role_arn = "arn:aws:iam::123456789012:role/uc"
 ```
 
 ## Run it in production with Helm

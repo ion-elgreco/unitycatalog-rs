@@ -214,7 +214,7 @@ admin_principals = ["alice@example.com"]
 {users}
 # The server's identity at RustFS, which calls AssumeRole for the
 # credentials of each request. uc reads the endpoint too.
-[aws]
+[identity.aws]
 endpoint = {q(rustfs)}
 access_key = {q(S3_ACCESS_KEY)}
 secret_key = {q(S3_SECRET_KEY)}

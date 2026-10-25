@@ -75,9 +75,10 @@ The chart sets the server's settings as `UC_*` environment variables. For the
 | `auth.accessTokenTimeout` | `24h` | The life of the server's tokens. |
 | `storage.tableStorageRoot` | `""` | The root of managed tables without a catalog or schema root. |
 | `storage.modelStorageRoot` | `""` | The same for models. |
-| `storage.credentials.s3` | `[]` | Per bucket: `bucketPath`, `region`, `awsRoleArn`, `credentialsSecretName`. |
-| `storage.credentials.adls` | `[]` | Per account: `storageAccountName`, and `credentialsSecretName` or `managedIdentity: true` with an optional `managedIdentityId`. |
-| `storage.credentials.gcs` | `[]` | Per bucket: `bucketPath`, and `credentialsSecretName` or the pod's own identity, with an optional `serviceAccount` to impersonate. |
+| `storage.identity.aws` | empty | The server's AWS identity: `credentialsSecretName` (`accessKey`, `secretKey`), `region`, `arn`, `endpoint`. Empty: the pod's identity. |
+| `storage.identity.azure` | empty | The server's Azure identity: `credentialsSecretName` (`directoryId`, `applicationId`, `clientSecret`) or `managedIdentityId`. Empty: the pod's identity. |
+| `storage.identity.gcp` | empty | The server's GCP identity: `credentialsSecretName` (`jsonKey`). Empty: the pod's identity. |
+| `storage.locations` | `[]` | Per location: `url`, and one identity of its cloud: `awsIamRoleArn` (with an optional `region`), `azureManagedIdentity` or `gcpServiceAccount` (`true` or a resource ID or an email), or `credentialsSecretName` (abfss: `directoryId`, `applicationId`, `clientSecret`; gs: `jsonKey`). |
 | `ui.enabled` | `true` | Serve the web UI at `/`. |
 | `ingress.enabled`, `host`, `ingressClassName`, `annotations`, `tlsSecretName` | off | An Ingress to the server. |
 | `httpRoute.enabled`, `host`, `parentRefs`, `annotations` | off | An HTTPRoute to the server; `parentRefs` is required. |

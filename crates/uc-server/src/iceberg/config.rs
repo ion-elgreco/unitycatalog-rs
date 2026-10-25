@@ -1,7 +1,7 @@
 //! The FileIO properties an Iceberg client needs to reach a table: vended
 //! credentials under Iceberg's property names. Upstream
-//! `FileOperations.getFileIOConfig`. With `aws.endpoint`, S3 clients also
-//! get the store's endpoint and region.
+//! `FileOperations.getFileIOConfig`. With `identity.aws.endpoint`, S3
+//! clients also get the store's endpoint and region.
 
 use std::collections::BTreeMap;
 

@@ -208,15 +208,15 @@ def s3(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
 @pytest.fixture(scope="session")
 def s3_server(tmp_path_factory: pytest.TempPathFactory, s3: str) -> Iterator[Server]:
     """A uc-server that vends credentials for the bucket `uc-test` of `s3`: it
-    assumes a role with moto's STS (`aws.endpoint`, `[s3.test]`)."""
+    assumes a role with moto's STS (`[identity.aws]`, `[locations.test]`)."""
     settings = {
-        "UC_AWS_ENDPOINT": s3,
-        "UC_S3_TEST_BUCKET": "s3://uc-test",
-        "UC_S3_TEST_REGION": "us-east-1",
-        "UC_S3_TEST_ROLE_ARN": "arn:aws:iam::123456789012:role/uc-test",
+        "UC_IDENTITY_AWS_ENDPOINT": s3,
         # moto takes any keys.
-        "UC_S3_TEST_ACCESS_KEY": "testing",
-        "UC_S3_TEST_SECRET_KEY": "testing",
+        "UC_IDENTITY_AWS_ACCESS_KEY": "testing",
+        "UC_IDENTITY_AWS_SECRET_KEY": "testing",
+        "UC_LOCATIONS_TEST_URL": "s3://uc-test",
+        "UC_LOCATIONS_TEST_REGION": "us-east-1",
+        "UC_LOCATIONS_TEST_AWS_IAM_ROLE_ARN": "arn:aws:iam::123456789012:role/uc-test",
     }
     with _running_server(tmp_path_factory.mktemp("uc-server-s3"), settings) as server:
         yield server
@@ -253,14 +253,14 @@ def gcs() -> Gcs:
 def gcs_server(tmp_path_factory: pytest.TempPathFactory, gcs: Gcs) -> Iterator[Server]:
     """A uc-server that vends credentials for the bucket `uc-test` of `gcs`:
     the service account's token, downscoped at floci-gcp's STS
-    (`gcp.endpoint`, `[gcs.test]`)."""
+    (`identity.gcp.endpoint`, `[locations.test]`)."""
     root = tmp_path_factory.mktemp("uc-server-gcs")
     key_file = root / "key.json"
     key_file.write_text(gcs.json_key)
     settings = {
-        "UC_GCP_ENDPOINT": gcs.url,
-        "UC_GCS_TEST_BUCKET": "gs://uc-test",
-        "UC_GCS_TEST_JSON_KEY_FILE": str(key_file),
+        "UC_IDENTITY_GCP_ENDPOINT": gcs.url,
+        "UC_LOCATIONS_TEST_URL": "gs://uc-test",
+        "UC_LOCATIONS_TEST_GCP_SERVICE_ACCOUNT_KEY": str(key_file),
     }
     with _running_server(root, settings) as server:
         yield server

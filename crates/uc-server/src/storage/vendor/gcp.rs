@@ -1,51 +1,62 @@
 //! GCP credentials, after upstream `GcpCredentialVendor`.
 //!
-//! Under an external location, the token is the storage credential's: of
-//! its service account key, or of the server's own identity, which
-//! impersonates the credential's service account when it has one. Else the
-//! bucket's `[gcs.<name>]` entry gives it: the entry's key file, else the
-//! server's own identity, which impersonates the entry's `service_account`
-//! when it has one. The server's own identity comes from Application
-//! Default Credentials: `GOOGLE_APPLICATION_CREDENTIALS`, gcloud's file or
-//! the metadata server. Google STS exchanges the token for one downscoped
-//! to the locations: `storage.objectViewer` for reads, and
-//! `storage.legacyBucketWriter` too for writes. Upstream's
-//! `TestingCredentialGenerator` gives a fixed token.
+//! The token is the one of the storage credential's [`Identity`], of the
+//! external location, else of the `[locations.<name>]`: of its service
+//! account key, or of the server's own identity, which impersonates the
+//! credential's service account when it has one. The server's own identity
+//! is the key file of `[identity.gcp]`, else Application Default
+//! Credentials: `GOOGLE_APPLICATION_CREDENTIALS`, gcloud's file or the
+//! metadata server. Google STS exchanges the token for one downscoped to the
+//! locations: `storage.objectViewer` for reads, and
+//! `storage.legacyBucketWriter` too for writes.
 //!
 //! The server's token does not come from `object_store`: for a service
 //! account key it is a self-signed JWT, not the OAuth access token that
 //! STS exchanges, and `object_store` cannot impersonate.
 
-use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde_json::{Value, json};
 
 use uc_api::{GcpOauthToken, TemporaryCredentials};
-use uc_common::{Error, NormalizedUrl, Result, now_epoch_millis};
+use uc_common::{Error, Result, now_epoch_millis};
 
 use super::{CredentialContext, StorageCredential};
 use crate::http::outbound::SendOnIo;
 
 const CLOUD_PLATFORM: &str = "https://www.googleapis.com/auth/cloud-platform";
 const GOOGLE_TOKEN_URI: &str = "https://oauth2.googleapis.com/token";
-/// Upstream's expiration of a testing token.
-const TESTING_EXPIRATION: i64 = 253_370_790_000_000;
+/// Who gets the token that STS downscopes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Identity {
+    /// The server's own identity, or the service account of this email that
+    /// it impersonates.
+    ServiceAccount(Option<String>),
+    /// The JSON key of a service account.
+    Key(String),
+}
 
-/// Upstream `GcsStorageConfig`.
-#[derive(Debug, Clone)]
-pub struct GcsConfig {
-    pub bucket_path: String,
-    pub json_key_file_path: Option<String>,
-    /// The email of a service account that the entry's key, else the
-    /// server's own identity, impersonates.
-    pub service_account: Option<String>,
-    /// Only upstream's `TestingCredentialGenerator` is known.
-    pub credential_generator: Option<String>,
+impl Identity {
+    /// The identity of a storage credential.
+    pub fn of(credential: &StorageCredential) -> Result<Self> {
+        let info = &credential.info;
+        if info.gcp_service_account_key.is_some() {
+            return Ok(Self::Key(credential.secret.clone().unwrap_or_default()));
+        }
+        match &info.gcp_service_account {
+            Some(account) => Ok(Self::ServiceAccount(account.email.clone())),
+            None => Err(Error::failed_precondition(
+                "The storage credential has no GCP identity.",
+            )),
+        }
+    }
 }
 
 pub struct GcpVendor {
-    buckets: HashMap<NormalizedUrl, GcsConfig>,
+    /// The key file of the server's own identity, else Application Default
+    /// Credentials.
+    key_file: Option<PathBuf>,
     http: reqwest::Client,
     sts: String,
     metadata: String,
@@ -62,9 +73,11 @@ struct Token {
 }
 
 impl GcpVendor {
-    pub fn new(buckets: HashMap<NormalizedUrl, GcsConfig>) -> Self {
+    /// The vendor whose own identity is the key of `key_file`, else
+    /// Application Default Credentials.
+    pub fn new(key_file: Option<PathBuf>) -> Self {
         Self {
-            buckets,
+            key_file,
             http: reqwest::Client::new(),
             sts: "https://sts.googleapis.com/v1/token".to_string(),
             metadata: "http://metadata.google.internal".to_string(),
@@ -95,14 +108,14 @@ impl GcpVendor {
         self
     }
 
-    pub async fn vend(&self, ctx: &CredentialContext) -> Result<TemporaryCredentials> {
-        let token = match &ctx.credential {
-            Some(credential) => {
-                let source = self.credential_token(credential).await?;
-                self.downscope(&source, ctx).await?
-            }
-            None => self.bucket_token(ctx).await?,
-        };
+    /// The token of `identity`, downscoped to `ctx`.
+    pub async fn vend(
+        &self,
+        ctx: &CredentialContext,
+        identity: &Identity,
+    ) -> Result<TemporaryCredentials> {
+        let source = self.identity_token(identity).await?;
+        let token = self.downscope(&source, ctx).await?;
         Ok(TemporaryCredentials {
             gcp_oauth_token: Some(GcpOauthToken {
                 oauth_token: Some(token.value),
@@ -112,75 +125,44 @@ impl GcpVendor {
         })
     }
 
-    /// The token of a storage credential's identity.
-    async fn credential_token(&self, credential: &StorageCredential) -> Result<Token> {
-        let info = &credential.info;
-        if info.gcp_service_account_key.is_some() {
-            let key: Value = serde_json::from_str(credential.secret.as_deref().unwrap_or_default())
-                .map_err(|e| Error::failed_precondition(format!("service account key: {e}")))?;
-            return self.service_account_token(&key).await;
-        }
-        let Some(account) = &info.gcp_service_account else {
-            return Err(Error::failed_precondition(
-                "The storage credential has no GCP identity.",
-            ));
+    /// The token of `identity`.
+    async fn identity_token(&self, identity: &Identity) -> Result<Token> {
+        let email = match identity {
+            Identity::Key(json) => {
+                let key: Value = serde_json::from_str(json)
+                    .map_err(|e| Error::failed_precondition(format!("service account key: {e}")))?;
+                return self.service_account_token(&key).await;
+            }
+            Identity::ServiceAccount(email) => email,
         };
-        let own = self.source_token(None).await.map_err(|e| {
-            Error::failed_precondition(format!("The server's GCP identity: {}", e.message()))
-        })?;
-        match &account.email {
+        let own = self
+            .source_token(self.key_file.as_deref())
+            .await
+            .map_err(|e| {
+                Error::failed_precondition(format!("The server's GCP identity: {}", e.message()))
+            })?;
+        match email {
             Some(email) => self.impersonate(&own, email).await,
             None => Ok(own),
         }
     }
 
-    /// The downscoped token of the bucket's `[gcs.<name>]` entry.
-    async fn bucket_token(&self, ctx: &CredentialContext) -> Result<Token> {
-        let config = self.buckets.get(&ctx.storage_base).ok_or_else(|| {
-            Error::failed_precondition(format!(
-                "Unknown GCS storage configuration for {}.",
-                ctx.storage_base
-            ))
-        })?;
-        match config.credential_generator.as_deref() {
-            Some(generator) if generator.ends_with("TestingCredentialGenerator") => Ok(Token {
-                value: config
-                    .json_key_file_path
-                    .clone()
-                    .unwrap_or_else(|| format!("testing://{}", config.bucket_path)),
-                expires_at: Some(TESTING_EXPIRATION),
-            }),
-            Some(generator) => Err(Error::internal(format!(
-                "Unable to instantiate GCS credentials generator {generator}"
-            ))),
-            None => {
-                let mut source = self
-                    .source_token(config.json_key_file_path.as_deref())
-                    .await
-                    .map_err(|_| Error::failed_precondition("GCS credentials not found."))?;
-                if let Some(email) = &config.service_account {
-                    source = self.impersonate(&source, email).await?;
-                }
-                self.downscope(&source, ctx).await
-            }
-        }
-    }
-
     /// The key file, else Application Default Credentials.
-    async fn source_token(&self, key_file: Option<&str>) -> Result<Token> {
-        let file = key_file.map(str::to_string).or_else(|| {
+    async fn source_token(&self, key_file: Option<&Path>) -> Result<Token> {
+        let file = key_file.map(Path::to_path_buf).or_else(|| {
             self.credentials_files
                 .then(default_credentials_file)
                 .flatten()
+                .map(PathBuf::from)
         });
         let Some(file) = file else {
             return self.metadata_token().await;
         };
         let text = tokio::fs::read_to_string(&file)
             .await
-            .map_err(|e| Error::failed_precondition(format!("{file}: {e}")))?;
+            .map_err(|e| Error::failed_precondition(format!("{}: {e}", file.display())))?;
         let key: Value = serde_json::from_str(&text)
-            .map_err(|e| Error::failed_precondition(format!("{file}: {e}")))?;
+            .map_err(|e| Error::failed_precondition(format!("{}: {e}", file.display())))?;
         match key["type"].as_str() {
             Some("service_account") => self.service_account_token(&key).await,
             Some("authorized_user") => {
@@ -199,7 +181,8 @@ impl GcpVendor {
                 self.token_request(GOOGLE_TOKEN_URI, &form).await
             }
             other => Err(Error::failed_precondition(format!(
-                "unsupported credential type {other:?} in {file}"
+                "unsupported credential type {other:?} in {}",
+                file.display()
             ))),
         }
     }

@@ -176,8 +176,8 @@ async fn arm(url: &str, id: &str, api_version: &str) {
 }
 
 /// The server's own identity, and a user-assigned identity by its resource
-/// ID, from the instance metadata service: of a credential, or of the
-/// account's `adls.*` entry.
+/// ID, from the instance metadata service: of a credential, or of a
+/// `[locations.<name>]`.
 #[tokio::test]
 async fn managed_identities_vend_a_sas() {
     let Some(url) = emulator() else { return };
@@ -185,13 +185,14 @@ async fn managed_identities_vend_a_sas() {
     arm(&url, group, "2021-04-01").await;
     let id = format!("{group}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uc");
     arm(&url, &id, "2023-01-31").await;
+    let bare = container(&url).await;
     let settings = format!(
-        "[adls.dev]\naccount = \"{ACCOUNT}\"\nmanaged_identity = true\nmanaged_identity_id = \"{id}\""
+        "[locations.dev]\nurl = \"abfss://{bare}@{ACCOUNT}.dfs.core.windows.net\"\n\
+         azure_managed_identity = \"{id}\""
     );
     let app = app(&url, &settings).await;
 
-    // A path without an external location: the entry's identity.
-    let bare = container(&url).await;
+    // A path without an external location: the location's identity.
     let path = format!("abfss://{bare}@{ACCOUNT}.dfs.core.windows.net/tables/t1");
     let sas = vend(&app, &path, "PATH_READ_WRITE").await;
     assert_eq!(

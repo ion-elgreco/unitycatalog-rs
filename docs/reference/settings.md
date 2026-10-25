@@ -49,18 +49,29 @@ defaults apply.
 - A duration is text such as `30s`, `5m`, `24h` or `5d`.
 - A list is a TOML array, or text with commas: `UC_AUTH_ALLOWED_ISSUERS=https://a.example,https://b.example`.
 
-## Cloud credentials
+## Cloud identities and locations
 
-The credentials of a bucket or storage account are a named table, such as `[s3.analytics]`.
-Their variables include the name: `UC_S3_ANALYTICS_SECRET_KEY` is `secret_key` in
-`[s3.analytics]`. A name has only lowercase letters and digits, and at least one letter: the
-server reads a name of only digits, such as `UC_S3_0_BUCKET`, as a list index.
+Two kinds of tables give the server access to cloud storage:
+
+- `[identity.aws]`, `[identity.azure]` and `[identity.gcp]`: who the server is in each cloud. The
+  server signs in with this identity for each storage credential. Without the table, the server
+  uses the identity of its environment.
+- `[locations.<name>]`: a URL and the identity that reaches it, for paths that no external
+  location covers. The URL's scheme picks the cloud. The identity fields are the same as the
+  options of `uc credential create`.
+
+Their variables include the cloud or the name: `UC_IDENTITY_AWS_SECRET_KEY` is `secret_key` in
+`[identity.aws]`, and `UC_LOCATIONS_ANALYTICS_URL` is `url` in `[locations.analytics]`. A name has
+only lowercase letters and digits, and at least one letter: the server reads a name of only
+digits, such as `UC_LOCATIONS_0_URL`, as a list index.
 
 ```toml
-[s3.analytics]
-bucket = "s3://analytics"
+[identity.aws]
 region = "us-east-1"
-role_arn = "arn:aws:iam::123456789012:role/uc"
+
+[locations.analytics]
+url = "s3://analytics"
+aws_iam_role_arn = "arn:aws:iam::123456789012:role/uc"
 ```
 
 [Cloud storage](../server/cloud-storage.md) tells how the server uses them.
@@ -140,64 +151,62 @@ role_arn = "arn:aws:iam::123456789012:role/uc"
 | `allow_missing_deletion_vectors` | `UC_TABLES_ALLOW_MISSING_DELETION_VECTORS` | `false` | Allow UniForm Iceberg v2 tables without deletion vectors. |
 | `iceberg_writes` | `UC_TABLES_ICEBERG_WRITES` | `true` | Allow writes through the Iceberg REST catalog. |
 
-## `[aws]`
+## `[identity.aws]`
 
-The server's own AWS identity, which assumes the roles of storage credentials.
-
-| Key | Variable | Default | Description |
-| --- | --- | --- | --- |
-| `region` | `UC_AWS_REGION` | `AWS_REGION`, else `AWS_DEFAULT_REGION`, else `us-east-1` | The region of the STS calls. |
-| `access_key` | `UC_AWS_ACCESS_KEY` | the identity from the environment | The access key. |
-| `secret_key` | `UC_AWS_SECRET_KEY` | the identity from the environment | The secret key. |
-| `master_role_arn` | `UC_AWS_MASTER_ROLE_ARN` | none | The server's role, shown as `unity_catalog_iam_arn` on storage credentials. |
-| `endpoint` | `UC_AWS_ENDPOINT` | AWS | The S3 and STS API of an S3-compatible store, such as MinIO or RustFS: `http://` or `https://`. See [Cloud storage](../server/cloud-storage.md#aws-s3). |
-
-## `[s3.<name>]`
-
-The credentials of one S3 bucket. An entry needs `region` and `role_arn`, or `access_key`,
-`secret_key` and `session_token`.
-
-| Key | Variable | Description |
-| --- | --- | --- |
-| `bucket` | `UC_S3_<NAME>_BUCKET` | The bucket: `s3://bucket`. Required. |
-| `region` | `UC_S3_<NAME>_REGION` | Its region. Iceberg clients get it too. |
-| `role_arn` | `UC_S3_<NAME>_ROLE_ARN` | The role that the server assumes. |
-| `access_key` | `UC_S3_<NAME>_ACCESS_KEY` | Keys that assume the role; without them, the identity from the environment. |
-| `secret_key` | `UC_S3_<NAME>_SECRET_KEY` | |
-| `session_token` | `UC_S3_<NAME>_SESSION_TOKEN` | With the keys: a session that the server gives out as it is. For tests. |
-
-## `[adls.<name>]`
-
-The credentials of one Azure storage account: a service principal, or the server's managed
-identity. `account` is required, and `tenant_id`, `client_id` and `client_secret` are required
-unless `managed_identity` is `true`.
-
-| Key | Variable | Description |
-| --- | --- | --- |
-| `account` | `UC_ADLS_<NAME>_ACCOUNT` | The storage account's name. |
-| `tenant_id` | `UC_ADLS_<NAME>_TENANT_ID` | The Entra ID tenant. |
-| `client_id` | `UC_ADLS_<NAME>_CLIENT_ID` | The service principal. |
-| `client_secret` | `UC_ADLS_<NAME>_CLIENT_SECRET` | Its secret. |
-| `managed_identity` | `UC_ADLS_<NAME>_MANAGED_IDENTITY` | `true`: the server's own Azure identity, from its environment (AKS workload identity, the managed identity of the VM). |
-| `managed_identity_id` | `UC_ADLS_<NAME>_MANAGED_IDENTITY_ID` | With `managed_identity`: the resource ID of a user-assigned identity, from the instance metadata service. |
-| `test_mode` | `UC_ADLS_<NAME>_TEST_MODE` | With a service principal: give fake SAS tokens, for tests. |
-
-## `[gcp]`
+The server's AWS identity, which assumes the roles of storage credentials. Without keys, the
+identity of the environment: the `AWS_*` variables, the role of a Kubernetes service account, an
+ECS task role, EKS Pod Identity or an instance role.
 
 | Key | Variable | Default | Description |
 | --- | --- | --- | --- |
-| `endpoint` | `UC_GCP_ENDPOINT` | Google | The STS and IAM Credentials API of a GCP emulator, such as Floci: `http://` or `https://`. |
+| `access_key` | `UC_IDENTITY_AWS_ACCESS_KEY` | the identity of the environment | The access key. |
+| `secret_key` | `UC_IDENTITY_AWS_SECRET_KEY` | the identity of the environment | The secret key. |
+| `region` | `UC_IDENTITY_AWS_REGION` | `AWS_REGION`, else `AWS_DEFAULT_REGION`, else `us-east-1` | The region of the STS calls. |
+| `arn` | `UC_IDENTITY_AWS_ARN` | none | The ARN of this identity, shown as `unity_catalog_iam_arn` on storage credentials, for the trust policies of their roles. |
+| `endpoint` | `UC_IDENTITY_AWS_ENDPOINT` | AWS | The S3 and STS API of an S3-compatible store, such as MinIO or RustFS: `http://` or `https://`. uc's table and volume commands use it too. See [Cloud storage](../server/cloud-storage.md#aws-s3). |
 
-## `[gcs.<name>]`
+## `[identity.azure]`
 
-The credentials of one GCS bucket.
+The server's Azure identity: a service principal, or a user-assigned managed identity. Without
+one, the identity of the environment: AKS workload identity, the `AZURE_*` variables, or the
+managed identity of the VM or App Service.
 
 | Key | Variable | Description |
 | --- | --- | --- |
-| `bucket` | `UC_GCS_<NAME>_BUCKET` | The bucket: `gs://bucket`. Required. |
-| `json_key_file` | `UC_GCS_<NAME>_JSON_KEY_FILE` | A service account's JSON key; without it, Google's Application Default Credentials. |
-| `service_account` | `UC_GCS_<NAME>_SERVICE_ACCOUNT` | The email of a service account that the key or the default credentials impersonate. |
-| `credential_generator` | `UC_GCS_<NAME>_CREDENTIAL_GENERATOR` | A test generator of tokens, for tests. |
+| `directory_id` | `UC_IDENTITY_AZURE_DIRECTORY_ID` | The service principal's tenant ID. |
+| `application_id` | `UC_IDENTITY_AZURE_APPLICATION_ID` | The service principal's client ID. |
+| `client_secret` | `UC_IDENTITY_AZURE_CLIENT_SECRET` | The service principal's secret. |
+| `managed_identity_id` | `UC_IDENTITY_AZURE_MANAGED_IDENTITY_ID` | Or the resource ID of a user-assigned managed identity, from the instance metadata service. |
+
+## `[identity.gcp]`
+
+The server's GCP identity. Without a key, Google's Application Default Credentials: the
+`GOOGLE_APPLICATION_CREDENTIALS` file, gcloud's application default credentials, or the metadata
+server.
+
+| Key | Variable | Default | Description |
+| --- | --- | --- | --- |
+| `json_key_file` | `UC_IDENTITY_GCP_JSON_KEY_FILE` | Application Default Credentials | A service account's JSON key file. |
+| `endpoint` | `UC_IDENTITY_GCP_ENDPOINT` | Google | The STS and IAM Credentials API of a GCP emulator, such as Floci: `http://` or `https://`. |
+
+## `[locations.<name>]`
+
+A URL and the identity that reaches the paths under it, when no external location covers them.
+With authorization on, only `storage.tables_root` and `storage.models_root` use them. The URL's
+scheme picks the cloud, and an entry holds exactly one identity of that cloud. Where several
+locations cover a path, the longest URL wins.
+
+| Key | Variable | Cloud | Description |
+| --- | --- | --- | --- |
+| `url` | `UC_LOCATIONS_<NAME>_URL` | all | `s3://bucket`, `abfss://container@account.dfs.core.windows.net` or `gs://bucket`, with a path or without. Required. |
+| `region` | `UC_LOCATIONS_<NAME>_REGION` | S3 | The bucket's region, which Iceberg clients get. Without it, the server asks S3. |
+| `aws_iam_role_arn` | `UC_LOCATIONS_<NAME>_AWS_IAM_ROLE_ARN` | S3 | The role that `[identity.aws]` assumes. Required for S3. |
+| `azure_directory_id` | `UC_LOCATIONS_<NAME>_AZURE_DIRECTORY_ID` | ADLS | A service principal's tenant ID, with `azure_application_id` and `azure_client_secret`. |
+| `azure_application_id` | `UC_LOCATIONS_<NAME>_AZURE_APPLICATION_ID` | ADLS | Its client ID. |
+| `azure_client_secret` | `UC_LOCATIONS_<NAME>_AZURE_CLIENT_SECRET` | ADLS | Its secret. |
+| `azure_managed_identity` | `UC_LOCATIONS_<NAME>_AZURE_MANAGED_IDENTITY` | ADLS | `true` for `[identity.azure]`, or the resource ID of a user-assigned managed identity. |
+| `gcp_service_account` | `UC_LOCATIONS_<NAME>_GCP_SERVICE_ACCOUNT` | GCS | `true` for `[identity.gcp]`, or the email of a service account that `[identity.gcp]` impersonates. |
+| `gcp_service_account_key` | `UC_LOCATIONS_<NAME>_GCP_SERVICE_ACCOUNT_KEY` | GCS | A service account's JSON key file. |
 
 ## `[ui]`
 

@@ -65,7 +65,7 @@ pub struct AppStateInner {
     pub s3_regions: Arc<S3Regions>,
     /// The server's AWS role (upstream `aws.masterRoleArn`), shown as
     /// `unity_catalog_iam_arn` on AWS IAM role credentials.
-    pub aws_master_role_arn: Option<Arc<str>>,
+    pub aws_identity_arn: Option<Arc<str>>,
     /// Producer handle for the audit-event drainer task.
     pub audit: AuditHandle,
     /// The last result of the readiness check, for `/readyz`.
@@ -88,7 +88,7 @@ impl AppState {
             policy,
             vendor: Arc::new(PlaceholderVendor),
             admin_principals: Arc::new(HashSet::new()),
-            aws_master_role_arn: None,
+            aws_identity_arn: None,
             delta_api_only: false,
             iceberg_writes_enabled: true,
             s3_regions: Arc::new(S3Regions::default()),
@@ -170,8 +170,8 @@ impl AppState {
         Ok(())
     }
 
-    pub fn with_aws_master_role_arn(mut self, arn: impl Into<Arc<str>>) -> Self {
-        self.inner().aws_master_role_arn = Some(arn.into());
+    pub fn with_aws_identity_arn(mut self, arn: impl Into<Arc<str>>) -> Self {
+        self.inner().aws_identity_arn = Some(arn.into());
         self
     }
 

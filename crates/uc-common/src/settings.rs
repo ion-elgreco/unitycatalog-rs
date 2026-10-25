@@ -9,10 +9,12 @@
 //! 3. `uc.toml`,
 //! 4. the default.
 //!
-//! Cloud credentials are named tables, one per bucket or account, such as
-//! `[s3.analytics]`. Their variables include the name:
-//! `UC_S3_ANALYTICS_SECRET_KEY` is `secret_key` in `[s3.analytics]`. A name
-//! has only lowercase letters and digits.
+//! The server's identity in a cloud is a table per cloud, such as
+//! `[identity.aws]`, and its variables include the cloud:
+//! `UC_IDENTITY_AWS_ACCESS_KEY`. Locations are named tables, such as
+//! `[locations.analytics]`, and their variables include the name:
+//! `UC_LOCATIONS_ANALYTICS_URL` is `url` in `[locations.analytics]`. A name
+//! has only lowercase letters and digits, and at least one letter.
 //!
 //! # `uc.toml`
 //!
@@ -41,16 +43,25 @@ use serde::{Deserialize, Deserializer};
 /// The groups of `uc.toml`; a variable of another group (`UC_CONFIG`,
 /// `UC_TEST_POSTGRES_URL`) is not a setting.
 const GROUPS: &[&str] = &[
-    "server", "db", "auth", "storage", "tables", "aws", "s3", "adls", "gcp", "gcs", "ui", "log",
+    "server",
+    "db",
+    "auth",
+    "storage",
+    "tables",
+    "identity",
+    "locations",
+    "ui",
+    "log",
     "cli",
 ];
 
-/// The groups of named tables: `UC_S3_<NAME>_<KEY>`.
-const NAMED: &[&str] = &["s3", "adls", "gcs"];
+/// The groups of tables in tables: `UC_IDENTITY_<CLOUD>_<KEY>` and
+/// `UC_LOCATIONS_<NAME>_<KEY>`.
+const NESTED: &[&str] = &["identity", "locations"];
 
 /// The settings of uc-server and uc: every group of `uc.toml`. uc-server
-/// reads all groups but `[cli]`; uc reads `[cli]`, `[ui]`, `aws.endpoint`
-/// and `aws.region`.
+/// reads all groups but `[cli]`; uc reads `[cli]`, `[ui]`,
+/// `identity.aws.endpoint` and `identity.aws.region`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
@@ -59,14 +70,9 @@ pub struct Settings {
     pub auth: Auth,
     pub storage: Storage,
     pub tables: Tables,
-    pub aws: Aws,
-    /// Credentials of S3 buckets, by name.
-    pub s3: BTreeMap<String, S3>,
-    /// Credentials of Azure storage accounts, by name.
-    pub adls: BTreeMap<String, Adls>,
-    pub gcp: Gcp,
-    /// Credentials of GCS buckets, by name.
-    pub gcs: BTreeMap<String, Gcs>,
+    pub identity: Identity,
+    /// Locations and the identities that reach them, by name.
+    pub locations: BTreeMap<String, Location>,
     pub ui: Ui,
     pub log: Log,
     pub cli: Cli,
@@ -328,77 +334,87 @@ impl Default for Tables {
     }
 }
 
-/// `[aws]`: the server's own AWS identity, which assumes the roles of
-/// storage credentials.
+/// `[identity]`: the server's own identity in each cloud. It signs in for
+/// the storage credentials of external locations and of `[locations.*]`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct Aws {
-    pub region: Option<String>,
+pub struct Identity {
+    pub aws: AwsIdentity,
+    pub azure: AzureIdentity,
+    pub gcp: GcpIdentity,
+}
+
+/// `[identity.aws]`: the server's AWS identity, which assumes the roles of
+/// storage credentials. Without keys, the identity of the environment.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AwsIdentity {
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
-    /// The server's role, shown as `unity_catalog_iam_arn`.
-    pub master_role_arn: Option<String>,
+    /// The region of STS calls.
+    pub region: Option<String>,
+    /// The ARN of this identity, shown as `unity_catalog_iam_arn` on storage
+    /// credentials, for the trust policies of their roles.
+    pub arn: Option<String>,
     /// The S3 and STS API of an S3-compatible store, such as MinIO or
     /// RustFS, in place of AWS (http or https). uc's table and volume
     /// commands use it too.
     pub endpoint: Option<String>,
 }
 
-/// `[s3.<name>]`: the credentials of an S3 bucket: a role to assume, or
-/// keys.
+/// `[identity.azure]`: the server's Azure identity: a service principal, or
+/// a user-assigned managed identity. Without one, the identity of the
+/// environment.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct S3 {
-    /// `s3://bucket`.
-    pub bucket: Option<String>,
-    pub region: Option<String>,
-    pub role_arn: Option<String>,
-    pub access_key: Option<String>,
-    pub secret_key: Option<String>,
-    pub session_token: Option<String>,
-}
-
-/// `[adls.<name>]`: the credentials of an Azure storage account: a service
-/// principal, or a managed identity.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct Adls {
-    pub account: Option<String>,
-    pub tenant_id: Option<String>,
-    pub client_id: Option<String>,
+pub struct AzureIdentity {
+    /// The service principal's tenant.
+    pub directory_id: Option<String>,
+    /// The service principal's client ID.
+    pub application_id: Option<String>,
     pub client_secret: Option<String>,
-    /// The server's own Azure identity, in place of a service principal.
-    #[serde(deserialize_with = "scalar")]
-    pub managed_identity: bool,
-    /// With `managed_identity`: the resource ID of a user-assigned managed
-    /// identity.
+    /// The resource ID of a user-assigned managed identity.
     pub managed_identity_id: Option<String>,
-    /// Fake SAS tokens, for tests.
-    #[serde(deserialize_with = "scalar")]
-    pub test_mode: bool,
 }
 
-/// `[gcp]`: Google Cloud, for the credentials of GCS.
+/// `[identity.gcp]`: the server's GCP identity. Without a key, Application
+/// Default Credentials.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct Gcp {
+pub struct GcpIdentity {
+    /// A service account's JSON key file.
+    pub json_key_file: Option<PathBuf>,
     /// The STS and IAM Credentials API of a GCP emulator, such as Floci, in
     /// place of Google's (http or https).
     pub endpoint: Option<String>,
 }
 
-/// `[gcs.<name>]`: the credentials of a GCS bucket.
+/// `[locations.<name>]`: a URL and the identity that reaches it, for the
+/// paths under it that no external location covers. The identity has the
+/// fields of `uc credential create`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct Gcs {
-    /// `gs://bucket`.
-    pub bucket: Option<String>,
-    /// A service account's JSON key; without one, the default credentials.
-    pub json_key_file: Option<String>,
-    /// The email of a service account that the credentials impersonate.
-    pub service_account: Option<String>,
-    /// A test generator of tokens, for tests.
-    pub credential_generator: Option<String>,
+pub struct Location {
+    /// `s3://bucket`, `abfss://container@account.dfs.core.windows.net` or
+    /// `gs://bucket`, with a path or without.
+    pub url: Option<String>,
+    /// For `s3://`: the bucket's region, which Iceberg clients get; else
+    /// the server asks S3.
+    pub region: Option<String>,
+    pub aws_iam_role_arn: Option<String>,
+    pub azure_directory_id: Option<String>,
+    pub azure_application_id: Option<String>,
+    pub azure_client_secret: Option<String>,
+    /// `true` for the server's Azure identity, or the resource ID of a
+    /// user-assigned managed identity.
+    #[serde(deserialize_with = "own_or")]
+    pub azure_managed_identity: Option<Option<String>>,
+    /// `true` for the server's GCP identity, or the email of a service
+    /// account that it impersonates.
+    #[serde(deserialize_with = "own_or")]
+    pub gcp_service_account: Option<Option<String>>,
+    /// A service account's JSON key file.
+    pub gcp_service_account_key: Option<PathBuf>,
 }
 
 /// `[ui]`: the web UI.
@@ -499,7 +515,7 @@ fn variables() -> Env {
             if !GROUPS.contains(&group) {
                 return None;
             }
-            let path = match NAMED.contains(&group) {
+            let path = match NESTED.contains(&group) {
                 true => format!("{group}.{}", rest.replacen('_', ".", 1)),
                 false => format!("{group}.{rest}"),
             };
@@ -618,6 +634,21 @@ fn list<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Er
     })
 }
 
+/// `true` for the server's own identity, or the name of another one, as
+/// the optional value of `uc credential create --azure_managed_identity`
+/// and `--gcp_service_account`. `false` is none.
+#[allow(clippy::option_option)]
+fn own_or<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Option<String>>, D::Error> {
+    Ok(match Scalar::<bool>::deserialize(deserializer)? {
+        Scalar::Value(own) => own.then_some(None),
+        Scalar::Text(text) => match text.trim() {
+            "true" => Some(None),
+            "false" | "" => None,
+            name => Some(Some(name.to_string())),
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -633,9 +664,13 @@ mod tests {
         cookie_timeout = "1d"
         mode = "oidc"
 
-        [s3.analytics]
-        bucket = "s3://analytics"
+        [locations.analytics]
+        url = "s3://analytics"
         region = "us-east-1"
+
+        [locations.models]
+        url = "gs://models"
+        gcp_service_account = true
     "#;
 
     /// `uc.toml` in a folder above the working directory, and the
@@ -665,12 +700,22 @@ mod tests {
                 ("UC_SERVER_OBS_PORT", "9100"),
                 ("UC_AUTH_ENABLED", "false"),
                 ("UC_AUTH_OIDC_CLIENT_ID", "12345"),
-                ("UC_S3_ANALYTICS_SECRET_KEY", "secret"),
-                ("UC_ADLS_LAKE_ACCOUNT", "lake"),
-                ("UC_ADLS_LAKE_MANAGED_IDENTITY", "true"),
-                ("UC_ADLS_LAKE_MANAGED_IDENTITY_ID", "/subscriptions/s/uc"),
+                ("UC_IDENTITY_AWS_SECRET_KEY", "secret"),
                 (
-                    "UC_GCS_LAKE_SERVICE_ACCOUNT",
+                    "UC_IDENTITY_AZURE_MANAGED_IDENTITY_ID",
+                    "/subscriptions/s/uc",
+                ),
+                (
+                    "UC_LOCATIONS_ANALYTICS_AWS_IAM_ROLE_ARN",
+                    "arn:aws:iam::1:role/uc",
+                ),
+                (
+                    "UC_LOCATIONS_LAKE_URL",
+                    "abfss://data@lake.dfs.core.windows.net",
+                ),
+                ("UC_LOCATIONS_LAKE_AZURE_MANAGED_IDENTITY", "true"),
+                (
+                    "UC_LOCATIONS_ARCHIVE_GCP_SERVICE_ACCOUNT",
                     "uc@p.iam.gserviceaccount.com",
                 ),
                 ("UC_DB_PASSWORD", ""),
@@ -685,18 +730,26 @@ mod tests {
         assert_eq!(settings.auth.oidc_client_id.as_deref(), Some("12345"));
         assert_eq!(settings.auth.mode, SignInMode::Oidc);
         assert_eq!(settings.auth.cookie_timeout, Duration::from_secs(86_400));
-        let s3 = &settings.s3["analytics"];
-        assert_eq!(s3.bucket.as_deref(), Some("s3://analytics"));
-        assert_eq!(s3.secret_key.as_deref(), Some("secret"));
-        let adls = &settings.adls["lake"];
-        assert!(adls.managed_identity);
+        let identity = &settings.identity;
+        assert_eq!(identity.aws.secret_key.as_deref(), Some("secret"));
         assert_eq!(
-            adls.managed_identity_id.as_deref(),
+            identity.azure.managed_identity_id.as_deref(),
             Some("/subscriptions/s/uc")
         );
+        let locations = &settings.locations;
+        let analytics = &locations["analytics"];
+        assert_eq!(analytics.url.as_deref(), Some("s3://analytics"));
         assert_eq!(
-            settings.gcs["lake"].service_account.as_deref(),
-            Some("uc@p.iam.gserviceaccount.com")
+            analytics.aws_iam_role_arn.as_deref(),
+            Some("arn:aws:iam::1:role/uc")
+        );
+        // `true` is the server's own identity, as in the file; other text
+        // names an identity.
+        assert_eq!(locations["lake"].azure_managed_identity, Some(None));
+        assert_eq!(locations["models"].gcp_service_account, Some(None));
+        assert_eq!(
+            locations["archive"].gcp_service_account,
+            Some(Some("uc@p.iam.gserviceaccount.com".into()))
         );
         // An empty variable counts as unset.
         assert_eq!(settings.db.password, None);
@@ -803,8 +856,9 @@ mod tests {
             "auth.public_url (UC_AUTH_PUBLIC_URL)"
         );
         assert_eq!(
-            invalid("s3.analytics.region", "x", "Expected a region."),
-            "Invalid value for s3.analytics.region (UC_S3_ANALYTICS_REGION): 'x'. Expected a region."
+            invalid("locations.analytics.region", "x", "Expected a region."),
+            "Invalid value for locations.analytics.region (UC_LOCATIONS_ANALYTICS_REGION): 'x'. \
+             Expected a region."
         );
     }
 

@@ -69,11 +69,8 @@ async fn temp_path_credentials_returns_bound_credential(#[future(awt)] with_cred
 
 #[rstest]
 #[tokio::test]
-async fn temp_path_credentials_need_a_location_or_bucket_configuration(
-    #[future(awt)] with_cred_and_loc: Router,
-) {
-    // Upstream: no external location, so the bucket's configuration, of
-    // which there is none.
+async fn temp_path_credentials_need_a_location(#[future(awt)] with_cred_and_loc: Router) {
+    // No external location, and no location of the settings.
     let resp = with_cred_and_loc
         .oneshot(req_json(
             Method::POST,
@@ -88,7 +85,8 @@ async fn temp_path_credentials_need_a_location_or_bucket_configuration(
     let err = common::assert_error(resp, StatusCode::BAD_REQUEST, "FAILED_PRECONDITION").await;
     assert_eq!(
         err["message"],
-        "Unknown GCS storage configuration for gs://other-bucket."
+        "No external location and no [locations.<name>] of the settings covers \
+         gs://other-bucket/somewhere."
     );
 }
 

@@ -15,7 +15,7 @@ use uc_server::{
     build_app, build_observability_app,
     observability::telemetry::init_tracing,
     server::{banner, options, serve},
-    storage::vendor::CloudVendor,
+    storage::vendor::{CloudVendor, Location, S3Location},
 };
 
 /// The life of a token of `uc-server token` without `--ttl`.
@@ -198,14 +198,14 @@ async fn run(options: options::Options) -> Result<(), String> {
         .with_external_local_roots(cfg.external_local_roots.clone())
         .with_http(cfg.http.clone());
 
-    // `aws.master_role_arn`, shown on AWS IAM role credentials.
+    // `identity.aws.arn`, shown on AWS IAM role credentials.
     if let Some(arn) = cfg
-        .aws_master_role_arn
+        .aws_identity_arn
         .as_deref()
         .map(str::trim)
         .filter(|a| !a.is_empty())
     {
-        state = state.with_aws_master_role_arn(arn);
+        state = state.with_aws_identity_arn(arn);
     }
 
     // The web UI's sign-in: `auth.mode` and its settings.
@@ -246,21 +246,24 @@ async fn run(options: options::Options) -> Result<(), String> {
         .with_security(Arc::new(security))
         .with_auth_settings(auth);
 
-    // Upstream `CloudCredentialVendor`, with the credentials of `[aws]`,
-    // `[s3.*]`, `[adls.*]` and `[gcs.*]`; the regions of `[s3.*]` also go to
-    // Iceberg clients.
+    // Upstream `CloudCredentialVendor`, with the identities of `[identity]`
+    // and `[locations]`; the regions of S3 locations also go to Iceberg
+    // clients.
     let storage = cfg.credentials.clone();
     info!(
-        s3 = storage.s3.len(),
-        adls = storage.adls.len(),
-        gcs = storage.gcs.len(),
+        locations = storage.locations.len(),
         s3_endpoint = storage.s3_store.as_ref().map(|s| s.endpoint.as_str()),
         gcp_endpoint = storage.gcp_endpoint.as_deref(),
         "credential vending configured"
     );
-    for (bucket, s3) in &storage.s3 {
-        if let Some(region) = &s3.region {
-            state = state.with_s3_region(bucket, region);
+    for location in &storage.locations {
+        if let Location::S3(S3Location {
+            url,
+            region: Some(region),
+            ..
+        }) = location
+        {
+            state = state.with_s3_region(url, region);
         }
     }
     state = state.with_vendor(CloudVendor::new(storage));

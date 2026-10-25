@@ -28,7 +28,7 @@ fn lineage_of(info: &CredentialInfo) -> Lineage {
 /// Upstream `toCredentialInfo`: AWS roles show the server's own role.
 fn present(state: &AppState, mut info: CredentialInfo) -> CredentialInfo {
     if let Some(role) = info.aws_iam_role.as_mut() {
-        role.unity_catalog_iam_arn = state.aws_master_role_arn.as_deref().map(str::to_string);
+        role.unity_catalog_iam_arn = state.aws_identity_arn.as_deref().map(str::to_string);
     }
     info
 }

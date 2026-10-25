@@ -153,7 +153,7 @@ fn sts_policy(seen: &Seen) -> Value {
 async fn s3_under_an_external_location_assumes_its_role() {
     let (sts, log) = mock("text/xml", ASSUME_ROLE.to_string()).await;
     let master = r#"
-        [aws]
+        [identity.aws]
         region = "us-west-2"
         access_key = "AKMASTER"
         secret_key = "master-secret"
@@ -214,7 +214,7 @@ async fn s3_under_an_external_location_assumes_its_role() {
     );
 }
 
-/// `aws.endpoint`: an S3-compatible store, such as RustFS. AssumeRole goes
+/// `identity.aws.endpoint`: an S3-compatible store, such as RustFS. AssumeRole goes
 /// to it, signed for `us-east-1`, and its session policy has no KMS
 /// statement, which such a store does not know.
 #[tokio::test]
@@ -222,7 +222,7 @@ async fn s3_compatible_store_gets_sts_calls_without_kms() {
     let (sts, log) = mock("text/xml", ASSUME_ROLE.to_string()).await;
     let settings = format!(
         r#"
-        [aws]
+        [identity.aws]
         endpoint = "{sts}/"
         access_key = "AKSTORE"
         secret_key = "store-secret"
@@ -246,32 +246,33 @@ async fn s3_compatible_store_gets_sts_calls_without_kms() {
     assert!(!policy.to_string().contains("kms:"), "{policy}");
 
     let settings =
-        uc_common::settings::Settings::from_toml("[aws]\nendpoint = \"localhost:9000\"").unwrap();
+        uc_common::settings::Settings::from_toml("[identity.aws]\nendpoint = \"localhost:9000\"")
+            .unwrap();
     let error = StorageConfig::from_settings(&settings).unwrap_err();
     assert!(
-        error.starts_with("Invalid value for aws.endpoint (UC_AWS_ENDPOINT)"),
+        error.starts_with("Invalid value for identity.aws.endpoint (UC_IDENTITY_AWS_ENDPOINT)"),
         "{error}"
     );
 }
 
-/// Without an external location, the bucket's `s3.*.N` entry: a preset
-/// session, or its keys assuming its role.
+/// Without an external location, the longest `[locations.<name>]` that
+/// covers the path: the server's identity assumes its role.
 #[tokio::test]
-async fn s3_without_a_location_uses_the_bucket_configuration() {
+async fn s3_without_an_external_location_uses_the_settings_location() {
     let (sts, log) = mock("text/xml", ASSUME_ROLE.to_string()).await;
     let settings = r#"
-        [s3.static]
-        bucket = "s3://static-bucket"
-        access_key = "AKSTATIC"
-        secret_key = "static-secret"
-        session_token = "static-session"
-
-        [s3.role]
-        bucket = "s3://role-bucket/"
+        [identity.aws]
         region = "eu-west-1"
-        role_arn = "arn:aws:iam::1:role/bucket"
-        access_key = "AKBUCKET"
-        secret_key = "bucket-secret"
+        access_key = "AKSERVER"
+        secret_key = "server-secret"
+
+        [locations.bucket]
+        url = "s3://role-bucket/"
+        aws_iam_role_arn = "arn:aws:iam::1:role/bucket"
+
+        [locations.tables]
+        url = "s3://role-bucket/tables"
+        aws_iam_role_arn = "arn:aws:iam::1:role/tables"
     "#;
     let app = app(
         settings,
@@ -282,15 +283,6 @@ async fn s3_without_a_location_uses_the_bucket_configuration() {
     )
     .await;
 
-    let body = ok(vend(&app, "s3://static-bucket/t", "PATH_READ").await).await;
-    assert_eq!(
-        body["aws_temp_credentials"],
-        json!({
-        "access_key_id": "AKSTATIC", "secret_access_key": "static-secret", "session_token": "static-session" })
-    );
-    assert_eq!(body["expiration_time"], Value::Null);
-    assert!(log.lock().unwrap().is_empty());
-
     let body = ok(vend(&app, "s3://role-bucket/t", "PATH_READ").await).await;
     assert_eq!(body["aws_temp_credentials"]["access_key_id"], "ASIAMOCK");
     let seen = log.lock().unwrap()[0].clone();
@@ -298,9 +290,13 @@ async fn s3_without_a_location_uses_the_bucket_configuration() {
     assert!(!seen.form().contains_key("ExternalId"));
     let authorization = seen.headers["authorization"].to_str().unwrap().to_string();
     assert!(
-        authorization.contains("Credential=AKBUCKET/") && authorization.contains("/eu-west-1/sts/"),
+        authorization.contains("Credential=AKSERVER/") && authorization.contains("/eu-west-1/sts/"),
         "{authorization}"
     );
+
+    ok(vend(&app, "s3://role-bucket/tables/t", "PATH_READ").await).await;
+    let seen = log.lock().unwrap()[1].clone();
+    assert_eq!(seen.form()["RoleArn"], "arn:aws:iam::1:role/tables");
 
     let err = assert_error(
         vend(&app, "s3://unknown/t", "PATH_READ").await,
@@ -308,7 +304,10 @@ async fn s3_without_a_location_uses_the_bucket_configuration() {
         "FAILED_PRECONDITION",
     )
     .await;
-    assert_eq!(err["message"], "S3 bucket configuration not found.");
+    assert_eq!(
+        err["message"],
+        "No external location and no [locations.<name>] of the settings covers s3://unknown/t."
+    );
 }
 
 /// A user delegation key, as the blob service answers it.
@@ -317,8 +316,8 @@ const DELEGATION_KEY: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?><UserDel
     <SignedExpiry>2030-01-01T01:00:00Z</SignedExpiry><SignedService>b</SignedService>\
     <SignedVersion>2021-08-06</SignedVersion><Value>c2VjcmV0</Value></UserDelegationKey>";
 
-/// Upstream `AzureCredentialVendor`: the account's service principal gets a
-/// user delegation key and signs a directory SAS for the path.
+/// Upstream `AzureCredentialVendor`: the location's service principal gets
+/// a user delegation key and signs a directory SAS for the path.
 #[tokio::test]
 async fn azure_signs_a_user_delegation_sas() {
     let (login, logins) = mock(
@@ -329,18 +328,11 @@ async fn azure_signs_a_user_delegation_sas() {
     .await;
     let (blob, keys) = mock("application/xml", DELEGATION_KEY.to_string()).await;
     let settings = r#"
-        [adls.acct]
-        account = "acct"
-        tenant_id = "tenant"
-        client_id = "client"
-        client_secret = "secret"
-
-        [adls.test]
-        account = "testacct"
-        tenant_id = "t"
-        client_id = "c"
-        client_secret = "s"
-        test_mode = true
+        [locations.acct]
+        url = "abfss://container@acct.dfs.core.windows.net"
+        azure_directory_id = "tenant"
+        azure_application_id = "client"
+        azure_client_secret = "secret"
     "#;
     let endpoints = Endpoints {
         azure_login: Some(login),
@@ -433,17 +425,6 @@ async fn azure_signs_a_user_delegation_sas() {
             .unwrap()
             .contains("sp=rl&")
     );
-    // Test mode: upstream's fixed token.
-    let body = ok(vend(
-        &app,
-        "abfss://c@testacct.dfs.core.windows.net/x",
-        "PATH_READ",
-    )
-    .await)
-    .await;
-    assert_eq!(body["azure_user_delegation_sas"]["sas_token"], "t/c/s");
-    assert_eq!(body["expiration_time"], 253_370_790_000_000_i64);
-
     let err = assert_error(
         vend(&app, "abfss://c@other.dfs.core.windows.net/x", "PATH_READ").await,
         StatusCode::BAD_REQUEST,
@@ -452,7 +433,8 @@ async fn azure_signs_a_user_delegation_sas() {
     .await;
     assert_eq!(
         err["message"],
-        "Azure storage account configuration not found."
+        "No external location and no [locations.<name>] of the settings covers \
+         abfss://c@other.dfs.core.windows.net/x."
     );
 
     // Under an external location, its credential's service principal signs
@@ -489,9 +471,10 @@ async fn azure_signs_a_user_delegation_sas() {
     ok(vend(&app, &format!("{other}/x"), "PATH_READ").await).await;
 }
 
-/// A managed identity is the server's own Azure identity: a user-assigned
-/// one by its resource ID, from the instance metadata service, or else the
-/// identity of the environment. A credential or an `adls.*` entry names it.
+/// A managed identity is a user-assigned one by its resource ID, from the
+/// instance metadata service, or else the server's own identity:
+/// `[identity.azure]`, else the identity of the environment. A credential or
+/// a `[locations.<name>]` names it.
 #[tokio::test]
 async fn azure_managed_identities_sign_user_delegation_sas() {
     let token = json!({ "access_token": "msi-token", "expires_on": "4102444800" });
@@ -503,12 +486,11 @@ async fn azure_managed_identities_sign_user_delegation_sas() {
         ..Default::default()
     };
     let settings = r#"
-        [adls.lake]
-        account = "lake"
-        managed_identity = true
-        managed_identity_id = "/subscriptions/s/lake"
+        [locations.lake]
+        url = "abfss://c@lake.dfs.core.windows.net"
+        azure_managed_identity = "/subscriptions/s/lake"
     "#;
-    let app = app(settings, endpoints).await;
+    let app = app(settings, endpoints.clone()).await;
     let id = "/subscriptions/s/resourceGroups/g/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uc";
     let url = "abfss://c@acct.dfs.core.windows.net/mi";
     let identity = json!({ "azure_managed_identity": { "managed_identity_id": id } });
@@ -543,7 +525,7 @@ async fn azure_managed_identities_sign_user_delegation_sas() {
     let asked = tokens.lock().unwrap().last().unwrap().clone();
     assert!(!asked.path.contains("msi_res_id"), "{}", asked.path);
 
-    // Without an external location: the account's entry.
+    // Without an external location: the location of the settings.
     let url = "abfss://c@lake.dfs.core.windows.net/tables/t";
     ok(vend(&app, url, "PATH_READ").await).await;
     let asked = tokens.lock().unwrap().last().unwrap().clone();
@@ -554,10 +536,37 @@ async fn azure_managed_identities_sign_user_delegation_sas() {
         "{}",
         asked.path
     );
+
+    // With `[identity.azure]`, the server's own identity is that one.
+    let settings = r#"
+        [identity.azure]
+        managed_identity_id = "/subscriptions/s/server"
+
+        [locations.lake]
+        url = "abfss://c@lake.dfs.core.windows.net"
+        azure_managed_identity = true
+    "#;
+    let server = crate::app(settings, endpoints).await;
+    ok(vend(
+        &server,
+        "abfss://c@lake.dfs.core.windows.net/t",
+        "PATH_READ",
+    )
+    .await)
+    .await;
+    let asked = tokens.lock().unwrap().last().unwrap().clone();
+    assert!(
+        asked
+            .path
+            .contains("msi_res_id=%2Fsubscriptions%2Fs%2Fserver"),
+        "{}",
+        asked.path
+    );
 }
 
-/// Upstream `GcpCredentialVendor`: the bucket's service account token,
-/// downscoped at Google STS to the path.
+/// Upstream `GcpCredentialVendor`: the token of the server's identity, a
+/// service account key of `[identity.gcp]`, downscoped at Google STS to the
+/// path.
 #[tokio::test]
 async fn gcp_downscopes_the_server_token() {
     let (token_uri, sign_ins) = mock(
@@ -584,13 +593,12 @@ async fn gcp_downscopes_the_server_token() {
     let key_path = key_file.path().to_string_lossy().into_owned();
     let settings = format!(
         r#"
-        [gcs.key]
-        bucket = "gs://gbucket"
+        [identity.gcp]
         json_key_file = "{key_path}"
 
-        [gcs.test]
-        bucket = "gs://tbucket"
-        credential_generator = "io.unitycatalog.server.service.credential.gcp.TestingCredentialGenerator"
+        [locations.gbucket]
+        url = "gs://gbucket"
+        gcp_service_account = true
         "#
     );
     let app = app(
@@ -667,14 +675,6 @@ async fn gcp_downscopes_the_server_token() {
         ])
     );
 
-    // Upstream's testing generator.
-    let body = ok(vend(&app, "gs://tbucket/x", "PATH_READ").await).await;
-    assert_eq!(
-        body["gcp_oauth_token"]["oauth_token"],
-        "testing://gs://tbucket"
-    );
-    assert_eq!(body["expiration_time"], 253_370_790_000_000_i64);
-
     let err = assert_error(
         vend(&app, "gs://nope/x", "PATH_READ").await,
         StatusCode::BAD_REQUEST,
@@ -683,7 +683,7 @@ async fn gcp_downscopes_the_server_token() {
     .await;
     assert_eq!(
         err["message"],
-        "Unknown GCS storage configuration for gs://nope."
+        "No external location and no [locations.<name>] of the settings covers gs://nope/x."
     );
 }
 
@@ -715,8 +715,7 @@ fn issuer(seen: &Seen) -> Value {
 
 /// A GCP credential's token, downscoped at STS: of its service account key,
 /// or of the server's own identity, which impersonates the credential's
-/// service account. A `gcs.*` entry's identity impersonates its
-/// `service_account`.
+/// service account. A `[locations.<name>]` holds the same identities.
 #[tokio::test]
 async fn gcp_credentials_downscope_their_identity() {
     let token = |value: &str| json!({ "access_token": value, "expires_in": 3600 }).to_string();
@@ -726,18 +725,28 @@ async fn gcp_credentials_downscope_their_identity() {
         json!({ "accessToken": "impersonated", "expireTime": "2030-01-01T00:00:00Z" });
     let (iam, impersonations) = mock("application/json", impersonated.to_string()).await;
     let (sts, exchanges) = mock("application/json", token("downscoped")).await;
-    let settings = r#"
-        [gcs.lake]
-        bucket = "gs://lake"
-        service_account = "lake@p.iam.gserviceaccount.com"
-    "#;
+    let key_file = tempfile::NamedTempFile::new().unwrap();
+    let file_key = service_account_key("file@p.iam.gserviceaccount.com", &token_uri);
+    std::fs::write(key_file.path(), file_key.to_string()).unwrap();
+    let settings = format!(
+        r#"
+        [locations.lake]
+        url = "gs://lake"
+        gcp_service_account = "lake@p.iam.gserviceaccount.com"
+
+        [locations.keyed]
+        url = "gs://keyed"
+        gcp_service_account_key = "{}"
+        "#,
+        key_file.path().display()
+    );
     let endpoints = Endpoints {
         gcp_sts: Some(format!("{sts}/v1/token")),
         gcp_metadata: Some(metadata),
         gcp_iam: Some(iam),
         ..Default::default()
     };
-    let app = app(settings, endpoints).await;
+    let app = app(&settings, endpoints).await;
     let subject = |n: usize| exchanges.lock().unwrap()[n].form()["subject_token"].clone();
 
     // A service account that the server's own identity impersonates.
@@ -795,7 +804,7 @@ async fn gcp_credentials_downscope_their_identity() {
     assert_eq!(issuer(&sign_in), "key@p.iam.gserviceaccount.com");
     assert_eq!(subject(2), "keyed");
 
-    // Without an external location: the bucket's entry.
+    // Without an external location: the location of the settings.
     ok(vend(&app, "gs://lake/tables/t1", "PATH_READ").await).await;
     let impersonation = impersonations.lock().unwrap()[1].clone();
     assert!(
@@ -806,6 +815,12 @@ async fn gcp_credentials_downscope_their_identity() {
         impersonation.path
     );
     assert_eq!(subject(3), "impersonated");
+    ok(vend(&app, "gs://keyed/t1", "PATH_READ").await).await;
+    assert_eq!(
+        issuer(&sign_ins.lock().unwrap()[1]),
+        "file@p.iam.gserviceaccount.com"
+    );
+    assert_eq!(subject(4), "keyed");
 }
 
 /// Upstream `CloudCredentialVendor`: local paths vend nothing.

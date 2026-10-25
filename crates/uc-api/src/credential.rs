@@ -19,8 +19,8 @@ pub struct AwsIamRoleRequest {
 pub struct AwsIamRoleResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role_arn: Option<String>,
-    /// The server's own role, which assumes `role_arn`
-    /// (`UC_AWS_MASTER_ROLE_ARN`).
+    /// The server's own AWS identity, which assumes `role_arn`
+    /// (`identity.aws.arn`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unity_catalog_iam_arn: Option<String>,
     /// Generated each time the role is set; the role's trust policy should
