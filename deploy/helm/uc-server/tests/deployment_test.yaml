@@ -289,6 +289,24 @@ tests:
             secret:
               secretName: gcs-secret
 
+  - it: gives an ADLS account the pod's managed identity, without a Secret
+    set:
+      storage.credentials.adls:
+        - storageAccountName: account
+          managedIdentity: true
+          managedIdentityId: /subscriptions/s/uc
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_ADLS_0_MANAGED_IDENTITY, value: "true"}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_ADLS_0_MANAGED_IDENTITY_ID, value: /subscriptions/s/uc}
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_ADLS_0_CLIENT_SECRET}
+          any: true
+
   - it: drops the probes that are turned off and keeps the given ones
     set:
       server.deployment.enableStartupProbe: false

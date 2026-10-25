@@ -92,8 +92,8 @@ uc external_location create --name lake \
   resource ID (`--azure_managed_identity <resource id>`), the server uses that user-assigned
   managed identity of its VM, through the instance metadata service.
 
-Or, without an external location, give a service principal of the storage account in the
-settings:
+Or, without an external location, give the identity of the storage account in the settings: a
+service principal,
 
 ```toml
 [adls.lake]
@@ -102,6 +102,19 @@ tenant_id = "<tenant id>"
 client_id = "<client id>"
 client_secret = "<client secret>"
 ```
+
+or the server's managed identity, with no secret:
+
+```toml
+[adls.lake]
+account = "mylake"
+managed_identity = true
+# managed_identity_id = "<resource id of a user-assigned identity>"
+```
+
+On AKS, give the server's pod workload identity with the Helm chart's `serviceAccount.annotations`
+(`azure.workload.identity/client-id`) and `server.deployment.extraPodLabels`
+(`azure.workload.identity/use: "true"`).
 
 ## Google Cloud Storage
 

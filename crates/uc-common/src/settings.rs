@@ -356,7 +356,8 @@ pub struct S3 {
     pub session_token: Option<String>,
 }
 
-/// `[adls.<name>]`: the credentials of an Azure storage account.
+/// `[adls.<name>]`: the credentials of an Azure storage account: a service
+/// principal, or a managed identity.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Adls {
@@ -364,6 +365,12 @@ pub struct Adls {
     pub tenant_id: Option<String>,
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
+    /// The server's own Azure identity, in place of a service principal.
+    #[serde(deserialize_with = "scalar")]
+    pub managed_identity: bool,
+    /// With `managed_identity`: the resource ID of a user-assigned managed
+    /// identity.
+    pub managed_identity_id: Option<String>,
     /// Fake SAS tokens, for tests.
     #[serde(deserialize_with = "scalar")]
     pub test_mode: bool,
@@ -646,6 +653,9 @@ mod tests {
                 ("UC_AUTH_ENABLED", "false"),
                 ("UC_AUTH_OIDC_CLIENT_ID", "12345"),
                 ("UC_S3_ANALYTICS_SECRET_KEY", "secret"),
+                ("UC_ADLS_LAKE_ACCOUNT", "lake"),
+                ("UC_ADLS_LAKE_MANAGED_IDENTITY", "true"),
+                ("UC_ADLS_LAKE_MANAGED_IDENTITY_ID", "/subscriptions/s/uc"),
                 ("UC_DB_PASSWORD", ""),
                 ("UC_TEST_POSTGRES_URL", "postgresql://not/a/setting"),
             ],
@@ -661,6 +671,12 @@ mod tests {
         let s3 = &settings.s3["analytics"];
         assert_eq!(s3.bucket.as_deref(), Some("s3://analytics"));
         assert_eq!(s3.secret_key.as_deref(), Some("secret"));
+        let adls = &settings.adls["lake"];
+        assert!(adls.managed_identity);
+        assert_eq!(
+            adls.managed_identity_id.as_deref(),
+            Some("/subscriptions/s/uc")
+        );
         // An empty variable counts as unset.
         assert_eq!(settings.db.password, None);
     }

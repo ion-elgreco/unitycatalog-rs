@@ -250,12 +250,18 @@ impl StorageConfig {
         let mut adls = HashMap::new();
         for (name, entry) in &settings.adls {
             let key = |field: &str| format!("adls.{name}.{field}");
-            adls.insert(
-                required(&entry.account, key("account"))?,
-                azure::AdlsConfig {
+            let identity = match entry.managed_identity {
+                true => azure::Identity::Managed(entry.managed_identity_id.clone()),
+                false => azure::Identity::ServicePrincipal {
                     tenant_id: required(&entry.tenant_id, key("tenant_id"))?,
                     client_id: required(&entry.client_id, key("client_id"))?,
                     client_secret: required(&entry.client_secret, key("client_secret"))?,
+                },
+            };
+            adls.insert(
+                required(&entry.account, key("account"))?,
+                azure::AdlsConfig {
+                    identity,
                     test_mode: entry.test_mode,
                 },
             );
@@ -373,5 +379,52 @@ impl CredentialVendor for PlaceholderVendor {
                     .await
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use azure::Identity;
+
+    fn accounts(text: &str) -> std::result::Result<HashMap<String, azure::AdlsConfig>, String> {
+        StorageConfig::from_settings(&Settings::from_toml(text)?).map(|c| c.adls)
+    }
+
+    #[test]
+    fn adls_entries_hold_a_service_principal_or_a_managed_identity() {
+        let found = accounts(
+            r#"
+            [adls.sp]
+            account = "one"
+            tenant_id = "t"
+            client_id = "c"
+            client_secret = "s"
+
+            [adls.own]
+            account = "two"
+            managed_identity = true
+
+            [adls.assigned]
+            account = "three"
+            managed_identity = true
+            managed_identity_id = "/subscriptions/s/uc"
+            "#,
+        )
+        .unwrap();
+        let principal = Identity::ServicePrincipal {
+            tenant_id: "t".into(),
+            client_id: "c".into(),
+            client_secret: "s".into(),
+        };
+        assert_eq!(found["one"].identity, principal);
+        assert_eq!(found["two"].identity, Identity::Managed(None));
+        assert_eq!(
+            found["three"].identity,
+            Identity::Managed(Some("/subscriptions/s/uc".into()))
+        );
+        // Without a managed identity, the service principal is required.
+        let error = accounts("[adls.x]\naccount = 'a'\ntenant_id = 't'").unwrap_err();
+        assert!(error.contains("adls.x.client_id"), "{error}");
     }
 }
