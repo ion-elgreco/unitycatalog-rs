@@ -1,5 +1,5 @@
 use crate::http::extract::{Json, Path, Query};
-use axum::{extract::State, http::StatusCode};
+use axum::extract::State;
 use serde::Deserialize;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -16,7 +16,7 @@ use uc_common::{
 use crate::{
     authn::principal::Principal,
     authz::{self, Access, rules},
-    http::error::ApiResult,
+    http::{EmptyObject, error::ApiResult},
     server::state::AppState,
 };
 
@@ -187,7 +187,7 @@ pub async fn delete_registered_model(
     principal: Principal,
     Path(full_name): Path<String>,
     Query(params): Query<DeleteModelParams>,
-) -> ApiResult<StatusCode> {
+) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
         &principal.username,
@@ -201,7 +201,7 @@ pub async fn delete_registered_model(
         .models()
         .delete_model(&full_name, params.force)
         .await?;
-    Ok(StatusCode::OK)
+    Ok(EmptyObject)
 }
 
 #[utoipa::path(
@@ -348,7 +348,7 @@ pub async fn delete_model_version(
     State(state): State<AppState>,
     principal: Principal,
     Path((full_name, version)): Path<(String, i64)>,
-) -> ApiResult<StatusCode> {
+) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
         &principal.username,
@@ -362,7 +362,7 @@ pub async fn delete_model_version(
         .models()
         .delete_version(&full_name, version)
         .await?;
-    Ok(StatusCode::OK)
+    Ok(EmptyObject)
 }
 
 #[utoipa::path(

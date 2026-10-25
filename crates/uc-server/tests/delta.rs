@@ -111,14 +111,9 @@ async fn post(app: &Router, body: &Value) -> axum::response::Response {
 async fn ok(app: &Router, body: &Value) {
     let resp = post(app, body).await;
     let resp = assert_status(resp, StatusCode::OK, &body.to_string()).await;
-    let bytes = http_body_util::BodyExt::collect(resp.into_body())
-        .await
-        .unwrap()
-        .to_bytes();
-    assert!(
-        bytes.is_empty(),
-        "upstream answers a commit with an empty body"
-    );
+    // An empty `DeltaCommitResponse`, which the Java SDK of Delta's client
+    // reads as JSON.
+    assert_eq!(json_body(resp).await, serde_json::json!({}));
 }
 
 async fn fails(app: &Router, body: &Value, status: StatusCode, code: &str, message: &str) {

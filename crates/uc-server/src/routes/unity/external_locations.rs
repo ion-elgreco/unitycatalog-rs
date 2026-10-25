@@ -1,5 +1,5 @@
 use crate::http::extract::{Json, Path, Query};
-use axum::{extract::State, http::StatusCode};
+use axum::extract::State;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use uc_api::{
@@ -11,7 +11,7 @@ use uc_common::{DeleteParams, PageToken, Pagination, SecurableType};
 use crate::{
     authn::principal::Principal,
     authz::{self, Access, Lineage, rules},
-    http::error::ApiResult,
+    http::{EmptyObject, error::ApiResult},
     server::state::AppState,
 };
 
@@ -157,7 +157,7 @@ pub async fn delete_external_location(
     principal: Principal,
     Path(name): Path<String>,
     Query(params): Query<DeleteParams>,
-) -> ApiResult<StatusCode> {
+) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
         &principal.username,
@@ -171,7 +171,7 @@ pub async fn delete_external_location(
         .external_locations()
         .delete(&name, params.force)
         .await?;
-    Ok(StatusCode::OK)
+    Ok(EmptyObject)
 }
 
 pub fn router() -> OpenApiRouter<AppState> {
