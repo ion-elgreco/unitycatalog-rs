@@ -31,7 +31,7 @@ What upstream (Java) and this project (Rust) have.
 | `uc` CLI | X | X | Rust adds a terminal UI and `uc serve`, `uc dev`, `uc web` |
 | Python client | X | X | Different APIs: `unitycatalog-client` and `unitycatalog-rs` |
 | Java client | X | | |
-| Spark and Hadoop connectors | X | | Upstream's connectors are not tested against the Rust server |
+| Spark and Hadoop connectors | X | | Upstream's Spark connector works with the Rust server: CI tests it with Spark 4.1 and 4.2 |
 | `unitycatalog-ai` (functions as LLM tools) | X | | |
 | Embedded database | X | X | Java: H2. Rust: Turso |
 | Settings | X | X | Java: `etc/conf/*.properties`. Rust: `uc.toml` and `UC_*` variables |
