@@ -1,19 +1,19 @@
 //! Azure credentials, after upstream `AzureCredentialVendor`.
 //!
-//! The identity that signs in to Microsoft Entra ID is the storage
-//! credential's, under an external location, or else the one of the
-//! account's `adls.*` entry:
+//! The identity that signs in to Microsoft Entra ID is the one of the
+//! storage credential: of the external location, else of the
+//! `[locations.<name>]`.
 //!
 //! - A service principal signs in with its client secret.
-//! - A managed identity is the server's own: the identity of its
-//!   environment (AKS workload identity, the `AZURE_*` variables, the
-//!   managed identity of the VM or App Service), or the user-assigned
-//!   identity of its resource ID, from the instance metadata service.
+//! - A managed identity without a resource ID is the server's own:
+//!   `[identity.azure]`, else the identity of its environment (AKS
+//!   workload identity, the `AZURE_*` variables, the managed identity of the
+//!   VM or App Service). With a resource ID, it is that user-assigned
+//!   identity, from the instance metadata service.
 //!
 //! `object_store` signs in and keeps the token. With the token the server
 //! gets a user delegation key for the hour, and signs a directory SAS for
-//! the path: read and list, plus write and delete for writes. In test mode
-//! the SAS of an `adls.*` entry is `tenant/client/secret`.
+//! the path: read and list, plus write and delete for writes.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -39,20 +39,10 @@ use crate::http::outbound::SendOnIo;
 /// [`user_delegation_sas`].
 const SAS_VERSION: &str = "2021-08-06";
 
-/// Upstream's expiration of a test-mode SAS.
-const TEST_MODE_EXPIRATION: i64 = 253_370_790_000_000;
-
-/// Upstream `ADLSStorageConfig`, with a managed identity in place of the
-/// service principal as an option.
-#[derive(Debug, Clone)]
-pub struct AdlsConfig {
-    pub identity: Identity,
-    /// With a service principal: fake SAS tokens.
-    pub test_mode: bool,
-}
-
 pub struct AzureVendor {
-    accounts: HashMap<String, AdlsConfig>,
+    /// The server's own identity: `[identity.azure]`, else the identity of
+    /// the environment.
+    server: Identity,
     http: reqwest::Client,
     /// Entra ID, when not Microsoft's: a test's.
     login: Option<String>,
@@ -72,13 +62,13 @@ pub enum Identity {
         client_secret: String,
     },
     /// The user-assigned managed identity of this resource ID, else the
-    /// identity of the server's environment.
+    /// server's own identity.
     Managed(Option<String>),
 }
 
 impl Identity {
     /// The identity of a storage credential.
-    fn of(credential: &StorageCredential) -> Result<Self> {
+    pub fn of(credential: &StorageCredential) -> Result<Self> {
         let info = &credential.info;
         if let Some(principal) = &info.azure_service_principal {
             return Ok(Self::ServicePrincipal {
@@ -242,9 +232,11 @@ fn permissions(privileges: &[StoragePrivilege]) -> String {
 }
 
 impl AzureVendor {
-    pub fn new(accounts: HashMap<String, AdlsConfig>) -> Self {
+    /// The vendor whose own identity is `server`, else the identity of the
+    /// environment.
+    pub fn new(server: Option<Identity>) -> Self {
         Self {
-            accounts,
+            server: server.unwrap_or(Identity::Managed(None)),
             http: reqwest::Client::new(),
             login: None,
             blob: None,
@@ -266,28 +258,18 @@ impl AzureVendor {
         self
     }
 
-    pub async fn vend(&self, ctx: &CredentialContext) -> Result<TemporaryCredentials> {
+    /// A SAS for `ctx`, signed with a key of `identity`.
+    pub async fn vend(
+        &self,
+        ctx: &CredentialContext,
+        identity: &Identity,
+    ) -> Result<TemporaryCredentials> {
         let parts = parse_location(&ctx.storage_base)?;
-        let identity = match &ctx.credential {
-            Some(credential) => Identity::of(credential)?,
-            None => {
-                let config = self.accounts.get(&parts.account_name).ok_or_else(|| {
-                    Error::failed_precondition("Azure storage account configuration not found.")
-                })?;
-                if config.test_mode
-                    && let Identity::ServicePrincipal {
-                        tenant_id,
-                        client_id,
-                        client_secret,
-                    } = &config.identity
-                {
-                    let token = format!("{tenant_id}/{client_id}/{client_secret}");
-                    return Ok(vended(token, TEST_MODE_EXPIRATION));
-                }
-                config.identity.clone()
-            }
+        let identity = match identity {
+            Identity::Managed(None) => &self.server,
+            other => other,
         };
-        let (sas_token, expiration) = self.delegation_sas(ctx, &parts, &identity).await?;
+        let (sas_token, expiration) = self.delegation_sas(ctx, &parts, identity).await?;
         Ok(vended(sas_token, expiration))
     }
 
@@ -331,7 +313,15 @@ impl AzureVendor {
     /// The identity's token for Azure Storage, from `object_store`, which
     /// keeps it until it is about to expire.
     async fn access_token(&self, account: &str, identity: &Identity) -> Result<String> {
-        let failed = |e: String| Error::internal(format!("Azure sign-in failed: {e}"));
+        let failed = |e: String| match identity {
+            // The identity of the environment, without `[identity.azure]`.
+            Identity::Managed(None) => Error::failed_precondition(format!(
+                "The server could not get its Azure identity: set [identity.azure] \
+                 (UC_IDENTITY_AZURE_*), or run it with an identity in its environment (AZURE_* \
+                 variables, AKS workload identity, the managed identity of the VM). Cause: {e}"
+            )),
+            _ => Error::internal(format!("Azure sign-in failed: {e}")),
+        };
         let credential = self
             .sign_in(account, identity)
             .map_err(|e| failed(e.to_string()))?
@@ -362,6 +352,7 @@ impl AzureVendor {
                 .with_tenant_id(tenant_id)
                 .with_client_id(client_id)
                 .with_client_secret(client_secret),
+            // The server's own identity, without `[identity.azure]`.
             Identity::Managed(None) => MicrosoftAzureBuilder::from_env(),
             // Only the instance metadata service knows identities by their
             // resource ID; the environment's identity would take its place.

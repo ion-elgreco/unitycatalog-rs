@@ -1,16 +1,16 @@
 //! Cloud credential vending, after upstream `StorageCredentialVendor` and
 //! `CloudCredentialVendor`.
 //!
-//! Credentials for a path come from the storage credential of the external
-//! location that covers it (an AWS role, an Azure service principal, an
-//! Azure managed identity, a GCP service account or a GCP service account
-//! key) or, without one, from the per-bucket settings
-//! (`[s3.<name>]`, `[adls.<name>]`, `[gcs.<name>]`). The
-//! vendor is chosen by the path's scheme: AWS STS for `s3`, an Azure user
-//! delegation SAS for `abfs`/`abfss`, a downscoped GCP token for `gs`, and
-//! nothing for local paths.
+//! Credentials for a path come from the identity of the storage credential
+//! of the external location that covers it (an AWS role, an Azure service
+//! principal, an Azure managed identity, a GCP service account or a GCP
+//! service account key), else of the [`Location`] of the settings that
+//! covers it. The server's own identity in the cloud (`[identity.<cloud>]`)
+//! signs in for it. The vendor is chosen by the path's scheme: AWS STS for
+//! `s3`, an Azure user delegation SAS for `abfs`/`abfss`, a downscoped GCP
+//! token for `gs`, and nothing for local paths.
 
-use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
@@ -24,6 +24,9 @@ use uc_common::settings::{self, Settings};
 pub mod aws;
 pub mod azure;
 pub mod gcp;
+mod location;
+
+pub use location::{AdlsLocation, GcsLocation, Location, S3Location};
 
 /// What the server itself does with a location; see [`ServerStorage`].
 ///
@@ -104,9 +107,14 @@ pub trait CredentialVendor: Send + Sync + 'static {
     async fn vend(&self, ctx: &CredentialContext) -> Result<TemporaryCredentials>;
 
     /// The S3-compatible store that vended S3 credentials are for, if not
-    /// AWS (`aws.endpoint`).
+    /// AWS (`identity.aws.endpoint`).
     fn s3_store(&self) -> Option<&aws::S3Store> {
         None
+    }
+
+    /// Whether a location of the settings covers `path`.
+    fn covers(&self, _path: &NormalizedUrl) -> bool {
+        false
     }
 }
 
@@ -170,45 +178,32 @@ pub async fn credential_for_url(
     Ok(Some(StorageCredential { info, secret }))
 }
 
-/// The per-bucket and master configuration of the settings.
+/// The settings of credential vending: the server's identity in each cloud,
+/// and the locations of the settings.
 #[derive(Debug, Clone, Default)]
 pub struct StorageConfig {
-    /// `[aws]`: the server's own AWS identity, which assumes the roles of
-    /// storage credentials.
-    pub aws_master: aws::S3Config,
-    /// `aws.endpoint`: an S3-compatible store in place of AWS.
+    /// `[identity.aws]`: the server's AWS identity, which assumes the roles
+    /// of storage credentials.
+    pub aws: aws::AwsIdentity,
+    /// `identity.aws.endpoint`: an S3-compatible store in place of AWS.
     pub s3_store: Option<aws::S3Store>,
-    /// `[s3.<name>]`, by bucket (`s3://bucket`).
-    pub s3: HashMap<NormalizedUrl, aws::S3Config>,
-    /// `[adls.<name>]`, by storage account name.
-    pub adls: HashMap<String, azure::AdlsConfig>,
-    /// `gcp.endpoint`: a GCP emulator in place of Google's STS and IAM
-    /// Credentials.
+    /// `[identity.azure]`: the server's Azure identity; none for the
+    /// identity of the environment.
+    pub azure: Option<azure::Identity>,
+    /// `identity.gcp.json_key_file`: the server's GCP identity; none for
+    /// Application Default Credentials.
+    pub gcp_key_file: Option<PathBuf>,
+    /// `identity.gcp.endpoint`: a GCP emulator in place of Google's STS and
+    /// IAM Credentials.
     pub gcp_endpoint: Option<String>,
-    /// `[gcs.<name>]`, by bucket (`gs://bucket`).
-    pub gcs: HashMap<NormalizedUrl, gcp::GcsConfig>,
+    /// `[locations.<name>]`.
+    pub locations: Vec<Location>,
 }
 
 impl StorageConfig {
-    /// `[aws]`, and the entries of `[s3.<name>]`, `[adls.<name>]` and
-    /// `[gcs.<name>]`. An incomplete entry is an error.
+    /// `[identity]` and `[locations]`. An incomplete identity is an error.
     pub fn from_settings(settings: &Settings) -> std::result::Result<Self, String> {
-        let required = |value: &Option<String>, key: String| {
-            value
-                .clone()
-                .ok_or_else(|| format!("{} is required", settings::name(&key)))
-        };
-        let bucket = |bucket: &str, key: String| {
-            NormalizedUrl::parse(bucket)
-                .map(|url| url.storage_base())
-                .map_err(|e| settings::invalid(&key, bucket, e.message()))
-        };
-        let aws_master = aws::S3Config {
-            region: settings.aws.region.clone(),
-            access_key: settings.aws.access_key.clone(),
-            secret_key: settings.aws.secret_key.clone(),
-            ..Default::default()
-        };
+        let identity = &settings.identity;
         let endpoint = |value: &Option<String>, key: &str| match value.as_deref().map(str::trim) {
             None | Some("") => Ok(None),
             Some(url) if url.starts_with("http://") || url.starts_with("https://") => {
@@ -220,77 +215,59 @@ impl StorageConfig {
                 "Expected an http or https URL.",
             )),
         };
-        let gcp_endpoint = endpoint(&settings.gcp.endpoint, "gcp.endpoint")?;
-        let s3_store = match endpoint(&settings.aws.endpoint, "aws.endpoint")? {
-            None => None,
-            Some(endpoint) => {
-                let region = settings.aws.region.clone();
-                Some(aws::S3Store {
-                    endpoint,
-                    region: region.unwrap_or_else(|| "us-east-1".into()),
-                })
-            }
-        };
-        let mut s3 = HashMap::new();
-        for (name, entry) in &settings.s3 {
-            let path = required(&entry.bucket, format!("s3.{name}.bucket"))?;
-            let config = aws::S3Config {
-                region: entry.region.clone(),
-                aws_role_arn: entry.role_arn.clone(),
-                access_key: entry.access_key.clone(),
-                secret_key: entry.secret_key.clone(),
-                session_token: entry.session_token.clone(),
-            };
-            let role = config.region.is_some() && config.aws_role_arn.is_some();
-            let keys = config.access_key.is_some()
-                && config.secret_key.is_some()
-                && config.session_token.is_some();
-            if !(role || keys) {
-                return Err(format!(
-                    "[s3.{name}] needs region and role_arn, or access_key, secret_key and \
-                     session_token"
-                ));
-            }
-            s3.insert(bucket(&path, format!("s3.{name}.bucket"))?, config);
+        let aws = &identity.aws;
+        if aws.access_key.is_some() != aws.secret_key.is_some() {
+            return Err("[identity.aws] needs access_key and secret_key, or neither".into());
         }
-        let mut adls = HashMap::new();
-        for (name, entry) in &settings.adls {
-            let key = |field: &str| format!("adls.{name}.{field}");
-            let identity = match entry.managed_identity {
-                true => azure::Identity::Managed(entry.managed_identity_id.clone()),
-                false => azure::Identity::ServicePrincipal {
-                    tenant_id: required(&entry.tenant_id, key("tenant_id"))?,
-                    client_id: required(&entry.client_id, key("client_id"))?,
-                    client_secret: required(&entry.client_secret, key("client_secret"))?,
-                },
-            };
-            adls.insert(
-                required(&entry.account, key("account"))?,
-                azure::AdlsConfig {
-                    identity,
-                    test_mode: entry.test_mode,
-                },
-            );
-        }
-        let mut gcs = HashMap::new();
-        for (name, entry) in &settings.gcs {
-            let path = required(&entry.bucket, format!("gcs.{name}.bucket"))?;
-            let config = gcp::GcsConfig {
-                bucket_path: path.clone(),
-                json_key_file_path: entry.json_key_file.clone(),
-                service_account: entry.service_account.clone(),
-                credential_generator: entry.credential_generator.clone(),
-            };
-            gcs.insert(bucket(&path, format!("gcs.{name}.bucket"))?, config);
-        }
+        let s3_store =
+            endpoint(&aws.endpoint, "identity.aws.endpoint")?.map(|endpoint| aws::S3Store {
+                endpoint,
+                region: aws.region.clone().unwrap_or_else(|| "us-east-1".into()),
+            });
+        let locations = settings
+            .locations
+            .iter()
+            .map(|(name, entry)| Location::parse(name, entry, aws.arn.as_deref()))
+            .collect::<std::result::Result<_, _>>()?;
         Ok(Self {
-            aws_master,
+            aws: aws::AwsIdentity {
+                access_key: aws.access_key.clone(),
+                secret_key: aws.secret_key.clone(),
+                region: aws.region.clone(),
+            },
             s3_store,
-            s3,
-            adls,
-            gcp_endpoint,
-            gcs,
+            azure: azure_identity(&identity.azure)?,
+            gcp_key_file: identity.gcp.json_key_file.clone(),
+            gcp_endpoint: endpoint(&identity.gcp.endpoint, "identity.gcp.endpoint")?,
+            locations,
         })
+    }
+}
+
+/// `[identity.azure]`: a service principal, a user-assigned managed
+/// identity, or none.
+fn azure_identity(
+    azure: &settings::AzureIdentity,
+) -> std::result::Result<Option<azure::Identity>, String> {
+    let principal = (
+        &azure.directory_id,
+        &azure.application_id,
+        &azure.client_secret,
+    );
+    match (principal, &azure.managed_identity_id) {
+        ((None, None, None), None) => Ok(None),
+        ((None, None, None), Some(id)) => Ok(Some(azure::Identity::Managed(Some(id.clone())))),
+        ((Some(tenant_id), Some(client_id), Some(client_secret)), None) => {
+            Ok(Some(azure::Identity::ServicePrincipal {
+                tenant_id: tenant_id.clone(),
+                client_id: client_id.clone(),
+                client_secret: client_secret.clone(),
+            }))
+        }
+        (_, Some(_)) => Err(
+            "[identity.azure] holds a service principal or managed_identity_id, not both".into(),
+        ),
+        _ => Err("[identity.azure] needs directory_id, application_id and client_secret".into()),
     }
 }
 
@@ -299,21 +276,21 @@ pub struct CloudVendor {
     aws: aws::AwsVendor,
     azure: azure::AzureVendor,
     gcp: gcp::GcpVendor,
+    /// `[locations.<name>]`.
+    locations: Vec<Location>,
 }
 
 impl CloudVendor {
     pub fn new(config: StorageConfig) -> Self {
+        let gcp = gcp::GcpVendor::new(config.gcp_key_file);
         Self {
-            aws: aws::AwsVendor::new(config.aws_master, config.s3, config.s3_store),
-            azure: azure::AzureVendor::new(config.adls),
+            aws: aws::AwsVendor::new(config.aws, config.s3_store),
+            azure: azure::AzureVendor::new(config.azure),
             gcp: match config.gcp_endpoint {
-                Some(url) => gcp::GcpVendor::new(config.gcs).with_endpoints(
-                    Some(format!("{url}/v1/token")),
-                    None,
-                    Some(url),
-                ),
-                None => gcp::GcpVendor::new(config.gcs),
+                Some(url) => gcp.with_endpoints(Some(format!("{url}/v1/token")), None, Some(url)),
+                None => gcp,
             },
+            locations: config.locations,
         }
     }
 
@@ -331,6 +308,28 @@ impl CloudVendor {
             self.gcp
                 .with_endpoints(endpoints.gcp_sts, endpoints.gcp_metadata, endpoints.gcp_iam);
         self
+    }
+
+    /// The longest location of the settings that covers `path`.
+    fn covering(&self, path: &NormalizedUrl) -> Option<&Location> {
+        self.locations
+            .iter()
+            .filter(|location| path.is_same_or_under(location.url()))
+            .max_by_key(|location| location.url().as_str().len())
+    }
+
+    /// The longest location of the settings that covers the path of `ctx`.
+    fn location(&self, ctx: &CredentialContext) -> Result<&Location> {
+        let path = ctx
+            .locations
+            .first()
+            .ok_or_else(|| Error::internal("credentials for no path"))?;
+        self.covering(path).ok_or_else(|| {
+            Error::failed_precondition(format!(
+                "No external location and no [locations.<name>] of the settings covers \
+                     {path}."
+            ))
+        })
     }
 }
 
@@ -352,16 +351,49 @@ pub struct Endpoints {
 #[async_trait]
 impl CredentialVendor for CloudVendor {
     async fn vend(&self, ctx: &CredentialContext) -> Result<TemporaryCredentials> {
+        let credential = ctx.credential.as_ref();
+        let other_cloud = || Error::internal("a location of the settings of another cloud");
         match ctx.scheme {
-            UriScheme::S3 => self.aws.vend(ctx).await,
-            UriScheme::Abfs | UriScheme::Abfss => self.azure.vend(ctx).await,
-            UriScheme::Gs => self.gcp.vend(ctx).await,
+            UriScheme::S3 => {
+                let role = match credential {
+                    Some(credential) => aws::Role::of(credential)?,
+                    None => match self.location(ctx)? {
+                        Location::S3(location) => location.role.clone(),
+                        _ => return Err(other_cloud()),
+                    },
+                };
+                self.aws.vend(ctx, &role).await
+            }
+            UriScheme::Abfs | UriScheme::Abfss => {
+                let identity = match credential {
+                    Some(credential) => azure::Identity::of(credential)?,
+                    None => match self.location(ctx)? {
+                        Location::Adls(location) => location.identity.clone(),
+                        _ => return Err(other_cloud()),
+                    },
+                };
+                self.azure.vend(ctx, &identity).await
+            }
+            UriScheme::Gs => {
+                let identity = match credential {
+                    Some(credential) => gcp::Identity::of(credential)?,
+                    None => match self.location(ctx)? {
+                        Location::Gcs(location) => location.identity.clone(),
+                        _ => return Err(other_cloud()),
+                    },
+                };
+                self.gcp.vend(ctx, &identity).await
+            }
             UriScheme::File => Ok(TemporaryCredentials::default()),
         }
     }
 
     fn s3_store(&self) -> Option<&aws::S3Store> {
         self.aws.store()
+    }
+
+    fn covers(&self, path: &NormalizedUrl) -> bool {
+        self.covering(path).is_some()
     }
 }
 
@@ -402,46 +434,39 @@ impl CredentialVendor for PlaceholderVendor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use azure::Identity;
 
-    fn accounts(text: &str) -> std::result::Result<HashMap<String, azure::AdlsConfig>, String> {
-        StorageConfig::from_settings(&Settings::from_toml(text)?).map(|c| c.adls)
+    fn config(text: &str) -> std::result::Result<StorageConfig, String> {
+        StorageConfig::from_settings(&Settings::from_toml(text)?)
     }
 
     #[test]
-    fn adls_entries_hold_a_service_principal_or_a_managed_identity() {
-        let found = accounts(
-            r#"
-            [adls.sp]
-            account = "one"
-            tenant_id = "t"
-            client_id = "c"
-            client_secret = "s"
-
-            [adls.own]
-            account = "two"
-            managed_identity = true
-
-            [adls.assigned]
-            account = "three"
-            managed_identity = true
-            managed_identity_id = "/subscriptions/s/uc"
-            "#,
-        )
-        .unwrap();
-        let principal = Identity::ServicePrincipal {
-            tenant_id: "t".into(),
-            client_id: "c".into(),
-            client_secret: "s".into(),
-        };
-        assert_eq!(found["one"].identity, principal);
-        assert_eq!(found["two"].identity, Identity::Managed(None));
+    fn the_server_identity_is_complete_or_absent() {
+        assert_eq!(config("").unwrap().azure, None);
         assert_eq!(
-            found["three"].identity,
-            Identity::Managed(Some("/subscriptions/s/uc".into()))
+            config("[identity.azure]\nmanaged_identity_id = '/subscriptions/s/uc'")
+                .unwrap()
+                .azure,
+            Some(azure::Identity::Managed(Some("/subscriptions/s/uc".into())))
         );
-        // Without a managed identity, the service principal is required.
-        let error = accounts("[adls.x]\naccount = 'a'\ntenant_id = 't'").unwrap_err();
-        assert!(error.contains("adls.x.client_id"), "{error}");
+        let principal = "[identity.azure]\ndirectory_id = 't'\napplication_id = 'c'\n\
+                         client_secret = 's'";
+        assert_eq!(
+            config(principal).unwrap().azure,
+            Some(azure::Identity::ServicePrincipal {
+                tenant_id: "t".into(),
+                client_id: "c".into(),
+                client_secret: "s".into(),
+            })
+        );
+        let error = |text: &str| config(text).unwrap_err();
+        assert_eq!(
+            error("[identity.azure]\ndirectory_id = 't'"),
+            "[identity.azure] needs directory_id, application_id and client_secret"
+        );
+        assert!(error(&format!("{principal}\nmanaged_identity_id = 'x'")).contains("not both"),);
+        assert_eq!(
+            error("[identity.aws]\naccess_key = 'k'"),
+            "[identity.aws] needs access_key and secret_key, or neither"
+        );
     }
 }

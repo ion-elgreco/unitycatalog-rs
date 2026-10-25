@@ -1,7 +1,7 @@
 //! Storage with credentials the server vends, as upstream's
 //! `DeltaKernelUtils.getHDFSConfiguration`. Local paths need none; S3, GCS
 //! and ADLS take the vended credentials over the environment's. S3 paths go
-//! to the S3-compatible store of `aws.endpoint`, if any.
+//! to the S3-compatible store of `identity.aws.endpoint`, if any.
 
 use std::sync::Arc;
 
@@ -20,7 +20,8 @@ use url::Url;
 use crate::commands::{Context, upstream};
 
 /// An S3-compatible store, such as MinIO or RustFS, in place of AWS: the
-/// server's `aws.endpoint` and `aws.region`, where its S3 credentials work.
+/// server's `identity.aws.endpoint` and `identity.aws.region`, where its S3
+/// credentials work.
 #[derive(Debug, Clone)]
 pub struct S3Store {
     endpoint: String,
@@ -28,8 +29,8 @@ pub struct S3Store {
 }
 
 impl S3Store {
-    /// The store of `[aws]`; none without `endpoint`.
-    pub fn from_settings(aws: &settings::Aws) -> Option<Self> {
+    /// The store of `[identity.aws]`; none without `endpoint`.
+    pub fn from_settings(aws: &settings::AwsIdentity) -> Option<Self> {
         let endpoint = aws.endpoint.as_deref().map(str::trim)?;
         (!endpoint.is_empty()).then(|| Self {
             endpoint: endpoint.trim_end_matches('/').to_string(),

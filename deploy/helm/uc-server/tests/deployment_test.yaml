@@ -247,31 +247,47 @@ tests:
       - failedTemplate:
           errorPattern: auth.publicUrl is required
 
-  - it: takes the storage credentials from their Secrets
+  - it: takes the server's identities and the locations' identities from their Secrets
     set:
-      storage.credentials.s3:
-        - bucketPath: s3://bucket
-          region: us-east-1
-          credentialsSecretName: s3-secret
-      storage.credentials.adls:
-        - storageAccountName: account
+      storage.identity:
+        aws: {credentialsSecretName: aws-secret}
+        azure: {credentialsSecretName: azure-secret}
+        gcp: {credentialsSecretName: gcp-secret}
+      storage.locations:
+        - url: abfss://data@account.dfs.core.windows.net
           credentialsSecretName: adls-secret
-      storage.credentials.gcs:
-        - bucketPath: gs://bucket
+        - url: gs://bucket
           credentialsSecretName: gcs-secret
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
           content:
-            name: UC_S3_ENTRY0_ACCESS_KEY
+            name: UC_IDENTITY_AWS_ACCESS_KEY
             valueFrom:
               secretKeyRef:
-                name: s3-secret
+                name: aws-secret
                 key: accessKey
       - contains:
           path: spec.template.spec.containers[0].env
           content:
-            name: UC_ADLS_ENTRY0_CLIENT_SECRET
+            name: UC_IDENTITY_AZURE_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: azure-secret
+                key: clientSecret
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_IDENTITY_GCP_JSON_KEY_FILE, value: /etc/uc/identity/gcp/jsonKey}
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: identity-gcp
+            secret:
+              secretName: gcp-secret
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_LOCATIONS_ENTRY0_AZURE_CLIENT_SECRET
             valueFrom:
               secretKeyRef:
                 name: adls-secret
@@ -279,51 +295,56 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].volumeMounts
           content:
-            name: gcs-0
-            mountPath: /etc/uc/gcs/0
+            name: location-1
+            mountPath: /etc/uc/locations/1
             readOnly: true
       - contains:
           path: spec.template.spec.volumes
           content:
-            name: gcs-0
+            name: location-1
             secret:
               secretName: gcs-secret
 
-  - it: gives an ADLS account the pod's managed identity, without a Secret
+  - it: gives locations the server's own identity, or one it names, without a Secret
     set:
-      storage.credentials.adls:
-        - storageAccountName: account
-          managedIdentity: true
-          managedIdentityId: /subscriptions/s/uc
+      storage.identity.azure.managedIdentityId: /subscriptions/s/uc
+      storage.locations:
+        - url: abfss://data@account.dfs.core.windows.net
+          azureManagedIdentity: true
+        - url: gs://bucket
+          gcpServiceAccount: uc@p.iam.gserviceaccount.com
+        - url: s3://bucket
+          awsIamRoleArn: true
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_ADLS_ENTRY0_MANAGED_IDENTITY, value: "true"}
+          content: {name: UC_IDENTITY_AZURE_MANAGED_IDENTITY_ID, value: /subscriptions/s/uc}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_ADLS_ENTRY0_MANAGED_IDENTITY_ID, value: /subscriptions/s/uc}
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content: {name: UC_ADLS_ENTRY0_CLIENT_SECRET}
-          any: true
-
-  - it: gives a GCS bucket the pod's identity, which may impersonate, without a Secret
-    set:
-      storage.credentials.gcs:
-        - bucketPath: gs://bucket
-          serviceAccount: uc@p.iam.gserviceaccount.com
-    asserts:
+          content: {name: UC_LOCATIONS_ENTRY0_AZURE_MANAGED_IDENTITY, value: "true"}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_GCS_ENTRY0_SERVICE_ACCOUNT, value: uc@p.iam.gserviceaccount.com}
+          content: {name: UC_LOCATIONS_ENTRY1_GCP_SERVICE_ACCOUNT, value: uc@p.iam.gserviceaccount.com}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_LOCATIONS_ENTRY2_AWS_IAM_ROLE_ARN, value: "true"}
       - notContains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_GCS_ENTRY0_JSON_KEY_FILE}
+          content: {name: UC_LOCATIONS_ENTRY0_AZURE_CLIENT_SECRET}
           any: true
       - notContains:
           path: spec.template.spec.volumes
-          content: {name: gcs-0}
+          content: {name: location-1}
           any: true
+
+  - it: takes a Secret only for gs:// and abfs(s):// locations
+    set:
+      storage.locations:
+        - url: s3://bucket
+          credentialsSecretName: s3-secret
+    asserts:
+      - failedTemplate:
+          errorPattern: credentialsSecretName is for gs:// and abfs\(s\):// URLs
 
   - it: drops the probes that are turned off and keeps the given ones
     set:

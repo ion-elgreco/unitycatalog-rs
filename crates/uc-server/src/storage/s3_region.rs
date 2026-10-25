@@ -93,7 +93,7 @@ impl S3Regions {
             ErrorCode::FailedPrecondition,
             format!(
                 "Could not resolve the AWS region for S3 bucket {base}; set the region of its \
-                 [s3.<name>] settings."
+                 [locations.<name>] in the settings."
             ),
         ))
     }

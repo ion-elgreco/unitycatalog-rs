@@ -272,8 +272,8 @@ async fn volume_location_rules(#[future(awt)] app: Router) {
     assert_eq!(vol["storage_location"], "s3://other/vol");
 }
 
-/// Without a catalog or schema location, a managed table or model names the
-/// server's setting that would place it.
+/// When the catalog and schema have no storage location, a managed table or
+/// model names the server's setting that would place it.
 #[rstest]
 #[tokio::test]
 async fn managed_objects_without_a_location_name_the_setting(#[future(awt)] app: Router) {

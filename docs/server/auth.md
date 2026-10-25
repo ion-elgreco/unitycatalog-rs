@@ -98,7 +98,8 @@ session.
 
 ### An auth proxy
 
-An auth proxy, such as oauth2-proxy or Authelia, signs users in and names the user in a header:
+An auth proxy, such as oauth2-proxy, Authelia or [Envoy Gateway](#envoy-gateway), signs users in
+and names the user in a header:
 
 ```toml
 [auth]
@@ -109,6 +110,73 @@ forward_logout_url = "https://auth.example.com/logout"
 
 The server reads the email from `Remote-Email`, else the user from `Remote-User`, and only on
 connections from `forward_trusted_proxies`.
+
+#### Envoy Gateway
+
+[Envoy Gateway](https://gateway.envoyproxy.io) 1.2 or later can be the auth proxy. A
+SecurityPolicy signs users in with OpenID Connect. A JWT provider in the same policy reads the ID
+token from its cookie, and puts the token's `email` in `Remote-Email`:
+
+```yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: uc-web-ui
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: uc-web-ui              # the route of the web UI's host only
+  oidc:
+    provider:
+      issuer: https://accounts.google.com
+    clientID: <client id>
+    clientSecret:
+      name: uc-oidc                # a Secret with the key client-secret
+    redirectURL: https://uc.example.com/oauth2/callback
+    logoutPath: /logout
+    cookieNames:
+      idToken: uc-id-token
+  jwt:
+    providers:
+      - name: id-token
+        issuer: https://accounts.google.com
+        audiences: ["<client id>"]
+        remoteJWKS:
+          uri: https://www.googleapis.com/oauth2/v3/certs
+        extractFrom:
+          cookies: [uc-id-token]
+        claimToHeaders:
+          - header: Remote-Email
+            claim: email
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: uc
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: <gateway>
+  headers:
+    earlyRequestHeaders:
+      remove: [Remote-Email, Remote-User]
+```
+
+```toml
+[auth]
+mode = "forward"
+forward_trusted_proxies = ["10.42.0.0/16"]           # the addresses of the Envoy pods
+forward_logout_url = "https://uc.example.com/logout"  # the policy's logoutPath
+```
+
+- Envoy adds `Remote-Email`, and does not replace a header of that name that the client sends.
+  The ClientTrafficPolicy removes the client's `Remote-Email` and `Remote-User` on every route
+  of the Gateway first. Without it, a client could name any user.
+- Give the SecurityPolicy only the route of the web UI, for example on a host of its own. `uc`,
+  the Python client and other API clients send the server's tokens, and OpenID Connect would
+  send their requests to the provider's sign-in page.
 
 ## Privileges
 
@@ -155,7 +223,42 @@ forbid (
 );
 ```
 
-A privilege is an action, such as `Action::"SELECT"`, the user is `User::"<email>"`, and a
-securable is an entity such as `Table::"<id>"`, in its schema, catalog and metastore. A securable
-has the attributes `owner` and `granted_privileges`: what is granted on it or a parent, to the
-user or to a group of the user.
+For each check, the server asks Cedar whether a principal may do an action on a resource.
+
+| Part | Cedar | Example |
+| --- | --- | --- |
+| Principal | `User::"<email>"`: the signed-in user | `User::"alice@example.com"` |
+| Action | `Action::"<privilege>"`, as a grant writes it, with its spaces | `Action::"USE CATALOG"` |
+| Resource | `<type>::"<id>"`: the securable that the check is on, by its id: `USE CATALOG` on the catalog, `SELECT` on the table | `Catalog::"6f1e…"` |
+
+The actions are the privileges: `CREATE CATALOG`, `USE CATALOG`, `CREATE SCHEMA`, `USE SCHEMA`,
+`CREATE TABLE`, `SELECT`, `MODIFY`, `CREATE FUNCTION`, `EXECUTE`, `CREATE VOLUME`, `READ VOLUME`,
+`CREATE MODEL`, `CREATE EXTERNAL LOCATION`, `READ FILES`, `WRITE FILES`, `CREATE EXTERNAL TABLE`,
+`CREATE EXTERNAL VOLUME`, `CREATE MANAGED STORAGE` and `CREATE STORAGE CREDENTIAL`.
+
+The resource types, and where their ids are:
+
+| Resource | Id | Shown by |
+| --- | --- | --- |
+| `Metastore::"<id>"` | `metastore_id` | `uc metastore get` |
+| `Catalog::"<id>"` | `id` | `uc catalog get` |
+| `Schema::"<id>"` | `schema_id` | `uc schema get` |
+| `Table::"<id>"` | `table_id` | `uc table get` |
+| `Volume::"<id>"` | `volume_id` | `uc volume get` |
+| `Function::"<id>"` | `function_id` | `uc function get` |
+| `RegisteredModel::"<id>"` | `id` | `uc registered_model get` |
+| `ExternalLocation::"<id>"` | `id` | `uc external_location get` |
+| `Credential::"<id>"` | `id` | `uc credential get` |
+
+- **Parents:** a table, volume, function or model is `in` its schema, a schema `in` its catalog,
+  and a catalog `in` the metastore. So `resource in Catalog::"<id>"` matches all that the catalog
+  holds. External locations and credentials have no parent.
+- **Attributes of a resource:** `owner`, the owner's email, when it has one; and
+  `granted_privileges`, the set of actions granted on it or on a parent, to the user or to a group
+  of the user.
+- **Groups** are no Cedar entities: a policy cannot say `principal in Group::"…"`. Their grants are
+  in `granted_privileges`.
+- **Owners and admins:** Cedar decides only whether a user holds a privilege. The checks for an
+  owner or an admin do not ask Cedar, so a `forbid` does not stop them.
+- An id stays the same when the securable is renamed. A securable that is dropped and made again
+  gets a new id.

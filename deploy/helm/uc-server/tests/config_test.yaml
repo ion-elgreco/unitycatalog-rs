@@ -47,15 +47,16 @@ tests:
       auth.audiences: uc
       storage.tableStorageRoot: s3://bucket/tables
       storage.modelStorageRoot: s3://bucket/models
-      storage.credentials.s3:
-        - bucketPath: s3://b
+      storage.identity.aws:
+        region: us-west-2
+        arn: arn:aws:iam::123456789012:role/uc
+      storage.locations:
+        - url: s3://b
           region: us-east-1
-          awsRoleArn: arn:aws:iam::123456789012:role/r
-      storage.credentials.adls:
-        - storageAccountName: account
+          awsIamRoleArn: arn:aws:iam::123456789012:role/r
+        - url: abfss://data@account.dfs.core.windows.net
           credentialsSecretName: adls
-      storage.credentials.gcs:
-        - bucketPath: gs://g
+        - url: gs://g
           credentialsSecretName: gcs
     template: templates/server/deployment.yaml
     asserts:
@@ -82,22 +83,28 @@ tests:
           content: {name: UC_STORAGE_MODELS_ROOT, value: s3://bucket/models}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_S3_ENTRY0_BUCKET, value: s3://b}
+          content: {name: UC_IDENTITY_AWS_REGION, value: us-west-2}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_S3_ENTRY0_REGION, value: us-east-1}
+          content: {name: UC_IDENTITY_AWS_ARN, value: arn:aws:iam::123456789012:role/uc}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_S3_ENTRY0_ROLE_ARN, value: arn:aws:iam::123456789012:role/r}
+          content: {name: UC_LOCATIONS_ENTRY0_URL, value: s3://b}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_ADLS_ENTRY0_ACCOUNT, value: account}
+          content: {name: UC_LOCATIONS_ENTRY0_REGION, value: us-east-1}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_GCS_ENTRY0_BUCKET, value: gs://g}
+          content: {name: UC_LOCATIONS_ENTRY0_AWS_IAM_ROLE_ARN, value: arn:aws:iam::123456789012:role/r}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_GCS_ENTRY0_JSON_KEY_FILE, value: /etc/uc/gcs/0/jsonKey}
+          content: {name: UC_LOCATIONS_ENTRY1_URL, value: abfss://data@account.dfs.core.windows.net}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_LOCATIONS_ENTRY2_URL, value: gs://g}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_LOCATIONS_ENTRY2_GCP_SERVICE_ACCOUNT_KEY, value: /etc/uc/locations/2/jsonKey}
 
   - it: writes server.config.toml as uc.toml
     set:

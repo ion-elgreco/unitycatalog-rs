@@ -1,8 +1,9 @@
 //! Object storage with the server's own credentials. Upstream
 //! `FileOperations`: local paths need none; cloud paths use credentials
-//! vended for the operation (from the covering external location or the
-//! bucket's configuration), or else the server's environment credentials.
-//! S3 paths go to the S3-compatible store of `aws.endpoint`, if any.
+//! vended for the operation (from the covering external location or
+//! location of the settings), or else the server's environment credentials.
+//! S3 paths go to the S3-compatible store of `identity.aws.endpoint`, if
+//! any.
 
 pub mod cleanup;
 pub mod s3_region;
@@ -23,7 +24,7 @@ use object_store::{
 };
 
 use uc_api::TemporaryCredentials;
-use uc_common::{ErrorCode, NormalizedUrl, UriScheme};
+use uc_common::{NormalizedUrl, UriScheme};
 use uc_metastore::DynMetastore;
 use uc_storage::runtime::io_handle;
 
@@ -71,16 +72,15 @@ impl ServerStorage {
             return Ok((Arc::new(LocalFileSystem::new()), path));
         }
         let credential = credential_for_url(&self.metastore, location.as_str()).await?;
-        let under_location = credential.is_some();
+        // Neither an external location nor a location of the settings: the
+        // environment's credentials.
+        if credential.is_none() && !self.vendor.covers(location) {
+            let store = build_store(location, None, self.vendor.s3_store())?;
+            return Ok((store, path));
+        }
         let ctx = CredentialContext::new(location.clone(), op.privileges(), credential);
-        let credentials = match self.vendor.vend(&ctx).await {
-            Ok(credentials) => Some(credentials),
-            // Neither an external location nor a bucket configuration: the
-            // environment's credentials.
-            Err(e) if !under_location && e.code() == ErrorCode::FailedPrecondition => None,
-            Err(e) => return Err(e.into()),
-        };
-        let store = build_store(location, credentials.as_ref(), self.vendor.s3_store())?;
+        let credentials = self.vendor.vend(&ctx).await?;
+        let store = build_store(location, Some(&credentials), self.vendor.s3_store())?;
         Ok((store, path))
     }
 }
@@ -225,7 +225,7 @@ mod tests {
         assert!(same_content(&store, &p("a"), &p("missing")).await.is_err());
     }
 
-    /// With `aws.endpoint`, S3 requests go to the store, path-style.
+    /// With `identity.aws.endpoint`, S3 requests go to the store, path-style.
     #[tokio::test]
     async fn s3_paths_go_to_the_store() {
         let seen = Arc::new(std::sync::Mutex::new(Vec::new()));

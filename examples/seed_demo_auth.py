@@ -74,8 +74,8 @@ def main() -> None:
         return
     # With authorization on, a catalog's storage root must be under an
     # external location. Its credential needs a role ARN, but RustFS takes
-    # any: the server's [aws] keys call AssumeRole, and the session policy
-    # limits each credential to its path and operation.
+    # any: the server's [identity.aws] keys call AssumeRole, and the session
+    # policy limits each credential to its path and operation.
     alice.create_credential(
         "rustfs",
         aws_iam_role=AwsIamRoleRequest("arn:aws:iam::000000000000:role/uc-demo"),

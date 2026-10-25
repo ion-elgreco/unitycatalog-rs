@@ -152,56 +152,81 @@ spec:
             {{- else if ne .Values.server.db.type "file" }}
             {{- fail "server.db.type must be file or postgresql" }}
             {{- end }}
-            # Cloud credentials, an entry per bucket or account, named by its
-            # index: UC_S3_ENTRY0_BUCKET is bucket of [s3.entry0]. A name is
-            # not a number, which the server would read as a list index.
-            {{- range $index, $config := .Values.storage.credentials.s3 }}
-            - name: UC_S3_ENTRY{{ $index }}_BUCKET
-              value: {{ $config.bucketPath | quote }}
-            {{- with $config.region }}
-            - name: UC_S3_ENTRY{{ $index }}_REGION
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with $config.awsRoleArn }}
-            - name: UC_S3_ENTRY{{ $index }}_ROLE_ARN
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with $config.credentialsSecretName }}
-            - name: UC_S3_ENTRY{{ $index }}_ACCESS_KEY
+            # The server's own identity in each cloud: [identity.<cloud>].
+            {{- with .Values.storage.identity.aws }}
+            {{- with .credentialsSecretName }}
+            - name: UC_IDENTITY_AWS_ACCESS_KEY
               valueFrom: {secretKeyRef: {name: {{ . | quote }}, key: accessKey}}
-            - name: UC_S3_ENTRY{{ $index }}_SECRET_KEY
+            - name: UC_IDENTITY_AWS_SECRET_KEY
               valueFrom: {secretKeyRef: {name: {{ . | quote }}, key: secretKey}}
             {{- end }}
-            {{- end }}
-            {{- range $index, $config := .Values.storage.credentials.adls }}
-            - name: UC_ADLS_ENTRY{{ $index }}_ACCOUNT
-              value: {{ $config.storageAccountName | quote }}
-            {{- if $config.managedIdentity }}
-            - name: UC_ADLS_ENTRY{{ $index }}_MANAGED_IDENTITY
-              value: "true"
-            {{- with $config.managedIdentityId }}
-            - name: UC_ADLS_ENTRY{{ $index }}_MANAGED_IDENTITY_ID
+            {{- with .region }}
+            - name: UC_IDENTITY_AWS_REGION
               value: {{ . | quote }}
             {{- end }}
+            {{- with .arn }}
+            - name: UC_IDENTITY_AWS_ARN
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .endpoint }}
+            - name: UC_IDENTITY_AWS_ENDPOINT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.storage.identity.azure }}
+            {{- with .credentialsSecretName }}
+            - name: UC_IDENTITY_AZURE_DIRECTORY_ID
+              valueFrom: {secretKeyRef: {name: {{ . | quote }}, key: directoryId}}
+            - name: UC_IDENTITY_AZURE_APPLICATION_ID
+              valueFrom: {secretKeyRef: {name: {{ . | quote }}, key: applicationId}}
+            - name: UC_IDENTITY_AZURE_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: {{ . | quote }}, key: clientSecret}}
+            {{- end }}
+            {{- with .managedIdentityId }}
+            - name: UC_IDENTITY_AZURE_MANAGED_IDENTITY_ID
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.storage.identity.gcp.credentialsSecretName }}
+            - name: UC_IDENTITY_GCP_JSON_KEY_FILE
+              value: /etc/uc/identity/gcp/jsonKey
+            {{- end }}
+            # Locations, named by their index: UC_LOCATIONS_ENTRY0_URL is url
+            # of [locations.entry0]. A name is not a number, which the server
+            # would read as a list index.
+            {{- range $index, $config := .Values.storage.locations }}
+            - name: UC_LOCATIONS_ENTRY{{ $index }}_URL
+              value: {{ $config.url | quote }}
+            {{- with $config.region }}
+            - name: UC_LOCATIONS_ENTRY{{ $index }}_REGION
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $config.awsIamRoleArn }}
+            - name: UC_LOCATIONS_ENTRY{{ $index }}_AWS_IAM_ROLE_ARN
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $config.azureManagedIdentity }}
+            - name: UC_LOCATIONS_ENTRY{{ $index }}_AZURE_MANAGED_IDENTITY
+              value: {{ . | toString | quote }}
+            {{- end }}
+            {{- with $config.gcpServiceAccount }}
+            - name: UC_LOCATIONS_ENTRY{{ $index }}_GCP_SERVICE_ACCOUNT
+              value: {{ . | toString | quote }}
+            {{- end }}
+            {{- with $config.credentialsSecretName }}
+            {{- if hasPrefix "gs://" $config.url }}
+            - name: UC_LOCATIONS_ENTRY{{ $index }}_GCP_SERVICE_ACCOUNT_KEY
+              value: /etc/uc/locations/{{ $index }}/jsonKey
+            {{- else if hasPrefix "abfs" $config.url }}
+            - name: UC_LOCATIONS_ENTRY{{ $index }}_AZURE_DIRECTORY_ID
+              valueFrom: {secretKeyRef: {name: {{ . | quote }}, key: directoryId}}
+            - name: UC_LOCATIONS_ENTRY{{ $index }}_AZURE_APPLICATION_ID
+              valueFrom: {secretKeyRef: {name: {{ . | quote }}, key: applicationId}}
+            - name: UC_LOCATIONS_ENTRY{{ $index }}_AZURE_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: {{ . | quote }}, key: clientSecret}}
             {{- else }}
-            - name: UC_ADLS_ENTRY{{ $index }}_TENANT_ID
-              valueFrom: {secretKeyRef: {name: {{ $config.credentialsSecretName | quote }}, key: tenantId}}
-            - name: UC_ADLS_ENTRY{{ $index }}_CLIENT_ID
-              valueFrom: {secretKeyRef: {name: {{ $config.credentialsSecretName | quote }}, key: clientId}}
-            - name: UC_ADLS_ENTRY{{ $index }}_CLIENT_SECRET
-              valueFrom: {secretKeyRef: {name: {{ $config.credentialsSecretName | quote }}, key: clientSecret}}
+            {{- fail "storage.locations: credentialsSecretName is for gs:// and abfs(s):// URLs" }}
             {{- end }}
-            {{- end }}
-            {{- range $index, $config := .Values.storage.credentials.gcs }}
-            - name: UC_GCS_ENTRY{{ $index }}_BUCKET
-              value: {{ $config.bucketPath | quote }}
-            {{- if $config.credentialsSecretName }}
-            - name: UC_GCS_ENTRY{{ $index }}_JSON_KEY_FILE
-              value: /etc/uc/gcs/{{ $index }}/jsonKey
-            {{- end }}
-            {{- with $config.serviceAccount }}
-            - name: UC_GCS_ENTRY{{ $index }}_SERVICE_ACCOUNT
-              value: {{ . | quote }}
             {{- end }}
             {{- end }}
             {{- range $k, $v := $d.env }}
@@ -249,10 +274,15 @@ spec:
             {{- end }}
             - name: tmp
               mountPath: /tmp
-            {{- range $index, $config := .Values.storage.credentials.gcs }}
-            {{- if $config.credentialsSecretName }}
-            - name: gcs-{{ $index }}
-              mountPath: /etc/uc/gcs/{{ $index }}
+            {{- if .Values.storage.identity.gcp.credentialsSecretName }}
+            - name: identity-gcp
+              mountPath: /etc/uc/identity/gcp
+              readOnly: true
+            {{- end }}
+            {{- range $index, $config := .Values.storage.locations }}
+            {{- if and $config.credentialsSecretName (hasPrefix "gs://" $config.url) }}
+            - name: location-{{ $index }}
+              mountPath: /etc/uc/locations/{{ $index }}
               readOnly: true
             {{- end }}
             {{- end }}
@@ -298,9 +328,14 @@ spec:
         # filesystem is read-only.
         - name: tmp
           emptyDir: {}
-        {{- range $index, $config := .Values.storage.credentials.gcs }}
-        {{- if $config.credentialsSecretName }}
-        - name: gcs-{{ $index }}
+        {{- with .Values.storage.identity.gcp.credentialsSecretName }}
+        - name: identity-gcp
+          secret:
+            secretName: {{ . | quote }}
+        {{- end }}
+        {{- range $index, $config := .Values.storage.locations }}
+        {{- if and $config.credentialsSecretName (hasPrefix "gs://" $config.url) }}
+        - name: location-{{ $index }}
           secret:
             secretName: {{ $config.credentialsSecretName | quote }}
         {{- end }}

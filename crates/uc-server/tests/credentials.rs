@@ -150,8 +150,8 @@ async fn aws_roles_show_the_server_role() {
     let metastore = uc_metastore::SqlMetastore::connect(uc_metastore::MetastoreConfig::for_tests())
         .await
         .unwrap();
-    let state = uc_server::AppState::new(metastore)
-        .with_aws_master_role_arn("arn:aws:iam::9:role/uc-master");
+    let state =
+        uc_server::AppState::new(metastore).with_aws_identity_arn("arn:aws:iam::9:role/uc-master");
     let app = uc_server::build_app(state);
     let resp = app
         .oneshot(req_json(

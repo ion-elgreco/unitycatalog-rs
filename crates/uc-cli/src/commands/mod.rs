@@ -105,7 +105,8 @@ pub enum Entity {
 pub struct Context<'a> {
     pub client: &'a Client,
     pub format: Format,
-    /// The S3-compatible store of `aws.endpoint`, for table and volume data.
+    /// The S3-compatible store of `identity.aws.endpoint`, for table and
+    /// volume data.
     pub s3: Option<crate::data::S3Store>,
     /// The option that gives a list's next page, which upstream does not
     /// print: it goes to standard error, after the list.
@@ -340,7 +341,7 @@ pub async fn run(global: &Global, settings: &Settings, entity: Entity) -> i32 {
     let c = Context {
         client: &client,
         format: global.output,
-        s3: crate::data::S3Store::from_settings(&settings.aws),
+        s3: crate::data::S3Store::from_settings(&settings.identity.aws),
         next_page: RefCell::new(None),
     };
     let as_is = prints_as_is(&entity);

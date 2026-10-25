@@ -1,22 +1,18 @@
 //! AWS credentials, after upstream `AwsCredentialVendor`.
 //!
-//! - Under an external location, the server's master identity (`aws.*`)
-//!   assumes the credential's `role_arn`, with its `external_id`.
-//! - Otherwise the bucket's `s3.*.N` entry decides: its session token as
-//!   is (testing only), or its keys assume its `awsRoleArn`.
-//!
-//! The session lasts an hour and its policy, from [`policy`], allows only
-//! the requested locations and operations.
+//! The server's identity (`[identity.aws]`) assumes the [`Role`] of the
+//! storage credential: of the external location, else of the
+//! `[locations.<name>]`. The session lasts an hour and its policy, from
+//! [`policy`], allows only the requested locations and operations.
 //!
 //! Without configured keys, `object_store` finds the identity in the
 //! environment: the `AWS_*` variables, web identity (a Kubernetes service
 //! account), the container endpoint (ECS, EKS Pod Identity) or the
 //! instance role. `object_store` also signs the `AssumeRole` call.
 //!
-//! With `aws.endpoint`, an S3-compatible store ([`S3Store`]) takes AWS's
-//! place: STS calls go to it, and the policies have no KMS statement.
+//! With `identity.aws.endpoint`, an S3-compatible store ([`S3Store`]) takes
+//! AWS's place: STS calls go to it, and the policies have no KMS statement.
 
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use object_store::{
@@ -32,54 +28,69 @@ use uc_api::{AwsCredentials, TemporaryCredentials};
 use uc_common::{Error, NormalizedUrl, Result};
 use uc_storage::runtime::io_handle;
 
-use super::{CredentialContext, StoragePrivilege, xml_text};
+use super::{CredentialContext, StorageCredential, StoragePrivilege, xml_text};
 use crate::http::outbound::SendOnIo;
 
-/// Upstream `S3StorageConfig`.
+/// The server's AWS identity (`[identity.aws]`): keys, else the identity of
+/// the environment, and the region of its STS calls.
 #[derive(Debug, Clone, Default)]
-pub struct S3Config {
-    pub region: Option<String>,
-    pub aws_role_arn: Option<String>,
+pub struct AwsIdentity {
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
-    pub session_token: Option<String>,
+    pub region: Option<String>,
+}
+
+/// The role that the server's identity assumes, with the external ID that
+/// the role's trust policy requires, if any.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Role {
+    pub arn: String,
+    pub external_id: Option<String>,
+}
+
+impl Role {
+    /// The role of a storage credential.
+    pub fn of(credential: &StorageCredential) -> Result<Self> {
+        let role = credential.info.aws_iam_role.as_ref();
+        let arn = role.and_then(|r| r.role_arn.clone()).ok_or_else(|| {
+            Error::failed_precondition("The storage credential has no AWS IAM role.")
+        })?;
+        Ok(Self {
+            arn,
+            external_id: role.and_then(|r| r.external_id.clone()),
+        })
+    }
 }
 
 /// An S3-compatible store, such as MinIO or RustFS, in place of AWS
-/// (`aws.endpoint`): its S3 and STS API, and the region that requests are
-/// signed for.
+/// (`identity.aws.endpoint`): its S3 and STS API, and the region that
+/// requests are signed for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct S3Store {
     pub endpoint: String,
-    /// `aws.region`, else `us-east-1`.
+    /// `identity.aws.region`, else `us-east-1`.
     pub region: String,
 }
 
 pub struct AwsVendor {
-    master: S3Config,
-    buckets: HashMap<NormalizedUrl, S3Config>,
+    identity: AwsIdentity,
     store: Option<S3Store>,
     /// STS, when not AWS's: the store's, or a test's.
     endpoint: Option<String>,
     http: reqwest::Client,
-    /// Identities and the regions of their STS calls, by configuration
-    /// (`master` or the bucket), made on first use.
-    identities: Mutex<HashMap<String, (AwsCredentialProvider, String)>>,
+    /// The server's identity and the region of its STS calls, made on first
+    /// use.
+    signer: Mutex<Option<(AwsCredentialProvider, String)>>,
 }
 
 impl AwsVendor {
-    pub fn new(
-        master: S3Config,
-        buckets: HashMap<NormalizedUrl, S3Config>,
-        store: Option<S3Store>,
-    ) -> Self {
+    pub fn new(identity: AwsIdentity, store: Option<S3Store>) -> Self {
         Self {
-            master,
-            buckets,
+            identity,
             endpoint: store.as_ref().map(|s| s.endpoint.clone()),
             store,
             http: reqwest::Client::new(),
-            identities: Mutex::new(HashMap::new()),
+            signer: Mutex::new(None),
         }
     }
 
@@ -94,64 +105,36 @@ impl AwsVendor {
         self.store.as_ref()
     }
 
-    pub async fn vend(&self, ctx: &CredentialContext) -> Result<TemporaryCredentials> {
-        let (key, config, role_arn, external_id) = match &ctx.credential {
-            Some(credential) => {
-                let role = credential.info.aws_iam_role.as_ref();
-                let role_arn = role.and_then(|r| r.role_arn.clone()).ok_or_else(|| {
-                    Error::failed_precondition("The storage credential has no AWS IAM role.")
-                })?;
-                (
-                    "master".to_string(),
-                    &self.master,
-                    role_arn,
-                    role.and_then(|r| r.external_id.clone()),
-                )
-            }
-            None => {
-                let config = self.buckets.get(&ctx.storage_base).ok_or_else(|| {
-                    Error::failed_precondition("S3 bucket configuration not found.")
-                })?;
-                // Upstream `StaticAwsCredentialGenerator`: a preset session.
-                if config.session_token.is_some() {
-                    return Ok(TemporaryCredentials {
-                        aws_temp_credentials: Some(AwsCredentials {
-                            access_key_id: config.access_key.clone(),
-                            secret_access_key: config.secret_key.clone(),
-                            session_token: config.session_token.clone(),
-                        }),
-                        ..Default::default()
-                    });
-                }
-                let role_arn = config.aws_role_arn.clone().ok_or_else(|| {
-                    Error::failed_precondition("S3 bucket configuration has no role.")
-                })?;
-                (ctx.storage_base.to_string(), config, role_arn, None)
-            }
-        };
-        let (identity, region) = self.identity(key, config)?;
+    /// A session of `role` for `ctx`.
+    pub async fn vend(&self, ctx: &CredentialContext, role: &Role) -> Result<TemporaryCredentials> {
+        let (signer, region) = self.signer()?;
+        let identity = signer.get_credential().await.map_err(|e| {
+            Error::failed_precondition(format!(
+                "The server could not get its AWS identity: set [identity.aws] \
+                 (UC_IDENTITY_AWS_*), or run it with an identity in its environment (AWS_* \
+                 variables, IRSA, EKS Pod Identity, an instance role). Cause: {e}"
+            ))
+        })?;
         let session_policy = policy(
             &ctx.privileges,
             &ctx.locations,
-            Some(&role_arn),
+            Some(&role.arn),
             Some(&region),
             self.store.is_none(),
         )?;
-        self.assume_role(&identity, &region, &role_arn, external_id, &session_policy)
+        self.assume_role(&identity, &region, role, &session_policy)
             .await
-            .map_err(|e| Error::internal(format!("AWS AssumeRole of {role_arn} failed: {e}")))
+            .map_err(|e| Error::internal(format!("AWS AssumeRole of {} failed: {e}", role.arn)))
     }
 
     /// STS `AssumeRole` for an hour, signed by `object_store`.
     async fn assume_role(
         &self,
-        identity: &AwsCredentialProvider,
+        identity: &AwsCredential,
         region: &str,
-        role_arn: &str,
-        external_id: Option<String>,
+        role: &Role,
         session_policy: &str,
     ) -> std::result::Result<TemporaryCredentials, String> {
-        let identity = identity.get_credential().await.map_err(|e| e.to_string())?;
         let endpoint = match &self.endpoint {
             Some(endpoint) => format!("{}/", endpoint.trim_end_matches('/')),
             None => {
@@ -163,12 +146,12 @@ impl AwsVendor {
         let mut form = vec![
             ("Action", "AssumeRole"),
             ("Version", "2011-06-15"),
-            ("RoleArn", role_arn),
+            ("RoleArn", role.arn.as_str()),
             ("RoleSessionName", session_name.as_str()),
             ("DurationSeconds", "3600"),
             ("Policy", session_policy),
         ];
-        if let Some(external_id) = &external_id {
+        if let Some(external_id) = &role.external_id {
             form.push(("ExternalId", external_id));
         }
         let body = serde_urlencoded::to_string(&form).map_err(|e| e.to_string())?;
@@ -179,7 +162,7 @@ impl AwsVendor {
             )
             .body(body.clone().into())
             .map_err(|e| e.to_string())?;
-        AwsAuthorizer::new(&identity, "sts", region).authorize(&mut request, None);
+        AwsAuthorizer::new(identity, "sts", region).authorize(&mut request, None);
         let response = self
             .http
             .post(&endpoint)
@@ -217,19 +200,20 @@ impl AwsVendor {
     /// store's, else `AWS_REGION` or `AWS_DEFAULT_REGION`, else `us-east-1`;
     /// the configured keys, else `object_store`'s identity from the
     /// environment.
-    fn identity(&self, key: String, config: &S3Config) -> Result<(AwsCredentialProvider, String)> {
-        let mut identities = self.identities.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(found) = identities.get(&key) {
+    fn signer(&self) -> Result<(AwsCredentialProvider, String)> {
+        let mut signer = self.signer.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(found) = signer.as_ref() {
             return Ok(found.clone());
         }
+        let identity = &self.identity;
         let env = AmazonS3Builder::from_env();
-        let region = config
+        let region = identity
             .region
             .clone()
             .or_else(|| self.store.as_ref().map(|s| s.region.clone()))
             .or_else(|| env.get_config_value(&AmazonS3ConfigKey::Region))
             .unwrap_or_else(|| "us-east-1".to_string());
-        let identity: AwsCredentialProvider = match (&config.access_key, &config.secret_key) {
+        let provider: AwsCredentialProvider = match (&identity.access_key, &identity.secret_key) {
             (Some(key_id), Some(secret_key)) => {
                 Arc::new(StaticCredentialProvider::new(AwsCredential {
                     key_id: key_id.clone(),
@@ -247,8 +231,8 @@ impl AwsVendor {
                 .credentials()
                 .clone(),
         };
-        identities.insert(key, (identity.clone(), region.clone()));
-        Ok((identity, region))
+        *signer = Some((provider.clone(), region.clone()));
+        Ok((provider, region))
     }
 }
 

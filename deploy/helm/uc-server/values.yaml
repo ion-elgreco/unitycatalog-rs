@@ -3,38 +3,59 @@
 # H2's) or a PostgreSQL server that several replicas share, as upstream.
 
 storage:
-  # -- Fallback root for models (upstream `storage-root.models`).
+  # -- Where models go when their catalog and schema have no storage root
+  # (upstream `storage-root.models`).
   modelStorageRoot: ""
-  # -- Fallback root for MANAGED tables (upstream `storage-root.tables`).
+  # -- Where MANAGED tables go when their catalog and schema have no storage
+  # root (upstream `storage-root.tables`).
   tableStorageRoot: ""
 
-  credentials:
-    # -- Per-bucket S3 credentials, for paths without an external location.
-    # The secret has `accessKey` and `secretKey`.
-    # - bucketPath: s3://my-bucket
-    #   region: us-east-1
-    #   awsRoleArn: arn:aws:iam::123456789012:role/my-role
-    #   credentialsSecretName: my-bucket-secret
-    s3: []
-    # -- Per-account ADLS credentials: a service principal, whose secret has
-    # `tenantId`, `clientId` and `clientSecret`; or, with `managedIdentity:
-    # true`, the pod's own Azure identity, such as AKS workload identity
-    # (see `serviceAccount.annotations` and `server.deployment.extraPodLabels`),
-    # or the user-assigned identity `managedIdentityId`.
-    # - storageAccountName: myaccount
-    #   credentialsSecretName: my-storage-secret
-    # - storageAccountName: otheraccount
-    #   managedIdentity: true
-    adls: []
-    # -- Per-bucket GCS credentials: a service account key, in a secret with
-    # `jsonKey`; else the pod's own GCP identity, such as GKE Workload
-    # Identity (see `serviceAccount.annotations`). With `serviceAccount`, that
-    # identity impersonates the service account of this email.
-    # - bucketPath: gs://my-bucket
-    #   credentialsSecretName: my-bucket-secret
-    # - bucketPath: gs://other-bucket
-    #   serviceAccount: unity-catalog@my-project.iam.gserviceaccount.com
-    gcs: []
+  # The server's own identity in each cloud (`[identity.<cloud>]`), which
+  # signs in for storage credentials. Empty: the pod's identity from its
+  # environment, such as EKS IRSA or Pod Identity, AKS workload identity (see
+  # `serviceAccount.annotations` and `server.deployment.extraPodLabels`) or
+  # GKE Workload Identity.
+  identity:
+    aws:
+      # -- A secret with the `accessKey` and `secretKey` of an AWS identity.
+      credentialsSecretName: ""
+      # -- The region of STS calls.
+      region: ""
+      # -- The ARN of the server's AWS identity, shown on storage credentials
+      # as `unity_catalog_iam_arn` for the trust policies of their roles.
+      arn: ""
+      # -- The S3 and STS API of an S3-compatible store, such as MinIO.
+      endpoint: ""
+    azure:
+      # -- A service principal: a secret with `directoryId`, `applicationId`
+      # and `clientSecret`.
+      credentialsSecretName: ""
+      # -- Or the resource ID of a user-assigned managed identity.
+      managedIdentityId: ""
+    gcp:
+      # -- A service account key: a secret with `jsonKey`.
+      credentialsSecretName: ""
+
+  # -- Locations and the identities that reach them (`[locations.<name>]`),
+  # for paths without an external location. The URL's scheme picks the
+  # cloud, and an entry holds one identity of it. `credentialsSecretName` is
+  # a service principal for abfss:// (`directoryId`, `applicationId`,
+  # `clientSecret`) and a service account key for gs:// (`jsonKey`).
+  # `awsIamRoleArn`, `azureManagedIdentity` and `gcpServiceAccount` take
+  # `true` for the server's own identity, or a role ARN, a resource ID or an
+  # email.
+  # - url: s3://my-bucket
+  #   region: us-east-1
+  #   awsIamRoleArn: arn:aws:iam::123456789012:role/my-role
+  # - url: abfss://data@myaccount.dfs.core.windows.net
+  #   credentialsSecretName: my-service-principal
+  # - url: abfss://data@otheraccount.dfs.core.windows.net
+  #   azureManagedIdentity: true
+  # - url: gs://my-bucket
+  #   gcpServiceAccount: unity-catalog@my-project.iam.gserviceaccount.com
+  # - url: gs://other-bucket
+  #   credentialsSecretName: my-service-account-key
+  locations: []
 
 auth:
   # -- Sign-in and authorization (upstream `server.authorization`).

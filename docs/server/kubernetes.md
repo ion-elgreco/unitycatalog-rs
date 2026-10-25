@@ -64,16 +64,15 @@ server:
 ```yaml
 storage:
   tableStorageRoot: s3://analytics/managed
-  credentials:
-    s3:
-      - bucketPath: s3://analytics
-        region: us-east-1
-        awsRoleArn: arn:aws:iam::123456789012:role/uc
+  locations:
+    - url: s3://analytics
+      region: us-east-1
+      awsIamRoleArn: arn:aws:iam::123456789012:role/uc
 ```
 
-Without `credentialsSecretName`, the identity that assumes the role comes from the environment,
-such as the role of the pod's service account (`serviceAccount.create` and `annotations`). See
-[Cloud storage](cloud-storage.md).
+The server's identity assumes the role. Without `storage.identity.aws.credentialsSecretName`, it
+comes from the environment, such as the role of the pod's service account
+(`serviceAccount.create` and `annotations`). See [Cloud storage](cloud-storage.md).
 
 ## Expose the server
 
