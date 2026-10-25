@@ -4,6 +4,14 @@ A Rust reimplementation of [Unity Catalog OSS](https://github.com/unitycatalog/u
 open catalog for data and AI. It has upstream's REST APIs (Unity Catalog, Delta and Iceberg REST),
 a web UI and the `uc` CLI, and keeps the catalog in an embedded database (Turso) or in PostgreSQL.
 
+The web UI, with sign-in through FerrisKey, as in `just demo-auth`:
+
+![Sign in with an OpenID Connect provider, create a catalog, browse to a table, delete the catalog, and log out in the web UI](.github/assets/web-ui.gif)
+
+The terminal UI of `uc`:
+
+![Create a catalog, browse to a table, and delete the catalog in the terminal UI](.github/assets/tui.gif)
+
 ## Java and Rust
 
 What upstream (Java) and this project (Rust) have.
