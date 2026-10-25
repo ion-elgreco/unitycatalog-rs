@@ -17,6 +17,8 @@ uc-common.workspace = true
 
 # The protobuf runtime of uc-client's models, for their enum values.
 buffa.workspace = true
+# The protobuf well-known types, for the field types of an Iceberg schema.
+buffa-types.workspace = true
 futures.workspace = true
 leptos = { version = "0.7", features = ["csr"] }
 leptos_router = "0.7"

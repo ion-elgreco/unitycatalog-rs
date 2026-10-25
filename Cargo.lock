@@ -8021,6 +8021,7 @@ name = "uc-ui"
 version = "0.0.0-dev"
 dependencies = [
  "buffa",
+ "buffa-types",
  "console_error_panic_hook",
  "futures",
  "gloo-timers",

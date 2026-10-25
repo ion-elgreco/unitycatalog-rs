@@ -25,7 +25,8 @@ When the server needs a sign-in, the UI shows its login page first: see
   **Details** (its fields, properties and JSON) and **Permissions**.
 - **Create**: **Create catalog** on the list of catalogs, **Create schema** on a catalog, and
   **New** on a schema, for a table, volume, SQL function or registered model. A new table is
-  managed, or external at a storage location, with any number of columns.
+  managed, or external at a storage location, with any number of columns. The Iceberg REST
+  catalog creates an Iceberg table, with its first metadata file.
 - **Edit**: the button at the top of a page, or **Edit** on the description. The pencil in a
   column's row edits the column's comment.
 - **Delete**: the button at the top of a page; type the name to confirm. The server deletes only

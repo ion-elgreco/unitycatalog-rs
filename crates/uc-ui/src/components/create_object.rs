@@ -1,15 +1,18 @@
 //! "New" on a schema's page, as the console's `CreateSchemaObjectAction`:
 //! a table, a volume, a SQL function or a registered model, from one
-//! dialog with a type picker. Beyond the console's, a table can be managed
-//! and have any number of columns. After the call, a toast, and the list
-//! that gained the object loads again.
+//! dialog with a type picker. Beyond the console's, a table can be managed,
+//! have any number of columns and be in Iceberg format, which the Iceberg
+//! REST catalog creates. After the call, a toast, and the list that gained
+//! the object loads again.
 
 use buffa::Enumeration;
+use buffa_types::google::protobuf::Value;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use uc_client::models::functions::v1::{
     CreateFunction, ParameterStyle, RoutineBody, SecurityType, SqlDataAccess,
 };
+use uc_client::models::iceberg::v1::{IcebergSchema, IcebergStructField};
 use uc_client::models::tables::v1::{ColumnInfo, ColumnTypeName, DataSourceFormat, TableType};
 use uc_client::models::volumes::v1::VolumeType;
 
@@ -34,8 +37,9 @@ const SCALARS: [ColumnTypeName; 9] = [
     ColumnTypeName::Variant,
 ];
 
-const FORMATS: [DataSourceFormat; 7] = [
+const FORMATS: [DataSourceFormat; 8] = [
     DataSourceFormat::Delta,
+    DataSourceFormat::Iceberg,
     DataSourceFormat::Csv,
     DataSourceFormat::Json,
     DataSourceFormat::Avro,
@@ -79,6 +83,41 @@ fn delta_type(t: ColumnTypeName) -> &'static str {
         ColumnTypeName::Binary => "binary",
         ColumnTypeName::Variant => "variant",
         _ => "string",
+    }
+}
+
+/// A scalar type's name in Iceberg's schema.
+fn iceberg_type(t: ColumnTypeName) -> &'static str {
+    match t {
+        ColumnTypeName::Boolean => "boolean",
+        ColumnTypeName::Int => "int",
+        ColumnTypeName::Long => "long",
+        ColumnTypeName::Double => "double",
+        ColumnTypeName::Date => "date",
+        ColumnTypeName::Timestamp => "timestamptz",
+        ColumnTypeName::Binary => "binary",
+        ColumnTypeName::Variant => "variant",
+        _ => "string",
+    }
+}
+
+/// The columns as an Iceberg schema. The server assigns the field ids
+/// again.
+fn iceberg_schema(columns: &[(String, ColumnTypeName)]) -> IcebergSchema {
+    let fields = columns
+        .iter()
+        .zip(1..)
+        .map(|((name, t), id)| IcebergStructField {
+            id,
+            name: name.clone(),
+            field_type: Value::from(iceberg_type(*t)).into(),
+            ..Default::default()
+        })
+        .collect();
+    IcebergSchema {
+        schema_type: "struct".into(),
+        fields,
+        ..Default::default()
     }
 }
 
@@ -159,28 +198,36 @@ pub fn CreateObjectModal(
         }
         let text = comment.get_untracked();
         let comment = (!text.is_empty()).then_some(text);
-        let columns: Vec<ColumnInfo> = columns.with_untracked(|columns| {
+        let columns: Vec<(String, ColumnTypeName)> = columns.with_untracked(|columns| {
             columns
                 .iter()
-                .enumerate()
-                .map(|(i, c)| {
-                    column(
-                        c.name.get_untracked().trim(),
+                .map(|c| {
+                    (
+                        c.name.get_untracked().trim().to_string(),
                         c.kind.get_untracked(),
-                        i as i32,
                     )
                 })
                 .collect()
         });
-        if kind == Kind::Tables && columns.iter().any(|c| c.name.is_empty()) {
+        if kind == Kind::Tables && columns.iter().any(|(name, _)| name.is_empty()) {
             notify.error("Every column needs a name");
             return;
         }
+        let source_format = format.get_untracked();
+        let iceberg = source_format == DataSourceFormat::Iceberg;
         if kind == Kind::Tables
             && table_type.get_untracked() == TableType::Managed
-            && format.get_untracked() != DataSourceFormat::Delta
+            && !iceberg
+            && source_format != DataSourceFormat::Delta
         {
-            notify.error("A managed table is in Delta format");
+            notify.error("A managed table is in Delta or Iceberg format");
+            return;
+        }
+        if kind == Kind::Tables
+            && iceberg
+            && columns.iter().any(|(_, t)| *t == ColumnTypeName::Variant)
+        {
+            notify.error("An Iceberg table cannot have a VARIANT column");
             return;
         }
         let path = location.get_untracked().trim().to_string();
@@ -200,13 +247,46 @@ pub fn CreateObjectModal(
         spawn_local(async move {
             let client = api::client();
             let answer = match kind {
+                // The Iceberg REST catalog writes the first metadata file:
+                // without a location the table is managed. Iceberg engines
+                // read the comment from the `comment` property, Unity
+                // Catalog from the table's own field.
+                Kind::Tables if iceberg => {
+                    async {
+                        let external = table_type.get_untracked() == TableType::External;
+                        client
+                            .create_iceberg_table(
+                                &catalog,
+                                &schema,
+                                &new_name,
+                                iceberg_schema(&columns),
+                            )
+                            .with_location(external.then_some(path))
+                            .with_properties(comment.clone().map(|c| ("comment", c)))
+                            .await?;
+                        if let Some(comment) = comment {
+                            client
+                                .table(format!("{catalog}.{schema}.{new_name}"))
+                                .update()
+                                .with_comment(comment)
+                                .await?;
+                        }
+                        Ok(())
+                    }
+                    .await
+                }
                 Kind::Tables => {
                     async {
                         let table_type = table_type.get_untracked();
+                        let columns = columns
+                            .iter()
+                            .zip(0..)
+                            .map(|((name, t), i)| column(name, *t, i))
+                            .collect::<Vec<ColumnInfo>>();
                         let create = client
                             .create_table(&new_name, &catalog, &schema, table_type)
                             .with_columns(columns)
-                            .with_data_source_format(format.get_untracked())
+                            .with_data_source_format(source_format)
                             .with_comment(comment);
                         // A managed table takes over a staging table, as
                         // engines make one: its id and its location under the
