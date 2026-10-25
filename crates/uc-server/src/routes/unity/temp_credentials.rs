@@ -215,6 +215,9 @@ pub async fn temp_path_credentials(
     let access = Access::load(&state, &principal.username).await?;
     if access.enabled() {
         let owner = authz::path_owner(&state, &req.url).await?;
+        if owner == PathOwner::Unowned {
+            return Err(authz::uncovered(&req.url).into());
+        }
         access.check(path_allowed(&access, &owner, req.operation))?;
     }
     let privileges: &[StoragePrivilege] = match req.operation {
