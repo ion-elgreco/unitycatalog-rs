@@ -238,17 +238,34 @@ reaches. The managed roots are under the first location.
 
 ## `[server]`
 
+### Where it runs
+
 | Key | Variable | Default | Description |
 | --- | --- | --- | --- |
 | `data_dir` | `UC_SERVER_DATA_DIR` | `.uc` | The folder of the embedded database, unless `db.url` names another database. |
 | `bind` | `UC_SERVER_BIND` | `0.0.0.0:8080` | The address of the APIs and the web UI. `--port` changes its port. |
-| `obs_port` | `UC_SERVER_OBS_PORT` | none | The port of `/livez`, `/readyz` and `/metrics`, on all interfaces. Not the API's port. |
+
+### Requests
+
+| Key | Variable | Default | Description |
+| --- | --- | --- | --- |
 | `max_request_length` | `UC_SERVER_MAX_REQUEST_LENGTH` | `10485760` | The largest request body, in bytes. A larger one gets 413. |
 | `request_timeout` | `UC_SERVER_REQUEST_TIMEOUT` | `10s` | The time that a request can take; then the server answers 503. `0s` for no limit. |
 | `rate_limit_per_sec` | `UC_SERVER_RATE_LIMIT_PER_SEC` | `0` | Requests per second from one client address; more get 429. `0` for no limit. |
 | `cors_allow_origins` | `UC_SERVER_CORS_ALLOW_ORIGINS` | all origins | The origins that browsers can call the API from. Empty or `*` allows every origin. |
+
+### Health checks and metrics
+
+| Key | Variable | Default | Description |
+| --- | --- | --- | --- |
+| `obs_port` | `UC_SERVER_OBS_PORT` | none | The port of `/livez`, `/readyz` and `/metrics`, on all interfaces. Not the API's port. |
 | `readiness_interval` | `UC_SERVER_READINESS_INTERVAL` | `5s` | How often `/readyz` checks the database. |
 | `readiness_db_timeout` | `UC_SERVER_READINESS_DB_TIMEOUT` | `2s` | How long that check can take. |
+
+### Threads
+
+| Key | Variable | Default | Description |
+| --- | --- | --- | --- |
 | `workers` | `UC_SERVER_WORKERS` | one per CPU | The threads that serve requests. Each has a runtime of its own and its share of the PostgreSQL connections (`db.pool_size`), so a request runs on one thread. |
 | `io_threads` | `UC_SERVER_IO_THREADS` | `1` | The threads for outbound IO: the connections to object stores and HTTP services. |
 
@@ -263,25 +280,58 @@ reaches. The managed roots are under the first location.
 
 ## `[auth]`
 
+### Authorization
+
+Sign-in and privilege checks for the API, and the first users and admins.
+
 | Key | Variable | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | `UC_AUTH_ENABLED` | `false` | Require sign-in, and check privileges. |
-| `signing_key_file` | `UC_AUTH_SIGNING_KEY_FILE` | none | The PEM file of the RSA key that signs the server's tokens. Without it, the server makes a key in memory at each start. See [The signing key](../server/auth.md#the-signing-key). |
-| `users` | none | none | `[[auth.users]]`: the users that the server makes at each start when they are missing. Only in `uc.toml`. See [The first users](../server/auth.md#the-first-users). |
-| `allowed_issuers` | `UC_AUTH_ALLOWED_ISSUERS` | none | The issuers of identity tokens that the server exchanges: exact, or with `*` for one DNS label. |
-| `audiences` | `UC_AUTH_AUDIENCES` | none | The audiences that those tokens must have. `*` alone accepts every audience. |
-| `access_token_timeout` | `UC_AUTH_ACCESS_TOKEN_TIMEOUT` | `24h` | The life of the server's access tokens. |
-| `cookie_timeout` | `UC_AUTH_COOKIE_TIMEOUT` | `5d` | The life of the `UC_TOKEN` cookie of the web UI. |
 | `admin_principals` | `UC_AUTH_ADMIN_PRINCIPALS` | none | The emails of the admins, besides the metastore's owner: see [Privileges](../server/auth.md#privileges). |
+| `users` | none | none | `[[auth.users]]`: the users that the server makes at each start when they are missing. Only in `uc.toml`. See [The first users](../server/auth.md#the-first-users). |
 | `cedar` | `UC_AUTH_CEDAR` | `false` | Check privileges with the Cedar policy engine. |
 | `cedar_policies` | `UC_AUTH_CEDAR_POLICIES` | none | Files of Cedar policies, on top of the default policies. |
+
+### Tokens
+
+The server's own tokens, and the identity tokens that clients exchange for them, such as with `uc
+auth login`.
+
+| Key | Variable | Default | Description |
+| --- | --- | --- | --- |
+| `signing_key_file` | `UC_AUTH_SIGNING_KEY_FILE` | none | The PEM file of the RSA key that signs the server's tokens. Without it, the server makes a key in memory at each start. See [The signing key](../server/auth.md#the-signing-key). |
+| `access_token_timeout` | `UC_AUTH_ACCESS_TOKEN_TIMEOUT` | `24h` | The life of the server's access tokens. |
+| `cookie_timeout` | `UC_AUTH_COOKIE_TIMEOUT` | `5d` | The life of the `UC_TOKEN` cookie of the web UI. |
+| `allowed_issuers` | `UC_AUTH_ALLOWED_ISSUERS` | none | The issuers of identity tokens that the server exchanges: exact, or with `*` for one DNS label. |
+| `audiences` | `UC_AUTH_AUDIENCES` | none | The audiences that those tokens must have. `*` alone accepts every audience. |
+
+### Web UI sign-in
+
+How users sign in to the web UI. The settings of each mode follow.
+
+| Key | Variable | Default | Description |
+| --- | --- | --- | --- |
 | `mode` | `UC_AUTH_MODE` | `none` | The web UI's sign-in: `none`, `oidc` or `forward`. |
+
+#### OpenID Connect: `mode = "oidc"`
+
+The server signs users in with an OpenID Connect provider.
+
+| Key | Variable | Default | Description |
+| --- | --- | --- | --- |
 | `public_url` | `UC_AUTH_PUBLIC_URL` | none | The server's external URL. The provider returns the browser to `<public_url>/auth/callback`, and with `oidc_end_session` to `<public_url>/` after "Log out". |
 | `oidc_issuer` | `UC_AUTH_OIDC_ISSUER` | none | The OpenID Connect provider's issuer. |
 | `oidc_client_id` | `UC_AUTH_OIDC_CLIENT_ID` | none | The OAuth client. |
 | `oidc_client_secret` | `UC_AUTH_OIDC_CLIENT_SECRET` | none | Its secret; none for a public client. |
 | `oidc_scopes` | `UC_AUTH_OIDC_SCOPES` | `openid email profile` | The scopes that the server asks for. |
 | `oidc_end_session` | `UC_AUTH_OIDC_END_SESSION` | `false` | "Log out" also ends the provider's session: see [OpenID Connect](../server/auth.md#openid-connect). |
+
+#### Auth proxy: `mode = "forward"`
+
+An auth proxy in front of the server signs users in, and sends their email in a header.
+
+| Key | Variable | Default | Description |
+| --- | --- | --- | --- |
 | `forward_trusted_proxies` | `UC_AUTH_FORWARD_TRUSTED_PROXIES` | none | The auth proxies whose headers count: CIDRs or addresses. |
 | `forward_email_header` | `UC_AUTH_FORWARD_EMAIL_HEADER` | `Remote-Email` | The header with the user's email. |
 | `forward_user_header` | `UC_AUTH_FORWARD_USER_HEADER` | `Remote-User` | The header with the user, without the email header. |
@@ -291,16 +341,30 @@ reaches. The managed roots are under the first location.
 
 ## `[storage]`
 
+### Managed storage
+
 | Key | Variable | Default | Description |
 | --- | --- | --- | --- |
 | `tables_root` | `UC_STORAGE_TABLES_ROOT` | none; `uc dev`: `storage` in its `--dir` | Where managed tables go when their catalog and schema have no storage root. |
 | `models_root` | `UC_STORAGE_MODELS_ROOT` | none; `uc dev`: `storage` in its `--dir` | Where models go when their catalog and schema have no storage root. |
+
+### Local external tables
+
+| Key | Variable | Default | Description |
+| --- | --- | --- | --- |
 | `external_local_roots` | `UC_STORAGE_EXTERNAL_LOCAL_ROOTS` | none | The local folders under which external Iceberg tables can be. |
+
+### Cleanup of dropped data
+
+When you delete a managed table, volume or model, the server deletes its files later.
+
+| Key | Variable | Default | Description |
+| --- | --- | --- | --- |
+| `cleanup_initial_delay` | `UC_STORAGE_CLEANUP_INITIAL_DELAY` | `7d` | How long the server waits before it deletes the data of a dropped object. |
+| `cleanup_retry_backoff` | `UC_STORAGE_CLEANUP_RETRY_BACKOFF` | `1h` | The wait before a failed cleanup runs again. |
 | `cleanup_poll_interval` | `UC_STORAGE_CLEANUP_POLL_INTERVAL` | `1m` | How often the cleanup of dropped managed data looks for work. |
 | `cleanup_attempt_timeout` | `UC_STORAGE_CLEANUP_ATTEMPT_TIMEOUT` | `30m` | How long one cleanup can take. |
 | `cleanup_lease_duration` | `UC_STORAGE_CLEANUP_LEASE_DURATION` | `2h` | How long a server holds a cleanup task. |
-| `cleanup_initial_delay` | `UC_STORAGE_CLEANUP_INITIAL_DELAY` | `7d` | How long the server waits before it deletes the data of a dropped object. |
-| `cleanup_retry_backoff` | `UC_STORAGE_CLEANUP_RETRY_BACKOFF` | `1h` | The wait before a failed cleanup runs again. |
 
 ## `[tables]`
 
@@ -389,12 +453,22 @@ entries cover a path, the one with the longest URL wins.
 
 The settings of `uc`. The server does not read them.
 
+### Server and output
+
 | Key | Variable | Default | Description |
 | --- | --- | --- | --- |
 | `server` | `UC_CLI_SERVER` | `http://localhost:8080` | The server of the commands. |
 | `token` | `UC_CLI_TOKEN` | the sign-in of `uc auth login` | The token of the requests. |
 | `server_bin` | `UC_CLI_SERVER_BIN` | `uc-server` next to `uc`, else on `PATH` | The server that `uc serve` and `uc dev` run. |
 | `output_width` | `UC_CLI_OUTPUT_WIDTH` | `COLUMNS`, else the terminal's width; at least 120 | The width of tables. |
+
+### `uc auth login` in the browser
+
+The OAuth endpoints and client of the identity provider. `uc auth login` signs in there, then
+exchanges the provider's token for one of the server.
+
+| Key | Variable | Default | Description |
+| --- | --- | --- | --- |
 | `oauth_authorization_url` | `UC_CLI_OAUTH_AUTHORIZATION_URL` | none | `uc auth login` in the browser: the provider's authorization endpoint. |
 | `oauth_token_url` | `UC_CLI_OAUTH_TOKEN_URL` | none | The provider's token endpoint. |
 | `oauth_client_id` | `UC_CLI_OAUTH_CLIENT_ID` | none | The OAuth client. |
