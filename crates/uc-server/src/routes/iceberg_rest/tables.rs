@@ -138,6 +138,7 @@ fn locations(table: &IcebergTableState) -> IcebergResult<(NormalizedUrl, Normali
 
 #[utoipa::path(
     get, path = "/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables",
+    operation_id = "iceberg_list_tables",
     params(
         ("catalog" = String, Path),
         ("namespace" = String, Path),
@@ -196,6 +197,7 @@ pub async fn list_tables(
 
 #[utoipa::path(
     head, path = "/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}",
+    operation_id = "iceberg_table_exists",
     params(("catalog" = String, Path), ("namespace" = String, Path), ("table" = String, Path)),
     responses(
         (status = 204, description = "The table exists"),
@@ -282,6 +284,7 @@ fn suppress_historical_snapshots(metadata: &mut Value) {
 
 #[utoipa::path(
     get, path = "/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}",
+    operation_id = "iceberg_load_table",
     params(
         ("catalog" = String, Path),
         ("namespace" = String, Path),
@@ -345,6 +348,7 @@ pub async fn load_table(
 
 #[utoipa::path(
     get, path = "/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/credentials",
+    operation_id = "iceberg_load_credentials",
     params(("catalog" = String, Path), ("namespace" = String, Path), ("table" = String, Path)),
     responses(
         (status = 200, body = IcebergLoadCredentialsResponse),
@@ -430,6 +434,7 @@ fn check_metrics_report(report: &serde_json::Value) -> IcebergResult<()> {
 
 #[utoipa::path(
     post, path = "/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/metrics",
+    operation_id = "iceberg_report_metrics",
     params(("catalog" = String, Path), ("namespace" = String, Path), ("table" = String, Path)),
     request_body(content = serde_json::Value, description = "An Iceberg scan or commit report"),
     responses(
@@ -463,6 +468,7 @@ pub async fn report_metrics(
 
 #[utoipa::path(
     get, path = "/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/views/{view}",
+    operation_id = "iceberg_load_view",
     params(("catalog" = String, Path), ("namespace" = String, Path), ("view" = String, Path)),
     responses((status = 404, body = IcebergErrorResponse, description = "Views are not served")),
     tag = "Iceberg",
@@ -557,6 +563,7 @@ async fn finalize_creation(
 
 #[utoipa::path(
     post, path = "/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables",
+    operation_id = "iceberg_create_table",
     params(("catalog" = String, Path), ("namespace" = String, Path)),
     request_body = IcebergCreateTableRequest,
     responses(
@@ -689,6 +696,7 @@ async fn commit_staged_create(
 
 #[utoipa::path(
     post, path = "/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}",
+    operation_id = "iceberg_commit_table",
     params(("catalog" = String, Path), ("namespace" = String, Path), ("table" = String, Path)),
     request_body = IcebergCommitTableRequest,
     responses(
@@ -816,6 +824,7 @@ fn validate_purge_requested(value: Option<&str>) -> IcebergResult<()> {
 
 #[utoipa::path(
     delete, path = "/iceberg/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}",
+    operation_id = "iceberg_drop_table",
     params(
         ("catalog" = String, Path),
         ("namespace" = String, Path),
@@ -864,6 +873,7 @@ pub async fn drop_table(
 
 #[utoipa::path(
     post, path = "/iceberg/v1/catalogs/{catalog}/tables/rename",
+    operation_id = "iceberg_rename_table",
     params(("catalog" = String, Path)),
     request_body = IcebergRenameTableRequest,
     responses(

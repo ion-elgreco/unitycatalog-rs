@@ -231,3 +231,28 @@ async fn docs_are_at_docs() {
     assert_eq!(status(&api, "/docs/").await, StatusCode::OK);
     assert_eq!(status(&api, "/api-docs/openapi.json").await, StatusCode::OK);
 }
+
+/// Swagger UI finds an operation by its id: two operations with one id
+/// send "Try it out" to the first, with the other's parameters.
+#[tokio::test]
+async fn operation_ids_are_unique() {
+    let metastore = SqlMetastore::connect(MetastoreConfig::for_tests())
+        .await
+        .unwrap();
+    let api = build_app(AppState::new(metastore));
+    let (code, doc) = json(&api, "/api-docs/openapi.json").await;
+    assert_eq!(code, StatusCode::OK);
+    let mut seen = std::collections::HashMap::new();
+    for (path, item) in doc["paths"].as_object().unwrap() {
+        for (method, operation) in item.as_object().unwrap() {
+            let Some(id) = operation["operationId"].as_str() else {
+                continue;
+            };
+            let at = format!("{} {path}", method.to_uppercase());
+            if let Some(first) = seen.insert(id.to_string(), at.clone()) {
+                panic!("operation id {id} is on {first} and {at}");
+            }
+        }
+    }
+    assert!(seen.contains_key("iceberg_load_table"));
+}

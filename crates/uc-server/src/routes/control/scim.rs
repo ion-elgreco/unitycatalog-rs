@@ -210,6 +210,7 @@ async fn create_scim_user(state: &AppState, user: ScimUser) -> ScimResult<ScimUs
 
 #[utoipa::path(
     post, path = "/scim2/Users",
+    operation_id = "scim_create_user",
     request_body = ScimUser,
     responses(
         (status = 201, body = ScimUser),
@@ -231,6 +232,7 @@ pub async fn create_user(
 
 #[utoipa::path(
     get, path = "/scim2/Users",
+    operation_id = "scim_list_users",
     params(
         ("count"      = Option<i64>, Query),
         ("startIndex" = Option<i64>, Query, description = "From 1"),
@@ -267,6 +269,7 @@ pub async fn list_users(
 
 #[utoipa::path(
     get, path = "/scim2/Users/{id}",
+    operation_id = "scim_get_user",
     params(("id" = String, Path)),
     responses(
         (status = 200, body = ScimUser),
@@ -288,6 +291,7 @@ pub async fn get_user(
 
 #[utoipa::path(
     delete, path = "/scim2/Users/{id}",
+    operation_id = "scim_delete_user",
     params(("id" = String, Path)),
     responses(
         (status = 200, description = "Disabled, grants removed"),
@@ -321,6 +325,7 @@ async fn disable_user(state: &AppState, id: &str) -> Result<(), Error> {
 
 #[utoipa::path(
     patch, path = "/scim2/Users/{id}",
+    operation_id = "scim_patch_user",
     params(("id" = String, Path)),
     request_body = ScimPatchOp,
     responses(
@@ -381,6 +386,7 @@ async fn patch_user_state(
 /// email stays.
 #[utoipa::path(
     put, path = "/scim2/Users/{id}",
+    operation_id = "scim_put_user",
     params(("id" = String, Path)),
     request_body = ScimUser,
     responses(
@@ -424,6 +430,7 @@ pub async fn put_user(
 /// deletes with `force`.
 #[utoipa::path(
     get, path = "/scim2/Me",
+    operation_id = "scim_me",
     responses(
         (status = 200, body = ScimUser),
         (status = 401, description = "Not signed in (authorization on)"),
@@ -452,6 +459,7 @@ pub async fn me(State(state): State<AppState>, principal: Principal) -> ScimResu
 
 #[utoipa::path(
     post, path = "/scim2/Groups",
+    operation_id = "scim_create_group",
     request_body = ScimGroup,
     responses(
         (status = 201, body = ScimGroup),
@@ -471,6 +479,7 @@ pub async fn create_group(
 
 #[utoipa::path(
     get, path = "/scim2/Groups",
+    operation_id = "scim_list_groups",
     params(
         ("count"      = Option<i64>, Query),
         ("startIndex" = Option<i64>, Query, description = "From 1"),
@@ -497,6 +506,7 @@ pub async fn list_groups(
 
 #[utoipa::path(
     get, path = "/scim2/Groups/{id}",
+    operation_id = "scim_get_group",
     params(("id" = String, Path)),
     responses(
         (status = 200, body = ScimGroup),
@@ -515,6 +525,7 @@ pub async fn get_group(
 
 #[utoipa::path(
     delete, path = "/scim2/Groups/{id}",
+    operation_id = "scim_delete_group",
     params(("id" = String, Path)),
     responses(
         (status = 204, description = "Deleted"),
@@ -534,6 +545,7 @@ pub async fn delete_group(
 
 #[utoipa::path(
     patch, path = "/scim2/Groups/{id}",
+    operation_id = "scim_patch_group",
     params(("id" = String, Path)),
     request_body = ScimPatchOp,
     responses(
@@ -556,6 +568,7 @@ pub async fn patch_group(
 
 #[utoipa::path(
     put, path = "/scim2/Groups/{id}",
+    operation_id = "scim_put_group",
     params(("id" = String, Path)),
     request_body = ScimGroup,
     responses(
@@ -655,6 +668,7 @@ pub struct ScimBulkOp {
 
 #[utoipa::path(
     post, path = "/scim2/Bulk",
+    operation_id = "scim_bulk",
     responses((status = 200, description = "BulkResponse with per-op status")),
     tag = "SCIM",
 )]
@@ -961,6 +975,7 @@ fn list_response(resources: serde_json::Value) -> serde_json::Value {
 }
 
 #[utoipa::path(get, path = "/scim2/Schemas",
+    operation_id = "scim_list_schemas",
     responses((status = 200, description = "SCIM Schemas catalog, as a ListResponse")),
     tag = "SCIM",
 )]
@@ -969,6 +984,7 @@ pub async fn list_schemas() -> axum::Json<serde_json::Value> {
 }
 
 #[utoipa::path(get, path = "/scim2/ResourceTypes",
+    operation_id = "scim_list_resource_types",
     responses((status = 200, description = "SCIM ResourceTypes catalog, as a ListResponse")),
     tag = "SCIM",
 )]
@@ -977,6 +993,7 @@ pub async fn list_resource_types() -> axum::Json<serde_json::Value> {
 }
 
 #[utoipa::path(get, path = "/scim2/ServiceProviderConfig",
+    operation_id = "scim_service_provider_config",
     responses((status = 200, description = "SCIM ServiceProviderConfig")),
     tag = "SCIM",
 )]
