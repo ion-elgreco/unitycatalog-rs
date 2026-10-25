@@ -53,7 +53,8 @@ defaults apply.
 
 The credentials of a bucket or storage account are a named table, such as `[s3.analytics]`.
 Their variables include the name: `UC_S3_ANALYTICS_SECRET_KEY` is `secret_key` in
-`[s3.analytics]`. A name has only lowercase letters and digits.
+`[s3.analytics]`. A name has only lowercase letters and digits, and at least one letter: the
+server reads a name of only digits, such as `UC_S3_0_BUCKET`, as a list index.
 
 ```toml
 [s3.analytics]

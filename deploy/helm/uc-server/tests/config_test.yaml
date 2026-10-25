@@ -82,22 +82,22 @@ tests:
           content: {name: UC_STORAGE_MODELS_ROOT, value: s3://bucket/models}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_S3_0_BUCKET, value: s3://b}
+          content: {name: UC_S3_ENTRY0_BUCKET, value: s3://b}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_S3_0_REGION, value: us-east-1}
+          content: {name: UC_S3_ENTRY0_REGION, value: us-east-1}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_S3_0_ROLE_ARN, value: arn:aws:iam::123456789012:role/r}
+          content: {name: UC_S3_ENTRY0_ROLE_ARN, value: arn:aws:iam::123456789012:role/r}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_ADLS_0_ACCOUNT, value: account}
+          content: {name: UC_ADLS_ENTRY0_ACCOUNT, value: account}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_GCS_0_BUCKET, value: gs://g}
+          content: {name: UC_GCS_ENTRY0_BUCKET, value: gs://g}
       - contains:
           path: spec.template.spec.containers[0].env
-          content: {name: UC_GCS_0_JSON_KEY_FILE, value: /etc/uc/gcs/0/jsonKey}
+          content: {name: UC_GCS_ENTRY0_JSON_KEY_FILE, value: /etc/uc/gcs/0/jsonKey}
 
   - it: writes server.config.toml as uc.toml
     set:
