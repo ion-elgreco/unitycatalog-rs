@@ -92,7 +92,10 @@ async fn create_get_list_update_delete_catalog(#[future(awt)] app: Router) {
         .oneshot(req(Method::DELETE, "/catalogs/main"))
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
+    // An empty JSON object, as upstream's spec: its Java client reads the
+    // answer of a delete as JSON.
+    let resp = assert_status(resp, StatusCode::OK, "delete").await;
+    assert_eq!(json_body(resp).await, json!({}));
 
     let resp = app
         .oneshot(req(Method::GET, "/catalogs/main"))

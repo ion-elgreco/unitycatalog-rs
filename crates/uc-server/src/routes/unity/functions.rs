@@ -1,5 +1,5 @@
 use crate::http::extract::{Json, Path, Query};
-use axum::{extract::State, http::StatusCode};
+use axum::extract::State;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use uc_api::{CreateFunctionRequest, FunctionInfo, ListFunctionsResponse};
@@ -8,7 +8,7 @@ use uc_common::{PageToken, SchemaScopedListParams as ListParams, SecurableType, 
 use crate::{
     authn::principal::Principal,
     authz::{self, Access, rules},
-    http::error::ApiResult,
+    http::{EmptyObject, error::ApiResult},
     server::state::AppState,
 };
 
@@ -125,7 +125,7 @@ pub async fn delete_function(
     State(state): State<AppState>,
     principal: Principal,
     Path(name): Path<String>,
-) -> ApiResult<StatusCode> {
+) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
         &principal.username,
@@ -135,7 +135,7 @@ pub async fn delete_function(
     )
     .await?;
     state.metastore.functions().delete(&name).await?;
-    Ok(StatusCode::OK)
+    Ok(EmptyObject)
 }
 
 pub fn router() -> OpenApiRouter<AppState> {

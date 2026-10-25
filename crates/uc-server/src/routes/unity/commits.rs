@@ -2,7 +2,7 @@
 //! tables. Upstream `DeltaCommitsService`; the rules are in
 //! [`uc_delta::commits`].
 
-use axum::{extract::State, http::StatusCode};
+use axum::extract::State;
 use tracing::warn;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -13,8 +13,8 @@ use uc_delta::commits::{self, CommitOutcome};
 use crate::{
     authn::principal::Principal,
     authz::{self, rules},
-    http::error::ApiResult,
     http::extract::Json,
+    http::{EmptyObject, error::ApiResult},
     server::state::AppState,
     storage::vendor::VendOp,
     storage::{ServerStorage, same_content},
@@ -37,7 +37,7 @@ pub async fn commit(
     State(state): State<AppState>,
     principal: Principal,
     Json(req): Json<DeltaCommit>,
-) -> ApiResult<StatusCode> {
+) -> ApiResult<EmptyObject> {
     if let Some(table_id) = req.table_id.as_deref() {
         authz::check_table_id(&state, &principal.username, table_id, rules::update_table).await?;
     }
@@ -50,7 +50,7 @@ pub async fn commit(
         .commit(req, principal.actor())
         .await?;
     verify_replay(&state, outcome).await?;
-    Ok(StatusCode::OK)
+    Ok(EmptyObject)
 }
 
 /// Upstream `verifyContentReplayOrThrowConflict`: settle a commit `outcome`

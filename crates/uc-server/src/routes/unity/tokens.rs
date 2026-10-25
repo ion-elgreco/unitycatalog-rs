@@ -10,7 +10,12 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use uc_api::{CreatePat, ListPatsResponse, PatInfo};
 use uc_common::{PageToken, Pagination};
 
-use crate::{authn::principal::Principal, authz, http::error::ApiResult, server::state::AppState};
+use crate::{
+    authn::principal::Principal,
+    authz,
+    http::{EmptyObject, error::ApiResult},
+    server::state::AppState,
+};
 
 #[utoipa::path(
     post, path = "/tokens",
@@ -69,14 +74,14 @@ pub async fn revoke_pat(
     State(state): State<AppState>,
     principal: Principal,
     Path(id): Path<String>,
-) -> ApiResult<StatusCode> {
+) -> ApiResult<EmptyObject> {
     let caller = principal.signed_in()?;
     let token = state.metastore.tokens().get_pat(&id).await?;
     if token.owner.as_deref() != Some(caller) {
         authz::require_signed_in_admin(&state, &principal).await?;
     }
     state.metastore.tokens().revoke_pat(&id).await?;
-    Ok(StatusCode::OK)
+    Ok(EmptyObject)
 }
 
 // The OAuth2 token endpoint: the RFC 6749 §4.4 `client_credentials` grant
