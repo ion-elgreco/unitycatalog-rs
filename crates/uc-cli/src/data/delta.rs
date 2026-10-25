@@ -134,6 +134,17 @@ pub async fn create_table(c: &Context<'_>, create: TableCreate) -> anyhow::Resul
     let columns = parse_columns(&columns)?;
     let mut properties: Option<HashMap<String, String>> =
         properties.map(|map| map.into_iter().collect());
+    // Delta Kernel does not write the metadata of the other formats yet.
+    if properties
+        .as_ref()
+        .and_then(|p| p.get("delta.universalFormat.enabledFormats"))
+        .is_some_and(|formats| !formats.trim().is_empty())
+    {
+        bail!(
+            "uc cannot create UniForm tables yet: Delta Kernel does not write their Iceberg or \
+             Hudi metadata; create them with an engine that does, such as Spark"
+        );
+    }
 
     let (location, credentials, staging_id) = match table_type {
         TableType::External => {
