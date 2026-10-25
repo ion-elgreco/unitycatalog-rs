@@ -3,9 +3,11 @@
 # H2's) or a PostgreSQL server that several replicas share, as upstream.
 
 storage:
-  # -- Fallback root for models (upstream `storage-root.models`).
+  # -- Where models go when their catalog and schema have no storage root
+  # (upstream `storage-root.models`).
   modelStorageRoot: ""
-  # -- Fallback root for MANAGED tables (upstream `storage-root.tables`).
+  # -- Where MANAGED tables go when their catalog and schema have no storage
+  # root (upstream `storage-root.tables`).
   tableStorageRoot: ""
 
   # The server's own identity in each cloud (`[identity.<cloud>]`), which

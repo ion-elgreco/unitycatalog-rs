@@ -130,8 +130,8 @@ reaches. The managed roots are under the first location.
     region = "us-east-1"
     aws_iam_role_arn = "arn:aws:iam::222222222222:role/uc-partner"
 
-    # Managed tables and models without a catalog or schema root, in the bucket
-    # of [locations.lake].
+    # Where managed tables and models go when their catalog and schema have no
+    # storage root: here in the bucket of [locations.lake].
     [storage]
     tables_root = "s3://acme-lake/managed/tables"
     models_root = "s3://acme-lake/managed/models"
@@ -156,8 +156,8 @@ reaches. The managed roots are under the first location.
     url = "gs://partner-data"
     gcp_service_account = "uc-partner@partner-project.iam.gserviceaccount.com"
 
-    # Managed tables and models without a catalog or schema root, in the bucket
-    # of [locations.lake].
+    # Where managed tables and models go when their catalog and schema have no
+    # storage root: here in the bucket of [locations.lake].
     [storage]
     tables_root = "gs://acme-lake/managed/tables"
     models_root = "gs://acme-lake/managed/models"
@@ -184,8 +184,8 @@ reaches. The managed roots are under the first location.
     azure_application_id = "<client id>"
     azure_client_secret = "<client secret>"
 
-    # Managed tables and models without a catalog or schema root, in the
-    # container of [locations.lake].
+    # Where managed tables and models go when their catalog and schema have no
+    # storage root: here in the container of [locations.lake].
     [storage]
     tables_root = "abfss://lake@acmelake.dfs.core.windows.net/managed/tables"
     models_root = "abfss://lake@acmelake.dfs.core.windows.net/managed/models"
@@ -250,8 +250,8 @@ reaches. The managed roots are under the first location.
 
 | Key | Variable | Default | Description |
 | --- | --- | --- | --- |
-| `tables_root` | `UC_STORAGE_TABLES_ROOT` | none; `uc dev`: `storage` in its `--dir` | The root of managed tables without a catalog or schema root. |
-| `models_root` | `UC_STORAGE_MODELS_ROOT` | none; `uc dev`: `storage` in its `--dir` | The root of models without a catalog or schema root. |
+| `tables_root` | `UC_STORAGE_TABLES_ROOT` | none; `uc dev`: `storage` in its `--dir` | Where managed tables go when their catalog and schema have no storage root. |
+| `models_root` | `UC_STORAGE_MODELS_ROOT` | none; `uc dev`: `storage` in its `--dir` | Where models go when their catalog and schema have no storage root. |
 | `external_local_roots` | `UC_STORAGE_EXTERNAL_LOCAL_ROOTS` | none | The local folders under which external Iceberg tables can be. |
 | `cleanup_poll_interval` | `UC_STORAGE_CLEANUP_POLL_INTERVAL` | `1m` | How often the cleanup of dropped managed data looks for work. |
 | `cleanup_attempt_timeout` | `UC_STORAGE_CLEANUP_ATTEMPT_TIMEOUT` | `30m` | How long one cleanup can take. |

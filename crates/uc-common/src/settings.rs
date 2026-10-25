@@ -284,9 +284,10 @@ pub struct AuthUser {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Storage {
-    /// The root of managed tables without a catalog or schema root.
+    /// Where managed tables go when their catalog and schema have no
+    /// storage root.
     pub tables_root: Option<String>,
-    /// The root of models without a catalog or schema root.
+    /// Where models go when their catalog and schema have no storage root.
     pub models_root: Option<String>,
     /// The local folders under which external Iceberg tables may be.
     #[serde(deserialize_with = "list")]

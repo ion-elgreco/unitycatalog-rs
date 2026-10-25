@@ -73,7 +73,7 @@ The chart sets the server's settings as `UC_*` environment variables. For the
 | `auth.forward.logoutUrl` | `""` | The proxy's sign-out, for the web UI's "Log out". |
 | `auth.cookieTimeout` | `5d` | The life of the web UI's sign-in. |
 | `auth.accessTokenTimeout` | `24h` | The life of the server's tokens. |
-| `storage.tableStorageRoot` | `""` | The root of managed tables without a catalog or schema root. |
+| `storage.tableStorageRoot` | `""` | Where managed tables go when their catalog and schema have no storage root. |
 | `storage.modelStorageRoot` | `""` | The same for models. |
 | `storage.identity.aws` | empty | The server's AWS identity: `credentialsSecretName` (`accessKey`, `secretKey`), `region`, `arn`, `endpoint`. Empty: the pod's identity. |
 | `storage.identity.azure` | empty | The server's Azure identity: `credentialsSecretName` (`directoryId`, `applicationId`, `clientSecret`) or `managedIdentityId`. Empty: the pod's identity. |
