@@ -256,7 +256,8 @@ async fn s3_compatible_store_gets_sts_calls_without_kms() {
 }
 
 /// Without an external location, the longest `[locations.<name>]` that
-/// covers the path: the server's identity assumes its role.
+/// covers the path: the server's identity assumes its role, or with
+/// `aws_iam_role_arn = true` the server's own role.
 #[tokio::test]
 async fn s3_without_an_external_location_uses_the_settings_location() {
     let (sts, log) = mock("text/xml", ASSUME_ROLE.to_string()).await;
@@ -265,6 +266,11 @@ async fn s3_without_an_external_location_uses_the_settings_location() {
         region = "eu-west-1"
         access_key = "AKSERVER"
         secret_key = "server-secret"
+        arn = "arn:aws:iam::1:role/uc-server"
+
+        [locations.own]
+        url = "s3://own-bucket"
+        aws_iam_role_arn = true
 
         [locations.bucket]
         url = "s3://role-bucket/"
@@ -297,6 +303,10 @@ async fn s3_without_an_external_location_uses_the_settings_location() {
     ok(vend(&app, "s3://role-bucket/tables/t", "PATH_READ").await).await;
     let seen = log.lock().unwrap()[1].clone();
     assert_eq!(seen.form()["RoleArn"], "arn:aws:iam::1:role/tables");
+
+    ok(vend(&app, "s3://own-bucket/t", "PATH_READ").await).await;
+    let seen = log.lock().unwrap()[2].clone();
+    assert_eq!(seen.form()["RoleArn"], "arn:aws:iam::1:role/uc-server");
 
     let err = assert_error(
         vend(&app, "s3://unknown/t", "PATH_READ").await,

@@ -72,6 +72,9 @@ region = "us-east-1"
 aws_iam_role_arn = "arn:aws:iam::123456789012:role/uc-analytics"
 ```
 
+With `aws_iam_role_arn = true`, the server assumes its own role, `identity.aws.arn`, with a
+session policy for the path. That role's trust policy must allow the role itself.
+
 For an S3-compatible store, such as MinIO or RustFS, set `identity.aws.endpoint` to its URL.
 
 ## Azure Data Lake Storage

@@ -227,7 +227,7 @@ impl StorageConfig {
         let locations = settings
             .locations
             .iter()
-            .map(|(name, entry)| Location::parse(name, entry))
+            .map(|(name, entry)| Location::parse(name, entry, aws.arn.as_deref()))
             .collect::<std::result::Result<_, _>>()?;
         Ok(Self {
             aws: aws::AwsIdentity {

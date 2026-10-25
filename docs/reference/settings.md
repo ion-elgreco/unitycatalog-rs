@@ -88,7 +88,7 @@ What the server does for each identity:
 
 | Identity of the location | The server |
 | --- | --- |
-| AWS IAM role | assumes the role as `[identity.aws]`. |
+| AWS IAM role | assumes the role as `[identity.aws]`; for `aws_iam_role_arn = true`, its own role `identity.aws.arn`. |
 | Azure service principal | signs in as the service principal. |
 | Azure managed identity | signs in as `[identity.azure]`, or as the user-assigned identity of the resource ID. |
 | GCP service account | uses the token of `[identity.gcp]`, or impersonates the service account as `[identity.gcp]`. |
@@ -201,7 +201,7 @@ ECS task role, EKS Pod Identity or an instance role.
 | `access_key` | `UC_IDENTITY_AWS_ACCESS_KEY` | the identity of the environment | The access key. |
 | `secret_key` | `UC_IDENTITY_AWS_SECRET_KEY` | the identity of the environment | The secret key. |
 | `region` | `UC_IDENTITY_AWS_REGION` | `AWS_REGION`, else `AWS_DEFAULT_REGION`, else `us-east-1` | The region of the STS calls. |
-| `arn` | `UC_IDENTITY_AWS_ARN` | none | The ARN of this identity, shown as `unity_catalog_iam_arn` on storage credentials, for the trust policies of their roles. |
+| `arn` | `UC_IDENTITY_AWS_ARN` | none | The ARN of this identity, shown as `unity_catalog_iam_arn` on storage credentials, for the trust policies of their roles. A role here is also the one of `aws_iam_role_arn = true`; its trust policy must then allow the role itself. |
 | `endpoint` | `UC_IDENTITY_AWS_ENDPOINT` | AWS | The S3 and STS API of an S3-compatible store, such as MinIO or RustFS: `http://` or `https://`. uc's table and volume commands use it too. See [Cloud storage](../server/cloud-storage.md#aws-s3). |
 
 ## `[identity.azure]`
@@ -239,7 +239,7 @@ locations cover a path, the longest URL wins.
 | --- | --- | --- | --- |
 | `url` | `UC_LOCATIONS_<NAME>_URL` | all | `s3://bucket`, `abfss://container@account.dfs.core.windows.net` or `gs://bucket`, with a path or without. Required. |
 | `region` | `UC_LOCATIONS_<NAME>_REGION` | S3 | The bucket's region, which Iceberg clients get. Without it, the server asks S3. |
-| `aws_iam_role_arn` | `UC_LOCATIONS_<NAME>_AWS_IAM_ROLE_ARN` | S3 | The role that `[identity.aws]` assumes. Required for S3. |
+| `aws_iam_role_arn` | `UC_LOCATIONS_<NAME>_AWS_IAM_ROLE_ARN` | S3 | `true` for the server's own role, `identity.aws.arn`, or the ARN of a role that `[identity.aws]` assumes. Required for S3. |
 | `azure_directory_id` | `UC_LOCATIONS_<NAME>_AZURE_DIRECTORY_ID` | ADLS | A service principal's tenant ID, with `azure_application_id` and `azure_client_secret`. |
 | `azure_application_id` | `UC_LOCATIONS_<NAME>_AZURE_APPLICATION_ID` | ADLS | Its client ID. |
 | `azure_client_secret` | `UC_LOCATIONS_<NAME>_AZURE_CLIENT_SECRET` | ADLS | Its secret. |

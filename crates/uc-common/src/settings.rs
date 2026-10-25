@@ -354,7 +354,8 @@ pub struct AwsIdentity {
     /// The region of STS calls.
     pub region: Option<String>,
     /// The ARN of this identity, shown as `unity_catalog_iam_arn` on storage
-    /// credentials, for the trust policies of their roles.
+    /// credentials, for the trust policies of their roles. A role here is
+    /// also the one of `aws_iam_role_arn = true`.
     pub arn: Option<String>,
     /// The S3 and STS API of an S3-compatible store, such as MinIO or
     /// RustFS, in place of AWS (http or https). uc's table and volume
@@ -401,7 +402,10 @@ pub struct Location {
     /// For `s3://`: the bucket's region, which Iceberg clients get; else
     /// the server asks S3.
     pub region: Option<String>,
-    pub aws_iam_role_arn: Option<String>,
+    /// `true` for the server's own role, `identity.aws.arn`, or the ARN of
+    /// a role that the server's identity assumes.
+    #[serde(deserialize_with = "own_or")]
+    pub aws_iam_role_arn: Option<Option<String>>,
     pub azure_directory_id: Option<String>,
     pub azure_application_id: Option<String>,
     pub azure_client_secret: Option<String>,
@@ -740,8 +744,8 @@ mod tests {
         let analytics = &locations["analytics"];
         assert_eq!(analytics.url.as_deref(), Some("s3://analytics"));
         assert_eq!(
-            analytics.aws_iam_role_arn.as_deref(),
-            Some("arn:aws:iam::1:role/uc")
+            analytics.aws_iam_role_arn,
+            Some(Some("arn:aws:iam::1:role/uc".into()))
         );
         // `true` is the server's own identity, as in the file; other text
         // names an identity.

@@ -313,6 +313,8 @@ tests:
           azureManagedIdentity: true
         - url: gs://bucket
           gcpServiceAccount: uc@p.iam.gserviceaccount.com
+        - url: s3://bucket
+          awsIamRoleArn: true
     asserts:
       - contains:
           path: spec.template.spec.containers[0].env
@@ -323,6 +325,9 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content: {name: UC_LOCATIONS_ENTRY1_GCP_SERVICE_ACCOUNT, value: uc@p.iam.gserviceaccount.com}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_LOCATIONS_ENTRY2_AWS_IAM_ROLE_ARN, value: "true"}
       - notContains:
           path: spec.template.spec.containers[0].env
           content: {name: UC_LOCATIONS_ENTRY0_AZURE_CLIENT_SECRET}

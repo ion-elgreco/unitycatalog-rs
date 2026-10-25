@@ -60,8 +60,14 @@ impl Location {
 
     /// The entry `name`: its URL, and the identity of the URL's cloud. A
     /// field of another cloud, a missing identity or two identities are
-    /// errors. A service account key is read from its file.
-    pub fn parse(name: &str, entry: &settings::Location) -> Result<Self, String> {
+    /// errors. A service account key is read from its file, and
+    /// `aws_iam_role_arn = true` is the server's role `own_role`
+    /// (`identity.aws.arn`).
+    pub fn parse(
+        name: &str,
+        entry: &settings::Location,
+        own_role: Option<&str>,
+    ) -> Result<Self, String> {
         let key = |field: &str| format!("locations.{name}.{field}");
         let text = entry
             .url
@@ -108,12 +114,31 @@ impl Location {
         }
         match scheme {
             UriScheme::S3 => {
-                let arn = entry.aws_iam_role_arn.clone().ok_or_else(|| {
-                    format!(
-                        "[locations.{name}] needs aws_iam_role_arn for {}",
-                        url.as_str()
-                    )
-                })?;
+                let arn = match &entry.aws_iam_role_arn {
+                    Some(Some(arn)) => arn.clone(),
+                    Some(None) => match own_role {
+                        Some(arn) if arn.contains(":role/") => arn.to_string(),
+                        Some(arn) => {
+                            return Err(format!(
+                                "[locations.{name}]: aws_iam_role_arn = true assumes \
+                                 identity.aws.arn, which must be a role, not {arn}"
+                            ));
+                        }
+                        None => {
+                            return Err(format!(
+                                "[locations.{name}]: aws_iam_role_arn = true assumes the \
+                                 server's own role: set identity.aws.arn \
+                                 (UC_IDENTITY_AWS_ARN)"
+                            ));
+                        }
+                    },
+                    None => {
+                        return Err(format!(
+                            "[locations.{name}] needs aws_iam_role_arn for {}",
+                            url.as_str()
+                        ));
+                    }
+                };
                 Ok(Self::S3(S3Location {
                     url,
                     region: entry.region.clone(),
@@ -196,11 +221,40 @@ mod tests {
 
     /// The locations of the TOML text `text`, by name.
     fn parse(text: &str) -> Result<Vec<(String, Location)>, String> {
-        settings::Settings::from_toml(text)?
+        let settings = settings::Settings::from_toml(text)?;
+        let own_role = settings.identity.aws.arn.as_deref();
+        settings
             .locations
             .iter()
-            .map(|(name, entry)| Location::parse(name, entry).map(|l| (name.clone(), l)))
+            .map(|(name, entry)| Location::parse(name, entry, own_role).map(|l| (name.clone(), l)))
             .collect()
+    }
+
+    #[test]
+    fn aws_iam_role_arn_true_is_the_servers_role() {
+        let found = parse(
+            r#"
+            [identity.aws]
+            arn = "arn:aws:iam::1:role/uc-server"
+
+            [locations.lake]
+            url = "s3://lake"
+            aws_iam_role_arn = true
+            "#,
+        )
+        .unwrap();
+        let Location::S3(lake) = &found[0].1 else {
+            panic!("{found:?}")
+        };
+        assert_eq!(lake.role.arn, "arn:aws:iam::1:role/uc-server");
+        let lake = "[locations.lake]\nurl = 's3://lake'\naws_iam_role_arn = true";
+        assert!(
+            parse(lake)
+                .unwrap_err()
+                .contains("set identity.aws.arn (UC_IDENTITY_AWS_ARN)")
+        );
+        let user = format!("[identity.aws]\narn = 'arn:aws:iam::1:user/uc'\n{lake}");
+        assert!(parse(&user).unwrap_err().contains("must be a role"));
     }
 
     fn url(text: &str) -> NormalizedUrl {

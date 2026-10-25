@@ -39,8 +39,9 @@ storage:
   # cloud, and an entry holds one identity of it. `credentialsSecretName` is
   # a service principal for abfss:// (`directoryId`, `applicationId`,
   # `clientSecret`) and a service account key for gs:// (`jsonKey`).
-  # `azureManagedIdentity` and `gcpServiceAccount` take `true` for the
-  # server's own identity, or a resource ID or an email.
+  # `awsIamRoleArn`, `azureManagedIdentity` and `gcpServiceAccount` take
+  # `true` for the server's own identity, or a role ARN, a resource ID or an
+  # email.
   # - url: s3://my-bucket
   #   region: us-east-1
   #   awsIamRoleArn: arn:aws:iam::123456789012:role/my-role

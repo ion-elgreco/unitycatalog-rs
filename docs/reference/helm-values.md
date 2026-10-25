@@ -78,7 +78,7 @@ The chart sets the server's settings as `UC_*` environment variables. For the
 | `storage.identity.aws` | empty | The server's AWS identity: `credentialsSecretName` (`accessKey`, `secretKey`), `region`, `arn`, `endpoint`. Empty: the pod's identity. |
 | `storage.identity.azure` | empty | The server's Azure identity: `credentialsSecretName` (`directoryId`, `applicationId`, `clientSecret`) or `managedIdentityId`. Empty: the pod's identity. |
 | `storage.identity.gcp` | empty | The server's GCP identity: `credentialsSecretName` (`jsonKey`). Empty: the pod's identity. |
-| `storage.locations` | `[]` | Per location: `url`, and one identity of its cloud: `awsIamRoleArn` (with an optional `region`), `azureManagedIdentity` or `gcpServiceAccount` (`true` or a resource ID or an email), or `credentialsSecretName` (abfss: `directoryId`, `applicationId`, `clientSecret`; gs: `jsonKey`). |
+| `storage.locations` | `[]` | Per location: `url`, and one identity of its cloud: `awsIamRoleArn` (with an optional `region`), `azureManagedIdentity` or `gcpServiceAccount` (`true` for the server's own identity, or a role ARN, a resource ID or an email), or `credentialsSecretName` (abfss: `directoryId`, `applicationId`, `clientSecret`; gs: `jsonKey`). |
 | `ui.enabled` | `true` | Serve the web UI at `/`. |
 | `ingress.enabled`, `host`, `ingressClassName`, `annotations`, `tlsSecretName` | off | An Ingress to the server. |
 | `httpRoute.enabled`, `host`, `parentRefs`, `annotations` | off | An HTTPRoute to the server; `parentRefs` is required. |
