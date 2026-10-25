@@ -279,12 +279,26 @@ pub async fn check_create(
         return Ok(());
     }
     let lineage = lineage(state, SecurableType::Schema, schema).await?;
-    let owner = match external {
-        Some(location) => Some(external_owner(state, location).await?),
+    // With no location the create fails on its own.
+    let location = external.flatten().filter(|l| !l.trim().is_empty());
+    let owner = match location {
+        Some(location) => Some(path_owner(state, location).await?),
         None => None,
     };
     let access = Access::load(state, principal).await?;
-    access.check(rule(&access, &lineage, owner.as_ref()))
+    match (rule(&access, &lineage, owner.as_ref()), location) {
+        (true, _) => Ok(()),
+        (false, Some(location)) if owner == Some(PathOwner::Unowned) => Err(uncovered(location)),
+        (false, _) => Err(denied()),
+    }
+}
+
+/// The error for a path that no external location covers.
+pub fn uncovered(url: &str) -> Error {
+    Error::new(
+        ErrorCode::PermissionDenied,
+        format!("No external location covers {url}."),
+    )
 }
 
 /// Check `rule` on the table, or uncommitted staging table, with id
@@ -357,15 +371,6 @@ pub async fn storage_root_allowed(
     };
     let owner = path_owner(state, root).await?;
     Ok(Some(rules::managed_storage(access, &owner)))
-}
-
-/// What holds the location of an EXTERNAL table or volume: nothing when it
-/// has none (the create then fails on its own).
-async fn external_owner(state: &AppState, location: Option<&str>) -> Result<PathOwner> {
-    match location.filter(|l| !l.trim().is_empty()) {
-        Some(location) => path_owner(state, location).await,
-        None => Ok(PathOwner::Unowned),
-    }
 }
 
 /// Upstream's `#external_location` and `#no_overlap_with_data_securable`
@@ -508,14 +513,14 @@ pub mod rules {
             && (a.owner(l, Schema) || create.iter().any(|c| a.all(l, Schema, &[UseSchema, *c])))
     }
 
-    /// The external-location tier of an EXTERNAL table or volume: no data
-    /// securable at the path, and `OWNER` or `create` on the covering
-    /// external location, if any.
+    /// The external-location tier of an EXTERNAL table or volume: an
+    /// external location covers the path, with no data securable at it, and
+    /// the caller has `OWNER` or `create` on it. Unlike upstream, a path
+    /// that no external location covers is refused, also for admins.
     pub fn external_path(a: &Access, owner: &PathOwner, create: uc_api::Privilege) -> bool {
         match owner {
-            PathOwner::Data(..) => false,
             PathOwner::ExternalLocation(el) => a.owner_or_any(el, Object, &[create]),
-            PathOwner::Unowned => true,
+            PathOwner::Data(..) | PathOwner::Unowned => false,
         }
     }
 

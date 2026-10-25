@@ -118,6 +118,8 @@ connections from `forward_trusted_proxies`.
   `SELECT` on the table.
 - Admins read everything, make catalogs, credentials and external locations, manage users, and
   grant any privilege.
+- External tables and volumes, and the credentials of a path, need an external location that
+  covers the path, also for admins.
 
 | Privilege | Lets the user |
 | --- | --- |
