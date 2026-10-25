@@ -98,7 +98,8 @@ session.
 
 ### An auth proxy
 
-An auth proxy, such as oauth2-proxy or Authelia, signs users in and names the user in a header:
+An auth proxy, such as oauth2-proxy, Authelia or [Envoy Gateway](#envoy-gateway), signs users in
+and names the user in a header:
 
 ```toml
 [auth]
@@ -109,6 +110,73 @@ forward_logout_url = "https://auth.example.com/logout"
 
 The server reads the email from `Remote-Email`, else the user from `Remote-User`, and only on
 connections from `forward_trusted_proxies`.
+
+#### Envoy Gateway
+
+[Envoy Gateway](https://gateway.envoyproxy.io) 1.2 or later can be the auth proxy. A
+SecurityPolicy signs users in with OpenID Connect. A JWT provider in the same policy reads the ID
+token from its cookie, and puts the token's `email` in `Remote-Email`:
+
+```yaml
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: uc-web-ui
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: uc-web-ui              # the route of the web UI's host only
+  oidc:
+    provider:
+      issuer: https://accounts.google.com
+    clientID: <client id>
+    clientSecret:
+      name: uc-oidc                # a Secret with the key client-secret
+    redirectURL: https://uc.example.com/oauth2/callback
+    logoutPath: /logout
+    cookieNames:
+      idToken: uc-id-token
+  jwt:
+    providers:
+      - name: id-token
+        issuer: https://accounts.google.com
+        audiences: ["<client id>"]
+        remoteJWKS:
+          uri: https://www.googleapis.com/oauth2/v3/certs
+        extractFrom:
+          cookies: [uc-id-token]
+        claimToHeaders:
+          - header: Remote-Email
+            claim: email
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: uc
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: <gateway>
+  headers:
+    earlyRequestHeaders:
+      remove: [Remote-Email, Remote-User]
+```
+
+```toml
+[auth]
+mode = "forward"
+forward_trusted_proxies = ["10.42.0.0/16"]           # the addresses of the Envoy pods
+forward_logout_url = "https://uc.example.com/logout"  # the policy's logoutPath
+```
+
+- Envoy adds `Remote-Email`, and does not replace a header of that name that the client sends.
+  The ClientTrafficPolicy removes the client's `Remote-Email` and `Remote-User` on every route
+  of the Gateway first. Without it, a client could name any user.
+- Give the SecurityPolicy only the route of the web UI, for example on a host of its own. `uc`,
+  the Python client and other API clients send the server's tokens, and OpenID Connect would
+  send their requests to the provider's sign-in page.
 
 ## Privileges
 
