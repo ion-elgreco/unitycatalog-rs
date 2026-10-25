@@ -190,3 +190,56 @@ jobs:
 
       - name: Run the tests against the upstream server
         run: just test-upstream
+
+  # Spark against a uc-server: upstream's connector with delta-spark, and
+  # Iceberg's Spark runtime (python/client/tests/integrations/test_spark.py).
+  # Spark 4.1 has Iceberg's runtime, Spark 4.2 the view catalog API.
+  spark:
+    name: Spark tests (Spark ${{ matrix.spark }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        spark: ["4.1.3", "4.2.0"]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+
+      - name: Install Java
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # The jars that Spark downloads: about 1 GB, most of it the AWS SDK of
+      # hadoop-aws. PRs restore main's cache but never save their own copies.
+      - name: Restore the Spark jars
+        id: jars
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.ivy2.5.2
+          key: spark-jars-${{ matrix.spark }}-${{ hashFiles('python/client/tests/integrations/test_spark.py') }}
+
+      - name: Build and install unitycatalog
+        run: just develop-client
+
+      - name: Run the Spark tests
+        env:
+          SPARK_VERSION: ${{ matrix.spark }}
+        run: just test-spark "${SPARK_VERSION}"
+
+      - name: Save the Spark jars
+        if: github.ref == 'refs/heads/main' && steps.jars.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.ivy2.5.2
+          key: ${{ steps.jars.outputs.cache-primary-key }}
