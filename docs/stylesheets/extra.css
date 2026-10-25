@@ -108,9 +108,10 @@
   word-break: normal;
   white-space: nowrap;
 }
-/* Names in the first column of a table, such as a setting and its variable, break only at
-   spaces, not inside a name. A table that gets too wide scrolls. */
-.md-typeset table:not([class]) td:first-child code {
+/* Names in the first column of a table, such as a setting, and the variables of the settings
+   page break only at spaces, not inside a name. A table that gets too wide scrolls. */
+.md-typeset table:not([class]) td:first-child code,
+.md-typeset .uc-settings table:not([class]) td:nth-child(2) code {
   word-break: normal;
   overflow-wrap: normal;
 }
