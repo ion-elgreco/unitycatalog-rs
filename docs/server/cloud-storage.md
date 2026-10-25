@@ -38,8 +38,9 @@ The Delta REST API and the Iceberg REST catalog give credentials with their tabl
    same kinds of identity. The longest URL wins.
 3. Local paths get empty credentials.
 
-The server signs in for the identity with its own identity in the cloud: `[identity.aws]`,
-`[identity.azure]` or `[identity.gcp]`, else the identity of its environment.
+To get credentials for that identity, the server signs in with its own identity: `[identity.aws]`,
+`[identity.azure]` or `[identity.gcp]`. When that is not set, the server uses the credentials of
+the machine or pod where it runs.
 
 With authorization on, an external table or volume, the `storage_root` of a catalog or schema,
 and the credentials of a path need an external location that covers the path, also for admins.

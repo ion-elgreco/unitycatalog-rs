@@ -335,8 +335,9 @@ impl Default for Tables {
     }
 }
 
-/// `[identity]`: the server's own identity in each cloud. It signs in for
-/// the storage credentials of external locations and of `[locations.*]`.
+/// `[identity]`: the identity that the server signs in to each cloud with,
+/// for the storage credentials of external locations and of
+/// `[locations.*]`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Identity {
@@ -345,8 +346,9 @@ pub struct Identity {
     pub gcp: GcpIdentity,
 }
 
-/// `[identity.aws]`: the server's AWS identity, which assumes the roles of
-/// storage credentials. Without keys, the identity of the environment.
+/// `[identity.aws]`: the identity that the server signs in to AWS with; it
+/// assumes the roles of storage credentials. Without keys, the credentials
+/// of the machine or pod where the server runs.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct AwsIdentity {
@@ -364,9 +366,9 @@ pub struct AwsIdentity {
     pub endpoint: Option<String>,
 }
 
-/// `[identity.azure]`: the server's Azure identity: a service principal, or
-/// a user-assigned managed identity. Without one, the identity of the
-/// environment.
+/// `[identity.azure]`: the identity that the server signs in to Azure with:
+/// a service principal, or a user-assigned managed identity. Without one,
+/// the credentials of the machine or pod where the server runs.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct AzureIdentity {
@@ -379,8 +381,9 @@ pub struct AzureIdentity {
     pub managed_identity_id: Option<String>,
 }
 
-/// `[identity.gcp]`: the server's GCP identity. Without a key, Application
-/// Default Credentials.
+/// `[identity.gcp]`: the identity that the server signs in to GCP with.
+/// Without a key, the credentials of the machine or pod where the server
+/// runs (Application Default Credentials).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct GcpIdentity {

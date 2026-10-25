@@ -55,7 +55,7 @@ Three kinds of setup decide how the server reaches cloud storage:
 
 | | Where you set it | What it is |
 | --- | --- | --- |
-| `[identity.<cloud>]` | `uc.toml`, `UC_IDENTITY_*` variables | Who the server is in AWS, Azure or GCP. Without it, the identity of the server's environment. |
+| `[identity.<cloud>]` | `uc.toml`, `UC_IDENTITY_*` variables | The identity that the server signs in to AWS, Azure or GCP with. When it is not set, the server uses the credentials of the machine or pod where it runs, such as environment variables, the pod's service account or the VM's identity. |
 | External location and storage credential | `uc external_location create` and `uc credential create`, the web UI or the API. The metastore keeps them. | A URL and the identity that reaches it, with an owner and grants. |
 | `[locations.<name>]` | `uc.toml`, `UC_LOCATIONS_*` variables | A URL and the identity that reaches it, without an owner or grants. It is not an external location: `uc external_location list` does not show it. |
 
@@ -74,7 +74,7 @@ flowchart TD
     end
     subgraph settings["In the settings: uc.toml, UC_* variables"]
         location["#91;locations.#lt;name#gt;#93;<br/>URL and an AWS role, or<br/>an Azure or GCP identity"]
-        identity["#91;identity.#lt;cloud#gt;#93;<br/>the server's own identity,<br/>else its environment's"]
+        identity["#91;identity.#lt;cloud#gt;#93;<br/>the identity the server<br/>signs in with; else the<br/>credentials of the pod<br/>or machine it runs on"]
     end
     temporary(["Temporary credentials:<br/>one hour, only this<br/>path and operation"])
     path -- "1. covered by" --> external
@@ -113,8 +113,8 @@ reaches. The managed roots are under the first location.
 === "AWS S3"
 
     ```toml
-    # The server's AWS identity. Here it comes from the environment, such as
-    # the IAM role of its pod (IRSA); arn names that role.
+    # The identity that the server signs in to AWS with. No keys are set, so
+    # the server uses the IAM role of its pod (IRSA); arn names that role.
     [identity.aws]
     region = "eu-west-1"
     arn = "arn:aws:iam::111111111111:role/uc-server"
@@ -140,8 +140,9 @@ reaches. The managed roots are under the first location.
 === "Google Cloud Storage"
 
     ```toml
-    # The server's GCP identity: a service account key. Without it, Application
-    # Default Credentials, such as GKE Workload Identity.
+    # The identity that the server signs in to GCP with: a service account key.
+    # When it is not set, the server uses the credentials of the machine or
+    # pod where it runs, such as GKE Workload Identity.
     [identity.gcp]
     json_key_file = "/etc/uc/gcp/uc-server.json"
 
@@ -166,8 +167,10 @@ reaches. The managed roots are under the first location.
 === "Azure Data Lake Storage"
 
     ```toml
-    # The server's Azure identity: a user-assigned managed identity of its VM.
-    # Without it, the identity of the environment, such as AKS workload identity.
+    # The identity that the server signs in to Azure with: a user-assigned
+    # managed identity of its VM. When it is not set, the server uses the
+    # credentials of the machine or pod where it runs, such as AKS workload
+    # identity.
     [identity.azure]
     managed_identity_id = "/subscriptions/<subscription>/resourceGroups/uc/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uc-server"
 
@@ -270,23 +273,25 @@ reaches. The managed roots are under the first location.
 
 ## `[identity.aws]`
 
-The server's AWS identity, which assumes the roles of storage credentials. Without keys, the
-identity of the environment: the `AWS_*` variables, the role of a Kubernetes service account, an
-ECS task role, EKS Pod Identity or an instance role.
+The identity that the server signs in to AWS with. It assumes the roles of storage credentials.
+Without keys, the server uses the credentials of the machine or pod where it runs: the `AWS_*`
+variables, the role of a Kubernetes service account, an ECS task role, EKS Pod Identity or an
+instance role.
 
 | Key | Variable | Default | Description |
 | --- | --- | --- | --- |
-| `access_key` | `UC_IDENTITY_AWS_ACCESS_KEY` | the identity of the environment | The access key. |
-| `secret_key` | `UC_IDENTITY_AWS_SECRET_KEY` | the identity of the environment | The secret key. |
+| `access_key` | `UC_IDENTITY_AWS_ACCESS_KEY` | the credentials where the server runs | The access key. |
+| `secret_key` | `UC_IDENTITY_AWS_SECRET_KEY` | the credentials where the server runs | The secret key. |
 | `region` | `UC_IDENTITY_AWS_REGION` | `AWS_REGION`, else `AWS_DEFAULT_REGION`, else `us-east-1` | The region of the STS calls. |
 | `arn` | `UC_IDENTITY_AWS_ARN` | none | The ARN of this identity, shown as `unity_catalog_iam_arn` on storage credentials, for the trust policies of their roles. A role here is also the one of `aws_iam_role_arn = true`; its trust policy must then allow the role itself. |
 | `endpoint` | `UC_IDENTITY_AWS_ENDPOINT` | AWS | The S3 and STS API of an S3-compatible store, such as MinIO or RustFS: `http://` or `https://`. uc's table and volume commands use it too. See [Cloud storage](../server/cloud-storage.md#aws-s3). |
 
 ## `[identity.azure]`
 
-The server's Azure identity: a service principal, or a user-assigned managed identity. Without
-one, the identity of the environment: AKS workload identity, the `AZURE_*` variables, or the
-managed identity of the VM or App Service.
+The identity that the server signs in to Azure with: a service principal, or a user-assigned
+managed identity. Without one, the server uses the credentials of the machine or pod where it
+runs: AKS workload identity, the `AZURE_*` variables, or the managed identity of the VM or App
+Service.
 
 | Key | Variable | Description |
 | --- | --- | --- |
@@ -297,9 +302,10 @@ managed identity of the VM or App Service.
 
 ## `[identity.gcp]`
 
-The server's GCP identity. Without a key, Google's Application Default Credentials: the
-`GOOGLE_APPLICATION_CREDENTIALS` file, gcloud's application default credentials, or the metadata
-server.
+The identity that the server signs in to GCP with. Without a key, the server uses the
+credentials of the machine or pod where it runs, which Google calls Application Default
+Credentials: the `GOOGLE_APPLICATION_CREDENTIALS` file, gcloud's application default
+credentials, or the metadata server, such as GKE Workload Identity.
 
 | Key | Variable | Default | Description |
 | --- | --- | --- | --- |
