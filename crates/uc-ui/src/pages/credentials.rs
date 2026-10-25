@@ -1,24 +1,284 @@
-//! The credentials, from "Manage" in the sidebar: each one's name, AWS IAM
-//! role, owner and creation, and "Create credential". The server lists the
-//! ones the user may see: all of them to admins, else their own and the
+//! The credentials, from "Manage" in the sidebar: each one's name,
+//! identity, owner and creation, and "Create credential". The server lists
+//! the ones the user may see: all of them to admins, else their own and the
 //! ones they may bind external locations to. Upstream's console has no
 //! such page.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_client::models::credentials::v1::{AwsIamRoleRequest, CredentialInfo, CredentialPurpose};
+use uc_client::models::credentials::v1::{
+    AwsIamRoleRequest, AzureManagedIdentity, AzureServicePrincipalRequest, CredentialInfo,
+    CredentialPurpose,
+};
 
 use crate::api;
 use crate::components::icons::Plus;
-use crate::components::{Empty, Modal, TextField, use_notify};
+use crate::components::{Empty, Modal, Select, TextField, use_notify};
 use crate::layout::{Column, ListLayout};
 use crate::load::{Key, use_cache, use_load};
 use crate::util::{Section, format_timestamp, or_dash};
 
-/// The ARN of a credential's AWS IAM role.
-pub fn role_arn(c: &CredentialInfo) -> Option<String> {
-    let arn = &c.aws_iam_role.as_option()?.role_arn;
-    (!arn.is_empty()).then(|| arn.clone())
+/// The kinds of identity that a credential holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentityKind {
+    AwsIamRole,
+    AzureServicePrincipal,
+    AzureManagedIdentity,
+}
+
+impl IdentityKind {
+    const ALL: [IdentityKind; 3] = [
+        Self::AwsIamRole,
+        Self::AzureServicePrincipal,
+        Self::AzureManagedIdentity,
+    ];
+
+    pub fn text(self) -> &'static str {
+        match self {
+            Self::AwsIamRole => "AWS IAM role",
+            Self::AzureServicePrincipal => "Azure service principal",
+            Self::AzureManagedIdentity => "Azure managed identity",
+        }
+    }
+
+    /// The kind of a credential's identity.
+    pub fn of(c: &CredentialInfo) -> Option<Self> {
+        if c.aws_iam_role.is_set() {
+            Some(Self::AwsIamRole)
+        } else if c.azure_service_principal.is_set() {
+            Some(Self::AzureServicePrincipal)
+        } else if c.azure_managed_identity.is_set() {
+            Some(Self::AzureManagedIdentity)
+        } else {
+            None
+        }
+    }
+}
+
+/// What names a credential's identity: the ARN of its AWS IAM role, the
+/// application ID of its service principal, or the resource ID of its
+/// managed identity. A managed identity without one is the server's own.
+pub fn identity_name(c: &CredentialInfo) -> Option<String> {
+    let name = match IdentityKind::of(c)? {
+        IdentityKind::AwsIamRole => c.aws_iam_role.as_option()?.role_arn.clone(),
+        IdentityKind::AzureServicePrincipal => c
+            .azure_service_principal
+            .as_option()?
+            .application_id
+            .clone(),
+        IdentityKind::AzureManagedIdentity => c
+            .azure_managed_identity
+            .as_option()?
+            .managed_identity_id
+            .clone()?,
+    };
+    (!name.is_empty()).then_some(name)
+}
+
+/// The server's own identity: a managed identity without a resource ID.
+fn servers_own(c: &CredentialInfo) -> bool {
+    c.azure_managed_identity.is_set() && identity_name(c).is_none()
+}
+
+/// A credential's identity, as a request sends it.
+pub enum Identity {
+    AwsIamRole(AwsIamRoleRequest),
+    AzureServicePrincipal(AzureServicePrincipalRequest),
+    AzureManagedIdentity(AzureManagedIdentity),
+}
+
+/// The identity fields of a dialog.
+#[derive(Clone, Copy)]
+pub struct IdentityForm {
+    pub kind: RwSignal<IdentityKind>,
+    role_arn: RwSignal<String>,
+    directory_id: RwSignal<String>,
+    application_id: RwSignal<String>,
+    client_secret: RwSignal<String>,
+    managed_identity_id: RwSignal<String>,
+}
+
+impl Default for IdentityForm {
+    fn default() -> Self {
+        Self {
+            kind: RwSignal::new(IdentityKind::AwsIamRole),
+            role_arn: RwSignal::new(String::new()),
+            directory_id: RwSignal::new(String::new()),
+            application_id: RwSignal::new(String::new()),
+            client_secret: RwSignal::new(String::new()),
+            managed_identity_id: RwSignal::new(String::new()),
+        }
+    }
+}
+
+impl IdentityForm {
+    /// The identity of `c`. The client secret stays empty: the server
+    /// does not return it.
+    pub fn fill(&self, c: &CredentialInfo) {
+        self.clear();
+        self.kind
+            .set(IdentityKind::of(c).unwrap_or(IdentityKind::AwsIamRole));
+        if let Some(role) = c.aws_iam_role.as_option() {
+            self.role_arn.set(role.role_arn.clone());
+        }
+        if let Some(principal) = c.azure_service_principal.as_option() {
+            self.directory_id.set(principal.directory_id.clone());
+            self.application_id.set(principal.application_id.clone());
+        }
+        if let Some(identity) = c.azure_managed_identity.as_option() {
+            self.managed_identity_id
+                .set(identity.managed_identity_id.clone().unwrap_or_default());
+        }
+    }
+
+    pub fn clear(&self) {
+        self.kind.set(IdentityKind::AwsIamRole);
+        for text in [
+            self.role_arn,
+            self.directory_id,
+            self.application_id,
+            self.client_secret,
+            self.managed_identity_id,
+        ] {
+            text.set(String::new());
+        }
+    }
+
+    fn text(field: RwSignal<String>) -> String {
+        field.get_untracked().trim().to_string()
+    }
+
+    /// The identity of the fields, or what is missing.
+    pub fn request(&self) -> Result<Identity, &'static str> {
+        let required = |field: RwSignal<String>, missing: &'static str| {
+            let text = Self::text(field);
+            if text.is_empty() {
+                Err(missing)
+            } else {
+                Ok(text)
+            }
+        };
+        Ok(match self.kind.get_untracked() {
+            IdentityKind::AwsIamRole => Identity::AwsIamRole(AwsIamRoleRequest {
+                role_arn: required(self.role_arn, "AWS IAM role ARN is required")?,
+                ..Default::default()
+            }),
+            IdentityKind::AzureServicePrincipal => {
+                Identity::AzureServicePrincipal(AzureServicePrincipalRequest {
+                    directory_id: required(self.directory_id, "Directory ID is required")?,
+                    application_id: required(self.application_id, "Application ID is required")?,
+                    client_secret: required(self.client_secret, "Client secret is required")?,
+                    ..Default::default()
+                })
+            }
+            IdentityKind::AzureManagedIdentity => {
+                let id = Self::text(self.managed_identity_id);
+                Identity::AzureManagedIdentity(AzureManagedIdentity {
+                    managed_identity_id: (!id.is_empty()).then_some(id),
+                    ..Default::default()
+                })
+            }
+        })
+    }
+
+    /// The identity that an edit of `current` sends: none when the fields
+    /// hold `current`'s identity. A service principal changes only with its
+    /// client secret.
+    pub fn change(&self, current: &CredentialInfo) -> Result<Option<Identity>, &'static str> {
+        let kind = self.kind.get_untracked();
+        let unchanged = IdentityKind::of(current) == Some(kind)
+            && match kind {
+                IdentityKind::AwsIamRole => current
+                    .aws_iam_role
+                    .as_option()
+                    .is_some_and(|r| r.role_arn == Self::text(self.role_arn)),
+                IdentityKind::AzureServicePrincipal => current
+                    .azure_service_principal
+                    .as_option()
+                    .is_some_and(|p| {
+                        p.directory_id == Self::text(self.directory_id)
+                            && p.application_id == Self::text(self.application_id)
+                            && Self::text(self.client_secret).is_empty()
+                    }),
+                IdentityKind::AzureManagedIdentity => {
+                    current.azure_managed_identity.as_option().is_some_and(|i| {
+                        i.managed_identity_id.clone().unwrap_or_default()
+                            == Self::text(self.managed_identity_id)
+                    })
+                }
+            };
+        match unchanged {
+            true => Ok(None),
+            false => self.request().map(Some),
+        }
+    }
+}
+
+/// The type of identity and its fields.
+#[component]
+pub fn IdentityFields(form: IdentityForm, id: &'static str) -> impl IntoView {
+    view! {
+        <Select
+            id=format!("{id}-type")
+            label="Type"
+            choices=&IdentityKind::ALL
+            value=form.kind
+            name=|k: &IdentityKind| k.text().to_string()
+        />
+        {move || match form.kind.get() {
+            IdentityKind::AwsIamRole => {
+                view! {
+                    <TextField
+                        id=format!("{id}-role")
+                        label="AWS IAM role ARN"
+                        value=form.role_arn
+                        placeholder="arn:aws:iam::123456789012:role/unity-catalog"
+                    />
+                    <p class="uc-hint">"The role that the server assumes to reach the storage."</p>
+                }
+                    .into_any()
+            }
+            IdentityKind::AzureServicePrincipal => {
+                view! {
+                    <TextField
+                        id=format!("{id}-directory")
+                        label="Directory (tenant) ID"
+                        value=form.directory_id
+                    />
+                    <TextField
+                        id=format!("{id}-application")
+                        label="Application (client) ID"
+                        value=form.application_id
+                    />
+                    <TextField
+                        id=format!("{id}-secret")
+                        label="Client secret"
+                        value=form.client_secret
+                        autocomplete="new-password"
+                        secret=true
+                    />
+                    <p class="uc-hint">
+                        "The app that the server signs in as. The server keeps the secret and never shows it."
+                    </p>
+                }
+                    .into_any()
+            }
+            IdentityKind::AzureManagedIdentity => {
+                view! {
+                    <TextField
+                        id=format!("{id}-managed")
+                        label="Managed identity resource ID"
+                        value=form.managed_identity_id
+                        placeholder="/subscriptions/…/userAssignedIdentities/unity-catalog"
+                    />
+                    <p class="uc-hint">
+                        "Empty: the server's own Azure identity. Else a user-assigned identity of the server's VM."
+                    </p>
+                }
+                    .into_any()
+            }
+        }}
+    }
 }
 
 #[component]
@@ -41,13 +301,27 @@ pub fn Credentials() -> impl IntoView {
             search_key: Some(Box::new(|c: &CredentialInfo| c.name.clone())),
         },
         Column {
-            title: "AWS IAM role",
+            title: "Identity",
             width: "36%",
             render: Box::new(|c: &CredentialInfo| {
-                view! { <code>{or_dash(role_arn(c))}</code> }.into_any()
+                let kind = IdentityKind::of(c).map(IdentityKind::text);
+                view! {
+                    <span class="uc-muted">{kind}</span>
+                    " "
+                    {match servers_own(c) {
+                        true => view! { <span class="uc-muted">"(server's own)"</span> }.into_any(),
+                        false => view! { <code>{or_dash(identity_name(c))}</code> }.into_any(),
+                    }}
+                }
+                .into_any()
             }),
             search_key: Some(Box::new(|c: &CredentialInfo| {
-                role_arn(c).unwrap_or_default()
+                let kind = IdentityKind::of(c).map_or("", IdentityKind::text);
+                let name = match servers_own(c) {
+                    true => "server's own".to_string(),
+                    false => identity_name(c).unwrap_or_default(),
+                };
+                format!("{kind} {name}")
             })),
         },
         Column {
@@ -80,7 +354,7 @@ pub fn Credentials() -> impl IntoView {
                 </button>
             </div>
             <p class="uc-muted">
-                "A storage credential holds the cloud identity that the server uses to reach storage: an AWS IAM role that it assumes. Each external location is bound to one."
+                "A storage credential holds the cloud identity that the server uses to reach storage: an AWS IAM role that it assumes, or an Azure service principal or managed identity that it signs in as. Each external location is bound to one."
             </p>
             <ListLayout
                 data=credentials
@@ -98,7 +372,7 @@ pub fn Credentials() -> impl IntoView {
 #[component]
 fn CreateCredential(open: RwSignal<bool>) -> impl IntoView {
     let name = RwSignal::new(String::new());
-    let role = RwSignal::new(String::new());
+    let identity = IdentityForm::default();
     let comment = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let notify = use_notify();
@@ -106,7 +380,7 @@ fn CreateCredential(open: RwSignal<bool>) -> impl IntoView {
     let close = move || {
         open.set(false);
         name.set(String::new());
-        role.set(String::new());
+        identity.clear();
         comment.set(String::new());
     };
     let on_ok = move || {
@@ -115,20 +389,25 @@ fn CreateCredential(open: RwSignal<bool>) -> impl IntoView {
             notify.error("Name is required");
             return;
         }
-        let arn = role.get_untracked().trim().to_string();
-        if arn.is_empty() {
-            notify.error("AWS IAM role ARN is required");
-            return;
-        }
-        let text = comment.get_untracked();
-        let role = AwsIamRoleRequest {
-            role_arn: arn,
-            ..Default::default()
+        let request = match identity.request() {
+            Ok(request) => request,
+            Err(missing) => {
+                notify.error(missing);
+                return;
+            }
         };
+        let text = comment.get_untracked();
         let create = api::client()
-            .create_credential(new_name, role)
+            .create_credential(new_name)
             .with_comment((!text.is_empty()).then_some(text))
             .with_purpose(CredentialPurpose::Storage);
+        let create = match request {
+            Identity::AwsIamRole(role) => create.with_aws_iam_role(role),
+            Identity::AzureServicePrincipal(principal) => {
+                create.with_azure_service_principal(principal)
+            }
+            Identity::AzureManagedIdentity(managed) => create.with_azure_managed_identity(managed),
+        };
         busy.set(true);
         spawn_local(async move {
             match create.await {
@@ -155,13 +434,7 @@ fn CreateCredential(open: RwSignal<bool>) -> impl IntoView {
             on_ok
         >
             <TextField id="uc-credential-name" label="Name" value=name required=true/>
-            <TextField
-                id="uc-credential-role"
-                label="AWS IAM role ARN"
-                value=role
-                placeholder="arn:aws:iam::123456789012:role/unity-catalog"
-            />
-            <p class="uc-hint">"The role that the server assumes to reach the storage."</p>
+            <IdentityFields form=identity id="uc-credential"/>
             <TextField id="uc-credential-comment" label="Comment" value=comment/>
         </Modal>
     }

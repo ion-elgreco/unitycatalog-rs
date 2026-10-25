@@ -17,7 +17,11 @@ from unitycatalog import (
     UnauthenticatedError,
     UnityCatalogError,
 )
-from unitycatalog.credentials import AwsIamRoleRequest
+from unitycatalog.credentials import (
+    AwsIamRoleRequest,
+    AzureManagedIdentity,
+    AzureServicePrincipalRequest,
+)
 from unitycatalog.delta import DeltaCommitInfo
 from unitycatalog.functions import (
     CreateFunction,
@@ -295,7 +299,10 @@ def test_credentials_and_external_locations(uc: Calls) -> None:
     credential_name = unique("credential")
     role = "arn:aws:iam::123456789012:role/uc"
     credential = uc.create_credential(
-        credential_name, AwsIamRoleRequest(role), purpose="STORAGE", comment="prod"
+        credential_name,
+        aws_iam_role=AwsIamRoleRequest(role),
+        purpose="STORAGE",
+        comment="prod",
     )
     assert (credential.purpose, credential.comment) == ("STORAGE", "prod")
     assert credential.aws_iam_role is not None
@@ -335,11 +342,34 @@ def test_credentials_and_external_locations(uc: Calls) -> None:
     assert credential_name not in [c.name for c in uc.list_credentials()]
 
 
+def test_azure_credentials(uc: Calls) -> None:
+    name = unique("credential")
+    principal = AzureServicePrincipalRequest("tenant", "app", "secret")
+    credential = uc.create_credential(name, azure_service_principal=principal)
+    assert credential.aws_iam_role is None
+    assert credential.azure_service_principal is not None
+    assert credential.azure_service_principal.directory_id == "tenant"
+    assert credential.azure_service_principal.application_id == "app"
+    url = f"abfss://lake@acct.dfs.core.windows.net/{name}"
+    uc.create_external_location(name, url, name)
+
+    updated = uc.credential(name).update(azure_managed_identity=AzureManagedIdentity())
+    assert updated.azure_service_principal is None
+    assert updated.azure_managed_identity == AzureManagedIdentity()
+    # The location's storage needs an Azure identity.
+    with pytest.raises(BadRequestError):
+        uc.credential(name).update(
+            aws_iam_role=AwsIamRoleRequest("arn:aws:iam::123456789012:role/uc")
+        )
+    uc.external_location(name).delete()
+    uc.credential(name).delete()
+
+
 def test_list_credentials_by_purpose(uc: Calls) -> None:
     # The upstream server takes `purpose`, but lists every credential.
     name = unique("credential")
     role = AwsIamRoleRequest("arn:aws:iam::123456789012:role/uc")
-    uc.create_credential(name, role, purpose="STORAGE")
+    uc.create_credential(name, aws_iam_role=role, purpose="STORAGE")
     assert name in [c.name for c in uc.list_credentials(purpose="STORAGE")]
     services = uc.list_credentials(purpose="SERVICE_PRINCIPAL")
     assert name not in [c.name for c in services]

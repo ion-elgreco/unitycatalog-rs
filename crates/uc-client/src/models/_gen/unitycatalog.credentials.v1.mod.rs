@@ -20,6 +20,9 @@ pub mod __buffa {
     pub fn register_types(reg: &mut ::buffa::type_registry::TypeRegistry) {
         reg.register_json_any(super::__AWS_IAM_ROLE_REQUEST_JSON_ANY);
         reg.register_json_any(super::__AWS_IAM_ROLE_RESPONSE_JSON_ANY);
+        reg.register_json_any(super::__AZURE_SERVICE_PRINCIPAL_REQUEST_JSON_ANY);
+        reg.register_json_any(super::__AZURE_SERVICE_PRINCIPAL_RESPONSE_JSON_ANY);
+        reg.register_json_any(super::__AZURE_MANAGED_IDENTITY_JSON_ANY);
         reg.register_json_any(super::__CREDENTIAL_INFO_JSON_ANY);
         reg.register_json_any(super::__CREATE_CREDENTIAL_REQUEST_JSON_ANY);
         reg.register_json_any(super::__LIST_CREDENTIALS_REQUEST_JSON_ANY);

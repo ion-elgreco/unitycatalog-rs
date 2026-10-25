@@ -1,11 +1,19 @@
 //! Azure credentials, after upstream `AzureCredentialVendor`.
 //!
-//! Each storage account is configured by `adls.*.N`. The service principal
-//! (tenant, client id and secret) signs in to Microsoft Entra ID through
-//! `object_store`, gets a user delegation key for the hour, and signs a
-//! directory SAS for the path: read and list, plus write and delete for
-//! writes. In test mode the SAS is `tenant/client/secret`. External
-//! locations are not supported for Azure yet, as upstream.
+//! The identity that signs in to Microsoft Entra ID is the storage
+//! credential's, under an external location, or else the service principal
+//! of the account's `adls.*` entry:
+//!
+//! - A service principal signs in with its client secret.
+//! - A managed identity is the server's own: the identity of its
+//!   environment (AKS workload identity, the `AZURE_*` variables, the
+//!   managed identity of the VM or App Service), or the user-assigned
+//!   identity of its resource ID, from the instance metadata service.
+//!
+//! `object_store` signs in and keeps the token. With the token the server
+//! gets a user delegation key for the hour, and signs a directory SAS for
+//! the path: read and list, plus write and delete for writes. In test mode
+//! the SAS of an `adls.*` entry is `tenant/client/secret`.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -14,7 +22,7 @@ use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use hmac::{Hmac, Mac};
 use object_store::{
-    azure::{AzureCredential, AzureCredentialProvider, MicrosoftAzureBuilder},
+    azure::{AzureConfigKey, AzureCredential, AzureCredentialProvider, MicrosoftAzureBuilder},
     client::SpawnedReqwestConnector,
 };
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
@@ -24,7 +32,7 @@ use uc_api::{AzureUserDelegationSAS, TemporaryCredentials};
 use uc_common::{Error, NormalizedUrl, Result};
 use uc_storage::runtime::io_handle;
 
-use super::{CredentialContext, StoragePrivilege, xml_text};
+use super::{CredentialContext, StorageCredential, StoragePrivilege, xml_text};
 use crate::http::outbound::SendOnIo;
 
 /// The SAS version signed: its string-to-sign is the one of
@@ -49,8 +57,43 @@ pub struct AzureVendor {
     /// Entra ID, when not Microsoft's: a test's.
     login: Option<String>,
     blob: Option<String>,
-    /// The service principals' sign-ins, by account, made on first use.
-    sign_ins: Mutex<HashMap<String, AzureCredentialProvider>>,
+    /// The instance metadata service, when not Azure's: a test's.
+    msi: Option<String>,
+    /// The sign-ins of the identities, made on first use.
+    sign_ins: Mutex<HashMap<Identity, AzureCredentialProvider>>,
+}
+
+/// Who signs in to Microsoft Entra ID.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum Identity {
+    ServicePrincipal {
+        tenant_id: String,
+        client_id: String,
+        client_secret: String,
+    },
+    /// The user-assigned managed identity of this resource ID, else the
+    /// identity of the server's environment.
+    Managed(Option<String>),
+}
+
+impl Identity {
+    /// The identity of a storage credential.
+    fn of(credential: &StorageCredential) -> Result<Self> {
+        let info = &credential.info;
+        if let Some(principal) = &info.azure_service_principal {
+            return Ok(Self::ServicePrincipal {
+                tenant_id: principal.directory_id.clone().unwrap_or_default(),
+                client_id: principal.application_id.clone().unwrap_or_default(),
+                client_secret: credential.client_secret.clone().unwrap_or_default(),
+            });
+        }
+        match &info.azure_managed_identity {
+            Some(identity) => Ok(Self::Managed(identity.managed_identity_id.clone())),
+            None => Err(Error::failed_precondition(
+                "The storage credential has no Azure identity.",
+            )),
+        }
+    }
 }
 
 /// Upstream `ADLSLocationUtils.ADLSLocationParts`.
@@ -205,44 +248,48 @@ impl AzureVendor {
             http: reqwest::Client::new(),
             login: None,
             blob: None,
+            msi: None,
             sign_ins: Mutex::new(HashMap::new()),
         }
     }
 
-    /// Entra ID and blob endpoints, for tests.
-    pub fn with_endpoints(mut self, login: Option<String>, blob: Option<String>) -> Self {
+    /// Entra ID, blob and instance metadata endpoints, for tests.
+    pub fn with_endpoints(
+        mut self,
+        login: Option<String>,
+        blob: Option<String>,
+        msi: Option<String>,
+    ) -> Self {
         self.login = login.or(self.login);
         self.blob = blob.or(self.blob);
+        self.msi = msi.or(self.msi);
         self
     }
 
     pub async fn vend(&self, ctx: &CredentialContext) -> Result<TemporaryCredentials> {
-        if ctx.credential.is_some() {
-            return Err(Error::unimplemented(
-                "Storage credential/external location for Azure is not supported yet.",
-            ));
-        }
         let parts = parse_location(&ctx.storage_base)?;
-        let config = self.accounts.get(&parts.account_name).ok_or_else(|| {
-            Error::failed_precondition("Azure storage account configuration not found.")
-        })?;
-        let (sas_token, expiration) = match config.test_mode {
-            true => {
-                let token = format!(
-                    "{}/{}/{}",
-                    config.tenant_id, config.client_id, config.client_secret
-                );
-                (token, TEST_MODE_EXPIRATION)
+        let identity = match &ctx.credential {
+            Some(credential) => Identity::of(credential)?,
+            None => {
+                let config = self.accounts.get(&parts.account_name).ok_or_else(|| {
+                    Error::failed_precondition("Azure storage account configuration not found.")
+                })?;
+                if config.test_mode {
+                    let token = format!(
+                        "{}/{}/{}",
+                        config.tenant_id, config.client_id, config.client_secret
+                    );
+                    return Ok(vended(token, TEST_MODE_EXPIRATION));
+                }
+                Identity::ServicePrincipal {
+                    tenant_id: config.tenant_id.clone(),
+                    client_id: config.client_id.clone(),
+                    client_secret: config.client_secret.clone(),
+                }
             }
-            false => self.delegation_sas(ctx, &parts, config).await?,
         };
-        Ok(TemporaryCredentials {
-            azure_user_delegation_sas: Some(AzureUserDelegationSAS {
-                sas_token: Some(sas_token),
-            }),
-            expiration_time: Some(expiration),
-            ..Default::default()
-        })
+        let (sas_token, expiration) = self.delegation_sas(ctx, &parts, &identity).await?;
+        Ok(vended(sas_token, expiration))
     }
 
     /// Upstream `DatalakeCredentialGenerator`: an hour from now.
@@ -250,7 +297,7 @@ impl AzureVendor {
         &self,
         ctx: &CredentialContext,
         parts: &LocationParts,
-        config: &AdlsConfig,
+        identity: &Identity,
     ) -> Result<(String, i64)> {
         let container = parts.container.as_deref().ok_or_else(|| {
             Error::invalid_argument(format!(
@@ -262,7 +309,7 @@ impl AzureVendor {
         let start = DateTime::from_timestamp(Utc::now().timestamp(), 0).unwrap_or_else(Utc::now);
         let expiry = start + Duration::hours(1);
         let (start_text, expiry_text) = (rfc3339(start), rfc3339(expiry));
-        let token = self.access_token(&parts.account_name, config).await?;
+        let token = self.access_token(&parts.account_name, identity).await?;
         let key = self
             .delegation_key(parts, &token, &start_text, &expiry_text)
             .await?;
@@ -282,12 +329,12 @@ impl AzureVendor {
         Ok((sas, expiry.timestamp_millis()))
     }
 
-    /// The service principal's token for Azure Storage, from `object_store`,
-    /// which keeps it until it is about to expire.
-    async fn access_token(&self, account: &str, config: &AdlsConfig) -> Result<String> {
+    /// The identity's token for Azure Storage, from `object_store`, which
+    /// keeps it until it is about to expire.
+    async fn access_token(&self, account: &str, identity: &Identity) -> Result<String> {
         let failed = |e: String| Error::internal(format!("Azure sign-in failed: {e}"));
         let credential = self
-            .sign_in(account, config)
+            .sign_in(account, identity)
             .map_err(|e| failed(e.to_string()))?
             .get_credential()
             .await
@@ -301,25 +348,41 @@ impl AzureVendor {
     fn sign_in(
         &self,
         account: &str,
-        config: &AdlsConfig,
+        identity: &Identity,
     ) -> object_store::Result<AzureCredentialProvider> {
         let mut sign_ins = self.sign_ins.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(found) = sign_ins.get(account) {
+        if let Some(found) = sign_ins.get(identity) {
             return Ok(found.clone());
         }
+        let builder = match identity {
+            Identity::ServicePrincipal {
+                tenant_id,
+                client_id,
+                client_secret,
+            } => MicrosoftAzureBuilder::new()
+                .with_tenant_id(tenant_id)
+                .with_client_id(client_id)
+                .with_client_secret(client_secret),
+            Identity::Managed(None) => MicrosoftAzureBuilder::from_env(),
+            // Only the instance metadata service knows identities by their
+            // resource ID; the environment's identity would take its place.
+            Identity::Managed(Some(id)) => {
+                MicrosoftAzureBuilder::new().with_config(AzureConfigKey::MsiResourceId, id)
+            }
+        };
         // A store only for its credentials: it sends no requests.
-        let mut builder = MicrosoftAzureBuilder::new()
+        let mut builder = builder
             .with_account(account)
             .with_container_name("uc-credentials")
-            .with_tenant_id(&config.tenant_id)
-            .with_client_id(&config.client_id)
-            .with_client_secret(&config.client_secret)
             .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
         if let Some(login) = &self.login {
             builder = builder.with_authority_host(login).with_allow_http(true);
         }
+        if let Some(msi) = &self.msi {
+            builder = builder.with_msi_endpoint(msi);
+        }
         let found = builder.build()?.credentials().clone();
-        sign_ins.insert(account.to_string(), found.clone());
+        sign_ins.insert(identity.clone(), found.clone());
         Ok(found)
     }
 
@@ -371,6 +434,17 @@ impl AzureVendor {
             signed_version: field("SignedVersion")?,
             value: field("Value")?,
         })
+    }
+}
+
+/// A SAS as vended credentials.
+fn vended(sas_token: String, expiration: i64) -> TemporaryCredentials {
+    TemporaryCredentials {
+        azure_user_delegation_sas: Some(AzureUserDelegationSAS {
+            sas_token: Some(sas_token),
+        }),
+        expiration_time: Some(expiration),
+        ..Default::default()
     }
 }
 

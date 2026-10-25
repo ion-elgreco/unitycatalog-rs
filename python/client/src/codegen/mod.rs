@@ -703,27 +703,44 @@ impl PyClient {
     ///
     /// Args:
     ///     name: Name of the credential.
-    ///     aws_iam_role: The AWS IAM role of the credential: an AWS IAM role is the only kind of
-    ///                   credential.
     ///     comment: User-provided free-form text description.
+    ///     aws_iam_role: The AWS IAM role of the credential. A credential has exactly one of
+    ///                   `aws_iam_role`, `azure_service_principal` and `azure_managed_identity`.
     ///     purpose: What the credential is used for.
+    ///     azure_service_principal: The Azure service principal of the credential.
+    ///     azure_managed_identity: The Azure managed identity of the credential.
     ///
     /// Returns:
     ///     A credential that gives access to storage or to external services.
-    #[pyo3(signature = (name, aws_iam_role, *, comment = None, purpose = None))]
+    #[pyo3(
+        signature = (
+            name,
+            *,
+            comment = None,
+            aws_iam_role = None,
+            purpose = None,
+            azure_service_principal = None,
+            azure_managed_identity = None
+        )
+    )]
     pub fn create_credential(
         &self,
         py: Python,
         name: String,
-        aws_iam_role: PyAwsIamRoleRequest,
         comment: Option<String>,
+        aws_iam_role: ::core::option::Option<PyAwsIamRoleRequest>,
         purpose: ::core::option::Option<PyCredentialPurpose>,
+        azure_service_principal: ::core::option::Option<PyAzureServicePrincipalRequest>,
+        azure_managed_identity: ::core::option::Option<PyAzureManagedIdentity>,
     ) -> PyUnityCatalogResult<PyCredentialInfo> {
         let request = self
             .client
-            .create_credential(name, aws_iam_role.into())
+            .create_credential(name)
             .with_comment(comment)
-            .with_purpose(purpose.map(::core::convert::Into::into));
+            .with_aws_iam_role(aws_iam_role.map(::core::convert::Into::into))
+            .with_purpose(purpose.map(::core::convert::Into::into))
+            .with_azure_service_principal(azure_service_principal.map(::core::convert::Into::into))
+            .with_azure_managed_identity(azure_managed_identity.map(::core::convert::Into::into));
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -733,20 +750,35 @@ impl PyClient {
     }
 
     /// Like `create_credential`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (name, aws_iam_role, *, comment = None, purpose = None))]
+    #[pyo3(
+        signature = (
+            name,
+            *,
+            comment = None,
+            aws_iam_role = None,
+            purpose = None,
+            azure_service_principal = None,
+            azure_managed_identity = None
+        )
+    )]
     pub fn create_credential_async<'py>(
         &self,
         py: Python<'py>,
         name: String,
-        aws_iam_role: PyAwsIamRoleRequest,
         comment: Option<String>,
+        aws_iam_role: ::core::option::Option<PyAwsIamRoleRequest>,
         purpose: ::core::option::Option<PyCredentialPurpose>,
+        azure_service_principal: ::core::option::Option<PyAzureServicePrincipalRequest>,
+        azure_managed_identity: ::core::option::Option<PyAzureManagedIdentity>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyCredentialInfo>> {
         let request = self
             .client
-            .create_credential(name, aws_iam_role.into())
+            .create_credential(name)
             .with_comment(comment)
-            .with_purpose(purpose.map(::core::convert::Into::into));
+            .with_aws_iam_role(aws_iam_role.map(::core::convert::Into::into))
+            .with_purpose(purpose.map(::core::convert::Into::into))
+            .with_azure_service_principal(azure_service_principal.map(::core::convert::Into::into))
+            .with_azure_managed_identity(azure_managed_identity.map(::core::convert::Into::into));
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -5874,6 +5906,9 @@ pub fn register(module: &::pyo3::Bound<'_, ::pyo3::types::PyModule>) -> ::pyo3::
             PyAwsCredentials,
             PyAwsIamRoleRequest,
             PyAwsIamRoleResponse,
+            PyAzureManagedIdentity,
+            PyAzureServicePrincipalRequest,
+            PyAzureServicePrincipalResponse,
             PyAzureUserDelegationSAS,
             PyCredentialInfo,
             PyGcpOauthToken,

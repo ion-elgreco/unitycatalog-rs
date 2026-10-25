@@ -30,7 +30,10 @@ The Delta REST API and the Iceberg REST catalog give credentials with their tabl
 
 ## Where the credentials come from
 
-1. An external location that covers the path: its storage credential, an AWS IAM role.
+1. An external location that covers the path: its storage credential. A credential holds one
+   identity: an AWS IAM role, an Azure service principal or an Azure managed identity. It must
+   reach the location's storage: an AWS role for `s3://`, an Azure identity for `abfs://` and
+   `abfss://`. A storage credential cannot hold a GCP identity yet.
 2. Else the settings of the bucket or account: `[s3.<name>]`, `[adls.<name>]` or `[gcs.<name>]`.
 3. Local paths get empty credentials.
 
@@ -68,8 +71,29 @@ For an S3-compatible store, such as MinIO or RustFS, set `aws.endpoint` to its U
 
 ## Azure Data Lake Storage
 
-A service principal of the storage account. The server signs SAS tokens with it: give it a data
-role on the account, such as Storage Blob Data Contributor.
+The server signs in to Microsoft Entra ID, gets a user delegation key, and signs SAS tokens with
+it. Give the identity that signs in a data role on the storage account, such as Storage Blob Data
+Contributor.
+
+With an external location, the credential is a service principal or a managed identity:
+
+```bash
+uc credential create --name lake --azure_directory_id <tenant id> \
+  --azure_application_id <client id> --azure_client_secret <client secret>
+uc external_location create --name lake \
+  --url abfss://data@mylake.dfs.core.windows.net/lake --credential_name lake
+```
+
+- A service principal: the server signs in as the app. The server keeps the client secret in its
+  database, and no answer of the API contains it. Backups contain it.
+- A managed identity (`--azure_managed_identity`): the server's own Azure identity, from its
+  environment: AKS workload identity, the `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and
+  `AZURE_CLIENT_SECRET` variables, or the managed identity of the VM or App Service. With a
+  resource ID (`--azure_managed_identity <resource id>`), the server uses that user-assigned
+  managed identity of its VM, through the instance metadata service.
+
+Or, without an external location, give a service principal of the storage account in the
+settings:
 
 ```toml
 [adls.lake]

@@ -123,10 +123,10 @@ The list commands take `--max_results` (default 100) and `--page_token`. After a
 
 | Operation | Flags |
 | --- | --- |
-| `create` | **`--name`**, `--aws_iam_role_arn`, `--comment` |
+| `create` | **`--name`**, `--comment`, and one identity: `--aws_iam_role_arn`; `--azure_directory_id` with `--azure_application_id` and `--azure_client_secret`; or `--azure_managed_identity [RESOURCE_ID]` |
 | `list` | `--max_results`, `--page_token` |
 | `get` | **`--name`** |
-| `update` | **`--name`**, and one or more of `--new_name`, `--comment`, `--aws_iam_role_arn` |
+| `update` | **`--name`**, and one or more of `--new_name`, `--comment` and one new identity, as for `create` |
 | `delete` | **`--name`**, `--force` |
 
 ## external_location

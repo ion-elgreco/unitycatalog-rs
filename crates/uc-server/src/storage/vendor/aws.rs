@@ -97,7 +97,7 @@ impl AwsVendor {
     pub async fn vend(&self, ctx: &CredentialContext) -> Result<TemporaryCredentials> {
         let (key, config, role_arn, external_id) = match &ctx.credential {
             Some(credential) => {
-                let role = credential.aws_iam_role.as_ref();
+                let role = credential.info.aws_iam_role.as_ref();
                 let role_arn = role.and_then(|r| r.role_arn.clone()).ok_or_else(|| {
                     Error::failed_precondition("The storage credential has no AWS IAM role.")
                 })?;

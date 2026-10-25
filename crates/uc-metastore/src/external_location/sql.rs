@@ -13,7 +13,8 @@ use uc_common::{
 };
 
 use crate::ExternalLocationOps;
-use crate::sql::rows::EXTERNAL_LOCATION;
+use crate::credential::sql::CredentialRow;
+use crate::sql::rows::{CREDENTIAL, EXTERNAL_LOCATION};
 use crate::sql::{
     SqlMetastore, char_len, create_err_as, db_err, insert, placeholders, select, select_one,
     starts_with, touch_audit, update,
@@ -121,8 +122,8 @@ impl SqlMetastore {
     }
 
     /// Upstream `validateAndGetCredentialDAO`: the id of the storage
-    /// credential named `name`.
-    async fn credential_id_for(&self, name: &str) -> Result<String> {
+    /// credential named `name`, which must reach `url`.
+    async fn credential_id_for(&self, name: &str, url: &NormalizedUrl) -> Result<String> {
         let credential = self
             .credential_row(name)
             .await?
@@ -133,6 +134,7 @@ impl SqlMetastore {
                 "Credential not of type storage: {name}"
             )));
         }
+        credential.check_reaches(url)?;
         Ok(credential.id_string)
     }
 
@@ -219,7 +221,7 @@ impl ExternalLocationOps for SqlMetastore {
         let url = NormalizedUrl::parse(&req.url)?;
         url.validate_not_under_managed_prefix()?;
         self.validate_url_not_used(&url, None).await?;
-        let credential_id = self.credential_id_for(&req.credential_name).await?;
+        let credential_id = self.credential_id_for(&req.credential_name, &url).await?;
 
         let now = now_epoch_millis();
         let id = Uuid::new_v4().to_string();
@@ -276,6 +278,7 @@ impl ExternalLocationOps for SqlMetastore {
         }
         // Upstream checks a new URL for overlaps only (no managed-prefix
         // check on update).
+        let new_url = req.url.is_some();
         if let Some(raw) = req.url {
             let url = NormalizedUrl::parse(&raw)?;
             self.validate_url_not_used(&url, Some(&existing.id_string))
@@ -285,8 +288,19 @@ impl ExternalLocationOps for SqlMetastore {
         if let Some(c) = req.comment {
             existing.comment = Some(c);
         }
+        let url = NormalizedUrl::parse(&existing.url)?;
         if let Some(credential_name) = req.credential_name {
-            existing.credential_id = self.credential_id_for(&credential_name).await?;
+            existing.credential_id = self.credential_id_for(&credential_name, &url).await?;
+        } else if new_url {
+            let credential: CredentialRow = select_one(
+                self.db.as_ref(),
+                &CREDENTIAL,
+                "WHERE id_string = $1",
+                &[existing.credential_id.as_str().into()],
+            )
+            .await?
+            .ok_or_else(|| Error::internal("external_location row without its credential"))?;
+            credential.check_reaches(&url)?;
         }
         touch_audit(
             &mut existing.updated_at,

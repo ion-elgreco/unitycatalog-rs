@@ -78,7 +78,7 @@ def main() -> None:
     # limits each credential to its path and operation.
     alice.create_credential(
         "rustfs",
-        AwsIamRoleRequest("arn:aws:iam::000000000000:role/uc-demo"),
+        aws_iam_role=AwsIamRoleRequest("arn:aws:iam::000000000000:role/uc-demo"),
         purpose="STORAGE",
         comment="The server's root user at RustFS",
     )

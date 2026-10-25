@@ -51,25 +51,42 @@ impl PyCredentialClient {
     ///
     /// Args:
     ///     comment: User-provided free-form text description.
-    ///     aws_iam_role: New AWS IAM role of the credential. The role gets a new external ID.
+    ///     aws_iam_role: New AWS IAM role of the credential. The role gets a new external ID. Give at most
+    ///                   one of `aws_iam_role`, `azure_service_principal` and `azure_managed_identity`: it
+    ///                   replaces the identity of the credential.
     ///     new_name: New name of the credential.
+    ///     azure_service_principal: New Azure service principal of the credential.
+    ///     azure_managed_identity: New Azure managed identity of the credential.
     ///
     /// Returns:
     ///     A credential that gives access to storage or to external services.
-    #[pyo3(signature = (*, comment = None, aws_iam_role = None, new_name = None))]
+    #[pyo3(
+        signature = (
+            *,
+            comment = None,
+            aws_iam_role = None,
+            new_name = None,
+            azure_service_principal = None,
+            azure_managed_identity = None
+        )
+    )]
     pub fn update(
         &self,
         py: Python,
         comment: Option<String>,
         aws_iam_role: ::core::option::Option<PyAwsIamRoleRequest>,
         new_name: Option<String>,
+        azure_service_principal: ::core::option::Option<PyAzureServicePrincipalRequest>,
+        azure_managed_identity: ::core::option::Option<PyAzureManagedIdentity>,
     ) -> PyUnityCatalogResult<PyCredentialInfo> {
         let request = self
             .client
             .update()
             .with_comment(comment)
             .with_aws_iam_role(aws_iam_role.map(::core::convert::Into::into))
-            .with_new_name(new_name);
+            .with_new_name(new_name)
+            .with_azure_service_principal(azure_service_principal.map(::core::convert::Into::into))
+            .with_azure_managed_identity(azure_managed_identity.map(::core::convert::Into::into));
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -79,20 +96,33 @@ impl PyCredentialClient {
     }
 
     /// Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (*, comment = None, aws_iam_role = None, new_name = None))]
+    #[pyo3(
+        signature = (
+            *,
+            comment = None,
+            aws_iam_role = None,
+            new_name = None,
+            azure_service_principal = None,
+            azure_managed_identity = None
+        )
+    )]
     pub fn update_async<'py>(
         &self,
         py: Python<'py>,
         comment: Option<String>,
         aws_iam_role: ::core::option::Option<PyAwsIamRoleRequest>,
         new_name: Option<String>,
+        azure_service_principal: ::core::option::Option<PyAzureServicePrincipalRequest>,
+        azure_managed_identity: ::core::option::Option<PyAzureManagedIdentity>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyCredentialInfo>> {
         let request = self
             .client
             .update()
             .with_comment(comment)
             .with_aws_iam_role(aws_iam_role.map(::core::convert::Into::into))
-            .with_new_name(new_name);
+            .with_new_name(new_name)
+            .with_azure_service_principal(azure_service_principal.map(::core::convert::Into::into))
+            .with_azure_managed_identity(azure_managed_identity.map(::core::convert::Into::into));
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

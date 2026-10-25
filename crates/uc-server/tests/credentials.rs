@@ -214,3 +214,188 @@ async fn cannot_delete_credential_bound_to_external_location_without_force(
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+async fn send(
+    app: &Router,
+    method: Method,
+    path: &str,
+    body: serde_json::Value,
+) -> axum::response::Response {
+    app.clone()
+        .oneshot(req_json(method, path, body))
+        .await
+        .unwrap()
+}
+
+/// An Azure service principal: answers hold its tenant and application,
+/// never its secret, which the database keeps.
+#[rstest]
+#[tokio::test]
+async fn azure_service_principals_keep_their_secret(#[future(awt)] app: Router) {
+    let principal =
+        json!({ "directory_id": "tenant", "application_id": "app", "client_secret": "s3cret" });
+    let resp = send(
+        &app,
+        Method::POST,
+        "/credentials",
+        json!({ "name": "sp", "azure_service_principal": principal }),
+    )
+    .await;
+    let info = json_body(assert_status(resp, StatusCode::OK, "create").await).await;
+    assert_eq!(
+        info["azure_service_principal"],
+        json!({ "directory_id": "tenant", "application_id": "app" })
+    );
+    assert!(info.get("aws_iam_role").is_none());
+    for resp in [
+        app.clone()
+            .oneshot(req(Method::GET, "/credentials/sp"))
+            .await
+            .unwrap(),
+        app.clone()
+            .oneshot(req(Method::GET, "/credentials"))
+            .await
+            .unwrap(),
+    ] {
+        let text = json_body(assert_status(resp, StatusCode::OK, "read").await)
+            .await
+            .to_string();
+        assert!(!text.contains("s3cret"), "{text}");
+    }
+    // Each field is required.
+    for field in ["directory_id", "application_id", "client_secret"] {
+        let mut principal = principal.clone();
+        principal[field] = json!("");
+        let resp = send(
+            &app,
+            Method::POST,
+            "/credentials",
+            json!({ "name": "bad", "azure_service_principal": principal }),
+        )
+        .await;
+        let err = assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+        assert_eq!(err["message"], format!("{field} must not be empty"));
+    }
+}
+
+/// A credential holds one identity; a new one replaces it.
+#[rstest]
+#[tokio::test]
+async fn credentials_hold_one_identity(#[future(awt)] app: Router) {
+    let resp = send(
+        &app,
+        Method::POST,
+        "/credentials",
+        json!({ "name": "none" }),
+    )
+    .await;
+    let err = assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    assert_eq!(err["message"], "Unknown credential type");
+    let two = json!({
+        "name": "two",
+        "aws_iam_role": { "role_arn": "arn:aws:iam::1:role/x" },
+        "azure_managed_identity": {},
+    });
+    let resp = send(&app, Method::POST, "/credentials", two).await;
+    let err = assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    assert_eq!(
+        err["message"],
+        "Give only one of aws_iam_role, azure_service_principal and azure_managed_identity."
+    );
+
+    let resp = send(
+        &app,
+        Method::POST,
+        "/credentials",
+        json!({ "name": "mi", "azure_managed_identity": {} }),
+    )
+    .await;
+    let info = json_body(assert_status(resp, StatusCode::OK, "create").await).await;
+    assert_eq!(info["azure_managed_identity"], json!({}));
+    let resp = send(
+        &app,
+        Method::PATCH,
+        "/credentials/mi",
+        json!({ "aws_iam_role": { "role_arn": "arn:aws:iam::1:role/x" } }),
+    )
+    .await;
+    let info = json_body(assert_status(resp, StatusCode::OK, "update").await).await;
+    assert_eq!(info["aws_iam_role"]["role_arn"], "arn:aws:iam::1:role/x");
+    assert!(info["aws_iam_role"]["external_id"].is_string());
+    assert!(info.get("azure_managed_identity").is_none());
+}
+
+/// A location's credential must reach its storage: S3 needs an AWS role,
+/// ADLS an Azure identity. Local paths take any.
+#[rstest]
+#[tokio::test]
+async fn external_locations_need_a_credential_of_their_cloud(#[future(awt)] app: Router) {
+    for body in [
+        json!({ "name": "aws", "aws_iam_role": { "role_arn": "arn:aws:iam::1:role/x" } }),
+        json!({ "name": "azure", "azure_managed_identity": {} }),
+    ] {
+        let resp = send(&app, Method::POST, "/credentials", body).await;
+        assert_status(resp, StatusCode::OK, "credential").await;
+    }
+    let location = |name: &str, url: &str, credential: &str| json!({ "name": name, "url": url, "credential_name": credential });
+    let adls = "abfss://c@acct.dfs.core.windows.net/lake";
+    let resp = send(
+        &app,
+        Method::POST,
+        "/external-locations",
+        location("el", adls, "aws"),
+    )
+    .await;
+    let err = assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    assert_eq!(
+        err["message"],
+        format!(
+            "Credential aws cannot reach {adls}: it needs an Azure service principal or managed identity."
+        )
+    );
+    for (name, url, credential) in [
+        ("el", adls, "azure"),
+        ("local", "file:///tmp/uc-lake", "aws"),
+    ] {
+        let resp = send(
+            &app,
+            Method::POST,
+            "/external-locations",
+            location(name, url, credential),
+        )
+        .await;
+        assert_status(resp, StatusCode::OK, "location").await;
+    }
+    // Neither a new URL nor a new credential may break the pair.
+    let resp = send(
+        &app,
+        Method::PATCH,
+        "/external-locations/el",
+        json!({ "url": "s3://bucket/lake" }),
+    )
+    .await;
+    assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    let resp = send(
+        &app,
+        Method::PATCH,
+        "/external-locations/el",
+        json!({ "credential_name": "aws" }),
+    )
+    .await;
+    assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    // Nor a new identity of the credential.
+    let resp = send(
+        &app,
+        Method::PATCH,
+        "/credentials/azure",
+        json!({ "aws_iam_role": { "role_arn": "arn:aws:iam::1:role/x" } }),
+    )
+    .await;
+    let err = assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    assert_eq!(
+        err["message"],
+        format!(
+            "Credential azure cannot reach {adls}: it needs an Azure service principal or managed identity."
+        )
+    );
+}

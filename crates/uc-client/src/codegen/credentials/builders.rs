@@ -103,14 +103,9 @@ pub struct CreateCredentialBuilder {
 impl CreateCredentialBuilder {
     /// Create a new builder instance.
     /// Obtain via the corresponding method on `CredentialServiceClient`.
-    pub(crate) fn new(
-        client: CredentialServiceClient,
-        name: impl Into<String>,
-        aws_iam_role: AwsIamRoleRequest,
-    ) -> Self {
+    pub(crate) fn new(client: CredentialServiceClient, name: impl Into<String>) -> Self {
         let request = CreateCredentialRequest {
             name: name.into(),
-            aws_iam_role: buffa::MessageField::some(aws_iam_role),
             ..Default::default()
         };
         Self { client, request }
@@ -122,9 +117,43 @@ impl CreateCredentialBuilder {
         self
     }
 
+    /// The AWS IAM role of the credential. A credential has exactly one of `aws_iam_role`,
+    /// `azure_service_principal` and `azure_managed_identity`.
+    pub fn with_aws_iam_role(mut self, aws_iam_role: impl Into<Option<AwsIamRoleRequest>>) -> Self {
+        self.request.aws_iam_role = {
+            let aws_iam_role: ::core::option::Option<_> = aws_iam_role.into();
+            buffa::MessageField::from(aws_iam_role)
+        };
+        self
+    }
+
     /// What the credential is used for.
     pub fn with_purpose(mut self, purpose: impl Into<Option<CredentialPurpose>>) -> Self {
         self.request.purpose = purpose.into().map(buffa::EnumValue::Known);
+        self
+    }
+
+    /// The Azure service principal of the credential.
+    pub fn with_azure_service_principal(
+        mut self,
+        azure_service_principal: impl Into<Option<AzureServicePrincipalRequest>>,
+    ) -> Self {
+        self.request.azure_service_principal = {
+            let azure_service_principal: ::core::option::Option<_> = azure_service_principal.into();
+            buffa::MessageField::from(azure_service_principal)
+        };
+        self
+    }
+
+    /// The Azure managed identity of the credential.
+    pub fn with_azure_managed_identity(
+        mut self,
+        azure_managed_identity: impl Into<Option<AzureManagedIdentity>>,
+    ) -> Self {
+        self.request.azure_managed_identity = {
+            let azure_managed_identity: ::core::option::Option<_> = azure_managed_identity.into();
+            buffa::MessageField::from(azure_managed_identity)
+        };
         self
     }
 }
@@ -190,7 +219,9 @@ impl UpdateCredentialBuilder {
         self
     }
 
-    /// New AWS IAM role of the credential. The role gets a new external ID.
+    /// New AWS IAM role of the credential. The role gets a new external ID. Give at most one of
+    /// `aws_iam_role`, `azure_service_principal` and `azure_managed_identity`: it replaces the
+    /// identity of the credential.
     pub fn with_aws_iam_role(mut self, aws_iam_role: impl Into<Option<AwsIamRoleRequest>>) -> Self {
         self.request.aws_iam_role = {
             let aws_iam_role: ::core::option::Option<_> = aws_iam_role.into();
@@ -202,6 +233,30 @@ impl UpdateCredentialBuilder {
     /// New name of the credential.
     pub fn with_new_name(mut self, new_name: impl Into<Option<String>>) -> Self {
         self.request.new_name = new_name.into();
+        self
+    }
+
+    /// New Azure service principal of the credential.
+    pub fn with_azure_service_principal(
+        mut self,
+        azure_service_principal: impl Into<Option<AzureServicePrincipalRequest>>,
+    ) -> Self {
+        self.request.azure_service_principal = {
+            let azure_service_principal: ::core::option::Option<_> = azure_service_principal.into();
+            buffa::MessageField::from(azure_service_principal)
+        };
+        self
+    }
+
+    /// New Azure managed identity of the credential.
+    pub fn with_azure_managed_identity(
+        mut self,
+        azure_managed_identity: impl Into<Option<AzureManagedIdentity>>,
+    ) -> Self {
+        self.request.azure_managed_identity = {
+            let azure_managed_identity: ::core::option::Option<_> = azure_managed_identity.into();
+            buffa::MessageField::from(azure_managed_identity)
+        };
         self
     }
 }

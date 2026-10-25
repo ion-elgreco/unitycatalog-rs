@@ -47,8 +47,8 @@ storage, as an engine gets them.
 Under the tree, **Manage** has the credentials and external locations, and, for admins, the users,
 groups and audit log:
 
-- **Credentials**: an AWS IAM role that the server assumes, with the external locations bound to
-  it.
+- **Credentials**: an AWS IAM role that the server assumes, or an Azure service principal or
+  managed identity that it signs in as, with the external locations bound to it.
 - **External locations**: a URL in cloud storage and its credential. See
   [Cloud storage](../server/cloud-storage.md).
 - **Users**: create a user by email; **Delete** deactivates the user.
