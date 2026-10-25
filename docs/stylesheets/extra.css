@@ -114,6 +114,21 @@
   word-break: normal;
   overflow-wrap: normal;
 }
+/* A group row of a settings table: a bold name alone in the first cell, and what the group
+   is for in the description. It sets the group off from the settings under it. */
+.md-typeset table:not([class]) tr:has(> td:first-child > strong:only-child) > td {
+  background-color: var(--md-default-fg-color--lightest);
+  border-top: 0.1rem solid var(--md-default-fg-color--lighter);
+  padding-top: 1.2em;
+  padding-bottom: 0.6em;
+}
+.md-typeset table:not([class]) tr:has(> td:first-child > strong:only-child) > td:first-child {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.md-typeset table:not([class]) tr:has(> td:first-child > strong:only-child) > td:last-child {
+  color: var(--md-default-fg-color--light);
+}
 .md-typeset h1 code {
   padding: 0;
   background: none;
