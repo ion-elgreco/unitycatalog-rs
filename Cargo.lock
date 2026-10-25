@@ -4441,7 +4441,7 @@ dependencies = [
 [[package]]
 name = "olai-codegen"
 version = "0.0.8"
-source = "git+https://github.com/ion-elgreco/trestle?branch=feat%2Fuc-client-plan#081193ff741bb5fe983f463202664957a4334a29"
+source = "git+https://github.com/ion-elgreco/trestle?branch=feat%2Fuc-client-plan#2acae1ffb3835bc601587ac562aef04aebe25ee6"
 dependencies = [
  "convert_case 0.7.1",
  "glob",
@@ -5085,7 +5085,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
