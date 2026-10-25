@@ -77,7 +77,7 @@ The chart sets the server's settings as `UC_*` environment variables. For the
 | `storage.modelStorageRoot` | `""` | The same for models. |
 | `storage.credentials.s3` | `[]` | Per bucket: `bucketPath`, `region`, `awsRoleArn`, `credentialsSecretName`. |
 | `storage.credentials.adls` | `[]` | Per account: `storageAccountName`, and `credentialsSecretName` or `managedIdentity: true` with an optional `managedIdentityId`. |
-| `storage.credentials.gcs` | `[]` | Per bucket: `bucketPath`, `credentialsSecretName`. |
+| `storage.credentials.gcs` | `[]` | Per bucket: `bucketPath`, and `credentialsSecretName` or the pod's own identity, with an optional `serviceAccount` to impersonate. |
 | `ui.enabled` | `true` | Serve the web UI at `/`. |
 | `ingress.enabled`, `host`, `ingressClassName`, `annotations`, `tlsSecretName` | off | An Ingress to the server. |
 | `httpRoute.enabled`, `host`, `parentRefs`, `annotations` | off | An HTTPRoute to the server; `parentRefs` is required. |

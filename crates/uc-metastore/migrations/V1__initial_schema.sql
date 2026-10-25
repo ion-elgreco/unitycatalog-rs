@@ -162,8 +162,8 @@ CREATE TABLE model_version (
     UNIQUE (registered_model_id, version)
 );
 
--- One identity per credential: an AWS role, an Azure service principal or
--- an Azure managed identity.
+-- One identity per credential: an AWS role, an Azure service principal, an
+-- Azure managed identity, a GCP service account or a GCP service account key.
 CREATE TABLE credential (
     id_string                 TEXT PRIMARY KEY,
     name                      TEXT NOT NULL UNIQUE,
@@ -177,6 +177,11 @@ CREATE TABLE credential (
     azure_client_secret       TEXT,
     azure_managed_identity    BOOLEAN NOT NULL,
     azure_managed_identity_id TEXT,
+    gcp_service_account       BOOLEAN NOT NULL,
+    gcp_service_account_email TEXT,
+    gcp_key_email             TEXT,
+    gcp_key_id                TEXT,
+    gcp_json_key              TEXT,
     created_at                BIGINT NOT NULL,
     created_by                TEXT,
     updated_at                BIGINT NOT NULL,

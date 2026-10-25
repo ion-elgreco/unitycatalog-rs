@@ -994,6 +994,47 @@ async fn users_permissions_credentials_and_locations() {
         json!({ "managed_identity_id": null })
     );
     assert_eq!(own["azure_service_principal"], Value::Null);
+    // GCP: a service account key from its file, which no answer holds, and
+    // a service account that the server impersonates.
+    let key = s.dir.path().join("key.json");
+    let json_key = json!({
+        "type": "service_account",
+        "client_email": "uc@p.iam.gserviceaccount.com",
+        "private_key_id": "kid",
+        "private_key": "PRIVATE",
+    });
+    std::fs::write(&key, json_key.to_string()).unwrap();
+    let keyed = s
+        .json(&[
+            "credential",
+            "create",
+            "--name",
+            "gcp",
+            "--gcp_service_account_key",
+            key.to_str().unwrap(),
+        ])
+        .await;
+    assert_eq!(
+        keyed["gcp_service_account_key"],
+        json!({ "email": "uc@p.iam.gserviceaccount.com", "private_key_id": "kid" })
+    );
+    assert!(!keyed.to_string().contains("PRIVATE"));
+    let impersonated = s
+        .json(&[
+            "credential",
+            "update",
+            "--name",
+            "gcp",
+            "--gcp_service_account",
+            "data@p.iam.gserviceaccount.com",
+        ])
+        .await;
+    assert_eq!(
+        impersonated["gcp_service_account"],
+        json!({ "email": "data@p.iam.gserviceaccount.com" })
+    );
+    assert_eq!(impersonated["gcp_service_account_key"], Value::Null);
+    s.ok(&["credential", "delete", "--name", "gcp"]).await;
     // Usage errors.
     let (code, _, err) = s.uc(&["credential", "create", "--name", "none"]).await;
     assert_eq!(code, 2);

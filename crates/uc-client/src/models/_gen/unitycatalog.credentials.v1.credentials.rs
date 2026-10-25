@@ -1749,6 +1749,506 @@ pub const __AZURE_MANAGED_IDENTITY_JSON_ANY: ::buffa::type_registry::JsonAnyEntr
         is_wkt: false,
     };
 
+/// The GCP service account of a credential: the server's own identity, or a service account that
+/// the server impersonates.
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct GcpServiceAccount {
+    /// Email of the service account that the server impersonates. The server's identity needs the
+    /// role Service Account Token Creator on it. Absent: the server's own identity, from Application
+    /// Default Credentials or the metadata server.
+    ///
+    /// Field 1: `email`
+    #[serde(
+        rename = "email",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub email: ::core::option::Option<::buffa::alloc::string::String>,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for GcpServiceAccount {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("GcpServiceAccount")
+            .field("email", &self.email)
+            .finish()
+    }
+}
+
+impl GcpServiceAccount {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.credentials.v1.GcpServiceAccount";
+}
+
+impl GcpServiceAccount {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::email`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_email(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.email = Some(value.into());
+        self
+    }
+}
+
+impl ::buffa::DefaultInstance for GcpServiceAccount {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<GcpServiceAccount> =
+            ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for GcpServiceAccount {
+    const PACKAGE: &'static str = "unitycatalog.credentials.v1";
+    const NAME: &'static str = "GcpServiceAccount";
+    const FULL_NAME: &'static str = "unitycatalog.credentials.v1.GcpServiceAccount";
+    const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.credentials.v1.GcpServiceAccount";
+}
+
+impl ::buffa::Message for GcpServiceAccount {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if let Some(ref v) = self.email {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, _cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let Some(ref v) = self.email {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.email
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.email = ::core::option::Option::None;
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for GcpServiceAccount {
+    const PROTO_FQN: &'static str = "unitycatalog.credentials.v1.GcpServiceAccount";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for GcpServiceAccount {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __GCP_SERVICE_ACCOUNT_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.credentials.v1.GcpServiceAccount",
+        to_json: ::buffa::type_registry::any_to_json::<GcpServiceAccount>,
+        from_json: ::buffa::type_registry::any_from_json::<GcpServiceAccount>,
+        is_wkt: false,
+    };
+
+/// The GCP service account key of a new or changed credential.
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct GcpServiceAccountKeyRequest {
+    /// The JSON key file of the service account. The server stores it and never returns it.
+    ///
+    /// Field 1: `json_key`
+    #[serde(
+        rename = "json_key",
+        alias = "jsonKey",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub json_key: ::buffa::alloc::string::String,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for GcpServiceAccountKeyRequest {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("GcpServiceAccountKeyRequest")
+            .field("json_key", &::core::format_args!("[REDACTED]"))
+            .finish()
+    }
+}
+
+impl GcpServiceAccountKeyRequest {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.credentials.v1.GcpServiceAccountKeyRequest";
+}
+
+impl ::buffa::DefaultInstance for GcpServiceAccountKeyRequest {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<GcpServiceAccountKeyRequest> =
+            ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for GcpServiceAccountKeyRequest {
+    const PACKAGE: &'static str = "unitycatalog.credentials.v1";
+    const NAME: &'static str = "GcpServiceAccountKeyRequest";
+    const FULL_NAME: &'static str = "unitycatalog.credentials.v1.GcpServiceAccountKeyRequest";
+    const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.credentials.v1.GcpServiceAccountKeyRequest";
+}
+
+impl ::buffa::Message for GcpServiceAccountKeyRequest {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if !self.json_key.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.json_key) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, _cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if !self.json_key.is_empty() {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.json_key, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.json_key, buf)?;
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.json_key.clear();
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for GcpServiceAccountKeyRequest {
+    const PROTO_FQN: &'static str = "unitycatalog.credentials.v1.GcpServiceAccountKeyRequest";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for GcpServiceAccountKeyRequest {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __GCP_SERVICE_ACCOUNT_KEY_REQUEST_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.credentials.v1.GcpServiceAccountKeyRequest",
+        to_json: ::buffa::type_registry::any_to_json::<GcpServiceAccountKeyRequest>,
+        from_json: ::buffa::type_registry::any_from_json::<GcpServiceAccountKeyRequest>,
+        is_wkt: false,
+    };
+
+/// The GCP service account key of a credential. The key is not returned.
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct GcpServiceAccountKeyResponse {
+    /// Email of the service account.
+    ///
+    /// Field 1: `email`
+    #[serde(
+        rename = "email",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub email: ::buffa::alloc::string::String,
+    /// ID of the key.
+    ///
+    /// Field 2: `private_key_id`
+    #[serde(
+        rename = "private_key_id",
+        alias = "privateKeyId",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub private_key_id: ::buffa::alloc::string::String,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for GcpServiceAccountKeyResponse {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("GcpServiceAccountKeyResponse")
+            .field("email", &self.email)
+            .field("private_key_id", &self.private_key_id)
+            .finish()
+    }
+}
+
+impl GcpServiceAccountKeyResponse {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.credentials.v1.GcpServiceAccountKeyResponse";
+}
+
+impl ::buffa::DefaultInstance for GcpServiceAccountKeyResponse {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<GcpServiceAccountKeyResponse> =
+            ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for GcpServiceAccountKeyResponse {
+    const PACKAGE: &'static str = "unitycatalog.credentials.v1";
+    const NAME: &'static str = "GcpServiceAccountKeyResponse";
+    const FULL_NAME: &'static str = "unitycatalog.credentials.v1.GcpServiceAccountKeyResponse";
+    const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.credentials.v1.GcpServiceAccountKeyResponse";
+}
+
+impl ::buffa::Message for GcpServiceAccountKeyResponse {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if !self.email.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.email) as u32;
+        }
+        if !self.private_key_id.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.private_key_id) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, _cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if !self.email.is_empty() {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.email, buf);
+        }
+        if !self.private_key_id.is_empty() {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.private_key_id, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.email, buf)?;
+            }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.private_key_id, buf)?;
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.email.clear();
+        self.private_key_id.clear();
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for GcpServiceAccountKeyResponse {
+    const PROTO_FQN: &'static str = "unitycatalog.credentials.v1.GcpServiceAccountKeyResponse";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for GcpServiceAccountKeyResponse {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __GCP_SERVICE_ACCOUNT_KEY_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.credentials.v1.GcpServiceAccountKeyResponse",
+        to_json: ::buffa::type_registry::any_to_json::<GcpServiceAccountKeyResponse>,
+        from_json: ::buffa::type_registry::any_from_json::<GcpServiceAccountKeyResponse>,
+        is_wkt: false,
+    };
+
 /// A credential that gives access to storage or to external services.
 #[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -1871,6 +2371,24 @@ pub struct CredentialInfo {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
     )]
     pub azure_managed_identity: ::buffa::MessageField<AzureManagedIdentity>,
+    /// The GCP service account of the credential.
+    ///
+    /// Field 14: `gcp_service_account`
+    #[serde(
+        rename = "gcp_service_account",
+        alias = "gcpServiceAccount",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub gcp_service_account: ::buffa::MessageField<GcpServiceAccount>,
+    /// The GCP service account key of the credential.
+    ///
+    /// Field 15: `gcp_service_account_key`
+    #[serde(
+        rename = "gcp_service_account_key",
+        alias = "gcpServiceAccountKey",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub gcp_service_account_key: ::buffa::MessageField<GcpServiceAccountKeyResponse>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1892,6 +2410,8 @@ impl ::core::fmt::Debug for CredentialInfo {
             .field("purpose", &self.purpose)
             .field("azure_service_principal", &self.azure_service_principal)
             .field("azure_managed_identity", &self.azure_managed_identity)
+            .field("gcp_service_account", &self.gcp_service_account)
+            .field("gcp_service_account_key", &self.gcp_service_account_key)
             .finish()
     }
 }
@@ -2021,6 +2541,18 @@ impl ::buffa::Message for CredentialInfo {
             __cache.set(__slot, inner_size);
             size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
         }
+        if self.gcp_service_account.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.gcp_service_account.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
+        if self.gcp_service_account_key.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.gcp_service_account_key.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -2092,6 +2624,18 @@ impl ::buffa::Message for CredentialInfo {
                 .encode(buf);
             ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.azure_managed_identity.write_to(__cache, buf);
+        }
+        if self.gcp_service_account.is_set() {
+            ::buffa::encoding::Tag::new(14u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.gcp_service_account.write_to(__cache, buf);
+        }
+        if self.gcp_service_account_key.is_set() {
+            ::buffa::encoding::Tag::new(15u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.gcp_service_account_key.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -2268,6 +2812,34 @@ impl ::buffa::Message for CredentialInfo {
                     depth,
                 )?;
             }
+            14u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 14u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.gcp_service_account.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
+            15u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 15u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.gcp_service_account_key.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -2290,6 +2862,8 @@ impl ::buffa::Message for CredentialInfo {
         self.purpose = ::core::option::Option::None;
         self.azure_service_principal = ::buffa::MessageField::none();
         self.azure_managed_identity = ::buffa::MessageField::none();
+        self.gcp_service_account = ::buffa::MessageField::none();
+        self.gcp_service_account_key = ::buffa::MessageField::none();
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -2350,7 +2924,8 @@ pub struct CreateCredentialRequest {
     )]
     pub comment: ::core::option::Option<::buffa::alloc::string::String>,
     /// The AWS IAM role of the credential. A credential has exactly one of `aws_iam_role`,
-    /// `azure_service_principal` and `azure_managed_identity`.
+    /// `azure_service_principal`, `azure_managed_identity`, `gcp_service_account` and
+    /// `gcp_service_account_key`.
     ///
     /// Field 3: `aws_iam_role`
     #[serde(
@@ -2386,6 +2961,24 @@ pub struct CreateCredentialRequest {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
     )]
     pub azure_managed_identity: ::buffa::MessageField<AzureManagedIdentity>,
+    /// The GCP service account of the credential.
+    ///
+    /// Field 7: `gcp_service_account`
+    #[serde(
+        rename = "gcp_service_account",
+        alias = "gcpServiceAccount",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub gcp_service_account: ::buffa::MessageField<GcpServiceAccount>,
+    /// The GCP service account key of the credential.
+    ///
+    /// Field 8: `gcp_service_account_key`
+    #[serde(
+        rename = "gcp_service_account_key",
+        alias = "gcpServiceAccountKey",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub gcp_service_account_key: ::buffa::MessageField<GcpServiceAccountKeyRequest>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -2400,6 +2993,8 @@ impl ::core::fmt::Debug for CreateCredentialRequest {
             .field("purpose", &self.purpose)
             .field("azure_service_principal", &self.azure_service_principal)
             .field("azure_managed_identity", &self.azure_managed_identity)
+            .field("gcp_service_account", &self.gcp_service_account)
+            .field("gcp_service_account_key", &self.gcp_service_account_key)
             .finish()
     }
 }
@@ -2485,6 +3080,18 @@ impl ::buffa::Message for CreateCredentialRequest {
             __cache.set(__slot, inner_size);
             size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
         }
+        if self.gcp_service_account.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.gcp_service_account.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
+        if self.gcp_service_account_key.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.gcp_service_account_key.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -2523,6 +3130,18 @@ impl ::buffa::Message for CreateCredentialRequest {
                 .encode(buf);
             ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.azure_managed_identity.write_to(__cache, buf);
+        }
+        if self.gcp_service_account.is_set() {
+            ::buffa::encoding::Tag::new(7u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.gcp_service_account.write_to(__cache, buf);
+        }
+        if self.gcp_service_account_key.is_set() {
+            ::buffa::encoding::Tag::new(8u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.gcp_service_account_key.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -2617,6 +3236,34 @@ impl ::buffa::Message for CreateCredentialRequest {
                     depth,
                 )?;
             }
+            7u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 7u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.gcp_service_account.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
+            8u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 8u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.gcp_service_account_key.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -2632,6 +3279,8 @@ impl ::buffa::Message for CreateCredentialRequest {
         self.purpose = ::core::option::Option::None;
         self.azure_service_principal = ::buffa::MessageField::none();
         self.azure_managed_identity = ::buffa::MessageField::none();
+        self.gcp_service_account = ::buffa::MessageField::none();
+        self.gcp_service_account_key = ::buffa::MessageField::none();
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -3283,8 +3932,8 @@ pub struct UpdateCredentialRequest {
     )]
     pub comment: ::core::option::Option<::buffa::alloc::string::String>,
     /// New AWS IAM role of the credential. The role gets a new external ID. Give at most one of
-    /// `aws_iam_role`, `azure_service_principal` and `azure_managed_identity`: it replaces the
-    /// identity of the credential.
+    /// `aws_iam_role`, `azure_service_principal`, `azure_managed_identity`, `gcp_service_account`
+    /// and `gcp_service_account_key`: it replaces the identity of the credential.
     ///
     /// Field 3: `aws_iam_role`
     #[serde(
@@ -3320,6 +3969,24 @@ pub struct UpdateCredentialRequest {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
     )]
     pub azure_managed_identity: ::buffa::MessageField<AzureManagedIdentity>,
+    /// New GCP service account of the credential.
+    ///
+    /// Field 7: `gcp_service_account`
+    #[serde(
+        rename = "gcp_service_account",
+        alias = "gcpServiceAccount",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub gcp_service_account: ::buffa::MessageField<GcpServiceAccount>,
+    /// New GCP service account key of the credential.
+    ///
+    /// Field 8: `gcp_service_account_key`
+    #[serde(
+        rename = "gcp_service_account_key",
+        alias = "gcpServiceAccountKey",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub gcp_service_account_key: ::buffa::MessageField<GcpServiceAccountKeyRequest>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -3334,6 +4001,8 @@ impl ::core::fmt::Debug for UpdateCredentialRequest {
             .field("new_name", &self.new_name)
             .field("azure_service_principal", &self.azure_service_principal)
             .field("azure_managed_identity", &self.azure_managed_identity)
+            .field("gcp_service_account", &self.gcp_service_account)
+            .field("gcp_service_account_key", &self.gcp_service_account_key)
             .finish()
     }
 }
@@ -3419,6 +4088,18 @@ impl ::buffa::Message for UpdateCredentialRequest {
             __cache.set(__slot, inner_size);
             size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
         }
+        if self.gcp_service_account.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.gcp_service_account.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
+        if self.gcp_service_account_key.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.gcp_service_account_key.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -3458,6 +4139,18 @@ impl ::buffa::Message for UpdateCredentialRequest {
                 .encode(buf);
             ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.azure_managed_identity.write_to(__cache, buf);
+        }
+        if self.gcp_service_account.is_set() {
+            ::buffa::encoding::Tag::new(7u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.gcp_service_account.write_to(__cache, buf);
+        }
+        if self.gcp_service_account_key.is_set() {
+            ::buffa::encoding::Tag::new(8u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.gcp_service_account_key.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -3554,6 +4247,34 @@ impl ::buffa::Message for UpdateCredentialRequest {
                     depth,
                 )?;
             }
+            7u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 7u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.gcp_service_account.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
+            8u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 8u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.gcp_service_account_key.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -3569,6 +4290,8 @@ impl ::buffa::Message for UpdateCredentialRequest {
         self.new_name = ::core::option::Option::None;
         self.azure_service_principal = ::buffa::MessageField::none();
         self.azure_managed_identity = ::buffa::MessageField::none();
+        self.gcp_service_account = ::buffa::MessageField::none();
+        self.gcp_service_account_key = ::buffa::MessageField::none();
         self.__buffa_unknown_fields.clear();
     }
 }

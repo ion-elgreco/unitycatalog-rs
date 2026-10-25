@@ -348,6 +348,10 @@ class Client:
         azure_managed_identity: typing.Optional[
             credentials.AzureManagedIdentity
         ] = None,
+        gcp_service_account: typing.Optional[credentials.GcpServiceAccount] = None,
+        gcp_service_account_key: typing.Optional[
+            credentials.GcpServiceAccountKeyRequest
+        ] = None,
     ) -> credentials.CredentialInfo:
         r"""
         Create a credential.
@@ -356,10 +360,13 @@ class Client:
             name: Name of the credential.
             comment: User-provided free-form text description.
             aws_iam_role: The AWS IAM role of the credential. A credential has exactly one of
-                          `aws_iam_role`, `azure_service_principal` and `azure_managed_identity`.
+                          `aws_iam_role`, `azure_service_principal`, `azure_managed_identity`,
+                          `gcp_service_account` and `gcp_service_account_key`.
             purpose: What the credential is used for.
             azure_service_principal: The Azure service principal of the credential.
             azure_managed_identity: The Azure managed identity of the credential.
+            gcp_service_account: The GCP service account of the credential.
+            gcp_service_account_key: The GCP service account key of the credential.
 
         Returns:
             A credential that gives access to storage or to external services.
@@ -376,6 +383,10 @@ class Client:
         ] = None,
         azure_managed_identity: typing.Optional[
             credentials.AzureManagedIdentity
+        ] = None,
+        gcp_service_account: typing.Optional[credentials.GcpServiceAccount] = None,
+        gcp_service_account_key: typing.Optional[
+            credentials.GcpServiceAccountKeyRequest
         ] = None,
     ) -> asyncio.Future[credentials.CredentialInfo]:
         r"""

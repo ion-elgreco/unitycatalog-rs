@@ -210,6 +210,8 @@ fn EditCredential(
             Some(Identity::AzureManagedIdentity(managed)) => {
                 update.with_azure_managed_identity(managed)
             }
+            Some(Identity::GcpServiceAccount(account)) => update.with_gcp_service_account(account),
+            Some(Identity::GcpServiceAccountKey(key)) => update.with_gcp_service_account_key(key),
         };
         let navigate = navigate.clone();
         busy.set(true);
@@ -282,6 +284,16 @@ fn credential_rows(c: &CredentialInfo) -> Vec<MetaRow> {
     if c.azure_managed_identity.is_set() {
         let id = identity_name(c).unwrap_or_else(|| "The server's own".to_string());
         rows.push(MetaRow::mono("Managed identity", id));
+    }
+    if c.gcp_service_account.is_set() {
+        let email = identity_name(c).unwrap_or_else(|| "The server's own".to_string());
+        rows.push(MetaRow::mono("Service account", email));
+    }
+    if let Some(key) = c.gcp_service_account_key.as_option() {
+        rows.extend([
+            MetaRow::mono("Service account", or_dash(key.email.clone())),
+            MetaRow::mono("Key ID", or_dash(key.private_key_id.clone())),
+        ]);
     }
     rows.extend([
         MetaRow::new("Created at", format_timestamp(c.created_at)),

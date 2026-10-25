@@ -278,6 +278,83 @@ async fn azure_service_principals_keep_their_secret(#[future(awt)] app: Router) 
     }
 }
 
+/// A GCP service account key: answers hold its email and key ID, never the
+/// key, which the database keeps.
+#[rstest]
+#[tokio::test]
+async fn gcp_service_account_keys_keep_their_key(#[future(awt)] app: Router) {
+    let key = json!({
+        "type": "service_account",
+        "client_email": "uc@p.iam.gserviceaccount.com",
+        "private_key_id": "kid",
+        "private_key": "-----BEGIN PRIVATE KEY-----\nPRIVATE\n-----END PRIVATE KEY-----\n",
+    });
+    let body =
+        |key: String| json!({ "name": "key", "gcp_service_account_key": { "json_key": key } });
+    let resp = send(&app, Method::POST, "/credentials", body(key.to_string())).await;
+    let info = json_body(assert_status(resp, StatusCode::OK, "create").await).await;
+    assert_eq!(
+        info["gcp_service_account_key"],
+        json!({ "email": "uc@p.iam.gserviceaccount.com", "private_key_id": "kid" })
+    );
+    for path in ["/credentials/key", "/credentials"] {
+        let resp = app.clone().oneshot(req(Method::GET, path)).await.unwrap();
+        let text = json_body(assert_status(resp, StatusCode::OK, "read").await)
+            .await
+            .to_string();
+        assert!(!text.contains("PRIVATE"), "{text}");
+    }
+    let mut user = key.clone();
+    user["type"] = json!("authorized_user");
+    let mut keyless = key.clone();
+    keyless["private_key"] = json!("");
+    for (key, reason) in [
+        (
+            "{".to_string(),
+            "EOF while parsing an object at line 1 column 1",
+        ),
+        (user.to_string(), "its type is not service_account"),
+        (keyless.to_string(), "it has no private_key"),
+    ] {
+        let resp = send(&app, Method::POST, "/credentials", body(key)).await;
+        let err = assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+        assert_eq!(
+            err["message"],
+            format!("json_key is not a service account key: {reason}.")
+        );
+    }
+}
+
+/// A GCP service account: the server's own identity, or the email of a
+/// service account that it impersonates.
+#[rstest]
+#[tokio::test]
+async fn gcp_service_accounts_name_an_email(#[future(awt)] app: Router) {
+    for (name, account) in [
+        ("own", json!({})),
+        ("sa", json!({ "email": "uc@p.iam.gserviceaccount.com" })),
+    ] {
+        let resp = send(
+            &app,
+            Method::POST,
+            "/credentials",
+            json!({ "name": name, "gcp_service_account": account }),
+        )
+        .await;
+        let info = json_body(assert_status(resp, StatusCode::OK, "create").await).await;
+        assert_eq!(info["gcp_service_account"], account);
+    }
+    let resp = send(
+        &app,
+        Method::PATCH,
+        "/credentials/own",
+        json!({ "gcp_service_account": { "email": "../x?y" } }),
+    )
+    .await;
+    let err = assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    assert_eq!(err["message"], "Not a service account email: ../x?y");
+}
+
 /// A credential holds one identity; a new one replaces it.
 #[rstest]
 #[tokio::test]
@@ -300,7 +377,8 @@ async fn credentials_hold_one_identity(#[future(awt)] app: Router) {
     let err = assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
     assert_eq!(
         err["message"],
-        "Give only one of aws_iam_role, azure_service_principal and azure_managed_identity."
+        "Give only one of aws_iam_role, azure_service_principal, azure_managed_identity, \
+         gcp_service_account and gcp_service_account_key."
     );
 
     let resp = send(
@@ -326,13 +404,14 @@ async fn credentials_hold_one_identity(#[future(awt)] app: Router) {
 }
 
 /// A location's credential must reach its storage: S3 needs an AWS role,
-/// ADLS an Azure identity. Local paths take any.
+/// ADLS an Azure identity, GCS a GCP identity. Local paths take any.
 #[rstest]
 #[tokio::test]
 async fn external_locations_need_a_credential_of_their_cloud(#[future(awt)] app: Router) {
     for body in [
         json!({ "name": "aws", "aws_iam_role": { "role_arn": "arn:aws:iam::1:role/x" } }),
         json!({ "name": "azure", "azure_managed_identity": {} }),
+        json!({ "name": "gcp", "gcp_service_account": {} }),
     ] {
         let resp = send(&app, Method::POST, "/credentials", body).await;
         assert_status(resp, StatusCode::OK, "credential").await;
@@ -353,8 +432,22 @@ async fn external_locations_need_a_credential_of_their_cloud(#[future(awt)] app:
             "Credential aws cannot reach {adls}: it needs an Azure service principal or managed identity."
         )
     );
+    let resp = send(
+        &app,
+        Method::POST,
+        "/external-locations",
+        location("gs", "gs://bucket/lake", "azure"),
+    )
+    .await;
+    let err = assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    assert_eq!(
+        err["message"],
+        "Credential azure cannot reach gs://bucket/lake: it needs a GCP service account or \
+         service account key."
+    );
     for (name, url, credential) in [
         ("el", adls, "azure"),
+        ("gs", "gs://bucket/lake", "gcp"),
         ("local", "file:///tmp/uc-lake", "aws"),
     ] {
         let resp = send(

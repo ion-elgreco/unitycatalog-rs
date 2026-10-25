@@ -5,6 +5,7 @@ use clap::builder::BoolishValueParser;
 use clap::{ArgGroup, Subcommand};
 use uc_client::models::credentials::v1::{
     AwsIamRoleRequest, AzureManagedIdentity, AzureServicePrincipalRequest, CredentialPurpose,
+    GcpServiceAccount, GcpServiceAccountKeyRequest,
 };
 
 use super::options::{Paging, changes, help};
@@ -15,7 +16,8 @@ use crate::output::models;
 #[command(rename_all = "snake_case")]
 pub enum CredentialOp {
     /// Create a storage credential with one identity: an AWS IAM role, an
-    /// Azure service principal or an Azure managed identity
+    /// Azure service principal, an Azure managed identity, a GCP service
+    /// account or a GCP service account key
     #[command(group = ArgGroup::new("identity").required(true))]
     Create {
         #[arg(long, help = help::NAME)]
@@ -34,6 +36,12 @@ pub enum CredentialOp {
         #[arg(long, help = help::AZURE_MANAGED_IDENTITY, group = "identity",
             value_name = "RESOURCE_ID", num_args = 0..=1)]
         azure_managed_identity: Option<Option<String>>,
+        #[arg(long, help = help::GCP_SERVICE_ACCOUNT, group = "identity",
+            value_name = "EMAIL", num_args = 0..=1)]
+        gcp_service_account: Option<Option<String>>,
+        #[arg(long, help = help::GCP_SERVICE_ACCOUNT_KEY, group = "identity",
+            value_name = "FILE")]
+        gcp_service_account_key: Option<String>,
     },
     /// List storage credentials
     List {
@@ -66,6 +74,12 @@ pub enum CredentialOp {
         #[arg(long, help = help::AZURE_MANAGED_IDENTITY, groups = ["changes", "identity"],
             value_name = "RESOURCE_ID", num_args = 0..=1)]
         azure_managed_identity: Option<Option<String>>,
+        #[arg(long, help = help::GCP_SERVICE_ACCOUNT, groups = ["changes", "identity"],
+            value_name = "EMAIL", num_args = 0..=1)]
+        gcp_service_account: Option<Option<String>>,
+        #[arg(long, help = help::GCP_SERVICE_ACCOUNT_KEY, groups = ["changes", "identity"],
+            value_name = "FILE")]
+        gcp_service_account_key: Option<String>,
     },
     /// Delete a storage credential
     Delete {
@@ -77,23 +91,38 @@ pub enum CredentialOp {
     },
 }
 
-/// The identity of a credential, as the options give it: at most one of
-/// the three, which clap checks.
+/// The identity of a credential, as the options give it: at most one, which
+/// clap checks.
 struct Identity {
     aws_iam_role: Option<AwsIamRoleRequest>,
     azure_service_principal: Option<AzureServicePrincipalRequest>,
     azure_managed_identity: Option<AzureManagedIdentity>,
+    gcp_service_account: Option<GcpServiceAccount>,
+    gcp_service_account_key: Option<GcpServiceAccountKeyRequest>,
 }
 
 impl Identity {
+    /// The identity; a GCP service account key is read from its file.
     fn new(
         aws_iam_role_arn: Option<String>,
         azure_directory_id: Option<String>,
         azure_application_id: Option<String>,
         azure_client_secret: Option<String>,
         azure_managed_identity: Option<Option<String>>,
-    ) -> Self {
-        Self {
+        gcp_service_account: Option<Option<String>>,
+        gcp_service_account_key: Option<String>,
+    ) -> Result<Self> {
+        let gcp_service_account_key = gcp_service_account_key
+            .map(|path| {
+                std::fs::read_to_string(&path)
+                    .map(|json_key| GcpServiceAccountKeyRequest {
+                        json_key,
+                        ..Default::default()
+                    })
+                    .map_err(|e| anyhow::anyhow!("{path}: {e}"))
+            })
+            .transpose()?;
+        Ok(Self {
             aws_iam_role: aws_iam_role_arn.map(|role_arn| AwsIamRoleRequest {
                 role_arn,
                 ..Default::default()
@@ -112,7 +141,12 @@ impl Identity {
                     ..Default::default()
                 }
             }),
-        }
+            gcp_service_account: gcp_service_account.map(|email| GcpServiceAccount {
+                email,
+                ..Default::default()
+            }),
+            gcp_service_account_key,
+        })
     }
 }
 
@@ -126,6 +160,8 @@ pub async fn run(c: &Context<'_>, op: CredentialOp) -> Result<String> {
             azure_application_id,
             azure_client_secret,
             azure_managed_identity,
+            gcp_service_account,
+            gcp_service_account_key,
         } => {
             let identity = Identity::new(
                 aws_iam_role_arn,
@@ -133,7 +169,9 @@ pub async fn run(c: &Context<'_>, op: CredentialOp) -> Result<String> {
                 azure_application_id,
                 azure_client_secret,
                 azure_managed_identity,
-            );
+                gcp_service_account,
+                gcp_service_account_key,
+            )?;
             let info = c
                 .client
                 .create_credential(name)
@@ -142,6 +180,8 @@ pub async fn run(c: &Context<'_>, op: CredentialOp) -> Result<String> {
                 .with_aws_iam_role(identity.aws_iam_role)
                 .with_azure_service_principal(identity.azure_service_principal)
                 .with_azure_managed_identity(identity.azure_managed_identity)
+                .with_gcp_service_account(identity.gcp_service_account)
+                .with_gcp_service_account_key(identity.gcp_service_account_key)
                 .await
                 .map_err(upstream("createCredential"))?;
             Ok(c.shaped(&models::CREDENTIAL, &serde_json::to_value(&info)?))
@@ -178,6 +218,8 @@ pub async fn run(c: &Context<'_>, op: CredentialOp) -> Result<String> {
             azure_application_id,
             azure_client_secret,
             azure_managed_identity,
+            gcp_service_account,
+            gcp_service_account_key,
         } => {
             let identity = Identity::new(
                 aws_iam_role_arn,
@@ -185,7 +227,9 @@ pub async fn run(c: &Context<'_>, op: CredentialOp) -> Result<String> {
                 azure_application_id,
                 azure_client_secret,
                 azure_managed_identity,
-            );
+                gcp_service_account,
+                gcp_service_account_key,
+            )?;
             let info = c
                 .client
                 .credential(name)
@@ -195,6 +239,8 @@ pub async fn run(c: &Context<'_>, op: CredentialOp) -> Result<String> {
                 .with_new_name(new_name)
                 .with_azure_service_principal(identity.azure_service_principal)
                 .with_azure_managed_identity(identity.azure_managed_identity)
+                .with_gcp_service_account(identity.gcp_service_account)
+                .with_gcp_service_account_key(identity.gcp_service_account_key)
                 .await
                 .map_err(upstream("updateCredential"))?;
             Ok(c.shaped(&models::CREDENTIAL, &serde_json::to_value(&info)?))

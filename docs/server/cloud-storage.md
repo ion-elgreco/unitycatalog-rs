@@ -31,9 +31,9 @@ The Delta REST API and the Iceberg REST catalog give credentials with their tabl
 ## Where the credentials come from
 
 1. An external location that covers the path: its storage credential. A credential holds one
-   identity: an AWS IAM role, an Azure service principal or an Azure managed identity. It must
-   reach the location's storage: an AWS role for `s3://`, an Azure identity for `abfs://` and
-   `abfss://`. A storage credential cannot hold a GCP identity yet.
+   identity: an AWS IAM role, an Azure service principal, an Azure managed identity, a GCP
+   service account or a GCP service account key. It must reach the location's storage: an AWS
+   role for `s3://`, an Azure identity for `abfs://` and `abfss://`, a GCP identity for `gs://`.
 2. Else the settings of the bucket or account: `[s3.<name>]`, `[adls.<name>]` or `[gcs.<name>]`.
 3. Local paths get empty credentials.
 
@@ -118,14 +118,43 @@ On AKS, give the server's pod workload identity with the Helm chart's `serviceAc
 
 ## Google Cloud Storage
 
-A service account of the bucket, with the Storage Object Admin role: a JSON key file, else
-Google's Application Default Credentials.
+The server gets a token of a GCP identity, and Google STS limits the token to the path and the
+operation. Give that identity the Storage Object Admin role on the bucket.
+
+With an external location, the credential is a service account or a service account key:
+
+```bash
+uc credential create --name models \
+  --gcp_service_account unity-catalog@my-project.iam.gserviceaccount.com
+uc external_location create --name models \
+  --url gs://models/registry --credential_name models
+```
+
+- A service account (`--gcp_service_account <email>`): the server's own identity impersonates the
+  service account. Give the server's identity the Service Account Token Creator role on the
+  service account. The server stores no secret.
+- Without an email (`--gcp_service_account`): the server's own identity, from Google's
+  Application Default Credentials: the `GOOGLE_APPLICATION_CREDENTIALS` file, gcloud's
+  application default credentials, or the metadata server, such as GKE Workload Identity or the
+  service account of the VM.
+- A service account key (`--gcp_service_account_key <file>`): the JSON key file. The server keeps
+  the key in its database, and no answer of the API contains it. Backups contain it.
+
+Or, without an external location, give the identity of the bucket in the settings: a JSON key
+file, else the server's own identity, which impersonates `service_account` when you give it.
 
 ```toml
 [gcs.models]
 bucket = "gs://models"
 json_key_file = "/etc/uc/gcs-key.json"
+
+[gcs.archive]
+bucket = "gs://archive"
+service_account = "unity-catalog@my-project.iam.gserviceaccount.com"
 ```
+
+On GKE, give the server's pod Workload Identity with the Helm chart's `serviceAccount.annotations`
+(`iam.gke.io/gcp-service-account`).
 
 ## Dropped data
 

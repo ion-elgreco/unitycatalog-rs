@@ -46,6 +46,9 @@ pub mod help {
         "The client secret of the credential's Azure service principal";
     pub const AZURE_MANAGED_IDENTITY: &str = "The server's own Azure identity; with a value, \
         the resource ID of a user-assigned managed identity";
+    pub const GCP_SERVICE_ACCOUNT: &str = "The server's own GCP identity; with a value, the \
+        email of a service account that the server impersonates";
+    pub const GCP_SERVICE_ACCOUNT_KEY: &str = "The JSON key file of a GCP service account";
 }
 
 /// `--properties`: a JSON object, whose values that are not strings become

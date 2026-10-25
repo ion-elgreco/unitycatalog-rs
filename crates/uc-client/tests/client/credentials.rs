@@ -4,6 +4,7 @@ use futures::TryStreamExt;
 
 use uc_client::models::credentials::v1::{
     AwsIamRoleRequest, AzureManagedIdentity, AzureServicePrincipalRequest, CredentialPurpose,
+    GcpServiceAccount, GcpServiceAccountKeyRequest,
 };
 use uc_client::models::volumes::v1::VolumeType;
 
@@ -131,6 +132,53 @@ async fn azure_credentials() {
         400,
         "INVALID_ARGUMENT",
     );
+}
+
+#[tokio::test]
+async fn gcp_credentials() {
+    let uc = client().await;
+    let json_key = serde_json::json!({
+        "type": "service_account",
+        "client_email": "uc@p.iam.gserviceaccount.com",
+        "private_key_id": "kid",
+        "private_key": "PRIVATE",
+    });
+    let credential = uc
+        .create_credential("key")
+        .with_gcp_service_account_key(GcpServiceAccountKeyRequest {
+            json_key: json_key.to_string(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    let key = credential.gcp_service_account_key.as_option().unwrap();
+    assert_eq!(
+        (key.email.as_str(), key.private_key_id.as_str()),
+        ("uc@p.iam.gserviceaccount.com", "kid")
+    );
+    uc.create_external_location("lake", "gs://bucket/lake", "key")
+        .await
+        .unwrap();
+    rejected(
+        uc.create_external_location("s3", "s3://bucket/lake", "key")
+            .await,
+        400,
+        "INVALID_ARGUMENT",
+    );
+
+    let email = "data@p.iam.gserviceaccount.com";
+    let updated = uc
+        .credential("key")
+        .update()
+        .with_gcp_service_account(GcpServiceAccount {
+            email: Some(email.into()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(!updated.gcp_service_account_key.is_set());
+    let account = updated.gcp_service_account.as_option().unwrap();
+    assert_eq!(account.email.as_deref(), Some(email));
 }
 
 /// A credential that a location uses, and a location that a volume uses,
