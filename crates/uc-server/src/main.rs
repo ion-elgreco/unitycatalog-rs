@@ -15,7 +15,7 @@ use uc_server::{
     build_app, build_observability_app,
     observability::telemetry::init_tracing,
     server::{banner, options, serve},
-    storage::vendor::{CloudVendor, Location, S3Location},
+    storage::vendor::{CloudVendor, Location, S3Location, credential_for_url},
 };
 
 /// The life of a token of `uc-server token` without `--ttl`.
@@ -265,6 +265,31 @@ async fn run(options: options::Options) -> Result<(), String> {
         {
             state = state.with_s3_region(url, region);
         }
+    }
+    // A cloud managed root that no location covers: clients get no
+    // credentials for the tables and models under it. An external location
+    // can still be made later, so it is no error.
+    let roots = [
+        ("storage.tables_root", &cfg.storage.tables_root),
+        ("storage.models_root", &cfg.storage.models_root),
+    ];
+    for (setting, root) in roots {
+        let Some(root) = root.as_ref().filter(|r| r.scheme().is_cloud()) else {
+            continue;
+        };
+        let in_settings = storage
+            .locations
+            .iter()
+            .any(|location| root.is_same_or_under(location.url()));
+        let external = credential_for_url(&state.metastore, root.as_str()).await;
+        if in_settings || external.is_ok_and(|credential| credential.is_some()) {
+            continue;
+        }
+        warn!(
+            %root,
+            "{setting}: no [locations.<name>] and no external location covers it, so clients \
+             get no credentials for the data under it"
+        );
     }
     state = state.with_vendor(CloudVendor::new(storage));
 
