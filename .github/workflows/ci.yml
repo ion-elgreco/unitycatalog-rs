@@ -40,6 +40,13 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+    # Floci AZ, a local Azure emulator with ADLS Gen2, for the Azure tests
+    # (crates/uc-server/tests/azure_emulator.rs). The image is the
+    # floci_az_image of the justfile.
+    services:
+      floci-az:
+        image: floci/floci-az:0.15.0
+        ports: ["4577:4577"]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -58,6 +65,8 @@ jobs:
         run: cargo clippy --profile "$PROFILE" --workspace --all-targets -- -D warnings
 
       - name: Run Rust tests
+        env:
+          UC_TEST_FLOCI_AZ_URL: http://localhost:4577
         run: just test-rust
 
   # The clients generated from proto/ (`just generate`) are the committed ones.
