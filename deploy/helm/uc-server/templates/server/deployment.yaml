@@ -175,12 +175,21 @@ spec:
             {{- range $index, $config := .Values.storage.credentials.adls }}
             - name: UC_ADLS_{{ $index }}_ACCOUNT
               value: {{ $config.storageAccountName | quote }}
+            {{- if $config.managedIdentity }}
+            - name: UC_ADLS_{{ $index }}_MANAGED_IDENTITY
+              value: "true"
+            {{- with $config.managedIdentityId }}
+            - name: UC_ADLS_{{ $index }}_MANAGED_IDENTITY_ID
+              value: {{ . | quote }}
+            {{- end }}
+            {{- else }}
             - name: UC_ADLS_{{ $index }}_TENANT_ID
               valueFrom: {secretKeyRef: {name: {{ $config.credentialsSecretName | quote }}, key: tenantId}}
             - name: UC_ADLS_{{ $index }}_CLIENT_ID
               valueFrom: {secretKeyRef: {name: {{ $config.credentialsSecretName | quote }}, key: clientId}}
             - name: UC_ADLS_{{ $index }}_CLIENT_SECRET
               valueFrom: {secretKeyRef: {name: {{ $config.credentialsSecretName | quote }}, key: clientSecret}}
+            {{- end }}
             {{- end }}
             {{- range $index, $config := .Values.storage.credentials.gcs }}
             - name: UC_GCS_{{ $index }}_BUCKET
