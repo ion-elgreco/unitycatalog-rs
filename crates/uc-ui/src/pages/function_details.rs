@@ -11,7 +11,7 @@ use crate::components::{
     Card, CodeBlock, DeleteButton, DeleteModal, Description, DetailsTab, EntityHeader, Loaded,
     MetaRow, PermissionsCard, Tabs,
 };
-use crate::kind::Kind;
+use crate::kind::{Kind, function_language, function_returns};
 use crate::load::{Key, field, use_load};
 use crate::util::{enum_name, format_timestamp, or_dash, pretty_json, route_params};
 
@@ -39,15 +39,7 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
         f.comment.clone().unwrap_or_default()
     });
     let badges = field(info, |f: &FunctionInfo| {
-        let language = f
-            .external_language
-            .clone()
-            .or_else(|| Some(enum_name(f.routine_body)).filter(|body| !body.is_empty()));
-        let returns = f
-            .full_data_type
-            .clone()
-            .or_else(|| f.data_type.map(enum_name));
-        [language, returns]
+        [function_language(f), function_returns(f)]
             .into_iter()
             .flatten()
             .collect::<Vec<_>>()
@@ -159,14 +151,7 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
 fn function_rows(f: &FunctionInfo) -> Vec<MetaRow> {
     vec![
         MetaRow::new("Owner", or_dash(f.owner.clone())),
-        MetaRow::new(
-            "Return type",
-            or_dash(
-                f.full_data_type
-                    .clone()
-                    .or_else(|| f.data_type.map(enum_name)),
-            ),
-        ),
+        MetaRow::new("Return type", or_dash(function_returns(f))),
         MetaRow::new("Created at", format_timestamp(f.created_at)),
         MetaRow::new("Updated at", format_timestamp(f.updated_at)),
         MetaRow::mono("Function ID", or_dash(f.function_id.clone())),
