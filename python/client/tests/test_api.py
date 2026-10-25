@@ -44,8 +44,16 @@ BOGUS: typing.Any = "BOGUS"
 
 # A method of the generated Rust client, and the type that it returns.
 RUST_METHOD = re.compile(r"pub fn (\w+)[^{]*?->\s*([\w:]+)", re.DOTALL)
-# The Rust methods that are not requests: constructors and accessors.
-NOT_REQUESTS = {"new", "new_unauthenticated", "new_with_token", "name", "full_name"}
+# The Rust methods that are not requests: constructors, their options and
+# accessors.
+NOT_REQUESTS = {
+    "new",
+    "new_unauthenticated",
+    "new_with_token",
+    "with_user_agent",
+    "name",
+    "full_name",
+}
 
 
 def _rust_methods(path: Path) -> dict[str, str]:
