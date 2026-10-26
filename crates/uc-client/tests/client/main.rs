@@ -15,6 +15,7 @@ mod functions;
 mod iceberg;
 mod models;
 mod permissions;
+mod protection;
 mod schemas;
 mod scim;
 mod sharing;

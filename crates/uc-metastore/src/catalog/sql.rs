@@ -4,13 +4,16 @@ use uuid::Uuid;
 
 use uc_api::{CatalogInfo, CreateCatalog, UpdateCatalog};
 use uc_common::{
-    Error, ErrorCode, NormalizedUrl, Pagination, Result, SecurablePropertiesMap, now_epoch_millis,
-    validate_sql_object_name,
+    Error, ErrorCode, NormalizedUrl, Pagination, Result, SecurablePropertiesMap, SecurableType,
+    now_epoch_millis, validate_sql_object_name,
 };
 
 use crate::CatalogOps;
+use crate::protection::sql::check_unprotected;
 use crate::sql::rows::CATALOG;
-use crate::sql::{SqlMetastore, create_err_as, db_err, insert, select_one, touch_audit, update};
+use crate::sql::{
+    SqlMetastore, create_err_as, db_err, exists_in, insert, select_one, touch_audit, update,
+};
 
 /// A catalog row, keyed by its UUID.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,19 +179,25 @@ impl CatalogOps for SqlMetastore {
 
     async fn delete(&self, name: &str, force: bool) -> Result<()> {
         let catalog = self.require_catalog_row(name).await?;
-        let has_schemas = self
-            .exists_where("schema", "catalog_id", &catalog.id_string)
-            .await?;
+        // One transaction: everything inside each schema, the schemas, then
+        // the catalog. Protected securables refuse the delete first.
+        let failed = db_err("delete catalog");
+        let tx = self.db.begin().await.map_err(&failed)?;
+        check_unprotected(
+            tx.as_ref(),
+            SecurableType::Catalog,
+            &catalog.id_string,
+            name,
+            force,
+        )
+        .await?;
+        let has_schemas =
+            exists_in(tx.as_ref(), "schema", "catalog_id", &catalog.id_string).await?;
         if has_schemas && !force {
             return Err(Error::failed_precondition(
                 "Cannot delete catalog with schemas. Use force=true to force deletion.",
             ));
         }
-
-        // One transaction: everything inside each schema, the schemas, then
-        // the catalog.
-        let failed = db_err("delete catalog");
-        let tx = self.db.begin().await.map_err(&failed)?;
         let id = [catalog.id_string.as_str().into()];
         let schemas = "SELECT id_string FROM schema WHERE catalog_id = $1";
         crate::schema::sql::drop_schema_children(

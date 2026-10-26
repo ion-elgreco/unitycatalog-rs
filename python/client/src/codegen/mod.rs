@@ -55,6 +55,7 @@ use uc_client::models::iceberg::v1::*;
 use uc_client::models::metastore::v1::*;
 use uc_client::models::models::v1::*;
 use uc_client::models::permissions::v1::*;
+use uc_client::models::protection::v1::*;
 use uc_client::models::recipients::v1::*;
 use uc_client::models::schemas::v1::*;
 use uc_client::models::scim::v1::*;
@@ -3352,6 +3353,97 @@ impl PyClient {
         })
     }
 
+    /// Get the protection of a securable.
+    ///
+    /// Returns:
+    ///     Whether a securable is protected against deletes. A protected securable cannot be deleted,
+    ///     also
+    ///     not with the delete of its catalog or schema, until its protection is removed.
+    #[pyo3(signature = (securable_type, full_name))]
+    pub fn get_protection(
+        &self,
+        py: Python,
+        securable_type: String,
+        full_name: String,
+    ) -> PyUnityCatalogResult<PyProtection> {
+        let request = self.client.get_protection(securable_type, full_name);
+        let runtime = crate::codegen::runtime::rt();
+        py.detach(|| {
+            #[allow(clippy::let_unit_value)]
+            let result = runtime.block_on(request.into_future())?;
+            Ok::<_, PyUnityCatalogError>(PyProtection::from(result))
+        })
+    }
+
+    /// Like `get_protection`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (securable_type, full_name))]
+    pub fn get_protection_async<'py>(
+        &self,
+        py: Python<'py>,
+        securable_type: String,
+        full_name: String,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyProtection>> {
+        let request = self.client.get_protection(securable_type, full_name);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(PyProtection::from(result))
+        })
+    }
+
+    /// Protect a securable, or remove its protection. Who can delete the securable can do this.
+    ///
+    /// Args:
+    ///     protected: `true` to protect the securable, `false` to remove its protection.
+    ///
+    /// Returns:
+    ///     Whether a securable is protected against deletes. A protected securable cannot be deleted,
+    ///     also
+    ///     not with the delete of its catalog or schema, until its protection is removed.
+    #[pyo3(signature = (securable_type, full_name, protected))]
+    pub fn update_protection(
+        &self,
+        py: Python,
+        securable_type: String,
+        full_name: String,
+        protected: bool,
+    ) -> PyUnityCatalogResult<PyProtection> {
+        let request = self
+            .client
+            .update_protection(securable_type, full_name, protected);
+        let runtime = crate::codegen::runtime::rt();
+        py.detach(|| {
+            #[allow(clippy::let_unit_value)]
+            let result = runtime.block_on(request.into_future())?;
+            Ok::<_, PyUnityCatalogError>(PyProtection::from(result))
+        })
+    }
+
+    /// Like `update_protection`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (securable_type, full_name, protected))]
+    pub fn update_protection_async<'py>(
+        &self,
+        py: Python<'py>,
+        securable_type: String,
+        full_name: String,
+        protected: bool,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyProtection>> {
+        let request = self
+            .client
+            .update_protection(securable_type, full_name, protected);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(PyProtection::from(result))
+        })
+    }
+
     /// List the recipients.
     ///
     /// Args:
@@ -6045,6 +6137,7 @@ pub fn register(module: &::pyo3::Bound<'_, ::pyo3::types::PyModule>) -> ::pyo3::
             PyPrivilegeAssignment
         ]
     )?;
+    register_submodule!(module, "protection", [PyProtection])?;
     register_submodule!(
         module,
         "recipients",

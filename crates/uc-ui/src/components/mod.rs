@@ -19,6 +19,7 @@ pub mod meta;
 pub mod modal;
 pub mod notification;
 pub mod permissions;
+pub mod protection;
 pub mod rows;
 pub mod tabs;
 
@@ -42,5 +43,6 @@ pub use meta::{DetailsTab, MetaGrid, MetaRow, RawJsonCard, properties};
 pub use modal::Modal;
 pub use notification::{Notifications, Notify, provide_notifications, use_notify};
 pub use permissions::PermissionsCard;
+pub use protection::{ProtectButton, use_protection};
 pub use rows::ObjectRow;
 pub use tabs::Tabs;

@@ -32,6 +32,10 @@ When the server needs a sign-in, the UI shows its login page first: see
 - **Delete**: the button at the top of a page; type the name to confirm. The server deletes only
   a catalog, schema, model or credential that holds nothing; an admin can tick a box to delete
   what it holds too.
+- **Protect**: the button at the top of a catalog, schema, table, volume or model page. A
+  protected object shows **Protected**, and its **Delete** is off until **Remove protection**.
+  A delete of what holds it is refused, and names it. See
+  [Protection against deletes](../server/operations.md#protection-against-deletes).
 - The buttons at the right of the header choose the light theme, the dark theme or the system's.
 
 ![A table](../assets/ui/table.png)

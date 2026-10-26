@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package unitycatalog.protection.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "olai/trestle/v1/annotations.proto";
+
+// Whether a securable is protected against deletes. A protected securable cannot be deleted,
+// also not with the delete of its catalog or schema, until its protection is removed.
+message Protection {
+  // `true` when the securable is protected.
+  bool protected = 1;
+  // When the protection was set, in epoch milliseconds.
+  optional int64 protected_at = 2;
+  // Who set the protection.
+  optional string protected_by = 3;
+}
+
+message GetProtectionRequest {
+  // Type of the securable. Values: `catalog`, `schema`, `table`, `volume`, `registered_model`.
+  string securable_type = 1 [(google.api.field_behavior) = REQUIRED];
+  // Full name of the securable, such as `catalog.schema.table`.
+  string full_name = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+message UpdateProtection {
+  // Type of the securable. Values: `catalog`, `schema`, `table`, `volume`, `registered_model`.
+  string securable_type = 1 [(google.api.field_behavior) = REQUIRED];
+  // Full name of the securable, such as `catalog.schema.table`.
+  string full_name = 2 [(google.api.field_behavior) = REQUIRED];
+  // `true` to protect the securable, `false` to remove its protection.
+  bool protected = 3 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.emit_unpopulated) = true
+  ];
+}
+
+// Protection: securables that cannot be deleted until their protection is removed. Catalogs,
+// schemas, tables, volumes and registered models can be protected.
+service ProtectionService {
+  // Get the protection of a securable.
+  rpc GetProtection(GetProtectionRequest) returns (Protection) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/protection/{securable_type}/{full_name}"};
+  }
+
+  // Protect a securable, or remove its protection. Who can delete the securable can do this.
+  rpc UpdateProtection(.unitycatalog.protection.v1.UpdateProtection) returns (Protection) {
+    option (google.api.http) = {
+      put: "/api/2.1/unity-catalog/protection/{securable_type}/{full_name}"
+      body: "*"
+    };
+  }
+}

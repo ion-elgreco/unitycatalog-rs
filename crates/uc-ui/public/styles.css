@@ -673,6 +673,9 @@ pre,
   gap: 8px;
 }
 
+/* An action that holds its button, such as Delete with its hint. */
+.uc-entity__action { display: inline-flex; }
+
 .uc-crumbs ol {
   display: flex;
   flex-wrap: wrap;
@@ -753,6 +756,15 @@ pre,
   background: color-mix(in srgb, var(--destructive) 12%, transparent);
   color: var(--destructive);
 }
+
+/* An object that cannot be deleted until its protection is removed. */
+.uc-badge--protected {
+  padding: 3px 10px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  font-size: 13px;
+}
+.uc-badge--protected svg { width: 13px; height: 13px; }
 
 /* A chip's remove button: the × after a privilege. */
 .uc-badge__x {

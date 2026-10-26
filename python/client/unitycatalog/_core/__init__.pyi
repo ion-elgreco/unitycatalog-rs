@@ -21,6 +21,7 @@ from . import iceberg
 from . import metastore
 from . import models
 from . import permissions
+from . import protection
 from . import recipients
 from . import schemas
 from . import scim
@@ -53,6 +54,7 @@ __all__ = [
     "metastore",
     "models",
     "permissions",
+    "protection",
     "recipients",
     "schemas",
     "scim",
@@ -1473,6 +1475,49 @@ class Client:
     ) -> asyncio.Future[permissions.PermissionsList]:
         r"""
         Like `update_permissions`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_protection(
+        self, securable_type: builtins.str, full_name: builtins.str
+    ) -> protection.Protection:
+        r"""
+        Get the protection of a securable.
+
+        Returns:
+            Whether a securable is protected against deletes. A protected securable cannot be deleted,
+            also
+            not with the delete of its catalog or schema, until its protection is removed.
+        """
+    def get_protection_async(
+        self, securable_type: builtins.str, full_name: builtins.str
+    ) -> asyncio.Future[protection.Protection]:
+        r"""
+        Like `get_protection`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def update_protection(
+        self,
+        securable_type: builtins.str,
+        full_name: builtins.str,
+        protected: builtins.bool,
+    ) -> protection.Protection:
+        r"""
+        Protect a securable, or remove its protection. Who can delete the securable can do this.
+
+        Args:
+            protected: `true` to protect the securable, `false` to remove its protection.
+
+        Returns:
+            Whether a securable is protected against deletes. A protected securable cannot be deleted,
+            also
+            not with the delete of its catalog or schema, until its protection is removed.
+        """
+    def update_protection_async(
+        self,
+        securable_type: builtins.str,
+        full_name: builtins.str,
+        protected: builtins.bool,
+    ) -> asyncio.Future[protection.Protection]:
+        r"""
+        Like `update_protection`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
     def list_recipients(
         self, *, max_results: typing.Optional[builtins.int] = None

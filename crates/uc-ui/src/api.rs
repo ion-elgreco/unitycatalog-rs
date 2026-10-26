@@ -16,6 +16,7 @@ use uc_client::models::external_locations::v1::ExternalLocationInfo;
 use uc_client::models::functions::v1::FunctionInfo;
 use uc_client::models::models::v1::{ModelVersionInfo, RegisteredModelInfo};
 use uc_client::models::permissions::v1::{PermissionsChange, PermissionsList, PrivilegeAssignment};
+use uc_client::models::protection::v1::Protection;
 use uc_client::models::schemas::v1::SchemaInfo;
 use uc_client::models::scim::v1::{ScimGroup, ScimUser};
 use uc_client::models::tables::v1::TableInfo;
@@ -122,6 +123,22 @@ pub async fn model_versions(full_name: &str) -> Result<Vec<ModelVersionInfo>> {
 pub async fn permissions(kind: SecurableType, full_name: &str) -> Result<Vec<PrivilegeAssignment>> {
     let list = client().get_permissions(kind.as_str(), full_name).await?;
     Ok(list.privilege_assignments)
+}
+
+/// Whether a securable is protected against deletes.
+pub async fn protection(kind: SecurableType, full_name: &str) -> Result<Protection> {
+    client().get_protection(kind.as_str(), full_name).await
+}
+
+/// Protect a securable, or remove its protection.
+pub async fn set_protection(
+    kind: SecurableType,
+    full_name: &str,
+    protected: bool,
+) -> Result<Protection> {
+    client()
+        .update_protection(kind.as_str(), full_name, protected)
+        .await
 }
 
 /// Grant and revoke privileges of one principal: the grants afterwards.

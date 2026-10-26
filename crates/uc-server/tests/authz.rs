@@ -1472,3 +1472,38 @@ async fn groups_give_their_grants_to_members() {
     let err = w.metastore.scim().create_user(user).await.unwrap_err();
     assert_eq!(err.code(), uc_common::ErrorCode::AlreadyExists);
 }
+
+#[tokio::test]
+async fn protection_rules() {
+    let w = World::new().await;
+    w.catalog_and_schema(&[ALICE]).await;
+    // Reading a protection takes what reading the schema takes; setting it,
+    // what deleting the schema takes.
+    let path = "/protection/schema/c.s";
+    let on = Some(json!({ "protected": true }));
+    assert_eq!(
+        w.ok(&w.alice, Method::GET, path, None).await,
+        json!({ "protected": false })
+    );
+    assert_eq!(
+        w.status(&w.bob, Method::GET, path, None).await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        w.status(&w.alice, Method::PUT, path, on.clone()).await,
+        StatusCode::FORBIDDEN
+    );
+    let protection = w.ok(&w.admin, Method::PUT, path, on).await;
+    assert_eq!(protection["protected"], true);
+    assert_eq!(protection["protected_by"], "admin@example.com");
+    // The admin too must remove the protection first.
+    let resp = w.call(&w.admin, Method::DELETE, "/schemas/c.s", None).await;
+    common::assert_error(resp, StatusCode::CONFLICT, "RESOURCE_PROTECTED").await;
+    let off = Some(json!({ "protected": false }));
+    w.ok(&w.admin, Method::PUT, path, off).await;
+    assert_eq!(
+        w.status(&w.admin, Method::DELETE, "/schemas/c.s", None)
+            .await,
+        StatusCode::OK
+    );
+}

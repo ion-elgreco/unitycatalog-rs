@@ -273,6 +273,17 @@ pub(crate) const PERMISSION: TableDef = TableDef {
     ],
 };
 
+pub(crate) const PROTECTION: TableDef = TableDef {
+    name: "protection",
+    key: &["securable_id"],
+    columns: &[
+        ("securable_id", Text),
+        ("securable_type", Text),
+        ("created_at", Int),
+        ("created_by", Text),
+    ],
+};
+
 /// One row; its `singleton` key column has a default.
 pub(crate) const METASTORE: TableDef = TableDef {
     name: "metastore",
@@ -405,6 +416,7 @@ pub(crate) const ALL: &[&TableDef] = &[
     &CREDENTIAL,
     &EXTERNAL_LOCATION,
     &PERMISSION,
+    &PROTECTION,
     &METASTORE,
     &PAT,
     &SCIM_USER,

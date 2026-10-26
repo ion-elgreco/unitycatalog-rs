@@ -18,7 +18,7 @@ use crate::migrations::run_migrations;
 use crate::{
     AuditLogOps, BackupOps, CatalogOps, CleanupOps, CredentialOps, DeltaTableOps,
     ExternalLocationOps, FunctionOps, IcebergTableOps, Metastore, ModelOps, PermissionOps,
-    SchemaOps, ScimOps, SecretStore, SharingOps, TableOps, TokenOps, VolumeOps,
+    ProtectionOps, SchemaOps, ScimOps, SecretStore, SharingOps, TableOps, TokenOps, VolumeOps,
 };
 use rows::TableDef;
 use uc_storage::{Exec, Storage, StorageError, StorageResult, Value};
@@ -103,6 +103,9 @@ impl Metastore for SqlMetastore {
         self
     }
     fn permissions(&self) -> &dyn PermissionOps {
+        self
+    }
+    fn protection(&self) -> &dyn ProtectionOps {
         self
     }
     fn tokens(&self) -> &dyn TokenOps {
@@ -244,6 +247,22 @@ where
 }
 
 /// `v` as JSON text, for a JSON column.
+/// Whether a row of `table` has `field = value`, on `ex`: in a transaction,
+/// on its connection.
+pub(crate) async fn exists_in<E: Exec + ?Sized>(
+    ex: &E,
+    table: &str,
+    field: &str,
+    value: &str,
+) -> Result<bool> {
+    let sql = format!("SELECT 1 FROM {table} WHERE {field} = $1 LIMIT 1");
+    let rows = ex
+        .query(&sql, &[value.into()])
+        .await
+        .map_err(db_err("exists"))?;
+    Ok(!rows.is_empty())
+}
+
 pub(crate) fn json_text<T: Serialize + ?Sized>(v: &T) -> Result<String> {
     serde_json::to_string(v).map_err(|e| Error::internal(e.to_string()))
 }
@@ -482,13 +501,7 @@ impl SqlMetastore {
 
     /// Whether a row of `table` has `field = value`.
     pub(crate) async fn exists_where(&self, table: &str, field: &str, value: &str) -> Result<bool> {
-        let sql = format!("SELECT 1 FROM {table} WHERE {field} = $1 LIMIT 1");
-        let rows = self
-            .db
-            .query(&sql, &[value.into()])
-            .await
-            .map_err(db_err("exists"))?;
-        Ok(!rows.is_empty())
+        exists_in(self.db.as_ref(), table, field, value).await
     }
 
     /// Upstream `PagedListingHelper`: the rows of `t` that match `filters`

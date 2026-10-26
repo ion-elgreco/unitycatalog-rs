@@ -30,6 +30,8 @@ pub mod help {
     pub const VERSION: &str = "The version number of the model version";
     pub const MODEL_NAME: &str = "The name of the registered model";
     pub const SECURABLE_TYPE: &str = "The type of the securable, such as catalog or table";
+    pub const PROTECTABLE_TYPE: &str =
+        "The type of the securable: catalog, schema, table, volume or registered_model";
     pub const PRINCIPAL: &str = "The principal of the permission";
     pub const PRIVILEGE: &str = "The privilege to grant or revoke, such as \"USE CATALOG\"";
     pub const USER_ID: &str = "The unique id of the user";
@@ -127,6 +129,10 @@ pub const SECURABLE_TYPES: &[&str] = &[
     "external_location",
     "credential",
 ];
+
+/// The securable types that can be protected against deletes.
+pub const PROTECTABLE_TYPES: &[&str] =
+    &["catalog", "schema", "table", "volume", "registered_model"];
 
 /// Upstream's privileges.
 pub const PRIVILEGES: &[&str] = &[

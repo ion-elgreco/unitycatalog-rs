@@ -113,6 +113,17 @@ The list commands take `--max_results` (default 100) and `--page_token`. After a
 `registered_model`, `external_location` or `credential`. `--privilege` is a privilege such as
 `"USE CATALOG"`: see [Privileges](../server/auth.md#privileges).
 
+## protection
+
+| Operation | Flags |
+| --- | --- |
+| `get` | **`--securable_type`**, **`--name`** |
+| `create` | **`--securable_type`**, **`--name`**: protects the securable against deletes |
+| `delete` | **`--securable_type`**, **`--name`**: removes its protection |
+
+`--securable_type` is `catalog`, `schema`, `table`, `volume` or `registered_model`. See
+[Protection against deletes](../server/operations.md#protection-against-deletes).
+
 ## metastore
 
 | Operation | Flags |

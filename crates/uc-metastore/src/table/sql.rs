@@ -8,11 +8,12 @@ use uc_api::{
 };
 use uc_common::{
     Error, ErrorCode, ManagedResource, NormalizedUrl, Pagination, Result, SecurablePropertiesMap,
-    now_epoch_millis, validate_sql_object_name,
+    SecurableType, now_epoch_millis, validate_sql_object_name,
 };
 
 use crate::TableOps;
 use crate::cleanup::sql::queue_cleanup;
+use crate::protection::sql::check_unprotected;
 use crate::sql::rows::{STAGING_TABLE, TBL};
 use crate::sql::{
     SchemaRef, SqlMetastore, by_id, create_err_as, db_err, enum_str, insert, parse_enum,
@@ -467,6 +468,14 @@ impl TableOps for SqlMetastore {
         let (_, row) = self.resolve_table(full_name).await?;
         let failed = db_err("delete table");
         let tx = self.db.begin().await.map_err(&failed)?;
+        check_unprotected(
+            tx.as_ref(),
+            SecurableType::Table,
+            &row.id_string,
+            full_name,
+            false,
+        )
+        .await?;
         let id = [row.id_string.as_str().into()];
         drop_managed_tables(tx.as_ref(), "id_string = $1", &id).await?;
         for sql in [

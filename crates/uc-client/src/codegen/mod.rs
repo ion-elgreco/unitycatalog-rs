@@ -13,6 +13,7 @@ pub mod iceberg;
 pub mod metastore;
 pub mod model_versions;
 pub mod permissions;
+pub mod protection;
 pub mod recipients;
 pub mod registered_models;
 pub mod schemas;

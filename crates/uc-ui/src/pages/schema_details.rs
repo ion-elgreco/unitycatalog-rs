@@ -15,7 +15,8 @@ use crate::components::edit_modal::Changes;
 use crate::components::icons::Plus;
 use crate::components::{
     Card, CreateObjectModal, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata,
-    Empty, EntityHeader, Loaded, MetaRow, PermissionsCard, Tabs, loaded_list, properties,
+    Empty, EntityHeader, Loaded, MetaRow, PermissionsCard, ProtectButton, Tabs, loaded_list,
+    properties, use_protection,
 };
 use crate::contents::Holder;
 use crate::kind::{Kind, schema_icon};
@@ -90,11 +91,13 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
         async move { saving.await.map(|_| ()) }
     };
     // The schema, and the list of the kind shown.
+    let protected = use_protection(SecurableType::Schema, full_name.clone());
     let reload = Signal::derive(move || {
         let (catalog, schema, full_name) = names.get_value();
         vec![
-            Key::Schema(full_name),
+            Key::Schema(full_name.clone()),
             Key::Entries(catalog, schema, kind.get()),
+            Key::Protection(SecurableType::Schema, full_name),
         ]
     });
     let new_object = move |_| {
@@ -108,13 +111,15 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
             name=full_name.clone()
             badges=vec!["Schema".to_string()]
             reload
+            protected
             actions=view! {
                 <EditMetadata name=schema.clone() comment properties=props save=save_metadata/>
                 <button type="button" class="uc-btn uc-btn--sm" on:click=new_object>
                     <Plus/>
                     "New"
                 </button>
-                <DeleteButton open=delete_open when=manages/>
+                <ProtectButton kind=SecurableType::Schema full_name=full_name.clone() protected when=manages/>
+                <DeleteButton open=delete_open when=manages protected/>
             }
                 .into_any()
         />

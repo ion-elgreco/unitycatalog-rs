@@ -10,7 +10,7 @@ use crate::auth::use_manages;
 use crate::components::edit_modal::Changes;
 use crate::components::{
     CredentialsCard, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata,
-    EntityHeader, Loaded, MetaRow, PermissionsCard, Tabs, Vendable,
+    EntityHeader, Loaded, MetaRow, PermissionsCard, ProtectButton, Tabs, Vendable, use_protection,
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
@@ -81,7 +81,11 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
         });
         async move { saving.await.map(|_| ()) }
     };
-    let reload = vec![Key::Volume(full_name.clone())];
+    let protected = use_protection(SecurableType::Volume, full_name.clone());
+    let reload = vec![
+        Key::Volume(full_name.clone()),
+        Key::Protection(SecurableType::Volume, full_name.clone()),
+    ];
 
     view! {
         <EntityHeader
@@ -89,9 +93,11 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
             name=full_name.clone()
             badges
             reload
+            protected
             actions=view! {
                 <EditMetadata name=volume.clone() comment save=save_metadata/>
-                <DeleteButton open=delete_open when=manages/>
+                <ProtectButton kind=SecurableType::Volume full_name=full_name.clone() protected when=manages/>
+                <DeleteButton open=delete_open when=manages protected/>
             }
                 .into_any()
         />

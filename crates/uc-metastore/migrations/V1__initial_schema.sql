@@ -214,6 +214,15 @@ CREATE TABLE permission (
 );
 CREATE INDEX permission_by_principal ON permission (principal);
 
+-- The securables that cannot be deleted until their protection is removed,
+-- named by id: catalogs, schemas, tables, volumes and registered models.
+CREATE TABLE protection (
+    securable_id   TEXT PRIMARY KEY,
+    securable_type TEXT NOT NULL,
+    created_at     BIGINT NOT NULL,
+    created_by     TEXT
+);
+
 -- One row: the metastore's id and owner.
 CREATE TABLE metastore (
     singleton    BIGINT NOT NULL DEFAULT 1 PRIMARY KEY CHECK (singleton = 1),

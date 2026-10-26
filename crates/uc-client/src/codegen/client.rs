@@ -15,6 +15,7 @@ use crate::codegen::iceberg::*;
 use crate::codegen::metastore::*;
 use crate::codegen::model_versions::*;
 use crate::codegen::permissions::*;
+use crate::codegen::protection::*;
 use crate::codegen::recipients::*;
 use crate::codegen::registered_models::*;
 use crate::codegen::schemas::*;
@@ -40,6 +41,7 @@ use uc_client::models::iceberg::v1::*;
 use uc_client::models::metastore::v1::*;
 use uc_client::models::models::v1::*;
 use uc_client::models::permissions::v1::*;
+use uc_client::models::protection::v1::*;
 use uc_client::models::recipients::v1::*;
 use uc_client::models::schemas::v1::*;
 use uc_client::models::scim::v1::*;
@@ -177,6 +179,14 @@ impl Client {
     ///Low-level `permissions` client exposing request/response passthrough methods.
     pub fn permissions_client(&self) -> crate::codegen::permissions::PermissionClient {
         crate::codegen::permissions::PermissionClient::new(
+            self.client.clone(),
+            self.base_url.clone(),
+        )
+    }
+
+    ///Low-level `protection` client exposing request/response passthrough methods.
+    pub fn protection_client(&self) -> crate::codegen::protection::ProtectionClient {
+        crate::codegen::protection::ProtectionClient::new(
             self.client.clone(),
             self.base_url.clone(),
         )
@@ -1408,6 +1418,51 @@ impl Client {
             securable_type,
             full_name,
             changes,
+        )
+    }
+
+    /// Get the protection of a securable.
+    ///
+    /// # Arguments
+    ///
+    /// * `securable_type` - Type of the securable. Values: `catalog`, `schema`, `table`, `volume`, `registered_model`.
+    /// * `full_name` - Full name of the securable, such as `catalog.schema.table`.
+    pub fn get_protection(
+        &self,
+        securable_type: impl Into<String>,
+        full_name: impl Into<String>,
+    ) -> GetProtectionBuilder {
+        GetProtectionBuilder::new(
+            crate::codegen::protection::ProtectionClient::new(
+                self.client.clone(),
+                self.base_url.clone(),
+            ),
+            securable_type,
+            full_name,
+        )
+    }
+
+    /// Protect a securable, or remove its protection. Who can delete the securable can do this.
+    ///
+    /// # Arguments
+    ///
+    /// * `securable_type` - Type of the securable. Values: `catalog`, `schema`, `table`, `volume`, `registered_model`.
+    /// * `full_name` - Full name of the securable, such as `catalog.schema.table`.
+    /// * `protected` - `true` to protect the securable, `false` to remove its protection.
+    pub fn update_protection(
+        &self,
+        securable_type: impl Into<String>,
+        full_name: impl Into<String>,
+        protected: bool,
+    ) -> UpdateProtectionBuilder {
+        UpdateProtectionBuilder::new(
+            crate::codegen::protection::ProtectionClient::new(
+                self.client.clone(),
+                self.base_url.clone(),
+            ),
+            securable_type,
+            full_name,
+            protected,
         )
     }
 

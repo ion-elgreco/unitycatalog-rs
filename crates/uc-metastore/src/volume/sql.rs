@@ -4,12 +4,13 @@ use uuid::Uuid;
 
 use uc_api::{CreateVolumeRequestContent, UpdateVolumeRequestContent, VolumeInfo, VolumeType};
 use uc_common::{
-    Error, ErrorCode, ManagedResource, NormalizedUrl, Pagination, Result, now_epoch_millis,
-    validate_sql_object_name,
+    Error, ErrorCode, ManagedResource, NormalizedUrl, Pagination, Result, SecurableType,
+    now_epoch_millis, validate_sql_object_name,
 };
 
 use crate::VolumeOps;
 use crate::cleanup::sql::queue_cleanup;
+use crate::protection::sql::check_unprotected;
 use crate::sql::rows::VOLUME;
 use crate::sql::{
     SchemaRef, SqlMetastore, by_id, create_err_as, db_err, enum_str, insert, parse_enum,
@@ -233,6 +234,14 @@ impl VolumeOps for SqlMetastore {
         // the same transaction as the drop.
         let failed = db_err("delete volume");
         let tx = self.db.begin().await.map_err(&failed)?;
+        check_unprotected(
+            tx.as_ref(),
+            SecurableType::Volume,
+            &row.id_string,
+            full_name,
+            false,
+        )
+        .await?;
         let id = [row.id_string.as_str().into()];
         queue_managed_volumes(tx.as_ref(), "id_string = $1", &id).await?;
         for sql in [

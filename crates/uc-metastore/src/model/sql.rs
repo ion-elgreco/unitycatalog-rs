@@ -7,16 +7,17 @@ use uc_api::{
     RegisteredModelInfo, UpdateModelVersion, UpdateRegisteredModel,
 };
 use uc_common::{
-    Error, ErrorCode, ManagedResource, NormalizedUrl, Pagination, Result, now_epoch_millis,
-    three_part_full_name, validate_sql_object_name,
+    Error, ErrorCode, ManagedResource, NormalizedUrl, Pagination, Result, SecurableType,
+    now_epoch_millis, three_part_full_name, validate_sql_object_name,
 };
 
 use crate::ModelOps;
 use crate::cleanup::sql::queue_cleanup;
+use crate::protection::sql::check_unprotected;
 use crate::sql::rows::{MODEL_VERSION, REGISTERED_MODEL};
 use crate::sql::{
-    SchemaRef, SqlMetastore, create_err_as, create_storage_dir, db_err, enum_str, insert,
-    parse_enum, select, select_one, split_three_part, touch_audit, update,
+    SchemaRef, SqlMetastore, create_err_as, create_storage_dir, db_err, enum_str, exists_in,
+    insert, parse_enum, select, select_one, split_three_part, touch_audit, update,
 };
 use uc_storage::{Exec, Value};
 
@@ -315,16 +316,28 @@ impl ModelOps for SqlMetastore {
 
     async fn delete_model(&self, full_name: &str, force: bool) -> Result<()> {
         let (_, model) = self.resolve_model(full_name).await?;
-        let has_versions = self
-            .exists_where("model_version", "registered_model_id", &model.id_string)
-            .await?;
+        let failed = db_err("delete registered model");
+        let tx = self.db.begin().await.map_err(&failed)?;
+        check_unprotected(
+            tx.as_ref(),
+            SecurableType::RegisteredModel,
+            &model.id_string,
+            full_name,
+            false,
+        )
+        .await?;
+        let has_versions = exists_in(
+            tx.as_ref(),
+            "model_version",
+            "registered_model_id",
+            &model.id_string,
+        )
+        .await?;
         if has_versions && !force {
             return Err(Error::aborted(format!(
                 "Unable to delete a registered model with existing model versions: {full_name}"
             )));
         }
-        let failed = db_err("delete registered model");
-        let tx = self.db.begin().await.map_err(&failed)?;
         let id = [model.id_string.as_str().into()];
         queue_models(tx.as_ref(), "id_string = $1", &id).await?;
         for sql in [

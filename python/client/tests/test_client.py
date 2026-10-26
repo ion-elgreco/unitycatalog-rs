@@ -471,6 +471,23 @@ def test_permissions(uc: Calls, catalog: str) -> None:
         uc.get_permissions("bogus", catalog)
 
 
+def test_protection(uc: Calls, schema: tuple[str, str]) -> None:
+    catalog, schema_name = schema
+    full_name = f"{catalog}.{schema_name}"
+    assert not uc.get_protection("schema", full_name).protected
+    protection = uc.update_protection("schema", full_name, protected=True)
+    assert protection.protected and protection.protected_at
+    assert uc.get_protection("schema", full_name) == protection
+    with pytest.raises(ConflictError, match="Remove its protection first") as error:
+        uc.schema(full_name).delete()
+    assert error.value.code == "RESOURCE_PROTECTED"
+    # A cascade names the protected securables, and deletes nothing.
+    with pytest.raises(ConflictError, match=f"schema {full_name}"):
+        uc.catalog(catalog).delete(force=True)
+    assert not uc.update_protection("schema", full_name, protected=False).protected
+    uc.schema(full_name).delete()
+
+
 @pytest.mark.upstream
 def test_metastore_summary(uc: Calls) -> None:
     summary = uc.get_metastore_summary()

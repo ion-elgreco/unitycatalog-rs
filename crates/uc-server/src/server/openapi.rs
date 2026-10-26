@@ -27,6 +27,7 @@ use uc_common::{ErrorCode, ErrorResponse, SecurableType};
         (name = "ExternalLocations",   description = "Paths backed by credentials"),
         (name = "TemporaryCredentials", description = "Short-lived credential vending"),
         (name = "Permissions",          description = "Grant / revoke privileges on securables"),
+        (name = "Protection",           description = "Protection of securables against deletes"),
         (name = "Metastore",            description = "Metastore-level information"),
         (name = "Auth",                 description = "Personal Access Tokens"),
         (name = "Iceberg",              description = "Apache Iceberg REST Catalog endpoints"),

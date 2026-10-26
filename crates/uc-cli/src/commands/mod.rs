@@ -22,6 +22,7 @@ pub mod metastore;
 pub mod model_version;
 pub mod options;
 pub mod permission;
+pub mod protection;
 pub mod registered_model;
 pub mod schema;
 pub mod table;
@@ -72,6 +73,9 @@ pub enum Entity {
     /// Grant and revoke privileges
     #[command(subcommand)]
     Permission(permission::PermissionOp),
+    /// Protect securables against deletes
+    #[command(subcommand)]
+    Protection(protection::ProtectionOp),
     /// Show the metastore
     #[command(subcommand)]
     Metastore(metastore::MetastoreOp),
@@ -131,9 +135,14 @@ pub fn upstream(operation: &'static str) -> impl FnOnce(ClientError) -> anyhow::
             }
             e => format!("{operation} call failed: {}", call_error(e)),
         };
+        let code = match &e {
+            ClientError::Api(api) => api.code.clone(),
+            _ => None,
+        };
         anyhow::Error::new(CallFailed {
             message,
             status: e.status(),
+            code,
         })
     }
 }
@@ -226,12 +235,13 @@ impl std::error::Error for CallError {
     }
 }
 
-/// A failed call: upstream's message, and the HTTP status of a refused
-/// call.
+/// A failed call: upstream's message, and the HTTP status and error code
+/// of a refused call.
 #[derive(Debug)]
 struct CallFailed {
     message: String,
     status: Option<u16>,
+    code: Option<String>,
 }
 
 impl std::fmt::Display for CallFailed {
@@ -253,6 +263,18 @@ fn needs_sign_in(e: &anyhow::Error) -> bool {
         };
         status == Some(401)
     })
+}
+
+/// Whether the server refused a delete of `e` for a protected securable.
+fn refused_for_protection(e: &anyhow::Error) -> bool {
+    let protected = ErrorCode::ResourceProtected.as_str();
+    e.chain()
+        .any(|cause| match cause.downcast_ref::<CallFailed>() {
+            Some(call) => call.code.as_deref() == Some(protected),
+            None => cause
+                .downcast_ref::<CallError>()
+                .is_some_and(|call| call_error(&call.0).code() == ErrorCode::ResourceProtected),
+        })
 }
 
 impl Context<'_> {
@@ -357,6 +379,7 @@ pub async fn run(global: &Global, settings: &Settings, entity: Entity) -> i32 {
         Entity::RegisteredModel(op) => registered_model::run(&c, op).await,
         Entity::ModelVersion(op) => model_version::run(&c, op).await,
         Entity::Permission(op) => permission::run(&c, op).await,
+        Entity::Protection(op) => protection::run(&c, op).await,
         Entity::Metastore(op) => metastore::run(&c, op).await,
         Entity::Credential(op) => credential::run(&c, op).await,
         Entity::ExternalLocation(op) => external_location::run(&c, op).await,
@@ -389,6 +412,12 @@ pub async fn run(global: &Global, settings: &Settings, entity: Entity) -> i32 {
                 let login = sign_in::login_command(global);
                 eprintln!("{}", sign_in::advice(&origin, source, &login));
             }
+            if refused_for_protection(&e) {
+                eprintln!(
+                    "To remove a protection: uc protection delete --securable_type <type> \
+                     --name <full name>"
+                );
+            }
             1
         }
     }
@@ -405,6 +434,7 @@ mod tests {
     use super::function::FunctionOp;
     use super::model_version::ModelVersionOp;
     use super::permission::PermissionOp;
+    use super::protection::ProtectionOp;
     use uc_client::models::tables::v1::{DataSourceFormat, TableType};
     use uc_common::SecurableType;
 
@@ -554,6 +584,39 @@ mod tests {
             panic!();
         };
         assert_eq!(path, "-");
+    }
+
+    #[test]
+    fn protects_only_data_securables() {
+        let Entity::Protection(ProtectionOp::Create {
+            securable_type,
+            name,
+        }) = entity(&[
+            "protection",
+            "create",
+            "--securable_type",
+            "Registered_Model",
+            "--name",
+            "a.b.m",
+        ])
+        else {
+            panic!();
+        };
+        assert_eq!(
+            (securable_type, name.as_str()),
+            (SecurableType::RegisteredModel, "a.b.m")
+        );
+        assert_eq!(
+            stop(&[
+                "protection",
+                "create",
+                "--securable_type",
+                "function",
+                "--name",
+                "a.b.f"
+            ]),
+            ErrorKind::InvalidValue
+        );
     }
 
     #[test]

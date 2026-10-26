@@ -96,6 +96,7 @@ nav:
           - unitycatalog.metastore: reference/python/metastore.md
           - unitycatalog.models: reference/python/models.md
           - unitycatalog.permissions: reference/python/permissions.md
+          - unitycatalog.protection: reference/python/protection.md
           - unitycatalog.recipients: reference/python/recipients.md
           - unitycatalog.schemas: reference/python/schemas.md
           - unitycatalog.scim: reference/python/scim.md

@@ -8,7 +8,7 @@ use std::time::Duration;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use super::icons::{ChevronRight, Notebook, RefreshCw};
+use super::icons::{ChevronRight, Lock, Notebook, RefreshCw};
 use crate::load::{Key, use_cache};
 use crate::util::{Route, catalog_href, schema_href};
 
@@ -94,6 +94,9 @@ pub fn EntityHeader(
     /// page shows. None hides the button.
     #[prop(into, optional)]
     reload: Option<Signal<Vec<Key>>>,
+    /// Whether the object is protected against deletes: a badge says so.
+    #[prop(into, optional)]
+    protected: Signal<bool>,
     #[prop(optional)] actions: Option<AnyView>,
 ) -> impl IntoView {
     view! {
@@ -109,6 +112,15 @@ pub fn EntityHeader(
                             .map(|badge| view! { <span class="uc-badge uc-badge--type">{badge}</span> })
                             .collect_view()
                     }}
+                    <Show when=move || protected.get()>
+                        <span
+                            class="uc-badge uc-badge--protected"
+                            title="It cannot be deleted until its protection is removed"
+                        >
+                            <Lock/>
+                            "Protected"
+                        </span>
+                    </Show>
                     {reload.map(|keys| view! { <ReloadButton keys/> })}
                 </div>
                 {actions.map(|actions| view! { <div class="uc-entity__actions">{actions}</div> })}

@@ -9,6 +9,7 @@ pub mod functions;
 pub mod metastore;
 pub mod models;
 pub mod permissions;
+pub mod protection;
 pub mod schemas;
 pub mod tables;
 pub mod temp_credentials;

@@ -96,6 +96,8 @@ pub enum Key {
     Version(String, i64),
     /// The grants on a securable, by its full name.
     Permissions(SecurableType, String),
+    /// Whether a securable is protected against deletes, by its full name.
+    Protection(SecurableType, String),
     /// The signed-in user's access tokens.
     Tokens,
     Credentials,
@@ -128,6 +130,7 @@ impl Key {
             Key::Versions(_) => "Failed to list model versions",
             Key::Version(..) => "Failed to fetch model version",
             Key::Permissions(..) => "Failed to fetch permissions",
+            Key::Protection(..) => "Failed to fetch protection",
             Key::Tokens => "Failed to list access tokens",
             Key::Credentials => "Failed to list credentials",
             Key::Credential(_) => "Failed to fetch credential",

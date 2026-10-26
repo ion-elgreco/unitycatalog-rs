@@ -106,6 +106,12 @@ pub mod permissions {
     }
 }
 
+pub mod protection {
+    pub mod v1 {
+        include!("./unitycatalog.protection.v1.rs");
+    }
+}
+
 pub mod recipients {
     pub mod v1 {
         include!("./unitycatalog.recipients.v1.rs");

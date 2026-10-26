@@ -6,14 +6,15 @@ use uuid::Uuid;
 
 use uc_api::{CreateSchema, SchemaInfo, UpdateSchema};
 use uc_common::{
-    Error, ErrorCode, NormalizedUrl, Pagination, Result, SecurablePropertiesMap, now_epoch_millis,
-    schema_full_name, validate_sql_object_name,
+    Error, ErrorCode, NormalizedUrl, Pagination, Result, SecurablePropertiesMap, SecurableType,
+    now_epoch_millis, schema_full_name, validate_sql_object_name,
 };
 
+use crate::protection::sql::check_unprotected;
 use crate::sql::rows::SCHEMA;
 use crate::sql::{
-    SchemaRef, SqlMetastore, create_err_as, db_err, insert, json_text, placeholders, select_one,
-    split_schema_name, touch_audit, update,
+    SchemaRef, SqlMetastore, create_err_as, db_err, exists_in, insert, json_text, placeholders,
+    select_one, split_schema_name, touch_audit, update,
 };
 use crate::{PropertyChanges, SchemaOps};
 use uc_storage::{Exec, Row, Value};
@@ -370,22 +371,27 @@ impl SchemaOps for SqlMetastore {
 
     async fn delete(&self, full_name: &str, force: bool) -> Result<()> {
         let (_, schema) = self.require_schema_row(full_name).await?;
+        let failed = db_err("delete schema");
+        let tx = self.db.begin().await.map_err(&failed)?;
+        check_unprotected(
+            tx.as_ref(),
+            SecurableType::Schema,
+            &schema.id_string,
+            full_name,
+            force,
+        )
+        .await?;
         // Upstream checks the child kinds in this order; without `force`
         // the first kind present stops the delete.
         if !force {
             for (table, kind) in SCHEMA_CHILDREN {
-                if self
-                    .exists_where(table, "schema_id", &schema.id_string)
-                    .await?
-                {
+                if exists_in(tx.as_ref(), table, "schema_id", &schema.id_string).await? {
                     return Err(Error::failed_precondition(format!(
                         "Cannot delete schema with {kind}"
                     )));
                 }
             }
         }
-        let failed = db_err("delete schema");
-        let tx = self.db.begin().await.map_err(&failed)?;
         let id = [schema.id_string.as_str().into()];
         drop_schema_children(tx.as_ref(), "schema_id = $1", &id).await?;
         for sql in [

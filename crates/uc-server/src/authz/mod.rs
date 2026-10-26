@@ -697,6 +697,25 @@ pub mod rules {
         a.admin() || a.owner(l, Object) || a.owner(l, Schema) || a.owner(l, Catalog)
     }
 
+    /// Reads of a catalog, schema, table, volume or registered model, such
+    /// as of its protection.
+    pub fn read_securable(a: &Access, kind: SecurableType, l: &Lineage) -> bool {
+        match kind {
+            SecurableType::Catalog => get_catalog(a, l),
+            SecurableType::Schema => get_schema(a, l),
+            SecurableType::Table => get_table(a, l),
+            SecurableType::Volume => get_volume(a, l),
+            SecurableType::RegisteredModel => get_model(a, l),
+            _ => false,
+        }
+    }
+
+    /// Setting and removing the protection of a securable: whoever can
+    /// grant on it, which is whoever can delete it.
+    pub fn protect(a: &Access, kind: SecurableType, l: &Lineage) -> bool {
+        update_permissions(a, kind, l)
+    }
+
     /// `update<Securable>Authorization`.
     pub fn update_permissions(a: &Access, kind: SecurableType, l: &Lineage) -> bool {
         a.admin()

@@ -237,6 +237,8 @@ pub static EXTERNAL_LOCATION: Model = Model(&[
 
 pub static PRIVILEGE_ASSIGNMENT: Model = Model(&[("principal", P), ("privileges", LIST)]);
 
+pub static PROTECTION: Model = Model(&[("protected", P), ("protected_at", P), ("protected_by", P)]);
+
 pub static METASTORE_SUMMARY: Model = Model(&[("metastore_id", P)]);
 
 /// The control API's `User`, which upstream's CLI prints for SCIM users.

@@ -10578,6 +10578,64 @@ impl ::core::convert::From<PyPrivilegeAssignment> for super::permissions::v1::Pr
     }
 }
 
+/// Whether a securable is protected against deletes. A protected securable cannot be deleted,
+/// also not with the delete of its catalog or schema, until its protection is removed.
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
+    name = "Protection",
+    eq,
+    frozen,
+    module = "unitycatalog._core.protection",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyProtection(pub super::protection::v1::Protection);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PyProtection {
+    /// `true` when the securable is protected.
+    #[getter]
+    fn protected(&self) -> bool {
+        self.0.protected
+    }
+
+    /// When the protection was set, in epoch milliseconds.
+    #[getter]
+    fn protected_at(&self) -> ::core::option::Option<i64> {
+        self.0.protected_at
+    }
+
+    /// Who set the protection.
+    #[getter]
+    fn protected_by(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.protected_by.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[
+                ("protected", false),
+                ("protected_at", false),
+                ("protected_by", false),
+            ],
+        )
+    }
+}
+
+impl ::core::convert::From<super::protection::v1::Protection> for PyProtection {
+    fn from(value: super::protection::v1::Protection) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyProtection> for super::protection::v1::Protection {
+    fn from(value: PyProtection) -> Self {
+        value.0
+    }
+}
+
 #[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListRecipientsResponse",

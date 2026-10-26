@@ -13,8 +13,8 @@ use crate::components::edit_modal::Changes;
 use crate::components::icons::Plus;
 use crate::components::{
     Card, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata, Empty,
-    EntityHeader, Loaded, MetaRow, Modal, PermissionsCard, Tabs, TextField, counted, loaded_list,
-    use_notify,
+    EntityHeader, Loaded, MetaRow, Modal, PermissionsCard, ProtectButton, Tabs, TextField, counted,
+    loaded_list, use_notify, use_protection,
 };
 use crate::contents::Holder;
 use crate::kind::Kind;
@@ -95,9 +95,11 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
         });
         async move { saving.await.map(|_| ()) }
     };
+    let protected = use_protection(SecurableType::RegisteredModel, full_name.clone());
     let reload = vec![
         Key::Model(full_name.clone()),
         Key::Versions(full_name.clone()),
+        Key::Protection(SecurableType::RegisteredModel, full_name.clone()),
     ];
 
     let version_rows = move || {
@@ -149,13 +151,20 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
             name=full_name.clone()
             badges=vec!["Model".to_string()]
             reload
+            protected
             actions=view! {
                 <EditMetadata name=model.clone() comment save=save_metadata/>
                 <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>
                     <Plus/>
                     "Create version"
                 </button>
-                <DeleteButton open=delete_open when=manages/>
+                <ProtectButton
+                    kind=SecurableType::RegisteredModel
+                    full_name=full_name.clone()
+                    protected
+                    when=manages
+                />
+                <DeleteButton open=delete_open when=manages protected/>
             }
                 .into_any()
         />

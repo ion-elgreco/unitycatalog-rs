@@ -219,6 +219,24 @@ pub fn ShieldCheck(#[prop(optional)] class: Option<&'static str>) -> impl IntoVi
     )
 }
 
+/// `lock`: a protected object.
+#[component]
+pub fn Lock(#[prop(optional)] class: Option<&'static str>) -> impl IntoView {
+    icon(
+        r#"<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>"#,
+        class,
+    )
+}
+
+/// `lock-open`: remove a protection.
+#[component]
+pub fn LockOpen(#[prop(optional)] class: Option<&'static str>) -> impl IntoView {
+    icon(
+        r#"<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>"#,
+        class,
+    )
+}
+
 /// `copy`.
 #[component]
 pub fn Copy(#[prop(optional)] class: Option<&'static str>) -> impl IntoView {

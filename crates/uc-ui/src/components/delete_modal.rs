@@ -237,19 +237,32 @@ where
 }
 
 /// "Delete" in a page's actions, for those who manage the object (`when`):
-/// it opens the modal.
+/// it opens the modal. It is off while the object is `protected`.
 #[component]
-pub fn DeleteButton(open: RwSignal<bool>, when: Memo<bool>) -> impl IntoView {
+pub fn DeleteButton(
+    open: RwSignal<bool>,
+    when: Memo<bool>,
+    #[prop(into, optional)] protected: Signal<bool>,
+) -> impl IntoView {
+    // The hint is on a wrapper: a disabled button gets no pointer events.
     view! {
         <Show when=move || when.get()>
-            <button
-                type="button"
-                class="uc-btn uc-btn--destructive uc-btn--sm"
-                on:click=move |_| open.set(true)
+            <span
+                class="uc-entity__action"
+                title=move || {
+                    protected.get().then_some("Remove the protection before you delete it")
+                }
             >
-                <Trash2/>
-                "Delete"
-            </button>
+                <button
+                    type="button"
+                    class="uc-btn uc-btn--destructive uc-btn--sm"
+                    disabled=move || protected.get()
+                    on:click=move |_| open.set(true)
+                >
+                    <Trash2/>
+                    "Delete"
+                </button>
+            </span>
         </Show>
     }
 }

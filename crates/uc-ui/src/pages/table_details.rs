@@ -9,7 +9,8 @@ use crate::api;
 use crate::auth::use_manages;
 use crate::components::{
     ColumnsCard, CredentialsCard, DeleteButton, DeleteModal, DescriptionCard, DetailsTab,
-    EntityHeader, Loaded, MetaRow, PermissionsCard, Tabs, Vendable, properties,
+    EntityHeader, Loaded, MetaRow, PermissionsCard, ProtectButton, Tabs, Vendable, properties,
+    use_protection,
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
@@ -62,7 +63,11 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
             Ok(())
         }
     };
-    let reload = vec![Key::Table(full_name.clone())];
+    let protected = use_protection(SecurableType::Table, full_name.clone());
+    let reload = vec![
+        Key::Table(full_name.clone()),
+        Key::Protection(SecurableType::Table, full_name.clone()),
+    ];
 
     view! {
         <EntityHeader
@@ -70,7 +75,12 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
             name=full_name.clone()
             badges
             reload
-            actions=view! { <DeleteButton open=delete_open when=manages/> }.into_any()
+            protected
+            actions=view! {
+                <ProtectButton kind=SecurableType::Table full_name=full_name.clone() protected when=manages/>
+                <DeleteButton open=delete_open when=manages protected/>
+            }
+                .into_any()
         />
         <div class="uc-page">
             <Loaded state=info>

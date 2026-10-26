@@ -43,6 +43,9 @@ pub enum ErrorCode {
     /// Local-only: a dependency (the database) is not reachable. Used by the
     /// readiness probe; upstream has no equivalent code.
     Unavailable,
+    /// Local-only: a delete would remove a protected securable. Upstream has
+    /// no protection.
+    ResourceProtected,
 }
 
 impl ErrorCode {
@@ -65,7 +68,8 @@ impl ErrorCode {
             Self::AlreadyExists
             | Self::Aborted
             | Self::CommitVersionConflict
-            | Self::UpdateRequirementConflict => StatusCode::CONFLICT,
+            | Self::UpdateRequirementConflict
+            | Self::ResourceProtected => StatusCode::CONFLICT,
             Self::PermissionDenied => StatusCode::FORBIDDEN,
             Self::Unauthenticated => StatusCode::UNAUTHORIZED,
             Self::ResourceExhausted => StatusCode::TOO_MANY_REQUESTS,
@@ -89,7 +93,7 @@ impl ErrorCode {
             Self::CatalogNotFound => "NoSuchCatalogException",
             Self::SchemaNotFound => "NoSuchSchemaException",
             Self::TableNotFound => "NoSuchTableException",
-            Self::PermissionDenied => "PermissionDeniedException",
+            Self::PermissionDenied | Self::ResourceProtected => "PermissionDeniedException",
             Self::Unauthenticated => "NotAuthorizedException",
             Self::ResourceExhausted => "ResourceExhaustedException",
             Self::Aborted | Self::CommitVersionConflict => "CommitVersionConflictException",
@@ -109,13 +113,15 @@ impl ErrorCode {
     }
 
     /// Upstream `deltaHttpStatus`: the UC Delta API status. "Already
-    /// exists" is always 409 there, and an unprocessable entity 400.
+    /// exists" is always 409 there, and an unprocessable entity 400. A
+    /// protected securable is 403, which engines report as a refusal.
     pub fn delta_status(self) -> StatusCode {
         if self.is_already_exists() {
             return StatusCode::CONFLICT;
         }
         match self {
             Self::UnprocessableEntity => StatusCode::BAD_REQUEST,
+            Self::ResourceProtected => StatusCode::FORBIDDEN,
             other => other.status(),
         }
     }
@@ -144,7 +150,7 @@ impl ErrorCode {
             | Self::OutOfRange => "BadRequestException",
             Self::UnprocessableEntity => "UnprocessableEntityException",
             Self::Unauthenticated => "NotAuthorizedException",
-            Self::PermissionDenied => "ForbiddenException",
+            Self::PermissionDenied | Self::ResourceProtected => "ForbiddenException",
             Self::Unimplemented => "UnsupportedOperationException",
             Self::Internal | Self::DataLoss | Self::CommitStateUnknown | Self::Unavailable => {
                 "ServiceFailureException"
@@ -153,10 +159,12 @@ impl ErrorCode {
     }
 
     /// The Iceberg REST status: the UC status, except that a schema or
-    /// table that already exists is a 409 conflict there.
+    /// table that already exists is a 409 conflict there, and a protected
+    /// securable a 403: Iceberg clients read a 409 on a drop as "not empty".
     pub fn iceberg_status(self) -> StatusCode {
         match self {
             Self::SchemaAlreadyExists | Self::TableAlreadyExists => StatusCode::CONFLICT,
+            Self::ResourceProtected => StatusCode::FORBIDDEN,
             other => other.status(),
         }
     }
@@ -191,6 +199,7 @@ impl ErrorCode {
             Self::CommitStateUnknown => "COMMIT_STATE_UNKNOWN",
             Self::UnprocessableEntity => "UNPROCESSABLE_ENTITY",
             Self::Unavailable => "UNAVAILABLE",
+            Self::ResourceProtected => "RESOURCE_PROTECTED",
         }
     }
 
@@ -280,6 +289,9 @@ impl Error {
     }
     pub fn unavailable(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::Unavailable, msg)
+    }
+    pub fn resource_protected(msg: impl Into<String>) -> Self {
+        Self::new(ErrorCode::ResourceProtected, msg)
     }
 
     pub fn code(&self) -> ErrorCode {
