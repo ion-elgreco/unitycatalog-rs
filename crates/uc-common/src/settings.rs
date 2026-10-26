@@ -47,6 +47,7 @@ const GROUPS: &[&str] = &[
     "db",
     "auth",
     "storage",
+    "secrets",
     "tables",
     "identity",
     "locations",
@@ -69,6 +70,7 @@ pub struct Settings {
     pub db: Db,
     pub auth: Auth,
     pub storage: Storage,
+    pub secrets: Secrets,
     pub tables: Tables,
     pub identity: Identity,
     /// Locations and the identities that reach them, by name.
@@ -177,9 +179,10 @@ pub struct Auth {
     /// Sign-in and privilege checks (default false).
     #[serde(deserialize_with = "scalar")]
     pub enabled: bool,
-    /// The PEM file of the RSA key that signs the server's tokens. Without
-    /// it, the server makes a key in memory at each start: its tokens end
-    /// when it stops, and replicas cannot check each other's tokens.
+    /// The PEM file of the RSA keys of the server's tokens, newest first:
+    /// the first signs, each checks the tokens it signed. Without it, the
+    /// server makes a key in memory at each start: its tokens end when it
+    /// stops, and replicas cannot check each other's tokens.
     pub signing_key_file: Option<PathBuf>,
     /// The users that the server makes at each start when they are missing
     /// (`[[auth.users]]`, only in `uc.toml`).
@@ -442,6 +445,48 @@ impl Default for Ui {
         Self {
             enabled: true,
             dir: None,
+        }
+    }
+}
+
+/// Where the server keeps the secrets of storage credentials.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SecretStoreKind {
+    /// In the database, each secret sealed with `secrets.key_file`.
+    #[default]
+    Database,
+}
+
+/// `[secrets]`: the store of the secrets of storage credentials, and how
+/// long the server keeps them in memory.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Secrets {
+    /// The store (default `database`).
+    pub store: SecretStoreKind,
+    /// The PEM file of the P-256 keys that seal secrets, newest first: the
+    /// first seals, each opens what it sealed. Without it, the server makes
+    /// a new key in memory at each start, so the secrets cannot be opened
+    /// after it stops.
+    pub key_file: Option<PathBuf>,
+    /// The most secrets, and Azure sign-ins, kept in memory (default 500;
+    /// 0 for none).
+    #[serde(deserialize_with = "scalar")]
+    pub cache_capacity: u64,
+    /// How long a secret stays in memory after the store gives it (default
+    /// `10m`).
+    #[serde(deserialize_with = "duration")]
+    pub cache_ttl: Duration,
+}
+
+impl Default for Secrets {
+    fn default() -> Self {
+        Self {
+            store: SecretStoreKind::Database,
+            key_file: None,
+            cache_capacity: 500,
+            cache_ttl: Duration::from_secs(10 * 60),
         }
     }
 }
@@ -818,6 +863,10 @@ mod tests {
     fn users_come_from_the_file() {
         let settings = Settings::from_toml(
             r#"
+            [secrets]
+            key_file = "/etc/uc/keys/secrets_key.pem"
+            cache_ttl = "5m"
+
             [auth]
             signing_key_file = "/etc/uc/keys/private_key.pem"
 
@@ -836,6 +885,13 @@ mod tests {
             settings.auth.signing_key_file,
             Some(PathBuf::from("/etc/uc/keys/private_key.pem"))
         );
+        assert_eq!(
+            settings.secrets.key_file,
+            Some(PathBuf::from("/etc/uc/keys/secrets_key.pem"))
+        );
+        assert_eq!(settings.secrets.store, SecretStoreKind::Database);
+        assert_eq!(settings.secrets.cache_capacity, 500);
+        assert_eq!(settings.secrets.cache_ttl, Duration::from_secs(300));
         assert_eq!(
             settings.auth.users,
             [

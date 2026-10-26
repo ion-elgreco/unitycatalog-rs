@@ -18,7 +18,8 @@ use uc_common::NormalizedUrl;
 use uc_metastore::DynMetastore;
 use uc_server::{
     storage::cleanup::{
-        CleanupConfig, CleanupError, CleanupStorage, DefaultCleanupStorage, StorageCleanupWorker,
+        Attempt, CleanupConfig, CleanupError, CleanupStorage, DefaultCleanupStorage,
+        StorageCleanupWorker,
     },
     storage::vendor::PlaceholderVendor,
 };
@@ -216,15 +217,16 @@ async fn dropped_managed_data_is_cleaned_up_after_the_delay() {
     assert_eq!(snapshot["tables"]["delta_commit"], json!([]), "{table_id}");
 
     // Files stay for the initial delay.
-    assert!(!worker(&metastore, HOUR).run_once().await.unwrap());
+    assert_eq!(
+        worker(&metastore, HOUR).run_once().await.unwrap(),
+        Attempt::Idle
+    );
     assert!(volume_dir.exists());
 
-    // Then one task per run.
+    // Then one poll takes every ready task.
     let worker = worker(&metastore, Duration::ZERO);
-    for _ in 0..4 {
-        assert!(worker.run_once().await.unwrap());
-    }
-    assert!(!worker.run_once().await.unwrap());
+    assert_eq!(worker.run_ready().await.unwrap(), 4);
+    assert_eq!(worker.run_once().await.unwrap(), Attempt::Idle);
     assert!(task_kinds(&metastore).await.is_empty());
     for dir in [
         local(&table["storage_location"]),
@@ -305,10 +307,11 @@ async fn failures_are_recorded_and_retried_after_the_backoff() {
     .await;
     ok(&app, Method::DELETE, "/volumes/c.s.v", None).await;
 
-    // Without a backoff the task is ready again at once.
+    // Without a backoff the task is ready again at once, but a failure
+    // ends the poll.
     let eager = worker_with(&metastore, Arc::new(Broken), Duration::ZERO, Duration::ZERO);
-    assert!(eager.run_once().await.unwrap());
-    assert!(eager.run_once().await.unwrap());
+    assert_eq!(eager.run_ready().await.unwrap(), 0);
+    assert_eq!(eager.run_once().await.unwrap(), Attempt::Failed);
     let task = &metastore.cleanup().list_tasks().await.unwrap()[0];
     assert_eq!(task.failure_count, 2);
     // Only the sanitized kind is kept, never the provider message.
@@ -319,8 +322,8 @@ async fn failures_are_recorded_and_retried_after_the_backoff() {
 
     // With a backoff it waits.
     let patient = worker_with(&metastore, Arc::new(Broken), Duration::ZERO, HOUR);
-    assert!(patient.run_once().await.unwrap());
-    assert!(!patient.run_once().await.unwrap());
+    assert_eq!(patient.run_once().await.unwrap(), Attempt::Failed);
+    assert_eq!(patient.run_once().await.unwrap(), Attempt::Idle);
     assert_eq!(
         metastore.cleanup().list_tasks().await.unwrap()[0].failure_count,
         3

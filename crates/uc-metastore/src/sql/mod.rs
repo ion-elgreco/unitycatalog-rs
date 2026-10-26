@@ -18,7 +18,7 @@ use crate::migrations::run_migrations;
 use crate::{
     AuditLogOps, BackupOps, CatalogOps, CleanupOps, CredentialOps, DeltaTableOps,
     ExternalLocationOps, FunctionOps, IcebergTableOps, Metastore, ModelOps, PermissionOps,
-    SchemaOps, ScimOps, SearchOps, SharingOps, TableOps, TokenOps, VolumeOps,
+    SchemaOps, ScimOps, SearchOps, SecretStore, SharingOps, TableOps, TokenOps, VolumeOps,
 };
 use rows::TableDef;
 use uc_storage::{Exec, Storage, StorageError, StorageResult, Value};
@@ -28,6 +28,7 @@ pub struct SqlMetastore {
     pub(crate) db: Arc<dyn Storage>,
     pub(crate) roots: ManagedStorageConfig,
     pub(crate) tables: TableSettings,
+    pub(crate) secrets: Arc<dyn SecretStore>,
 }
 
 impl SqlMetastore {
@@ -38,7 +39,7 @@ impl SqlMetastore {
         let db = uc_storage::open(&cfg.database)
             .await
             .map_err(|e| Error::internal(format!("cannot open {described}: {e}")))?;
-        Self::new(db, cfg.storage, cfg.tables).await
+        Self::new(db, cfg.storage, cfg.tables, cfg.secrets).await
     }
 
     /// The catalog on `db`, any [`Storage`], with its tables brought up to
@@ -47,9 +48,15 @@ impl SqlMetastore {
         db: Arc<dyn Storage>,
         roots: ManagedStorageConfig,
         tables: TableSettings,
+        secrets: Arc<dyn SecretStore>,
     ) -> Result<Arc<Self>> {
         run_migrations(db.as_ref()).await?;
-        Ok(Arc::new(Self { db, roots, tables }))
+        Ok(Arc::new(Self {
+            db,
+            roots,
+            tables,
+            secrets,
+        }))
     }
 
     /// Upstream `checkManagedTableEnabled`.

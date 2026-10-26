@@ -174,8 +174,8 @@ identity of its own, and the managed roots.
     models_root = "abfss://lake@acmelake.dfs.core.windows.net/managed/models"
     ```
 
-    - A service principal signs in with its secret. The server keeps the secret in its database.
-      No answer of the API shows it, but backups contain it.
+    - A service principal signs in with its secret. The server keeps the secret in its database,
+      sealed with [the secrets key](database.md#the-secrets-key). No answer of the API shows it.
     - `azure_managed_identity = true`, or `--azure_managed_identity` without a value, is the
       server's own identity. With a resource ID, the server uses that user-assigned identity of
       its VM.
@@ -227,8 +227,8 @@ identity of its own, and the managed roots.
     - With an email, the server's identity impersonates that service account, and needs the
       Service Account Token Creator role on it. `true`, or `--gcp_service_account` without an
       email, is the server's own identity.
-    - With a service account key, the server keeps the key in its database. No answer of the API
-      shows it, but backups contain it.
+    - With a service account key, the server keeps the key in its database, sealed with
+      [the secrets key](database.md#the-secrets-key). No answer of the API shows it.
     - On GKE, give the server's pod Workload Identity with the Helm chart's
       `serviceAccount.annotations` (`iam.gke.io/gcp-service-account`).
 

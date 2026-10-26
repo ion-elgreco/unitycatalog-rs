@@ -11,29 +11,30 @@
 //!   VM or App Service). With a resource ID, it is that user-assigned
 //!   identity, from the instance metadata service.
 //!
-//! `object_store` signs in and keeps the token. With the token the server
-//! gets a user delegation key for the hour, and signs a directory SAS for
-//! the path: read and list, plus write and delete for writes.
-
-use std::collections::HashMap;
-use std::sync::Mutex;
+//! `object_store` signs in and keeps the token. The sign-ins stay in memory
+//! as long as the secrets of `[secrets]` (`secrets.cache_*`). With the token
+//! the server gets a user delegation key for the hour, and signs a directory
+//! SAS for the path: read and list, plus write and delete for writes.
 
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use hmac::{Hmac, Mac};
+use moka::sync::Cache;
 use object_store::{
     azure::{AzureConfigKey, AzureCredential, AzureCredentialProvider, MicrosoftAzureBuilder},
     client::SpawnedReqwestConnector,
 };
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 
 use uc_api::{AzureUserDelegationSAS, TemporaryCredentials};
 use uc_common::{Error, NormalizedUrl, Result};
+use uc_metastore::SecretValue;
 use uc_storage::runtime::io_handle;
 
 use super::{CredentialContext, StorageCredential, StoragePrivilege, xml_text};
 use crate::http::outbound::SendOnIo;
+use crate::storage::secrets::CacheConfig;
 
 /// The SAS version signed: its string-to-sign is the one of
 /// [`user_delegation_sas`].
@@ -49,21 +50,51 @@ pub struct AzureVendor {
     blob: Option<String>,
     /// The instance metadata service, when not Azure's: a test's.
     msi: Option<String>,
-    /// The sign-ins of the identities, made on first use.
-    sign_ins: Mutex<HashMap<Identity, AzureCredentialProvider>>,
+    /// The sign-ins of the identities, made on first use; none without a
+    /// cache.
+    sign_ins: Option<Cache<SignInKey, AzureCredentialProvider>>,
 }
 
 /// Who signs in to Microsoft Entra ID.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Identity {
     ServicePrincipal {
         tenant_id: String,
         client_id: String,
-        client_secret: String,
+        client_secret: SecretValue,
     },
     /// The user-assigned managed identity of this resource ID, else the
     /// server's own identity.
     Managed(Option<String>),
+}
+
+/// The key of a sign-in: its identity, with the digest of a client secret
+/// in place of the secret.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum SignInKey {
+    ServicePrincipal {
+        tenant_id: String,
+        client_id: String,
+        secret_sha256: [u8; 32],
+    },
+    Managed(Option<String>),
+}
+
+impl From<&Identity> for SignInKey {
+    fn from(identity: &Identity) -> Self {
+        match identity {
+            Identity::ServicePrincipal {
+                tenant_id,
+                client_id,
+                client_secret,
+            } => Self::ServicePrincipal {
+                tenant_id: tenant_id.clone(),
+                client_id: client_id.clone(),
+                secret_sha256: Sha256::digest(client_secret.as_sensitive_bytes()).into(),
+            },
+            Identity::Managed(id) => Self::Managed(id.clone()),
+        }
+    }
 }
 
 impl Identity {
@@ -233,15 +264,20 @@ fn permissions(privileges: &[StoragePrivilege]) -> String {
 
 impl AzureVendor {
     /// The vendor whose own identity is `server`, else the identity of the
-    /// environment.
-    pub fn new(server: Option<Identity>) -> Self {
+    /// environment, with its sign-ins in `cache`.
+    pub fn new(server: Option<Identity>, cache: Option<CacheConfig>) -> Self {
         Self {
             server: server.unwrap_or(Identity::Managed(None)),
             http: reqwest::Client::new(),
             login: None,
             blob: None,
             msi: None,
-            sign_ins: Mutex::new(HashMap::new()),
+            sign_ins: cache.map(|CacheConfig { capacity, ttl }| {
+                Cache::builder()
+                    .max_capacity(capacity)
+                    .time_to_live(ttl)
+                    .build()
+            }),
         }
     }
 
@@ -339,9 +375,9 @@ impl AzureVendor {
         account: &str,
         identity: &Identity,
     ) -> object_store::Result<AzureCredentialProvider> {
-        let mut sign_ins = self.sign_ins.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(found) = sign_ins.get(identity) {
-            return Ok(found.clone());
+        let key = SignInKey::from(identity);
+        if let Some(found) = self.sign_ins.as_ref().and_then(|cache| cache.get(&key)) {
+            return Ok(found);
         }
         let builder = match identity {
             Identity::ServicePrincipal {
@@ -351,7 +387,7 @@ impl AzureVendor {
             } => MicrosoftAzureBuilder::new()
                 .with_tenant_id(tenant_id)
                 .with_client_id(client_id)
-                .with_client_secret(client_secret),
+                .with_client_secret(client_secret.as_sensitive_str()),
             // The server's own identity, without `[identity.azure]`.
             Identity::Managed(None) => MicrosoftAzureBuilder::from_env(),
             // Only the instance metadata service knows identities by their
@@ -372,7 +408,9 @@ impl AzureVendor {
             builder = builder.with_msi_endpoint(msi);
         }
         let found = builder.build()?.credentials().clone();
-        sign_ins.insert(identity.clone(), found.clone());
+        if let Some(cache) = &self.sign_ins {
+            cache.insert(key, found.clone());
+        }
         Ok(found)
     }
 
@@ -441,6 +479,40 @@ fn vended(sas_token: String, expiration: i64) -> TemporaryCredentials {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn sign_ins_are_kept_by_a_digest_of_the_secret() {
+        let principal = |secret: &str| Identity::ServicePrincipal {
+            tenant_id: "tenant".into(),
+            client_id: "app".into(),
+            client_secret: secret.into(),
+        };
+        let key = SignInKey::from(&principal("s3cret"));
+        assert!(!format!("{key:?}").contains("s3cret"));
+        assert!(!format!("{:?}", principal("s3cret")).contains("s3cret"));
+        assert_ne!(key, SignInKey::from(&principal("n3w")));
+
+        let cache = CacheConfig {
+            capacity: 10,
+            ttl: std::time::Duration::from_secs(60),
+        };
+        let vendor = AzureVendor::new(None, Some(cache));
+        let first = vendor.sign_in("acct", &principal("s3cret")).unwrap();
+        let again = vendor.sign_in("acct", &principal("s3cret")).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&first, &again));
+        // A new secret signs in again.
+        let other = vendor.sign_in("acct", &principal("n3w")).unwrap();
+        assert!(!std::sync::Arc::ptr_eq(&first, &other));
+        let sign_ins = vendor.sign_ins.as_ref().unwrap();
+        sign_ins.run_pending_tasks();
+        assert_eq!(sign_ins.entry_count(), 2);
+
+        // Without a cache, no sign-in stays.
+        let uncached = AzureVendor::new(None, None);
+        let first = uncached.sign_in("acct", &principal("s3cret")).unwrap();
+        let again = uncached.sign_in("acct", &principal("s3cret")).unwrap();
+        assert!(!std::sync::Arc::ptr_eq(&first, &again));
+    }
 
     fn key() -> DelegationKey {
         DelegationKey {

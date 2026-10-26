@@ -11,11 +11,21 @@ pub enum Command {
     Run(Options),
     /// `uc-server token`: print a token of the user `admin`.
     Token(TokenOptions),
-    /// `uc-server keygen`: print a new signing key, or write it to the
-    /// file of `--output`.
-    Keygen(Option<std::path::PathBuf>),
+    /// `uc-server keygen`: print a new key, or write it to the file of
+    /// `--output`.
+    Keygen(KeygenOptions),
     /// Print the text and exit with the code.
     Exit(i32, String),
+}
+
+/// The options of `uc-server keygen`.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct KeygenOptions {
+    /// `--secrets`: a P-256 key for `secrets.key_file`, instead of an RSA
+    /// key for `auth.signing_key_file`.
+    pub secrets: bool,
+    /// The new file to write it to, instead of the standard output.
+    pub output: Option<std::path::PathBuf>,
 }
 
 /// The options of `uc-server token`.
@@ -54,9 +64,10 @@ pub fn help() -> String {
         "                        Print a token of the user admin that expires",
         "                        after --ttl (default 1h). Needs",
         "                        auth.signing_key_file.",
-        "    keygen [--output <arg>]",
-        "                        Print a new signing key for",
-        "                        auth.signing_key_file, or write it to a new",
+        "    keygen [--secrets] [--output <arg>]",
+        "                        Print a new RSA key for auth.signing_key_file,",
+        "                        or with --secrets a P-256 key for",
+        "                        secrets.key_file; --output writes it to a new",
         "                        file that only its owner reads.",
         "",
     ]
@@ -179,21 +190,23 @@ fn parse_token(mut args: impl Iterator<Item = String>) -> Command {
     Command::Token(options)
 }
 
-/// The options of `uc-server keygen`: `--output` and `--help`.
+/// The options of `uc-server keygen`: `--secrets`, `--output` and
+/// `--help`.
 fn parse_keygen(mut args: impl Iterator<Item = String>) -> Command {
-    let mut output = None;
+    let mut options = KeygenOptions::default();
     while let Some(arg) = args.next() {
         let (name, inline) = split(&arg);
         match name.as_str() {
             "-h" | "--help" => return Command::Exit(0, help()),
+            "--secrets" if inline.is_none() => options.secrets = true,
             "--output" => match inline.or_else(|| args.next()) {
-                Some(path) => output = Some(path.into()),
+                Some(path) => options.output = Some(path.into()),
                 None => return failed("Missing argument for option: output".into()),
             },
             other => return failed(format!("Unrecognized option: {other}")),
         }
     }
-    Command::Keygen(output)
+    Command::Keygen(options)
 }
 
 /// Upstream `validateObservabilityPort`: not the API port.
@@ -270,10 +283,20 @@ mod tests {
             matches!(run(&["token", "-p", "1"]), Command::Exit(255, text) if text.contains("Unrecognized option: -p"))
         );
         assert!(matches!(run(&["token", "--help"]), Command::Exit(0, _)));
-        assert_eq!(run(&["keygen"]), Command::Keygen(None));
+        assert_eq!(run(&["keygen"]), Command::Keygen(KeygenOptions::default()));
         assert_eq!(
             run(&["keygen", "--output", "/data/key.pem"]),
-            Command::Keygen(Some("/data/key.pem".into()))
+            Command::Keygen(KeygenOptions {
+                secrets: false,
+                output: Some("/data/key.pem".into()),
+            })
+        );
+        assert_eq!(
+            run(&["keygen", "--secrets", "--output=/data/secrets.pem"]),
+            Command::Keygen(KeygenOptions {
+                secrets: true,
+                output: Some("/data/secrets.pem".into()),
+            })
         );
         assert!(matches!(run(&["keygen", "x"]), Command::Exit(255, _)));
         assert!(matches!(

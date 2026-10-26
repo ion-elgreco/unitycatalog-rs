@@ -100,12 +100,17 @@ tests:
           content:
             name: keys
             secret:
-              secretName: uc-server-server-jwt-key
+              secretName: uc-server-server-keys
       - contains:
           path: spec.template.spec.containers[0].env
           content:
             name: UC_AUTH_SIGNING_KEY_FILE
             value: /etc/uc/keys/private_key.pem
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_SECRETS_KEY_FILE
+            value: /etc/uc/keys/secrets_key.pem
 
   - it: takes the image tag and pull settings from the values
     set:
