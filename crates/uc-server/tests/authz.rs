@@ -10,24 +10,7 @@ use axum::{
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use common::{assert_status, json_body, req_bearer, req_json};
-
-/// `req_json` signed in with `token`.
-fn signed(
-    method: Method,
-    path: &str,
-    body: Option<Value>,
-    token: &str,
-) -> axum::http::Request<axum::body::Body> {
-    let mut request = match body {
-        Some(body) => req_json(method, path, body),
-        None => req_bearer(method, path, token),
-    };
-    request
-        .headers_mut()
-        .insert("authorization", format!("Bearer {token}").parse().unwrap());
-    request
-}
+use common::{assert_status, json_body, signed};
 
 /// Users: the admin (metastore owner), alice and bob.
 struct World {

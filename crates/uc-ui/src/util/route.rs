@@ -6,7 +6,7 @@ use leptos::prelude::*;
 use leptos_router::hooks::{use_location, use_params_map};
 use percent_encoding::percent_decode_str;
 
-use crate::components::icons::{Cloud, KeyRound, ScrollText, Users, UsersRound};
+use crate::components::icons::{Cloud, KeyRound, ScrollText, Search, Users, UsersRound};
 use crate::kind::Kind;
 
 /// The catalog page.
@@ -19,8 +19,8 @@ pub fn schema_href(catalog: &str, schema: &str) -> String {
     format!("/catalog/{catalog}/{schema}")
 }
 
-/// A page outside the catalogs: the user's access tokens, and the pages
-/// under "Manage" in the sidebar.
+/// A page outside the catalogs: the user's access tokens, the pages under
+/// "Manage" in the sidebar, and the search page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Section {
     Tokens,
@@ -29,6 +29,7 @@ pub enum Section {
     Users,
     Groups,
     Audit,
+    Search,
 }
 
 impl Section {
@@ -49,6 +50,7 @@ impl Section {
             Section::Users => "Users",
             Section::Groups => "Groups",
             Section::Audit => "Audit log",
+            Section::Search => "Search",
         }
     }
 
@@ -61,6 +63,7 @@ impl Section {
             Section::Users => "/users",
             Section::Groups => "/groups",
             Section::Audit => "/audit",
+            Section::Search => "/search",
         }
     }
 
@@ -83,6 +86,7 @@ impl Section {
             Section::Users => view! { <Users/> }.into_any(),
             Section::Groups => view! { <UsersRound/> }.into_any(),
             Section::Audit => view! { <ScrollText/> }.into_any(),
+            Section::Search => view! { <Search/> }.into_any(),
         }
     }
 
@@ -95,6 +99,7 @@ impl Section {
             "users" => Some(Section::Users),
             "groups" => Some(Section::Groups),
             "audit" => Some(Section::Audit),
+            "search" => Some(Section::Search),
             _ => None,
         }
     }
@@ -234,6 +239,7 @@ mod tests {
         assert!(route.in_section(Section::Groups));
         assert_eq!(route.item.as_deref(), Some("analysts"));
         assert_eq!(Route::parse("/audit").section, Some(Section::Audit));
+        assert_eq!(Route::parse("/search").section, Some(Section::Search));
         assert_eq!(Section::Groups.item_href("analysts"), "/groups/analysts");
     }
 }

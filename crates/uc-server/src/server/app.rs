@@ -110,6 +110,7 @@ pub fn build_app(state: AppState) -> Router {
         .nest(API_BASE, routes::unity::permissions::router())
         .nest(API_BASE, routes::unity::metastore::router())
         .nest(API_BASE, routes::unity::tokens::router())
+        .nest(API_BASE, routes::unity::search::router())
         .nest(API_BASE, routes::iceberg_rest::router())
         .nest(API_BASE, routes::admin::router())
         .nest(API_BASE, routes::sharing::router())

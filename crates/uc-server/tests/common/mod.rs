@@ -231,6 +231,18 @@ pub fn req_bearer(method: Method, path: &str, token: &str) -> Request<Body> {
         .unwrap()
 }
 
+/// `req_json`, or `req` without a body, signed in with `token`.
+pub fn signed(method: Method, path: &str, body: Option<Value>, token: &str) -> Request<Body> {
+    let mut request = match body {
+        Some(body) => req_json(method, path, body),
+        None => req(method, path),
+    };
+    request
+        .headers_mut()
+        .insert("authorization", format!("Bearer {token}").parse().unwrap());
+    request
+}
+
 /// A fresh local directory to use as a storage root. Kept after the test
 /// (the OS cleans up its temp dir).
 pub fn temp_storage_root() -> String {

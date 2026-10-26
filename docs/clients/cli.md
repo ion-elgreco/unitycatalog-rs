@@ -70,7 +70,7 @@ uc function call --full_name main.default.add --input_params "1,2"
 
 | Command | What it does |
 | --- | --- |
-| `uc dev` | Runs `uc-server` on `127.0.0.1:8080`, with its data in `.uc`, and opens the web UI. |
+| `uc dev` | Runs `uc-server` on `127.0.0.1:8080`, with the catalog in memory (unless `db.url` is set) and its managed data in `.uc`, and opens the web UI. |
 | `uc serve` | Runs `uc-server` with its flags, such as `--port`. |
 | `uc web` | Serves the web UI on `http://localhost:3000`, for the server of `--server`. |
 

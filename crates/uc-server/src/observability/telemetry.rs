@@ -14,9 +14,13 @@ use crate::observability::log_file::{RollingFile, UpstreamFormat};
 
 type BoxedLayer = Box<dyn Layer<Registry> + Send + Sync>;
 
-/// The stdout layer, and upstream's log file in `log_dir`.
+/// The stdout layer, and upstream's log file in `log_dir`. Without
+/// `RUST_LOG`: info, but only warnings of tantivy, the full-text index of
+/// Turso, which logs each commit of an index.
 fn layers(log_dir: Option<&std::path::Path>) -> Vec<BoxedLayer> {
-    let filter = || EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = || {
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,tantivy=warn"))
+    };
     let mut layers: Vec<BoxedLayer> = vec![
         tracing_subscriber::fmt::layer()
             .with_filter(filter())

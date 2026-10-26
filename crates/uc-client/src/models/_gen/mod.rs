@@ -124,6 +124,12 @@ pub mod scim {
     }
 }
 
+pub mod search {
+    pub mod v1 {
+        include!("./unitycatalog.search.v1.rs");
+    }
+}
+
 pub mod shares {
     pub mod v1 {
         include!("./unitycatalog.shares.v1.rs");

@@ -1,6 +1,7 @@
 //! The app's shell, as upstream's console lays it out. A dark header has a
-//! button that hides the sidebar, the logo, the theme switcher, a link to
-//! the API docs and the account menu when a user is signed in. Below it,
+//! button that hides the sidebar, the logo, the search box, the theme
+//! switcher, a link to the API docs and the account menu when a user is
+//! signed in. Below it,
 //! on the gray page: the path of the page shown, then the catalog tree in
 //! a card on the left, with the "Manage" links under it, and the page on
 //! the right. Signed out, the login screen takes its place.
@@ -13,6 +14,7 @@ use crate::components::icons::{
     ExternalLink, KeyRound, LogOut, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Sun, User,
 };
 use crate::components::{CatalogTree, Crumbs, Dropdown};
+use crate::layout::SearchBox;
 use crate::pages::{Denied, Login};
 use crate::theme::{ColorMode, use_theme};
 use crate::util::{Section, provide_route, use_route};
@@ -94,6 +96,7 @@ fn Layout() -> impl IntoView {
                         <img src="/uc-logo-reverse.svg" alt="Unity Catalog"/>
                     </a>
                 </div>
+                <SearchBox/>
                 <div class="uc-header__group">
                     <ThemeSwitcher/>
                     // The server's Swagger UI, outside the app: the router

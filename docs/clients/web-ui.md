@@ -36,6 +36,20 @@ When the server needs a sign-in, the UI shows its login page first: see
 
 ![A table](../assets/ui/table.png)
 
+## Search
+
+The box in the header finds catalogs, schemas, tables, volumes, functions and models by the words
+of their names and comments. Press `/` to go to it.
+
+- Type at least two characters: the first results show under the box. The arrow keys and Enter,
+  or a click, open one.
+- **See all results**, or Enter without a marked result, opens the search page: all the results,
+  with a tab for each type, and **Load more** for the next page.
+- Names equal to the text come first, then names that start with it, names that hold it, and the
+  objects whose comment holds its words. You see only the objects that you may read.
+- On Turso, a word matches anywhere in a word: `rders` finds `sales_orders`. On PostgreSQL, a word
+  matches the start of a word: `ord` finds `sales_orders`, `rders` does not.
+
 ## Permissions
 
 The Permissions tab shows your privileges on the object and its grants. The owner and admins can

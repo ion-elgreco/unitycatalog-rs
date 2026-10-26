@@ -19,6 +19,7 @@ use crate::codegen::recipients::*;
 use crate::codegen::registered_models::*;
 use crate::codegen::schemas::*;
 use crate::codegen::scim::*;
+use crate::codegen::search::*;
 use crate::codegen::shares::*;
 use crate::codegen::sharing::*;
 use crate::codegen::staging_tables::*;
@@ -43,6 +44,7 @@ use uc_client::models::permissions::v1::*;
 use uc_client::models::recipients::v1::*;
 use uc_client::models::schemas::v1::*;
 use uc_client::models::scim::v1::*;
+use uc_client::models::search::v1::*;
 use uc_client::models::shares::v1::*;
 use uc_client::models::sharing::v1::*;
 use uc_client::models::tables::v1::*;
@@ -211,6 +213,11 @@ impl Client {
     ///Low-level `scim` client exposing request/response passthrough methods.
     pub fn scim_client(&self) -> crate::codegen::scim::ScimClient {
         crate::codegen::scim::ScimClient::new(self.client.clone(), self.base_url.clone())
+    }
+
+    ///Low-level `search` client exposing request/response passthrough methods.
+    pub fn search_client(&self) -> crate::codegen::search::SearchClient {
+        crate::codegen::search::SearchClient::new(self.client.clone(), self.base_url.clone())
     }
 
     ///Low-level `shares` client exposing request/response passthrough methods.
@@ -1735,6 +1742,18 @@ impl Client {
             self.client.clone(),
             self.base_url.clone(),
         ))
+    }
+
+    /// Find the objects whose name or comment holds all the words of a query.
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - The words to find in the names and comments. An object matches when it holds all of them.
+    pub fn search_objects(&self, query: impl Into<String>) -> SearchObjectsBuilder {
+        SearchObjectsBuilder::new(
+            crate::codegen::search::SearchClient::new(self.client.clone(), self.base_url.clone()),
+            query,
+        )
     }
 
     /// List the shares.

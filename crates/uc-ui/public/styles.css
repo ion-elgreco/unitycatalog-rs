@@ -358,6 +358,79 @@ pre,
   width: auto;
 }
 
+/* The search box in the header: light on the dark bar, white while it has
+   the focus; its first results open below it. */
+.uc-header__search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  max-width: 520px;
+}
+
+.uc-header__search .uc-search { max-width: none; }
+
+.uc-header__search .uc-input {
+  height: 36px;
+  border-color: transparent;
+  background: rgb(255 255 255 / 0.12);
+  box-shadow: none;
+  color: #fff;
+}
+
+.uc-header__search .uc-input::placeholder { color: rgb(255 255 255 / 0.65); }
+.uc-header__search .uc-icon { color: rgb(255 255 255 / 0.75); }
+.uc-header__search .uc-input:focus { background: var(--card); color: var(--foreground); }
+.uc-header__search .uc-input:focus::placeholder { color: var(--placeholder); }
+.uc-header__search .uc-search:focus-within .uc-icon { color: var(--muted-foreground); }
+
+/* A `uc-menu__panel` as wide as the box. */
+.uc-header__search .uc-search__panel {
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.uc-search__note {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.uc-search__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.uc-search__option svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+.uc-search__option:hover,
+.uc-search__option.is-active { background: var(--accent); }
+
+.uc-search__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.uc-search__text .uc-muted { font-size: 12px; }
+
+.uc-search__all {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  color: var(--primary);
+  font-weight: 500;
+}
+
 .uc-avatar {
   display: inline-flex;
   align-items: center;
@@ -1342,6 +1415,9 @@ pre,
 
 .uc-search .uc-icon svg { width: 16px; height: 16px; }
 .uc-search input { padding-left: 36px; }
+
+/* The search page's field and its button. */
+.uc-search-form .uc-search { max-width: 520px; }
 
 /* A secret, hidden until shown, with its copy button. */
 .uc-secret {

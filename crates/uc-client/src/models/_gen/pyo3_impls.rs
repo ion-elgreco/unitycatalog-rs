@@ -12705,6 +12705,166 @@ impl ::core::convert::From<PyScimUser> for super::scim::v1::ScimUser {
 
 #[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
+    name = "SearchObjectsResponse",
+    eq,
+    frozen,
+    module = "unitycatalog._core.search",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PySearchObjectsResponse(pub super::search::v1::SearchObjectsResponse);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PySearchObjectsResponse {
+    /// The results: first the names equal to the query, then the names that start with it, the
+    /// names that hold it, and the objects whose comment holds its words. Only the objects that the
+    /// caller may read.
+    #[getter]
+    fn results(&self) -> ::std::vec::Vec<PySearchResult> {
+        self.0
+            .results
+            .iter()
+            .cloned()
+            .map(PySearchResult::from)
+            .collect()
+    }
+
+    /// Opaque token of the next page. Absent on the last page.
+    #[getter]
+    fn next_page_token(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.next_page_token.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[("results", false), ("next_page_token", false)],
+        )
+    }
+}
+
+impl ::core::convert::From<super::search::v1::SearchObjectsResponse> for PySearchObjectsResponse {
+    fn from(value: super::search::v1::SearchObjectsResponse) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PySearchObjectsResponse> for super::search::v1::SearchObjectsResponse {
+    fn from(value: PySearchObjectsResponse) -> Self {
+        value.0
+    }
+}
+
+/// A catalog, schema, table, volume, function or registered model whose name or comment holds the
+/// words of a search.
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
+    name = "SearchResult",
+    eq,
+    frozen,
+    module = "unitycatalog._core.search",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PySearchResult(pub super::search::v1::SearchResult);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PySearchResult {
+    /// Type of the object: `catalog`, `schema`, `table`, `volume`, `function` or `registered_model`.
+    #[getter]
+    fn securable_type(&self) -> ::std::string::String {
+        self.0.securable_type.clone()
+    }
+
+    /// Full name of the object: `<catalog>`, `<catalog>.<schema>` or `<catalog>.<schema>.<name>`.
+    #[getter]
+    fn full_name(&self) -> ::std::string::String {
+        self.0.full_name.clone()
+    }
+
+    /// Name of the catalog of the object, or of the catalog itself.
+    #[getter]
+    fn catalog_name(&self) -> ::std::string::String {
+        self.0.catalog_name.clone()
+    }
+
+    /// Name of the schema of the object, or of the schema itself. Absent for a catalog.
+    #[getter]
+    fn schema_name(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.schema_name.clone()
+    }
+
+    /// Name of the object, relative to its parent.
+    #[getter]
+    fn name(&self) -> ::std::string::String {
+        self.0.name.clone()
+    }
+
+    /// User-provided free-form text description.
+    #[getter]
+    fn comment(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.comment.clone()
+    }
+
+    /// Username of the owner of the object.
+    #[getter]
+    fn owner(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.owner.clone()
+    }
+
+    /// Time at which the object was created, in epoch milliseconds.
+    #[getter]
+    fn created_at(&self) -> i64 {
+        self.0.created_at
+    }
+
+    /// Time at which the object was last changed, in epoch milliseconds.
+    #[getter]
+    fn updated_at(&self) -> i64 {
+        self.0.updated_at
+    }
+
+    /// Unique identifier of the object.
+    #[getter]
+    fn id(&self) -> ::std::string::String {
+        self.0.id.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[
+                ("securable_type", false),
+                ("full_name", false),
+                ("catalog_name", false),
+                ("schema_name", false),
+                ("name", false),
+                ("comment", false),
+                ("owner", false),
+                ("created_at", false),
+                ("updated_at", false),
+                ("id", false),
+            ],
+        )
+    }
+}
+
+impl ::core::convert::From<super::search::v1::SearchResult> for PySearchResult {
+    fn from(value: super::search::v1::SearchResult) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PySearchResult> for super::search::v1::SearchResult {
+    fn from(value: PySearchResult) -> Self {
+        value.0
+    }
+}
+
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
     name = "ListSharesResponse",
     eq,
     frozen,

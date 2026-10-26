@@ -10,6 +10,7 @@ pub mod metastore;
 pub mod models;
 pub mod permissions;
 pub mod schemas;
+pub mod search;
 pub mod tables;
 pub mod temp_credentials;
 pub mod tokens;

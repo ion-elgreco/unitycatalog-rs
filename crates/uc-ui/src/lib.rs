@@ -16,6 +16,7 @@ pub mod kind;
 pub mod layout;
 pub mod load;
 pub mod pages;
+pub mod search;
 pub mod theme;
 pub mod util;
 

@@ -17,6 +17,7 @@ mod models;
 mod permissions;
 mod schemas;
 mod scim;
+mod search;
 mod sharing;
 mod tables;
 mod volumes;

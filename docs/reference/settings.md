@@ -88,7 +88,7 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 
 | Setting | Variable | Default | Description |
 | --- | --- | --- | --- |
-| `url` | `UC_DB_URL` | `uc.db` in `data_dir` | `file:<path>`, `memory`, `postgresql://…` or `jdbc:postgresql://…`. See [Database](../server/database.md). |
+| `url` | `UC_DB_URL` | `uc.db` in `data_dir`; `uc dev`: `memory` | `file:<path>`, `memory`, `postgresql://…` or `jdbc:postgresql://…`. See [Database](../server/database.md). |
 | `user` | `UC_DB_USER` | from the URL | The PostgreSQL user, instead of the URL's. |
 | `password` | `UC_DB_PASSWORD` | from the URL | The PostgreSQL password, instead of the URL's. |
 | `pool_size` | `UC_DB_POOL_SIZE` | `20` | The most PostgreSQL connections at one time. |

@@ -46,6 +46,7 @@ fn uc(dir: &Path) -> Command {
         .env_remove("UC_CLI_TOKEN")
         .env_remove("UC_CLI_SERVER_BIN")
         .env_remove("UC_UI_ENABLED")
+        .env_remove("UC_DB_URL")
         .env("UC_UI_DIR", dir.join("no-ui"))
         .env("UC_CONFIG", settings)
         .env("XDG_STATE_HOME", dir.join("state"))
@@ -298,7 +299,7 @@ async fn dev_runs_uc_server_with_its_folder_and_the_ui() {
     script(
         &fake,
         &format!(
-            "echo \"$UC_SERVER_BIND $UC_UI_DIR $UC_SERVER_DATA_DIR $UC_CONFIG\" > {}\n\
+            "echo \"$UC_SERVER_BIND $UC_UI_DIR $UC_SERVER_DATA_DIR $UC_CONFIG $UC_DB_URL\" > {}\n\
              exec python3 -m http.server --bind 127.0.0.1 \"${{UC_SERVER_BIND##*:}}\"",
             record.display()
         ),
@@ -314,18 +315,21 @@ async fn dev_runs_uc_server_with_its_folder_and_the_ui() {
         .spawn()
         .unwrap();
     let mut lines = BufReader::new(dev.stdout.take().unwrap()).lines();
-    // uc-server prints the URLs; with the UI, uc dev only says how to stop.
+    // uc-server prints the URLs; with the UI, uc dev says where the catalog
+    // is and how to stop.
     let banner = banner(&mut lines).await;
     assert!(!banner.contains("No web UI"), "{banner}");
+    assert!(banner.contains("The catalog is in memory"), "{banner}");
 
-    // uc-server gets the folder, the UI and uc's settings file.
+    // uc-server gets the folder, the UI, uc's settings file and a database
+    // in memory.
     let data = std::fs::canonicalize(dir.path().join("data")).unwrap();
     let settings = std::fs::canonicalize(dir.path().join("empty.toml")).unwrap();
     let recorded = std::fs::read_to_string(&record).unwrap();
     assert_eq!(
         recorded.trim(),
         format!(
-            "127.0.0.1:{port} {} {} {}",
+            "127.0.0.1:{port} {} {} {} memory",
             ui.display(),
             data.display(),
             settings.display()
@@ -349,6 +353,46 @@ async fn dev_runs_uc_server_with_its_folder_and_the_ui() {
             .is_err(),
         "the server still runs"
     );
+}
+
+/// With `db.url`, `uc dev` leaves the database of the settings.
+#[cfg(unix)]
+#[tokio::test]
+async fn dev_keeps_the_database_of_the_settings() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = dir.path().join("uc-server");
+    let record = dir.path().join("record");
+    script(
+        &fake,
+        &format!(
+            "echo \"$UC_DB_URL\" > {}\n\
+             exec python3 -m http.server --bind 127.0.0.1 \"${{UC_SERVER_BIND##*:}}\"",
+            record.display()
+        ),
+    );
+    let mut dev = uc(dir.path())
+        .args(["dev", "--port", &free_port().to_string(), "--no_browser"])
+        .env("UC_CLI_SERVER_BIN", &fake)
+        .env("UC_DB_URL", "file:keep.db")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut lines = BufReader::new(dev.stdout.take().unwrap()).lines();
+    let banner = banner(&mut lines).await;
+    assert!(!banner.contains("The catalog is in memory"), "{banner}");
+    let recorded = std::fs::read_to_string(&record).unwrap();
+    assert_eq!(recorded.trim(), "file:keep.db");
+    let pid = dev.id().unwrap().to_string();
+    let killed = std::process::Command::new("kill")
+        .args(["-TERM", &pid])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    tokio::time::timeout(Duration::from_secs(30), dev.wait())
+        .await
+        .expect("uc dev stops")
+        .unwrap();
 }
 
 /// What `uc dev` prints once the server answers.
