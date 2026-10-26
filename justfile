@@ -55,7 +55,7 @@ develop: develop-client wasm
 develop-client: venv
     cd python/client && uv run --no-sync maturin develop --profile {{ profile }}
 
-# Build everything (just develop), then run `uc dev` from .venv on the port, with its data in .uc-demo; the first run puts in the dummy data of examples/seed_demo.py (delete .uc-demo for new data); Ctrl+C stops it
+# Build everything (just develop), then run `uc dev` from .venv on the port, with its data and its catalog (uc.db) in .uc-demo; the first run puts in the dummy data of examples/seed_demo.py (delete .uc-demo for new data); Ctrl+C stops it
 demo port="8080": develop
     #!/usr/bin/env bash
     set -euo pipefail
@@ -65,7 +65,7 @@ demo port="8080": develop
         echo "Port {{ port }} is in use. Choose another one, such as: just demo 8081" >&2
         exit 1
     fi
-    uv run --no-sync uc dev --port {{ port }} --dir .uc-demo &
+    UC_DB_URL=file:.uc-demo/uc.db uv run --no-sync uc dev --port {{ port }} --dir .uc-demo &
     until curl -fs -o /dev/null "$url/"; do
         # uc dev stopped, and said why.
         kill -0 $! 2>/dev/null || exit 1
@@ -105,7 +105,7 @@ demo-auth port="8080" idp_port="8090" s3_port="9000": develop
     # FerrisKey's realm, client and users, RustFS's bucket, and the settings of
     # uc dev and uc; `uc auth login` listens on the port after FerrisKey's.
     uv run --no-sync examples/demo-auth/setup.py "$idp" "$s3" "$url" $(({{ idp_port }} + 1)) .uc-demo-auth/uc.toml
-    uv run --no-sync uc --config .uc-demo-auth/uc.toml dev --port {{ port }} --dir .uc-demo-auth &
+    UC_DB_URL=file:.uc-demo-auth/uc.db uv run --no-sync uc --config .uc-demo-auth/uc.toml dev --port {{ port }} --dir .uc-demo-auth &
     uc=$!
     # On an error, uc dev stops too.
     trap 'kill $uc 2>/dev/null || true; wait; "${compose[@]}" down' EXIT

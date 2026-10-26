@@ -75,7 +75,8 @@ pub struct DevArgs {
     /// The port of the API and the web UI
     #[arg(long, default_value_t = 8080)]
     pub port: u16,
-    /// The folder of the database and the keys (server.data_dir)
+    /// The data folder (server.data_dir); managed tables and models go to
+    /// `storage` in it
     #[arg(long, default_value = ".uc")]
     pub dir: std::path::PathBuf,
     /// Do not open the web UI in a browser

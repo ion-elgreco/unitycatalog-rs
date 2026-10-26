@@ -12,7 +12,7 @@ with SQLite, and needs no other service. Only one server can use the file at a t
 | --- | --- |
 | none | `uc.db` in `server.data_dir`. |
 | `file:<path>` | The file `<path>`. |
-| `memory` | In memory, for tests: the catalog is lost when the server stops. |
+| `memory` | In memory, for tests and `uc dev`: the catalog is lost when the server stops. |
 | `jdbc:h2:file:<path>`, `jdbc:h2:mem:<name>` | Upstream's H2 URLs: the Turso file `<path>.db`, or memory. |
 
 To copy the catalog, stop the server and copy `uc.db`, or use

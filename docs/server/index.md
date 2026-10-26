@@ -35,8 +35,9 @@ enabled = true             # UC_AUTH_ENABLED
 
 ## Run it with uc
 
-`uc dev` runs the server for local work: on `127.0.0.1:8080`, with its data in `.uc` and the web
-UI, which it opens in your browser. `uc serve` runs `uc-server` with the flags above.
+`uc dev` runs the server for local work: on `127.0.0.1:8080`, with the catalog in memory, its
+managed tables and models in `.uc/storage` and the web UI, which it opens in your browser. To keep
+the catalog when it stops, set `db.url`, such as `UC_DB_URL=file:.uc/uc.db uc dev`. `uc serve` runs `uc-server` with the flags above.
 
 ## Paths
 

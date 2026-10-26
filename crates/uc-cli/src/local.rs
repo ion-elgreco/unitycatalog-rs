@@ -98,8 +98,8 @@ pub async fn serve(settings: &Settings, args: Vec<String>) -> anyhow::Result<i32
     }
 }
 
-/// `uc dev`: uc-server on localhost, with its data in `args.dir` and the
-/// web UI; uc-server's exit code.
+/// `uc dev`: uc-server on localhost, with the catalog in memory, its
+/// managed data in `args.dir` and the web UI; uc-server's exit code.
 pub async fn dev(settings: &Settings, args: DevArgs) -> anyhow::Result<i32> {
     // From here on, Ctrl+C and SIGTERM stop uc-server first.
     let mut stop = StopSignal::new()?;
@@ -136,6 +136,11 @@ pub async fn dev(settings: &Settings, args: DevArgs) -> anyhow::Result<i32> {
     if let Some(file) = config_file(settings) {
         command.env("UC_CONFIG", file);
     }
+    // The catalog is in Turso in memory, unless the settings name a database.
+    let in_memory = settings.db.url.is_none();
+    if in_memory {
+        command.env("UC_DB_URL", "memory");
+    }
     // Managed tables and models of a catalog without a storage root, such
     // as one made in the web UI, go to `storage` in the data folder, unless
     // the settings name a root.
@@ -165,6 +170,12 @@ pub async fn dev(settings: &Settings, args: DevArgs) -> anyhow::Result<i32> {
             println!("No web UI: {} is false.", settings::name("ui.enabled"))
         }
         None => println!("No web UI. {NO_UI}"),
+    }
+    if in_memory {
+        println!(
+            "The catalog is in memory: it is gone when uc dev stops. To keep it, set {} to file:<path>.",
+            settings::name("db.url")
+        );
     }
     println!("Press Ctrl+C to stop it.");
     if ui.is_some() && !args.no_browser {

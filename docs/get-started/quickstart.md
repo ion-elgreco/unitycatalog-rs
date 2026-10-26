@@ -10,7 +10,8 @@ uc dev
 ```
 
 This installs the server, the CLI, the Python client and the web UI. `uc dev` runs a server on
-<http://localhost:8080>, and opens the web UI in your browser.
+<http://localhost:8080>, and opens the web UI in your browser. The server keeps the catalog in
+memory: it is gone when `uc dev` stops.
 
 ## 2. Make a table
 
