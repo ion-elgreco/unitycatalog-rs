@@ -14,29 +14,30 @@
 //! Local storage has real directories.
 
 use std::fmt;
-use std::ops::Range;
 use std::sync::Arc;
 
 use axum::{
     body::Body,
     extract::State,
-    http::{HeaderMap, HeaderValue, StatusCode, header},
+    http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
 };
-use bytes::{Bytes, BytesMut};
 use futures::StreamExt;
 use object_store::{
-    GetOptions, GetRange, ListResult, ObjectMeta, ObjectStore, PutPayload, WriteMultipart,
+    GetOptions, GetRange, ListResult, ObjectMeta, ObjectStore, buffered::BufWriter,
     list::PaginatedListOptions, local::LocalFileSystem, path::Path as ObjectPath,
 };
 use percent_encoding::percent_decode_str;
 use serde::Deserialize;
+use tokio::io::AsyncWriteExt;
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 
 use uc_api::{DirectoryEntry, ListDirectoryContentsResponse};
-use uc_common::{Error, NormalizedUrl, SecurableType, UriScheme, three_part_full_name};
+use uc_common::{
+    Error, NormalizedUrl, SecurableType, lenient_bool, lenient_opt_i64, three_part_full_name,
+};
 
 use crate::{
     authn::principal::Principal,
@@ -46,7 +47,7 @@ use crate::{
         extract::{Json, Path, Query},
     },
     server::state::AppState,
-    storage::{Opened, ServerStorage, delete_all, vendor::VendOp},
+    storage::{Opened, delete_all, vendor::VendOp},
 };
 
 /// The most entries of a page, and the size of a page without
@@ -55,6 +56,10 @@ const MAX_PAGE_SIZE: usize = 1000;
 
 /// The size of the parts of an upload. Smaller files are written at once.
 const PART_SIZE: usize = 8 * 1024 * 1024;
+
+/// The routes of directories and of files, under [`uc_common::FILES_BASE`].
+const DIRECTORIES: &str = "/directories";
+const FILES: &str = "/files";
 
 /// The parts of an upload that are sent at the same time.
 const UPLOAD_CONCURRENCY: usize = 4;
@@ -78,19 +83,30 @@ struct FilesDoc;
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::with_openapi(FilesDoc::openapi())
         .route(
-            "/directories/{*directory_path}",
+            &format!("{DIRECTORIES}/{{*directory_path}}"),
             get(list_directory_contents)
                 .head(get_directory_metadata)
                 .put(create_directory)
                 .delete(delete_directory),
         )
         .route(
-            "/files/{*file_path}",
+            &format!("{FILES}/{{*file_path}}"),
             get(download_file)
                 .head(get_file_metadata)
                 .put(upload_file)
                 .delete(delete_file),
         )
+}
+
+/// Whether a request of `method` to `path`, under [`uc_common::FILES_BASE`],
+/// can take longer than the request timeout: an upload takes as long as its
+/// body, and the delete of a directory as long as what it holds.
+pub fn takes_long(method: &Method, path: &str) -> bool {
+    let under = |route: &str| {
+        path.strip_prefix(route)
+            .is_some_and(|rest| rest.starts_with('/'))
+    };
+    (method == Method::PUT && under(FILES)) || (method == Method::DELETE && under(DIRECTORIES))
 }
 
 /// The securables that hold files.
@@ -178,23 +194,13 @@ impl FilesPath {
             false => Ok(self),
         }
     }
-
-    /// The absolute path of the entry `parts`, relative to the volume or
-    /// table.
-    fn entry(&self, parts: &[String]) -> String {
-        let [catalog, schema, name] = &self.names;
-        let mut path = format!("/{}/{catalog}/{schema}/{name}", self.root.as_str());
-        for part in parts {
-            path.push('/');
-            path.push_str(part);
-        }
-        path
-    }
 }
 
 impl fmt::Display for FilesPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.entry(&self.rest))
+        let [catalog, schema, name] = &self.names;
+        write!(f, "/{}/{catalog}/{schema}/{name}", self.root.as_str())?;
+        self.rest.iter().try_for_each(|part| write!(f, "/{part}"))
     }
 }
 
@@ -203,8 +209,6 @@ struct Target {
     path: FilesPath,
     opened: Arc<Opened>,
     key: ObjectPath,
-    /// Whether the storage is local: it has real directories.
-    local: bool,
 }
 
 impl Target {
@@ -212,80 +216,109 @@ impl Target {
         &self.opened.store
     }
 
-    /// The error of the store for this path.
-    fn error(&self, e: object_store::Error) -> Error {
-        storage_error(&self.path, e)
+    /// Whether the storage is local, which has real directories: the one
+    /// store without paged listing.
+    fn local(&self) -> bool {
+        self.opened.pages.is_none()
     }
 
-    /// The path in the volume or table of `location`, as its parts.
-    fn parts_of(&self, location: &ObjectPath) -> Vec<String> {
-        location
-            .prefix_match(&self.opened.root)
-            .map(|parts| {
-                parts
-                    .map(|part| {
-                        percent_decode_str(part.as_ref())
-                            .decode_utf8_lossy()
-                            .into_owned()
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
+    /// The error of the store for this path.
+    fn error(&self, e: &object_store::Error) -> Error {
+        storage_error(&self.path, e)
     }
 
     /// The file system path of the key, for local storage.
     fn local_path(&self) -> Result<std::path::PathBuf, Error> {
         LocalFileSystem::new()
             .path_to_filesystem(&self.key)
-            .map_err(|e| self.error(e))
+            .map_err(|e| self.error(&e))
     }
 
-    /// The prefix of the keys in the directory of the key.
-    fn prefix(&self) -> String {
-        match self.key.as_ref() {
-            "" => String::new(),
-            key => format!("{key}/"),
-        }
+    /// Whether the key is a local directory.
+    async fn local_directory(&self) -> Result<bool, Error> {
+        Ok(tokio::fs::metadata(self.local_path()?)
+            .await
+            .is_ok_and(|m| m.is_dir()))
+    }
+
+    /// A page of the directory of the key: at most `size` directories,
+    /// then files, and the token of the next page. Object storage pages
+    /// at the storage. A local directory is listed whole and paged by name:
+    /// the token is the number of entries before the page.
+    async fn page(
+        &self,
+        size: usize,
+        token: Option<String>,
+    ) -> Result<(ListResult, Option<String>), Error> {
+        let Some(pages) = &self.opened.pages else {
+            return self.local_page(size, token.as_deref()).await;
+        };
+        let prefix = (!self.key.as_ref().is_empty()).then(|| format!("{}/", self.key));
+        let options = PaginatedListOptions {
+            delimiter: Some("/".into()),
+            max_keys: Some(size),
+            page_token: token,
+            ..Default::default()
+        };
+        let page = pages
+            .list_paginated(prefix.as_deref(), options)
+            .await
+            .map_err(|e| self.error(&e))?;
+        Ok((page.result, page.page_token))
+    }
+
+    async fn local_page(
+        &self,
+        size: usize,
+        token: Option<&str>,
+    ) -> Result<(ListResult, Option<String>), Error> {
+        let start = match token {
+            None => 0,
+            Some(token) => token
+                .parse::<usize>()
+                .map_err(|_| Error::invalid_argument(format!("Invalid page token: {token}")))?,
+        };
+        let mut all = self
+            .store()
+            .list_with_delimiter(Some(&self.key))
+            .await
+            .map_err(|e| self.error(&e))?;
+        all.common_prefixes.sort();
+        all.objects.sort_by(|a, b| a.location.cmp(&b.location));
+        let dirs = all.common_prefixes.len();
+        let total = dirs + all.objects.len();
+        let end = start.saturating_add(size).min(total);
+        let page = ListResult {
+            common_prefixes: all
+                .common_prefixes
+                .into_iter()
+                .skip(start)
+                .take(end.saturating_sub(start))
+                .collect(),
+            objects: all
+                .objects
+                .into_iter()
+                .skip(start.saturating_sub(dirs))
+                .take(end.saturating_sub(start.max(dirs)))
+                .collect(),
+        };
+        Ok((page, (end < total).then(|| end.to_string())))
     }
 
     /// Whether the directory of the key holds any file or directory.
     async fn has_entries(&self) -> Result<bool, Error> {
-        let listed = match &self.opened.pages {
-            Some(pages) => {
-                let options = PaginatedListOptions {
-                    delimiter: Some("/".into()),
-                    max_keys: Some(1),
-                    ..Default::default()
-                };
-                let prefix = self.prefix();
-                let prefix = (!prefix.is_empty()).then_some(prefix.as_str());
-                pages
-                    .list_paginated(prefix, options)
-                    .await
-                    .map_err(|e| self.error(e))?
-                    .result
-            }
-            None => self
-                .store()
-                .list_with_delimiter(Some(&self.key))
-                .await
-                .map_err(|e| self.error(e))?,
-        };
-        Ok(!listed.common_prefixes.is_empty() || !listed.objects.is_empty())
+        let (first, _) = self.page(1, None).await?;
+        Ok(!is_empty(&first))
     }
 
     /// Whether the directory of the key exists: the volume or table
     /// itself, a local directory, or a prefix of files.
     async fn directory_exists(&self) -> Result<bool, Error> {
-        if self.path.rest.is_empty() {
-            return Ok(true);
+        match (self.path.rest.is_empty(), self.local()) {
+            (true, _) => Ok(true),
+            (false, true) => self.local_directory().await,
+            (false, false) => self.has_entries().await,
         }
-        if self.local {
-            return Ok(tokio::fs::metadata(self.local_path()?)
-                .await
-                .is_ok_and(|m| m.is_dir()));
-        }
-        self.has_entries().await
     }
 
     /// The metadata of the file of the key.
@@ -293,12 +326,22 @@ impl Target {
         self.store()
             .head(&self.key)
             .await
-            .map_err(|e| self.error(e))
+            .map_err(|e| self.error(&e))
     }
 }
 
+fn is_empty(listed: &ListResult) -> bool {
+    listed.common_prefixes.is_empty() && listed.objects.is_empty()
+}
+
+/// The last part of `location`, as its name.
+fn name_of(location: &ObjectPath) -> String {
+    let part = location.filename().unwrap_or_default();
+    percent_decode_str(part).decode_utf8_lossy().into_owned()
+}
+
 /// The error of the store for `path`.
-fn storage_error(path: &FilesPath, e: object_store::Error) -> Error {
+fn storage_error(path: &FilesPath, e: &object_store::Error) -> Error {
     match e {
         object_store::Error::NotFound { .. } => Error::not_found(format!("Not found: {path}")),
         object_store::Error::AlreadyExists { .. } => {
@@ -322,22 +365,18 @@ async fn open(
 ) -> ApiResult<Target> {
     let write = op == VendOp::ReadWrite;
     let full_name = path.full_name();
+    let user = &principal.username;
+    // The check's error comes first: it is a 404 for a missing securable.
     let location = match path.root {
         Root::Volumes => {
-            authz::check(
-                state,
-                &principal.username,
-                SecurableType::Volume,
-                &full_name,
-                |a, l| rules::vend_volume(a, l, write),
-            )
-            .await?;
-            state
-                .metastore
-                .volumes()
-                .get(&full_name)
-                .await?
-                .storage_location
+            let (allowed, volume) = tokio::join!(
+                authz::check(state, user, SecurableType::Volume, &full_name, |a, l| {
+                    rules::vend_volume(a, l, write)
+                }),
+                state.metastore.volumes().get(&full_name),
+            );
+            allowed?;
+            volume?.storage_location
         }
         Root::Tables => {
             if write {
@@ -346,20 +385,14 @@ async fn open(
                 ))
                 .into());
             }
-            authz::check(
-                state,
-                &principal.username,
-                SecurableType::Table,
-                &full_name,
-                |a, l| rules::vend_table(a, l, false),
-            )
-            .await?;
-            state
-                .metastore
-                .tables()
-                .get(&full_name)
-                .await?
-                .storage_location
+            let (allowed, table) = tokio::join!(
+                authz::check(state, user, SecurableType::Table, &full_name, |a, l| {
+                    rules::vend_table(a, l, false)
+                }),
+                state.metastore.tables().get(&full_name),
+            );
+            allowed?;
+            table?.storage_location
         }
     };
     let location = location.filter(|l| !l.is_empty()).ok_or_else(|| {
@@ -369,26 +402,21 @@ async fn open(
         ))
     })?;
     let location = NormalizedUrl::parse(&location)?;
-    let storage = ServerStorage::new(state.metastore.clone(), state.vendor.clone());
     let opened = state
         .stores
-        .open(&storage, &location, op)
+        .open(&state.metastore, &state.vendor, &location, op)
         .await
         .map_err(|e| Error::internal(format!("Cannot open the storage of {path}: {}", e.0)))?;
     let key = path
         .rest
         .iter()
         .fold(opened.root.clone(), |key, part| key.child(part.as_str()));
-    Ok(Target {
-        path,
-        opened,
-        key,
-        local: location.scheme() == UriScheme::File,
-    })
+    Ok(Target { path, opened, key })
 }
 
 #[derive(Debug, Deserialize)]
 pub struct ListParams {
+    #[serde(default, deserialize_with = "lenient_opt_i64")]
     pub page_size: Option<i64>,
     pub page_token: Option<String>,
 }
@@ -422,93 +450,43 @@ pub async fn list_directory_contents(
             .min(MAX_PAGE_SIZE),
     };
     let token = params.page_token.filter(|t| !t.is_empty());
+    let first = token.is_none();
     let target = open(&state, &principal, FilesPath::parse(&path)?, VendOp::Read).await?;
-    let (listed, next_page_token) = match &target.opened.pages {
-        Some(pages) => {
-            let prefix = target.prefix();
-            let options = PaginatedListOptions {
-                delimiter: Some("/".into()),
-                max_keys: Some(size),
-                page_token: token.clone(),
-                ..Default::default()
-            };
-            let page = pages
-                .list_paginated((!prefix.is_empty()).then_some(prefix.as_str()), options)
-                .await
-                .map_err(|e| target.error(e))?;
-            (page.result, page.page_token)
-        }
-        None => local_page(&target, size, token.as_deref()).await?,
-    };
-    let empty = listed.common_prefixes.is_empty() && listed.objects.is_empty();
-    if empty && token.is_none() && !target.directory_exists().await? {
+    let (listed, next_page_token) = target.page(size, token).await?;
+    // An empty first page below the root: in object storage the directory
+    // is not there; a local one can be empty.
+    if is_empty(&listed)
+        && first
+        && !target.path.rest.is_empty()
+        && !(target.local() && target.local_directory().await?)
+    {
         return Err(Error::not_found(format!("Not found: {}", target.path)).into());
     }
-    let mut contents = Vec::new();
-    for location in &listed.common_prefixes {
-        let parts = target.parts_of(location);
-        contents.push(DirectoryEntry {
-            path: format!("{}/", target.path.entry(&parts)),
-            name: parts.last().cloned().unwrap_or_default(),
+    let base = target.path.to_string();
+    let directories = listed.common_prefixes.iter().map(|location| {
+        let name = name_of(location);
+        DirectoryEntry {
+            path: format!("{base}/{name}/"),
+            name,
             is_directory: true,
             file_size: None,
             last_modified: None,
-        });
-    }
-    for meta in &listed.objects {
-        let parts = target.parts_of(&meta.location);
-        contents.push(DirectoryEntry {
-            path: target.path.entry(&parts),
-            name: parts.last().cloned().unwrap_or_default(),
+        }
+    });
+    let files = listed.objects.iter().map(|meta| {
+        let name = name_of(&meta.location);
+        DirectoryEntry {
+            path: format!("{base}/{name}"),
+            name,
             is_directory: false,
             file_size: i64::try_from(meta.size).ok(),
             last_modified: Some(meta.last_modified.timestamp_millis()),
-        });
-    }
+        }
+    });
     Ok(Json(ListDirectoryContentsResponse {
-        contents,
+        contents: directories.chain(files).collect(),
         next_page_token,
     }))
-}
-
-/// A page of a local directory: its directories, then its files, by name;
-/// the token is the number of entries before the page.
-async fn local_page(
-    target: &Target,
-    size: usize,
-    token: Option<&str>,
-) -> Result<(ListResult, Option<String>), Error> {
-    let start = match token {
-        None => 0,
-        Some(token) => token
-            .parse::<usize>()
-            .map_err(|_| Error::invalid_argument(format!("Invalid page token: {token}")))?,
-    };
-    let mut all = target
-        .store()
-        .list_with_delimiter(Some(&target.key))
-        .await
-        .map_err(|e| target.error(e))?;
-    all.common_prefixes.sort();
-    all.objects.sort_by(|a, b| a.location.cmp(&b.location));
-    let dirs = all.common_prefixes.len();
-    let total = dirs + all.objects.len();
-    let end = start.saturating_add(size).min(total);
-    let page = ListResult {
-        common_prefixes: all
-            .common_prefixes
-            .into_iter()
-            .skip(start)
-            .take(end.saturating_sub(start))
-            .collect(),
-        objects: all
-            .objects
-            .into_iter()
-            .skip(start.saturating_sub(dirs))
-            .take(end.saturating_sub(start.max(dirs)))
-            .collect(),
-    };
-    Ok((page, (end < total).then(|| end.to_string())))
 }
 
 #[utoipa::path(
@@ -553,7 +531,7 @@ pub async fn create_directory(
         VendOp::ReadWrite,
     )
     .await?;
-    if target.local {
+    if target.local() {
         let dir = target.local_path()?;
         if tokio::fs::metadata(&dir).await.is_ok_and(|m| m.is_file()) {
             return Err(
@@ -569,7 +547,8 @@ pub async fn create_directory(
 
 #[derive(Debug, Deserialize)]
 pub struct DeleteDirectoryParams {
-    pub recursive: Option<bool>,
+    #[serde(default, deserialize_with = "lenient_bool")]
+    pub recursive: bool,
 }
 
 #[utoipa::path(
@@ -605,36 +584,33 @@ pub async fn delete_directory(
         ))
         .into());
     }
-    let recursive = params.recursive.unwrap_or(false);
-    let not_found = || Error::not_found(format!("Not found: {}", target.path));
     let not_empty = || {
         Error::failed_precondition(format!(
             "The directory is not empty: {}. Delete its files first, or set recursive.",
             target.path
         ))
     };
-    if !target.local {
-        // A directory without files is not there: nothing to delete.
-        match (recursive, target.has_entries().await?) {
-            (_, false) => {}
-            (false, true) => return Err(not_empty().into()),
-            (true, true) => {
-                delete_all(target.store().as_ref(), &target.key)
-                    .await
-                    .map_err(|e| target.error(e))?;
-            }
+    // In object storage a directory without files is not there: nothing to
+    // delete.
+    if !target.local() {
+        if params.recursive {
+            delete_all(target.store().as_ref(), &target.key)
+                .await
+                .map_err(|e| target.error(&e))?;
+        } else if target.has_entries().await? {
+            return Err(not_empty().into());
         }
         return Ok(StatusCode::NO_CONTENT);
     }
     let dir = target.local_path()?;
-    let removed = match recursive {
+    let removed = match params.recursive {
         true => tokio::fs::remove_dir_all(&dir).await,
         false => tokio::fs::remove_dir(&dir).await,
     };
     match removed {
         Ok(()) => Ok(StatusCode::NO_CONTENT),
         Err(e) => Err(match e.kind() {
-            std::io::ErrorKind::NotFound => not_found(),
+            std::io::ErrorKind::NotFound => Error::not_found(format!("Not found: {}", target.path)),
             std::io::ErrorKind::DirectoryNotEmpty => not_empty(),
             _ => Error::internal(format!("Cannot delete the directory {}: {e}", target.path)),
         }
@@ -666,37 +642,47 @@ pub async fn download_file(
         VendOp::Read,
     )
     .await?;
-    let range = match headers.get(header::RANGE).and_then(|v| v.to_str().ok()) {
-        None => None,
-        Some(value) => {
-            let size = target.head().await?.size;
-            match byte_range(value, size) {
-                Ok(range) => range,
-                Err(()) => {
-                    return Ok((
-                        StatusCode::RANGE_NOT_SATISFIABLE,
-                        [(header::CONTENT_RANGE, format!("bytes */{size}"))],
-                    )
-                        .into_response());
-                }
-            }
-        }
-    };
+    let range = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(byte_range);
     let options = GetOptions {
-        range: range.clone().map(GetRange::Bounded),
+        range: range.clone(),
         ..Default::default()
     };
-    let result = target
-        .store()
-        .get_opts(&target.key, options)
-        .await
-        .map_err(|e| target.error(e))?;
+    let not_satisfiable = |size: u64| {
+        Ok((
+            StatusCode::RANGE_NOT_SATISFIABLE,
+            [(header::CONTENT_RANGE, format!("bytes */{size}"))],
+        )
+            .into_response())
+    };
+    let result = match target.store().get_opts(&target.key, options).await {
+        Ok(result) => result,
+        // A range outside the file fails: read the size for the answer.
+        Err(e) => {
+            let unsatisfiable = match (&range, &e) {
+                (_, object_store::Error::NotFound { .. }) | (None, _) => None,
+                (Some(range), _) => {
+                    let size = target.head().await?.size;
+                    range.as_range(size).is_err().then_some(size)
+                }
+            };
+            return match unsatisfiable {
+                Some(size) => not_satisfiable(size),
+                None => Err(target.error(&e).into()),
+            };
+        }
+    };
     let meta = result.meta.clone();
     let served = result.range.clone();
+    if range.is_some() && served.is_empty() {
+        return not_satisfiable(meta.size);
+    }
     let path = target.path.clone();
     let body = result
         .into_stream()
-        .map(move |chunk| chunk.map_err(|e| storage_error(&path, e)));
+        .map(move |chunk| chunk.map_err(|e| storage_error(&path, &e)));
     let mut response = Response::new(Body::from_stream(body));
     file_headers(response.headers_mut(), &meta, served.end - served.start);
     if range.is_some() {
@@ -710,27 +696,21 @@ pub async fn download_file(
 }
 
 /// The range of a `Range` header of the form `bytes=a-b`, `bytes=a-` or
-/// `bytes=-n`, in a file of `size` bytes. A header of another form gives
-/// `None`, for the whole file; a range outside the file is an error.
-fn byte_range(value: &str, size: u64) -> Result<Option<Range<u64>>, ()> {
-    let Some((start, end)) = value
+/// `bytes=-n`. A header of another form gives `None`: the whole file.
+fn byte_range(value: &str) -> Option<GetRange> {
+    let (start, end) = value
         .trim()
         .strip_prefix("bytes=")
-        .filter(|spec| !spec.contains(','))
-        .and_then(|spec| spec.split_once('-'))
-    else {
-        return Ok(None);
-    };
+        .filter(|spec| !spec.contains(','))?
+        .split_once('-')?;
     let (start, end) = (start.trim(), end.trim());
-    let range = match (start.parse::<u64>(), end.parse::<u64>()) {
-        (Ok(start), Ok(end)) if start <= end => start..end.saturating_add(1).min(size),
-        (Ok(start), Err(_)) if end.is_empty() => start..size,
-        (Err(_), Ok(suffix)) if start.is_empty() && suffix > 0 => size.saturating_sub(suffix)..size,
-        _ => return Ok(None),
-    };
-    match range.start < size {
-        true => Ok(Some(range)),
-        false => Err(()),
+    match (start.parse::<u64>(), end.parse::<u64>()) {
+        (Ok(start), Ok(end)) if start <= end => {
+            Some(GetRange::Bounded(start..end.saturating_add(1)))
+        }
+        (Ok(start), Err(_)) if end.is_empty() => Some(GetRange::Offset(start)),
+        (Err(_), Ok(suffix)) if start.is_empty() && suffix > 0 => Some(GetRange::Suffix(suffix)),
+        _ => None,
     }
 }
 
@@ -787,7 +767,8 @@ pub async fn get_file_metadata(
 
 #[derive(Debug, Deserialize)]
 pub struct UploadParams {
-    pub overwrite: Option<bool>,
+    #[serde(default, deserialize_with = "lenient_bool")]
+    pub overwrite: bool,
 }
 
 #[utoipa::path(
@@ -818,7 +799,7 @@ pub async fn upload_file(
         VendOp::ReadWrite,
     )
     .await?;
-    if !params.overwrite.unwrap_or(false) {
+    if !params.overwrite {
         match target.store().head(&target.key).await {
             Ok(_) => {
                 return Err(Error::already_exists(format!(
@@ -828,7 +809,7 @@ pub async fn upload_file(
                 .into());
             }
             Err(object_store::Error::NotFound { .. }) => {}
-            Err(e) => return Err(target.error(e).into()),
+            Err(e) => return Err(target.error(&e).into()),
         }
     }
     write_body(&target, body).await?;
@@ -838,47 +819,33 @@ pub async fn upload_file(
 /// Write `body` to the key: at once when it is smaller than a part, else
 /// part by part.
 async fn write_body(target: &Target, body: Body) -> Result<(), Error> {
-    let cut_off = |e: axum::Error| {
-        Error::invalid_argument(format!("The upload of {} broke off: {e}", target.path))
-    };
+    let mut writer =
+        BufWriter::with_capacity(target.store().clone(), target.key.clone(), PART_SIZE)
+            .with_max_concurrency(UPLOAD_CONCURRENCY);
     let mut stream = body.into_data_stream();
-    let mut first = BytesMut::new();
-    while first.len() < PART_SIZE {
-        match stream.next().await {
-            Some(chunk) => first.extend_from_slice(&chunk.map_err(cut_off)?),
-            None => {
-                target
-                    .store()
-                    .put(&target.key, PutPayload::from(first.freeze()))
-                    .await
-                    .map_err(|e| target.error(e))?;
-                return Ok(());
-            }
-        }
-    }
-    let upload = target
-        .store()
-        .put_multipart(&target.key)
-        .await
-        .map_err(|e| target.error(e))?;
-    let mut writer = WriteMultipart::new_with_chunk_size(upload, PART_SIZE);
-    writer.put(first.freeze());
     while let Some(chunk) = stream.next().await {
-        let chunk: Bytes = match chunk {
-            Ok(chunk) => chunk,
-            Err(e) => {
-                let _ = writer.abort().await;
-                return Err(cut_off(e));
-            }
+        let written = match chunk {
+            Ok(chunk) => writer.put(chunk).await.map_err(|e| target.error(&e)),
+            Err(e) => Err(Error::invalid_argument(format!(
+                "The upload of {} broke off: {e}",
+                target.path
+            ))),
         };
-        if let Err(e) = writer.wait_for_capacity(UPLOAD_CONCURRENCY).await {
+        if let Err(e) = written {
             let _ = writer.abort().await;
-            return Err(target.error(e));
+            return Err(e);
         }
-        writer.put(chunk);
     }
-    writer.finish().await.map_err(|e| target.error(e))?;
-    Ok(())
+    // The writer gives the store's errors back as I/O errors.
+    writer.shutdown().await.map_err(|e| {
+        match e
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<object_store::Error>())
+        {
+            Some(inner) => target.error(inner),
+            None => Error::internal(format!("Storage error on {}: {e}", target.path)),
+        }
+    })
 }
 
 #[utoipa::path(
@@ -908,7 +875,7 @@ pub async fn delete_file(
         .store()
         .delete(&target.key)
         .await
-        .map_err(|e| target.error(e))?;
+        .map_err(|e| target.error(&e))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -939,14 +906,25 @@ mod tests {
 
     #[test]
     fn reads_ranges() {
-        assert_eq!(byte_range("bytes=0-9", 100), Ok(Some(0..10)));
-        assert_eq!(byte_range("bytes=90-200", 100), Ok(Some(90..100)));
-        assert_eq!(byte_range("bytes=95-", 100), Ok(Some(95..100)));
-        assert_eq!(byte_range("bytes=-10", 100), Ok(Some(90..100)));
-        assert_eq!(byte_range("bytes=-500", 100), Ok(Some(0..100)));
-        assert_eq!(byte_range("bytes=100-", 100), Err(()));
-        assert_eq!(byte_range("bytes=0-1,5-6", 100), Ok(None));
-        assert_eq!(byte_range("items=0-1", 100), Ok(None));
-        assert_eq!(byte_range("bytes=5-1", 100), Ok(None));
+        // In a file of 100 bytes; `Some(None)` is outside it.
+        let range = |value| byte_range(value).map(|r| r.as_range(100).ok());
+        assert_eq!(range("bytes=0-9"), Some(Some(0..10)));
+        assert_eq!(range("bytes=90-200"), Some(Some(90..100)));
+        assert_eq!(range("bytes=95-"), Some(Some(95..100)));
+        assert_eq!(range("bytes=-10"), Some(Some(90..100)));
+        assert_eq!(range("bytes=-500"), Some(Some(0..100)));
+        assert_eq!(range("bytes=100-"), Some(None));
+        for whole in ["bytes=0-1,5-6", "items=0-1", "bytes=5-1", "bytes=-0"] {
+            assert!(byte_range(whole).is_none(), "{whole}");
+        }
+    }
+
+    #[test]
+    fn uploads_and_directory_deletes_take_long() {
+        assert!(takes_long(&Method::PUT, "/files/Volumes/c/s/v/a"));
+        assert!(takes_long(&Method::DELETE, "/directories/Volumes/c/s/v/a"));
+        assert!(!takes_long(&Method::GET, "/files/Volumes/c/s/v/a"));
+        assert!(!takes_long(&Method::DELETE, "/files/Volumes/c/s/v/a"));
+        assert!(!takes_long(&Method::PUT, "/filesystem/x"));
     }
 }

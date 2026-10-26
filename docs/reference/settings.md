@@ -73,7 +73,7 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 | `bind` | `UC_SERVER_BIND` | `0.0.0.0:8080` | The address of the APIs and the web UI. `--port` changes its port. |
 | **Requests** |  |  | Limits on the requests that it serves. |
 | `max_request_length` | `UC_SERVER_MAX_REQUEST_LENGTH` | `10485760` | The largest request body, in bytes. A larger one gets 413. Not for uploads to the Files API, which stream to storage. |
-| `request_timeout` | `UC_SERVER_REQUEST_TIMEOUT` | `10s` | The time that a request can take; then the server answers 503. `0s` for no limit. Not for uploads to the Files API. |
+| `request_timeout` | `UC_SERVER_REQUEST_TIMEOUT` | `10s` | The time that a request can take; then the server answers 503. `0s` for no limit. Not for uploads and directory deletes of the Files API. |
 | `rate_limit_per_sec` | `UC_SERVER_RATE_LIMIT_PER_SEC` | `0` | Requests per second from one client address; more get 429. `0` for no limit. |
 | `cors_allow_origins` | `UC_SERVER_CORS_ALLOW_ORIGINS` | all origins | The origins that browsers can call the API from. Empty or `*` allows every origin. |
 | **Health checks and metrics** |  |  | `/livez`, `/readyz` and `/metrics`. |

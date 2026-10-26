@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use futures::{StreamExt, stream::BoxStream};
+use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use object_store::{
     ObjectStore, StaticCredentialProvider,
     aws::AmazonS3Builder,
@@ -128,9 +128,10 @@ pub struct Opened {
 }
 
 /// Opened stores by location and operation, kept until shortly before
-/// their credentials expire: one vend serves many requests.
+/// their credentials expire: one vend serves many requests, and requests
+/// that come at the same time wait for one open.
 #[derive(Clone)]
-pub struct StoreCache(moka::sync::Cache<(String, VendOp), Arc<Opened>>);
+pub struct StoreCache(moka::future::Cache<(String, VendOp), Arc<Opened>>);
 
 /// How long a store is kept at most. Grants are checked on every request;
 /// this bounds how long a changed storage credential takes to apply.
@@ -163,7 +164,7 @@ impl moka::Expiry<(String, VendOp), Arc<Opened>> for StoreExpiry {
 impl Default for StoreCache {
     fn default() -> Self {
         Self(
-            moka::sync::Cache::builder()
+            moka::future::Cache::builder()
                 .max_capacity(1_000)
                 .expire_after(StoreExpiry)
                 .build(),
@@ -176,17 +177,20 @@ impl StoreCache {
     /// same location and operation.
     pub async fn open(
         &self,
-        storage: &ServerStorage,
+        metastore: &DynMetastore,
+        vendor: &DynVendor,
         location: &NormalizedUrl,
         op: VendOp,
     ) -> Result<Arc<Opened>, StorageError> {
         let key = (location.as_str().to_string(), op);
-        if let Some(opened) = self.0.get(&key) {
-            return Ok(opened);
-        }
-        let opened = Arc::new(storage.open_store(location, op).await?);
-        self.0.insert(key, opened.clone());
-        Ok(opened)
+        let open = async {
+            let storage = ServerStorage::new(metastore.clone(), vendor.clone());
+            storage.open_store(location, op).await.map(Arc::new)
+        };
+        self.0
+            .try_get_with(key, open)
+            .await
+            .map_err(|e| StorageError(e.0.clone()))
     }
 }
 
@@ -256,22 +260,16 @@ fn build_store(
 }
 
 /// Delete every object under `prefix`, in batches where the store has
-/// them (S3, Azure, GCS); the number deleted.
-pub async fn delete_all(
-    store: &dyn ObjectStore,
-    prefix: &ObjectPath,
-) -> object_store::Result<usize> {
+/// them (S3, Azure, GCS).
+pub async fn delete_all(store: &dyn ObjectStore, prefix: &ObjectPath) -> object_store::Result<()> {
     let locations = store
         .list(Some(prefix))
-        .map(|meta| meta.map(|meta| meta.location))
+        .map_ok(|meta| meta.location)
         .boxed();
-    let mut deleted = store.delete_stream(locations);
-    let mut count = 0;
-    while let Some(location) = deleted.next().await {
-        location?;
-        count += 1;
-    }
-    Ok(count)
+    store
+        .delete_stream(locations)
+        .try_for_each(|_| futures::future::ready(Ok(())))
+        .await
 }
 
 /// Whether two objects hold the same bytes. Both are read in step, so

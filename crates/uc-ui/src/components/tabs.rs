@@ -44,12 +44,11 @@ pub fn Tabs(
     .into_iter()
     .flatten()
     .collect();
-    let tabs: Vec<Tab> = panels.iter().map(|(this, _)| *this).collect();
     view! {
         <div class="uc-tabs" role="tablist">
-            {tabs
-                .into_iter()
-                .map(|this| {
+            {panels
+                .iter()
+                .map(|&(this, _)| {
                     view! {
                         <button
                             type="button"

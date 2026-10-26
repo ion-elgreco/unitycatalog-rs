@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from google.api import annotations_pb2, field_behavior_pb2
-from google.protobuf import descriptor_pb2
+from google.protobuf import descriptor_pb2, descriptor_pool
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "reference" / "openapi.json"
@@ -60,10 +60,9 @@ GROUPS = {
     "Health": ["HealthService"],
 }
 DEFAULT_GROUP = "Unity Catalog REST API"
-# The field options of trestle (proto/olai/trestle/v1/annotations.proto): a field of a response
-# that comes from a response header, and a field that is the HTTP body as raw bytes.
-RESPONSE_HEADER = 51001
-RAW_BODY = 51003
+# The options of trestle (proto/olai/trestle/v1/annotations.proto): a field of a response that
+# comes from a response header, and a field that is the HTTP body as raw bytes.
+TRESTLE = "olai/trestle/v1/annotations.proto"
 # Words of service names that are acronyms or brand names.
 WORDS = {"Api": "API", "Scim": "SCIM", "Rest": "REST"}
 
@@ -120,53 +119,6 @@ class Enum:
     value_comments: dict[int, str]
 
 
-def varint(data: bytes, at: int) -> tuple[int, int]:
-    """The varint at `at` of `data`, and the offset after it."""
-    value = shift = 0
-    while True:
-        byte = data[at]
-        at += 1
-        value |= (byte & 0x7F) << shift
-        shift += 7
-        if byte < 0x80:
-            return value, at
-
-
-def trestle_options(f: descriptor_pb2.FieldDescriptorProto) -> dict[int, int | bytes]:
-    """The options of a field that this script has no classes for, such as trestle's, by field
-    number: protobuf keeps them as unknown fields, in the field's serialized options."""
-    data = f.options.SerializeToString()
-    out: dict[int, int | bytes] = {}
-    at = 0
-    while at < len(data):
-        key, at = varint(data, at)
-        number, wire = key >> 3, key & 7
-        if wire == 0:
-            out[number], at = varint(data, at)
-        elif wire == 2:
-            size, at = varint(data, at)
-            out[number] = data[at : at + size]
-            at += size
-        elif wire == 1:
-            at += 8
-        elif wire == 5:
-            at += 4
-        else:
-            break
-    return out
-
-
-def response_header(f: descriptor_pb2.FieldDescriptorProto) -> str | None:
-    """The response header that a field of a response comes from, if any."""
-    value = trestle_options(f).get(RESPONSE_HEADER)
-    return value.decode() if isinstance(value, bytes) else None
-
-
-def raw_body(f: descriptor_pb2.FieldDescriptorProto) -> bool:
-    """Whether a field is the HTTP body as raw bytes."""
-    return bool(trestle_options(f).get(RAW_BODY))
-
-
 BINARY = {
     "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
 }
@@ -185,6 +137,11 @@ class Api:
             tuple[str, descriptor_pb2.ServiceDescriptorProto, str, list[str]]
         ] = []
         fds = descriptor_pb2.FileDescriptorSet.FromString(descriptor_set.read_bytes())
+        # trestle's options, which protobuf parses once the default pool knows them.
+        pool = descriptor_pool.Default()
+        pool.Add(next(f for f in fds.file if f.name == TRESTLE))
+        self.raw_body_option = pool.FindExtensionByName("olai.trestle.v1.raw_body")
+        self.header_option = pool.FindExtensionByName("olai.trestle.v1.response_header")
         for f in fds.file:
             locations = {
                 tuple(loc.path): loc.leading_comments
@@ -259,6 +216,21 @@ class Api:
         if f.json_name and f.json_name != lower_camel(f.name):
             return f.json_name
         return f.name
+
+    @staticmethod
+    def trestle_options(
+        f: descriptor_pb2.FieldDescriptorProto,
+    ) -> descriptor_pb2.FieldOptions:
+        """The options of `f`, parsed again, with trestle's."""
+        return descriptor_pb2.FieldOptions.FromString(f.options.SerializeToString())
+
+    def response_header(self, f: descriptor_pb2.FieldDescriptorProto) -> str | None:
+        """The response header that a field of a response comes from, if any."""
+        return self.trestle_options(f).Extensions[self.header_option] or None
+
+    def raw_body(self, f: descriptor_pb2.FieldDescriptorProto) -> bool:
+        """Whether a field is the HTTP body as raw bytes."""
+        return self.trestle_options(f).Extensions[self.raw_body_option]
 
     @staticmethod
     def required(f: descriptor_pb2.FieldDescriptorProto) -> bool:
@@ -392,7 +364,7 @@ class Api:
         ]
         if parameters:
             op["parameters"] = parameters
-        if body_fields and all(raw_body(f) for f in body_fields):
+        if body_fields and all(self.raw_body(f) for f in body_fields):
             op["requestBody"] = {"required": True, "content": BINARY}
         elif body_fields:
             media = (
@@ -424,13 +396,15 @@ class Api:
         )
         answer: dict = {"description": description or "OK"}
         fields = list(out.proto.field) if out else []
-        headers = {name: f for f in fields if (name := response_header(f)) is not None}
-        body = [f for f in fields if response_header(f) is None]
-        if not headers and not any(raw_body(f) for f in body):
+        named = [(f, self.response_header(f)) for f in fields]
+        headers = {name: f for f, name in named if name is not None}
+        body = [f for f, name in named if name is None]
+        raw = any(self.raw_body(f) for f in body)
+        if not headers and not raw:
             schema = WELL_KNOWN.get(output_type) or self.ref(output_type)
             answer["content"] = {"application/json": {"schema": schema}}
             return answer
-        if any(raw_body(f) for f in body):
+        if raw:
             answer["content"] = BINARY
         elif body:
             answer["content"] = {

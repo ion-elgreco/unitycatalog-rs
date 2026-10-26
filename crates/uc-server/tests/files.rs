@@ -15,15 +15,14 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use common::{assert_error, assert_status, json_body, req_json, seeded};
+use uc_common::FILES_BASE;
 
-const FS: &str = "/api/2.0/fs";
-
-/// A Files API request: `path` under [`FS`], with `body`, signed in with
-/// `token` if any.
+/// A Files API request: `path` under [`FILES_BASE`], with `body`, signed in
+/// with `token` if any.
 fn fs(method: Method, path: &str, body: &[u8], token: Option<&str>) -> Request<Body> {
     let mut request = Request::builder()
         .method(method)
-        .uri(format!("{FS}{path}"))
+        .uri(format!("{FILES_BASE}{path}"))
         .body(Body::from(body.to_vec()))
         .unwrap();
     if let Some(token) = token {
@@ -324,50 +323,41 @@ async fn privileges() {
         .await
         .unwrap();
     let bob = common::active_user(&metastore, "bob@example.com").await;
-    let ok = |token: &str, path: &str, body: Value| {
-        let request = common::signed(Method::POST, path, Some(body), token);
+    // A call of the admin that must succeed.
+    let admin_call = |method: Method, path: &str, body: Value| {
+        let request = common::signed(method, path, Some(body), &admin);
         let app = app.clone();
         async move {
             let resp = app.oneshot(request).await.unwrap();
             assert_status(resp, StatusCode::OK, "setup").await;
         }
     };
+    let ok = |path: &str, body: Value| admin_call(Method::POST, path, body);
     // A local storage root, under an external location as sign-in needs.
     let root = common::temp_storage_root();
     let credential = json!({
         "name": "cred", "purpose": "STORAGE",
         "aws_iam_role": { "role_arn": "arn:aws:iam::1:role/x" },
     });
-    ok(&admin, "/credentials", credential).await;
+    ok("/credentials", credential).await;
     let location = json!({ "name": "el", "url": root, "credential_name": "cred" });
-    ok(&admin, "/external-locations", location).await;
+    ok("/external-locations", location).await;
     let catalog = json!({ "name": "c", "storage_root": format!("{root}/c") });
-    ok(&admin, "/catalogs", catalog).await;
-    ok(
-        &admin,
-        "/schemas",
-        json!({ "name": "s", "catalog_name": "c" }),
-    )
-    .await;
+    ok("/catalogs", catalog).await;
+    ok("/schemas", json!({ "name": "s", "catalog_name": "c" })).await;
     let volume = json!({
         "name": "v", "catalog_name": "c", "schema_name": "s", "volume_type": "MANAGED",
     });
-    ok(&admin, "/volumes", volume).await;
+    ok("/volumes", volume).await;
     let grant = |securable: &str, name: &str, privilege: &str| {
         let body = json!({
             "changes": [{ "principal": "bob@example.com", "add": [privilege], "remove": [] }],
         });
-        let request = common::signed(
+        admin_call(
             Method::PATCH,
             &format!("/permissions/{securable}/{name}"),
-            Some(body),
-            &admin,
-        );
-        let app = app.clone();
-        async move {
-            let resp = app.oneshot(request).await.unwrap();
-            assert_status(resp, StatusCode::OK, "grant").await;
-        }
+            body,
+        )
     };
     grant("catalog", "c", "USE CATALOG").await;
     grant("schema", "c.s", "USE SCHEMA").await;

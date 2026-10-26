@@ -209,15 +209,11 @@ async fn request_timeout(
     req: Request,
     next: middleware::Next,
 ) -> Response {
-    // An upload to the Files API takes as long as its body, and a delete of
-    // a directory as long as what it holds.
-    let rest = req
+    let long = req
         .uri()
         .path()
         .strip_prefix(FILES_BASE)
-        .unwrap_or_default();
-    let long = (req.method() == Method::PUT && rest.starts_with("/files/"))
-        || (req.method() == Method::DELETE && rest.starts_with("/directories/"));
+        .is_some_and(|path| routes::files::takes_long(req.method(), path));
     let Some(timeout) = timeout.filter(|_| !long) else {
         return next.run(req).await;
     };

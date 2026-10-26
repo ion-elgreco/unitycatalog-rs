@@ -7,31 +7,29 @@
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use uc_client::models::files::v1::DirectoryEntry;
+use uc_common::FILES_BASE;
 use wasm_bindgen_futures::JsFuture;
 
+use super::delete_modal::HoldsChoice;
 use super::field::TextField;
 use super::icons::{Download, File, Folder, FolderPlus, RefreshCw, Trash2, Upload};
-use super::{Card, EmptyState, LoadError, LoadingBlock, Modal, use_notify};
+use super::{Card, Modal, loaded_list, use_notify};
 use crate::api;
+use crate::load::Load;
 use crate::util::{format_size, format_timestamp};
 
 /// The entries of a page.
 const PAGE_SIZE: i32 = 200;
 
-/// The entries of a folder so far, and the token of the next page.
-#[derive(Clone, Default)]
-struct Listing {
-    entries: Vec<DirectoryEntry>,
-    next: Option<String>,
-}
-
-#[derive(Clone)]
-enum State {
-    Loading,
-    Ready(Listing),
-    Failed(String),
-}
+/// What a URL path keeps of a file's path: the unreserved bytes and `/`.
+const PATH: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~')
+    .remove(b'/');
 
 #[component]
 pub fn FilesCard(
@@ -46,45 +44,50 @@ pub fn FilesCard(
     let root = StoredValue::new(root);
     // The folders under the root, to the folder on show.
     let dir = RwSignal::new(Vec::<String>::new());
-    let state = RwSignal::new(State::Loading);
+    let folder = Signal::derive(move || join(&root.get_value(), &dir.get()));
+    let entries = RwSignal::new(Load::<Vec<DirectoryEntry>>::Loading);
+    // The token of the next page, and whether it loads.
+    let next = RwSignal::new(None::<String>);
     let more = RwSignal::new(false);
     // Each load has a number; an answer to an older one is dropped.
     let loads = StoredValue::new(0_u64);
-    let folder = move || join(&root.get_value(), &dir.get_untracked());
 
     let load = move |token: Option<String>| {
         let id = loads.get_value() + 1;
         loads.set_value(id);
         let at_root = dir.with_untracked(Vec::is_empty);
-        let path = folder();
-        match token {
-            None => state.set(State::Loading),
-            Some(_) => more.set(true),
+        let path = folder.get_untracked();
+        let first = token.is_none();
+        match first {
+            true => entries.set(Load::Loading),
+            false => more.set(true),
         }
         spawn_local(async move {
             let page = api::client()
                 .list_directory_contents(path)
                 .with_page_size(PAGE_SIZE)
-                .with_page_token(token.clone())
+                .with_page_token(token)
                 .await;
             if loads.try_get_value() != Some(id) {
                 return;
             }
-            let next = match page {
-                Ok(page) => {
-                    let mut listing = match (&token, state.try_get_untracked()) {
-                        (Some(_), Some(State::Ready(listing))) => listing,
-                        _ => Listing::default(),
-                    };
-                    listing.entries.extend(page.contents);
-                    listing.next = page.next_page_token;
-                    State::Ready(listing)
-                }
-                Err(e) if e.status() == Some(404) && !at_root => State::Ready(Listing::default()),
-                Err(e) => State::Failed(api::failure(&e, "Failed to list the files")),
-            };
             let _ = more.try_set(false);
-            let _ = state.try_set(next);
+            match page {
+                Ok(page) => {
+                    let _ = next.try_set(page.next_page_token);
+                    let _ = entries.try_update(|loaded| match loaded {
+                        Load::Ready(list) if !first => list.extend(page.contents),
+                        _ => *loaded = Load::Ready(page.contents),
+                    });
+                }
+                Err(e) => {
+                    let _ = next.try_set(None);
+                    let _ = entries.try_set(match e.status() {
+                        Some(404) if !at_root => Load::Ready(Vec::new()),
+                        _ => Load::Failed(api::failure(&e, "Failed to list the files")),
+                    });
+                }
+            }
         });
     };
     Effect::new(move |_| {
@@ -166,10 +169,6 @@ pub fn FilesCard(
 
     let row = move |entry: DirectoryEntry| {
         let name = entry.name.clone();
-        let icon = match entry.is_directory {
-            true => view! { <Folder class="uc-icon--volume"/> }.into_any(),
-            false => view! { <File/> }.into_any(),
-        };
         let label = match entry.is_directory {
             true => {
                 let child = name.clone();
@@ -179,7 +178,7 @@ pub fn FilesCard(
                         class="uc-btn uc-btn--link"
                         on:click=move |_| dir.update(|d| d.push(child.clone()))
                     >
-                        {icon}
+                        <Folder class="uc-icon--volume"/>
                         {name.clone()}
                     </button>
                 }
@@ -187,7 +186,7 @@ pub fn FilesCard(
             }
             false => view! {
                 <span class="uc-files__name">
-                    {icon}
+                    <File/>
                     {name.clone()}
                 </span>
             }
@@ -196,7 +195,10 @@ pub fn FilesCard(
         let size = entry.file_size.map_or_else(|| "—".to_string(), format_size);
         let modified = format_timestamp(entry.last_modified.unwrap_or_default());
         let download = (!entry.is_directory).then(|| {
-            let href = format!("/api/2.0/fs/files{}", encode_path(&entry.path));
+            let href = format!(
+                "{FILES_BASE}/files{}",
+                utf8_percent_encode(&entry.path, PATH)
+            );
             view! {
                 <a
                     class="uc-btn uc-btn--ghost uc-btn--icon uc-btn--xs"
@@ -237,14 +239,8 @@ pub fn FilesCard(
         }
     };
 
-    let body = move || match state.get() {
-        State::Loading => view! { <LoadingBlock/> }.into_any(),
-        State::Failed(message) => view! { <LoadError message/> }.into_any(),
-        State::Ready(listing) if listing.entries.is_empty() => {
-            view! { <EmptyState empty="This folder is empty."/> }.into_any()
-        }
-        State::Ready(listing) => {
-            let next = listing.next.clone();
+    let body = move || {
+        loaded_list(entries.get(), "This folder is empty.", |list| {
             view! {
                 <div class="uc-table-wrap">
                     <table class="uc-table">
@@ -256,34 +252,36 @@ pub fn FilesCard(
                                 <th></th>
                             </tr>
                         </thead>
-                        <tbody>{listing.entries.into_iter().map(row).collect_view()}</tbody>
+                        <tbody>{list.into_iter().map(row).collect_view()}</tbody>
                     </table>
                 </div>
-                {next
-                    .map(|token| {
-                        view! {
-                            <button
-                                type="button"
-                                class="uc-btn uc-btn--outline uc-btn--sm uc-files__more"
-                                disabled=move || more.get()
-                                on:click=move |_| load(Some(token.clone()))
-                            >
-                                {move || if more.get() { "Loading…" } else { "Load more" }}
-                            </button>
-                        }
-                    })}
             }
             .into_any()
-        }
+        })
+    };
+    let load_more = move || {
+        next.get().map(|token| {
+            view! {
+                <button
+                    type="button"
+                    class="uc-btn uc-btn--outline uc-btn--sm uc-files__more"
+                    disabled=move || more.get()
+                    on:click=move |_| load(Some(token.clone()))
+                >
+                    {move || if more.get() { "Loading…" } else { "Load more" }}
+                </button>
+            }
+        })
     };
 
     view! {
         <Card title="Files" actions>
             <nav class="uc-files__path" aria-label="Folder">{crumbs}</nav>
             {body}
+            {load_more}
         </Card>
-        <UploadModal open=upload_open folder=Signal::derive(move || join(&root.get_value(), &dir.get())) then=move || load(None)/>
-        <NewFolderModal open=folder_open folder=Signal::derive(move || join(&root.get_value(), &dir.get())) then=move |name: String| dir.update(|d| d.push(name))/>
+        <UploadModal open=upload_open folder then=move || load(None)/>
+        <NewFolderModal open=folder_open folder then=move |name: String| dir.update(|d| d.push(name))/>
         <DeleteEntryModal entry=deleting then=move || load(None)/>
     }
 }
@@ -429,25 +427,17 @@ fn NewFolderModal(
     }
 }
 
-/// What a folder holds, which its delete dialog counts on the first page of
-/// its entries.
-#[derive(Clone, PartialEq)]
-enum Held {
-    Counting,
-    Nothing,
-    Some(String),
-    Failed(String),
-}
-
-/// "Delete file?" or "Delete folder?". A folder that holds something gets a
-/// box that deletes what it holds too, as the delete of a catalog has.
+/// "Delete file?" or "Delete folder?". A folder that holds something gets
+/// the box that deletes what it holds too, as the delete of a catalog has.
 #[component]
 fn DeleteEntryModal(
     entry: RwSignal<Option<DirectoryEntry>>,
     then: impl Fn() + Copy + Send + Sync + 'static,
 ) -> impl IntoView {
     let busy = RwSignal::new(false);
-    let held = RwSignal::new(Held::Nothing);
+    // What the folder holds, counted on the first page of its entries:
+    // `None` for a file.
+    let held = RwSignal::new(None::<Load<Option<String>>>);
     let forced = RwSignal::new(false);
     let notify = use_notify();
     let noun = move || match entry.with(|e| e.as_ref().is_some_and(|e| e.is_directory)) {
@@ -460,32 +450,34 @@ fn DeleteEntryModal(
         };
         forced.set(false);
         if !target.is_directory {
-            held.set(Held::Nothing);
+            held.set(None);
             return;
         }
-        held.set(Held::Counting);
+        held.set(Some(Load::Loading));
         spawn_local(async move {
             let page = api::client()
                 .list_directory_contents(target.path.clone())
                 .with_page_size(1000)
                 .await;
             let counted = match page {
-                Ok(page) if page.contents.is_empty() => Held::Nothing,
-                Ok(page) => Held::Some(holds(&page.contents, page.next_page_token.is_some())),
-                Err(e) if e.status() == Some(404) => Held::Nothing,
-                Err(e) => Held::Failed(api::failure(&e, "Failed to list the folder")),
+                Ok(page) if page.contents.is_empty() => Load::Ready(None),
+                Ok(page) => {
+                    Load::Ready(Some(holds(&page.contents, page.next_page_token.is_some())))
+                }
+                Err(e) if e.status() == Some(404) => Load::Ready(None),
+                Err(e) => Load::Failed(api::failure(&e, "Failed to list the folder")),
             };
             // Only for the folder that the dialog still shows.
             let shown = entry.try_get_untracked().flatten();
             if shown.is_some_and(|e| e.path == target.path) {
-                let _ = held.try_set(counted);
+                let _ = held.try_set(Some(counted));
             }
         });
     });
     let blocked = Signal::derive(move || match held.get() {
-        Held::Counting => true,
-        Held::Nothing => false,
-        Held::Some(_) | Held::Failed(_) => !forced.get(),
+        None | Some(Load::Ready(None)) => false,
+        Some(Load::Loading) => true,
+        Some(Load::Ready(Some(_)) | Load::Failed(_)) => !forced.get(),
     });
     let on_ok = move || {
         let Some(target) = entry.get_untracked() else {
@@ -517,31 +509,6 @@ fn DeleteEntryModal(
             }
         });
     };
-    let choice = move || {
-        let note = match held.get() {
-            Held::Nothing => return ().into_any(),
-            Held::Counting => {
-                return view! { <p class="uc-hint">"Counting what the folder holds…"</p> }
-                    .into_any();
-            }
-            Held::Some(text) => format!("The folder holds {text}."),
-            Held::Failed(message) => {
-                format!("The UI could not count what the folder holds: {message}")
-            }
-        };
-        view! {
-            <p class="uc-hint">{note}</p>
-            <label class="uc-checkbox">
-                <input
-                    type="checkbox"
-                    prop:checked=move || forced.get()
-                    on:change=move |e| forced.set(event_target_checked(&e))
-                />
-                <span>"Also delete the files and folders in it"</span>
-            </label>
-        }
-        .into_any()
-    };
     view! {
         <Modal
             open=Signal::derive(move || entry.with(Option::is_some))
@@ -559,7 +526,19 @@ fn DeleteEntryModal(
                 <strong>{move || entry.with(|e| e.as_ref().map(|e| e.name.clone()))}</strong>
                 "? This cannot be undone."
             </p>
-            {choice}
+            {move || {
+                held.with(Option::is_some)
+                    .then(|| {
+                        view! {
+                            <HoldsChoice
+                                what="the folder"
+                                held
+                                label="Also delete the files and folders in it"
+                                forced
+                            />
+                        }
+                    })
+            }}
         </Modal>
     }
 }
@@ -600,29 +579,11 @@ fn join(root: &str, parts: &[String]) -> String {
     path
 }
 
-/// `path` for a URL: every byte but the unreserved ones and `/`
-/// percent-encoded.
-fn encode_path(path: &str) -> String {
-    use std::fmt::Write as _;
-    let mut out = String::with_capacity(path.len());
-    for byte in path.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
-                out.push(byte as char)
-            }
-            _ => {
-                let _ = write!(out, "%{byte:02X}");
-            }
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use uc_client::models::files::v1::DirectoryEntry;
 
-    use super::{encode_path, holds, join};
+    use super::{PATH, holds, join};
 
     #[test]
     fn what_a_folder_holds() {
@@ -647,9 +608,7 @@ mod tests {
         assert_eq!(join("/Volumes/c/s/v", &[]), "/Volumes/c/s/v");
         let parts = ["a".to_string(), "b c".to_string()];
         assert_eq!(join("/Volumes/c/s/v/", &parts), "/Volumes/c/s/v/a/b c");
-        assert_eq!(
-            encode_path("/Volumes/c/s/v/a b#1%.txt"),
-            "/Volumes/c/s/v/a%20b%231%25.txt"
-        );
+        let encoded = percent_encoding::utf8_percent_encode("/Volumes/c/s/v/a b#1%~.txt", PATH);
+        assert_eq!(encoded.to_string(), "/Volumes/c/s/v/a%20b%231%25~.txt");
     }
 }

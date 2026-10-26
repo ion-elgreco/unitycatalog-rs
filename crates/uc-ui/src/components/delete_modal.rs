@@ -255,7 +255,6 @@ pub fn DeleteButton(open: RwSignal<bool>, when: Memo<bool>) -> impl IntoView {
 }
 
 /// The first step's count, and the box that deletes what it found too.
-/// Nothing for an object that holds nothing.
 #[component]
 fn ForceChoice(
     counted: RwSignal<Option<Load<Contents>>>,
@@ -264,16 +263,40 @@ fn ForceChoice(
 ) -> impl IntoView {
     let what = holder.with_value(|h| h.as_ref().map(Holder::noun).unwrap_or("it"));
     let label = holder.with_value(|h| h.as_ref().map(Holder::force_label).unwrap_or_default());
+    let held = Signal::derive(move || {
+        counted.with(|counted| {
+            counted.as_ref().map(|load| match load {
+                Load::Loading => Load::Loading,
+                Load::Ready(contents) => Load::Ready(contents.describe()),
+                Load::Failed(message) => Load::Failed(message.clone()),
+            })
+        })
+    });
+    view! { <HoldsChoice what held label forced/> }
+}
+
+/// What an object holds, which its delete dialog counts, and the box that
+/// deletes that too. Nothing for an object that holds nothing.
+#[component]
+pub fn HoldsChoice(
+    /// The object, as the dialog names it, such as "the catalog".
+    what: &'static str,
+    /// What it holds, such as "2 schemas": `None` or loading while it is
+    /// counted, `Ready(None)` when it holds nothing.
+    #[prop(into)]
+    held: Signal<Option<Load<Option<String>>>>,
+    /// What the box says.
+    label: &'static str,
+    forced: RwSignal<bool>,
+) -> impl IntoView {
     move || {
-        let note = match counted.get() {
+        let note = match held.get() {
             None | Some(Load::Loading) => {
                 let text = format!("Counting what {what} holds…");
                 return view! { <p class="uc-hint">{text}</p> }.into_any();
             }
-            Some(Load::Ready(contents)) => match contents.describe() {
-                Some(text) => format!("{} holds {text}.", capitalized(what)),
-                None => return ().into_any(),
-            },
+            Some(Load::Ready(None)) => return ().into_any(),
+            Some(Load::Ready(Some(text))) => format!("{} holds {text}.", capitalized(what)),
             Some(Load::Failed(message)) => {
                 format!("The UI could not count what {what} holds: {message}")
             }

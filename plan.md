@@ -57,7 +57,8 @@ from the first plan: writes need ownership, because upstream has no `WRITE VOLUM
   Keys are built from the storage root with `Path::child`, so no key leaves the volume or table.
 - `ServerStorage::open_store` returns the store, its `PaginatedListStore` (S3, GCS, Azure) and the
   expiry of its credentials. `StoreCache` (in `AppState`) keeps opened stores by location and
-  operation, at most 5 minutes and until 2 minutes before the credentials expire.
+  operation, at most 5 minutes and until 2 minutes before the credentials expire; requests that
+  miss at the same time wait for one open.
 - Listing: one storage page per request with the storage's continuation token; local paths list
   the directory, sort it and page by offset.
 - Uploads stream: smaller than 8 MiB in one `put`, else multipart with 4 parts at a time. They

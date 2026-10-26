@@ -101,7 +101,7 @@ pub struct Server {
     #[serde(deserialize_with = "scalar")]
     pub max_request_length: usize,
     /// The time a request may take (default `10s`, as Armeria; `0s`
-    /// for none). Not for uploads to the Files API.
+    /// for none). Not for uploads and directory deletes of the Files API.
     #[serde(deserialize_with = "duration")]
     pub request_timeout: Duration,
     /// Requests per second and client address; 0 for no limit.

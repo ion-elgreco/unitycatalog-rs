@@ -6197,8 +6197,8 @@ pub struct PyDownloadFileResponse(pub super::files::v1::DownloadFileResponse);
 impl PyDownloadFileResponse {
     /// The bytes of the file.
     #[getter]
-    fn contents(&self) -> ::std::borrow::Cow<'static, [u8]> {
-        ::std::borrow::Cow::Owned(self.0.contents.clone())
+    fn contents(&self) -> ::std::borrow::Cow<'_, [u8]> {
+        ::std::borrow::Cow::Borrowed(&self.0.contents)
     }
 
     /// Size of the file, in bytes.
