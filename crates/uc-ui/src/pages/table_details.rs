@@ -9,7 +9,7 @@ use crate::api;
 use crate::auth::use_manages;
 use crate::components::{
     ColumnsCard, CredentialsCard, DeleteButton, DeleteModal, DescriptionCard, DetailsTab,
-    EntityHeader, Loaded, MetaRow, PermissionsCard, Tabs, Vendable, properties,
+    EntityHeader, Label, Loaded, MetaRow, PermissionsCard, Tabs, Vendable, format_logo, properties,
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
@@ -38,13 +38,14 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
     let manages = use_manages(owner);
     let comment = field(info, |t: &TableInfo| t.comment.clone().unwrap_or_default());
     let badges = field(info, |t: &TableInfo| {
-        [
-            enum_name(t.table_type),
-            t.data_source_format.map(enum_name).unwrap_or_default(),
-        ]
-        .into_iter()
-        .filter(|badge| !badge.is_empty())
-        .collect::<Vec<_>>()
+        let format = t
+            .data_source_format
+            .map(|format| Label::new(enum_name(format), format_logo(format)));
+        [Some(Label::from(enum_name(t.table_type))), format]
+            .into_iter()
+            .flatten()
+            .filter(|badge| !badge.text.is_empty())
+            .collect::<Vec<_>>()
     });
     let table_id = field(info, |t: &TableInfo| {
         Some(t.table_id.clone()).filter(|id| !id.is_empty())
@@ -118,7 +119,7 @@ fn table_rows(t: &TableInfo) -> Vec<MetaRow> {
     vec![
         MetaRow::new("Owner", or_dash(t.owner.clone())),
         MetaRow::new("Type", or_dash(enum_name(t.table_type))),
-        MetaRow::new("Format", or_dash(t.data_source_format.map(enum_name))),
+        MetaRow::new("Format", Label::format(t.data_source_format)),
         MetaRow::new("Created at", format_timestamp(t.created_at)),
         MetaRow::new("Updated at", format_timestamp(t.updated_at)),
         MetaRow::mono("Table ID", or_dash(t.table_id.clone())),

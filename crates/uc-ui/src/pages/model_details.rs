@@ -13,8 +13,8 @@ use crate::components::edit_modal::Changes;
 use crate::components::icons::Plus;
 use crate::components::{
     Card, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata, Empty,
-    EntityHeader, Loaded, MetaRow, Modal, PermissionsCard, Tabs, TextField, counted, loaded_list,
-    use_notify,
+    EntityHeader, Label, Loaded, MetaRow, Modal, PermissionsCard, Tabs, TextField, counted,
+    loaded_list, use_notify,
 };
 use crate::contents::Holder;
 use crate::kind::Kind;
@@ -147,7 +147,7 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
         <EntityHeader
             icon=Kind::Models.icon()
             name=full_name.clone()
-            badges=vec!["Model".to_string()]
+            badges=vec![Label::from("Model")]
             reload
             actions=view! {
                 <EditMetadata name=model.clone() comment save=save_metadata/>

@@ -21,7 +21,14 @@ Each copies `public/` (`index.html`, `styles.css`, favicon, manifest,
 wasm32-unknown-unknown`, then `wasm-bindgen --target web`, which writes
 the wasm and its loader to `dist/assets/`. `just wasm` also writes
 `uc_ui_bg.wasm.br` (brotli at quality 11) and `uc_ui_bg.wasm.gz` next to
-the wasm, which the servers send as they are. The recipes need the
+the wasm, which the servers send as they are. `public/formats/` holds the
+logos of the table formats, from the projects' repositories (Apache-2.0):
+Delta Lake's glyph from `delta-io/website`
+`src/components/assets/delta-lake-logo.svg` (the wordmark removed),
+`apache/iceberg` `site/docs/assets/images/iceberg-logo-icon.png` and
+`lance-format/lance` `docs/src/logo/logo.png` (both trimmed and scaled to
+64 px), and `apache/parquet-format` `logo/parquet-logos_1.svg` (a tighter
+view box). The recipes need the
 `wasm32-unknown-unknown` target, which rustup adds from
 `rust-toolchain.toml`, and the wasm-bindgen CLI of the version in
 `Cargo.lock`; `just wasm` also needs the `brotli` tool:

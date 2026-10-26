@@ -13,7 +13,7 @@ use crate::api;
 use crate::auth::use_manages;
 use crate::components::{
     Card, CredentialsCard, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EntityHeader,
-    Loaded, MetaRow, Modal, PermissionsCard, Tabs, TextField, Vendable, use_notify,
+    Label, Loaded, MetaRow, Modal, PermissionsCard, Tabs, TextField, Vendable, use_notify,
 };
 use crate::load::{Key, field, use_cache, use_load};
 use crate::util::{Section, format_timestamp, or_dash, pretty_json, route_params};
@@ -65,7 +65,7 @@ fn LocationPage(name: String) -> impl IntoView {
         <EntityHeader
             icon=Section::ExternalLocations.icon()
             name=name.clone()
-            badges=vec!["External location".to_string()]
+            badges=vec![Label::from("External location")]
             reload
             actions=view! {
                 <EditLocation name=name.clone() url credential comment/>
