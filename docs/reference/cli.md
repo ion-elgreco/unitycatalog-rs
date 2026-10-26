@@ -52,7 +52,7 @@ The list commands take `--max_results` (default 100) and `--page_token`. After a
 
 - `--columns`: `"id INT, name STRING"`. The types are `BOOLEAN`, `BYTE`, `SHORT`, `INT`, `LONG`,
   `FLOAT`, `DOUBLE`, `DATE`, `TIMESTAMP`, `TIMESTAMP_NTZ`, `STRING`, `BINARY` and `DECIMAL`.
-- `--format`: `DELTA` (the default), `ICEBERG`, `CSV`, `JSON`, `AVRO`, `PARQUET`, `ORC` or `TEXT`.
+- `--format`: `DELTA` (the default), `ICEBERG`, `CSV`, `JSON`, `AVRO`, `PARQUET`, `ORC`, `TEXT` or `LANCE`.
   Only `DELTA` gets a Delta table at the location; `read` and `write` work with Delta tables.
 - `--table_type`: `EXTERNAL` (the default), which needs `--storage_location`, or `MANAGED`.
 - When a Delta table is already at the location of an `EXTERNAL` table, `create` keeps it.

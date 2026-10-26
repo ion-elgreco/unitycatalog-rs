@@ -51,7 +51,7 @@ pub enum TableOp {
 }
 
 const FORMATS: &[&str] = &[
-    "DELTA", "ICEBERG", "CSV", "JSON", "AVRO", "PARQUET", "ORC", "TEXT",
+    "DELTA", "ICEBERG", "CSV", "JSON", "AVRO", "PARQUET", "ORC", "TEXT", "LANCE",
 ];
 
 // `table create`.
