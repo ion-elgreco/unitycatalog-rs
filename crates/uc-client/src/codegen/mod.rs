@@ -17,6 +17,7 @@ pub mod recipients;
 pub mod registered_models;
 pub mod schemas;
 pub mod scim;
+pub mod search;
 pub mod shares;
 pub mod sharing;
 pub mod staging_tables;

@@ -18,7 +18,7 @@ use crate::migrations::run_migrations;
 use crate::{
     AuditLogOps, BackupOps, CatalogOps, CleanupOps, CredentialOps, DeltaTableOps,
     ExternalLocationOps, FunctionOps, IcebergTableOps, Metastore, ModelOps, PermissionOps,
-    SchemaOps, ScimOps, SharingOps, TableOps, TokenOps, VolumeOps,
+    SchemaOps, ScimOps, SearchOps, SharingOps, TableOps, TokenOps, VolumeOps,
 };
 use rows::TableDef;
 use uc_storage::{Exec, Storage, StorageError, StorageResult, Value};
@@ -102,6 +102,9 @@ impl Metastore for SqlMetastore {
         self
     }
     fn scim(&self) -> &dyn ScimOps {
+        self
+    }
+    fn search(&self) -> &dyn SearchOps {
         self
     }
     fn audit_log(&self) -> &dyn AuditLogOps {

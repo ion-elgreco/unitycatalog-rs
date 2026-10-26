@@ -202,6 +202,30 @@ def test_volumes(uc: Calls, schema: tuple[str, str]) -> None:
     assert uc.list_volumes(catalog, schema_name) == []
 
 
+def test_search(uc: Calls, schema: tuple[str, str]) -> None:
+    catalog, schema_name = schema
+    name = unique("orders")
+    for volume in [name, f"{name}_raw"]:
+        uc.create_volume(catalog, schema_name, volume, "MANAGED", comment="landing")
+    found = uc.search_objects(name)
+    assert [r.name for r in found.results] == [name, f"{name}_raw"]
+    first = found.results[0]
+    assert first.full_name == f"{catalog}.{schema_name}.{name}"
+    assert (first.securable_type, first.catalog_name, first.schema_name) == (
+        "volume",
+        catalog,
+        schema_name,
+    )
+    assert first.comment == "landing"
+    assert found.next_page_token is None
+
+    page = uc.search_objects(name, securable_type="volume", max_results=1)
+    assert [r.name for r in page.results] == [name]
+    following = uc.search_objects(name, max_results=1, page_token=page.next_page_token)
+    assert [r.name for r in following.results] == [f"{name}_raw"]
+    assert uc.search_objects(name, securable_type="table").results == []
+
+
 @pytest.mark.upstream
 def test_functions(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema

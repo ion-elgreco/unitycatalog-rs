@@ -4,8 +4,8 @@
 //!
 //! The metastore writes its SQL once, in PostgreSQL's dialect with `$1`
 //! placeholders, kept to what Turso also runs. Where the engines differ
-//! (the clock, row locks, DDL, the migration lock), [`Exec`] and
-//! [`Transaction`] ask the engine. A [`Value`] binds and a [`Row`] reads the
+//! (the clock, row locks, full-text search, DDL, the migration lock),
+//! [`Exec`] and [`Transaction`] ask the engine. A [`Value`] binds and a [`Row`] reads the
 //! few types the catalog stores: integers, booleans and text (JSON
 //! documents are text too).
 //!
@@ -220,6 +220,17 @@ pub trait Exec: Send + Sync {
     /// Appended to a `SELECT` in a transaction: lock the rows it reads
     /// until the transaction ends.
     fn for_update(&self) -> &'static str;
+
+    /// An SQL condition: `columns` hold the words of a [`Exec::text_query`],
+    /// bound to the parameter `param` (such as `$1`). The full-text index
+    /// of those columns, in that order, answers it; the DDL makes it with
+    /// `CREATE INDEX … USING fts (columns)`. Turso finds a word anywhere in
+    /// a word of the text, PostgreSQL at the start of one.
+    fn text_match(&self, columns: &[&str], param: &str) -> String;
+
+    /// The parameter of [`Exec::text_match`] that matches all the words of
+    /// `text`; `None` when `text` has no word that the index can find.
+    fn text_query(&self, text: &str) -> Option<String>;
 }
 
 /// A database the catalog runs on.

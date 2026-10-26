@@ -19,6 +19,10 @@ const IDLE_READERS: usize = 16;
 /// `unixepoch('subsec')` is fractional seconds.
 const NOW_MILLIS: &str = "CAST(unixepoch('subsec') * 1000 AS BIGINT)";
 
+/// The shortest word that a full-text index finds: the indexes hold the
+/// n-grams of 2 and 3 characters of the text (`tokenizer = 'ngram'`).
+const MIN_WORD: usize = 2;
+
 fn map_err(e: turso::Error) -> StorageError {
     match e {
         turso::Error::Constraint(m) if m.starts_with("UNIQUE constraint failed") => {
@@ -50,6 +54,23 @@ fn numbered(sql: &str) -> Cow<'_, str> {
         out.push(c);
     }
     Cow::Owned(out)
+}
+
+/// Turso's full-text index: tantivy, on the n-grams of the text.
+fn text_match(columns: &[&str], param: &str) -> String {
+    format!("fts_match({}, {param})", columns.join(", "))
+}
+
+/// Tantivy's query: each word a phrase in quotes, all of them required.
+/// Words keep `_`, which the n-grams hold too; any other character that is
+/// not a letter or a digit splits them, so none of the query syntax is left.
+fn text_query(text: &str) -> Option<String> {
+    let words: Vec<String> = text
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|w| w.chars().count() >= MIN_WORD)
+        .map(|w| format!("\"{w}\""))
+        .collect();
+    (!words.is_empty()).then(|| words.join(" AND "))
 }
 
 /// Booleans are integers in Turso.
@@ -137,6 +158,7 @@ impl TursoStorage {
             }
         };
         let db = turso::Builder::new_local(&file)
+            .experimental_index_method(true)
             .build()
             .await
             .map_err(map_err)?;
@@ -189,6 +211,14 @@ impl Exec for TursoStorage {
     fn for_update(&self) -> &'static str {
         ""
     }
+
+    fn text_match(&self, columns: &[&str], param: &str) -> String {
+        text_match(columns, param)
+    }
+
+    fn text_query(&self, text: &str) -> Option<String> {
+        text_query(text)
+    }
 }
 
 #[async_trait]
@@ -240,6 +270,14 @@ impl Exec for TursoTransaction {
     fn for_update(&self) -> &'static str {
         ""
     }
+
+    fn text_match(&self, columns: &[&str], param: &str) -> String {
+        text_match(columns, param)
+    }
+
+    fn text_query(&self, text: &str) -> Option<String> {
+        text_query(text)
+    }
 }
 
 #[async_trait]
@@ -287,6 +325,53 @@ mod tests {
             "SELECT a FROM t WHERE b = ?1 AND c = '$2' AND \"$3\" = ?12"
         );
         assert!(matches!(numbered("SELECT 1"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn text_queries_keep_words_only() {
+        assert_eq!(
+            text_query("Sales_ord (2024) a:b").as_deref(),
+            Some("\"Sales_ord\" AND \"2024\"")
+        );
+        assert_eq!(text_query("\"-* a"), None);
+    }
+
+    /// The index finds a part of a word, ignores case, and follows writes;
+    /// syntax of tantivy's queries is plain text.
+    #[tokio::test]
+    async fn full_text_index_finds_parts_of_words() {
+        let db = TursoStorage::open(None).await.unwrap();
+        let tx = db.begin().await.unwrap();
+        tx.apply_ddl(
+            "CREATE TABLE t (k TEXT PRIMARY KEY, name TEXT NOT NULL, comment TEXT);\n\
+             INSERT INTO t VALUES ('a', 'sales_orders', NULL), ('b', 'words', 'Raw ORDER lines');\n\
+             CREATE INDEX t_search ON t USING fts (name, comment) WITH (tokenizer = 'ngram');",
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        let find = async |text: &str| {
+            let sql = format!(
+                "SELECT k FROM t WHERE {} ORDER BY k",
+                db.text_match(&["name", "comment"], "$1")
+            );
+            let Some(query) = db.text_query(text) else {
+                return vec![];
+            };
+            let rows = db.query(&sql, &[query.into()]).await.unwrap();
+            rows.iter().map(|r| r.text(0).unwrap()).collect::<Vec<_>>()
+        };
+        assert_eq!(find("rders").await, ["a"]);
+        assert_eq!(find("ORD").await, ["a", "b"]);
+        assert_eq!(find("order lines").await, ["b"]);
+        assert_eq!(find("sales lines").await, Vec::<String>::new());
+        assert_eq!(find("(ord) -x:y").await, ["a", "b"]);
+
+        db.execute("UPDATE t SET name = 'invoices' WHERE k = 'a'", &[])
+            .await
+            .unwrap();
+        assert_eq!(find("rders").await, Vec::<String>::new());
+        assert_eq!(find("voic").await, ["a"]);
     }
 
     #[tokio::test]

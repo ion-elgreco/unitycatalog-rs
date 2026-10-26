@@ -99,6 +99,7 @@ nav:
           - unitycatalog.recipients: reference/python/recipients.md
           - unitycatalog.schemas: reference/python/schemas.md
           - unitycatalog.scim: reference/python/scim.md
+          - unitycatalog.search: reference/python/search.md
           - unitycatalog.shares: reference/python/shares.md
           - unitycatalog.sharing: reference/python/sharing.md
           - unitycatalog.tables: reference/python/tables.md

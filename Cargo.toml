@@ -81,8 +81,8 @@ figment2 = { version = "0.11", default-features = false, features = ["env", "tom
 
 # Storage — Turso (embedded: in memory or in a file) and PostgreSQL (a server).
 # Turso without its `mimalloc` feature, which sets the allocator of the whole
-# process.
-turso = { version = "0.8.3", default-features = false }
+# process; `fts` is its full-text index, on tantivy.
+turso = { version = "0.8.3", default-features = false, features = ["fts"] }
 tokio-postgres = "0.7.13"
 deadpool = { version = "0.12", default-features = false, features = ["managed", "rt_tokio_1"] }
 # TLS to PostgreSQL. The crypto provider is chosen explicitly (ring), as

@@ -24,6 +24,7 @@ from . import permissions
 from . import recipients
 from . import schemas
 from . import scim
+from . import search
 from . import shares
 from . import sharing
 from . import tables
@@ -56,6 +57,7 @@ __all__ = [
     "recipients",
     "schemas",
     "scim",
+    "search",
     "shares",
     "sharing",
     "tables",
@@ -2005,6 +2007,38 @@ class Client:
     ) -> asyncio.Future[scim.ScimServiceProviderConfig]:
         r"""
         Like `get_service_provider_config`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def search_objects(
+        self,
+        query: builtins.str,
+        *,
+        securable_type: typing.Optional[builtins.str] = None,
+        max_results: typing.Optional[builtins.int] = None,
+        page_token: typing.Optional[builtins.str] = None,
+    ) -> search.SearchObjectsResponse:
+        r"""
+        Find the objects whose name or comment holds all the words of a query.
+
+        Args:
+            query: The words to find in the names and comments. An object matches when it holds all of them.
+            securable_type: Return only the objects of this type: `catalog`, `schema`, `table`, `volume`,
+                            `function` or `registered_model`.
+            max_results: The maximum number of results to return.
+            page_token: Opaque token of the page to return: the `next_page_token` of the page before.
+
+        Returns:
+            The requested resource
+        """
+    def search_objects_async(
+        self,
+        query: builtins.str,
+        *,
+        securable_type: typing.Optional[builtins.str] = None,
+        max_results: typing.Optional[builtins.int] = None,
+        page_token: typing.Optional[builtins.str] = None,
+    ) -> asyncio.Future[search.SearchObjectsResponse]:
+        r"""
+        Like `search_objects`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
     def list_shares(
         self, *, max_results: typing.Optional[builtins.int] = None

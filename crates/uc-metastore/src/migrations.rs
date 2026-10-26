@@ -3,8 +3,9 @@
 //! The migrations are the files `migrations/V{n}__{name}.sql`: SQL that
 //! both engines run. Integers are `BIGINT`, booleans `BOOLEAN` (integers on
 //! Turso) and JSON documents `TEXT`. For PostgreSQL, sqlparser reads the
-//! SQL and gives text columns `COLLATE "C"`, so both engines sort by byte
-//! (see [`Transaction::apply_ddl`]).
+//! SQL and gives text columns `COLLATE "C"`, so both engines sort by byte,
+//! and makes Turso's full-text indexes (`USING fts`) GIN indexes (see
+//! [`Transaction::apply_ddl`]).
 //!
 //! refinery creates its history table (`refinery_schema_history`), reads
 //! the versions applied so far and applies the missing ones, in order.

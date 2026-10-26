@@ -1,6 +1,6 @@
 //! The root component: the router, the toasts and the shell. The routes
-//! are the console's (`web/src/routes`), with the access tokens page and
-//! the pages under "Manage" added.
+//! are the console's (`web/src/routes`), with the access tokens page, the
+//! pages under "Manage" and the search page added.
 
 use leptos::prelude::*;
 use leptos_router::components::{ParentRoute, Route, Router, Routes};
@@ -13,7 +13,8 @@ use crate::load::provide_cache;
 use crate::pages::{
     AccessTokens, AuditLog, CatalogDetails, CatalogsList, CredentialDetails, Credentials,
     ExternalLocationDetails, ExternalLocations, FunctionDetails, GroupDetails, Groups, Login,
-    ModelDetails, ModelVersionDetails, SchemaDetails, TableDetails, Users, VolumeDetails,
+    ModelDetails, ModelVersionDetails, SchemaDetails, SearchResults, TableDetails, Users,
+    VolumeDetails,
 };
 use crate::theme::provide_theme;
 
@@ -47,6 +48,7 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("groups") view=Groups/>
                     <Route path=path!("groups/:name") view=GroupDetails/>
                     <Route path=path!("audit") view=AuditLog/>
+                    <Route path=path!("search") view=SearchResults/>
                 </ParentRoute>
             </Routes>
         </Router>

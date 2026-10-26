@@ -58,6 +58,7 @@ use uc_client::models::permissions::v1::*;
 use uc_client::models::recipients::v1::*;
 use uc_client::models::schemas::v1::*;
 use uc_client::models::scim::v1::*;
+use uc_client::models::search::v1::*;
 use uc_client::models::shares::v1::*;
 use uc_client::models::sharing::v1::*;
 use uc_client::models::tables::v1::*;
@@ -4677,6 +4678,82 @@ impl PyClient {
         })
     }
 
+    /// Find the objects whose name or comment holds all the words of a query.
+    ///
+    /// Args:
+    ///     query: The words to find in the names and comments. An object matches when it holds all of them.
+    ///     securable_type: Return only the objects of this type: `catalog`, `schema`, `table`, `volume`,
+    ///                     `function` or `registered_model`.
+    ///     max_results: The maximum number of results to return.
+    ///     page_token: Opaque token of the page to return: the `next_page_token` of the page before.
+    ///
+    /// Returns:
+    ///     The requested resource
+    #[pyo3(
+        signature = (
+            query,
+            *,
+            securable_type = None,
+            max_results = None,
+            page_token = None
+        )
+    )]
+    pub fn search_objects(
+        &self,
+        py: Python,
+        query: String,
+        securable_type: Option<String>,
+        max_results: Option<i32>,
+        page_token: Option<String>,
+    ) -> PyUnityCatalogResult<PySearchObjectsResponse> {
+        let request = self
+            .client
+            .search_objects(query)
+            .with_securable_type(securable_type)
+            .with_max_results(max_results)
+            .with_page_token(page_token);
+        let runtime = crate::codegen::runtime::rt();
+        py.detach(|| {
+            #[allow(clippy::let_unit_value)]
+            let result = runtime.block_on(request.into_future())?;
+            Ok::<_, PyUnityCatalogError>(PySearchObjectsResponse::from(result))
+        })
+    }
+
+    /// Like `search_objects`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(
+        signature = (
+            query,
+            *,
+            securable_type = None,
+            max_results = None,
+            page_token = None
+        )
+    )]
+    pub fn search_objects_async<'py>(
+        &self,
+        py: Python<'py>,
+        query: String,
+        securable_type: Option<String>,
+        max_results: Option<i32>,
+        page_token: Option<String>,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PySearchObjectsResponse>> {
+        let request = self
+            .client
+            .search_objects(query)
+            .with_securable_type(securable_type)
+            .with_max_results(max_results)
+            .with_page_token(page_token);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(PySearchObjectsResponse::from(result))
+        })
+    }
+
     /// List the shares.
     ///
     /// Args:
@@ -6084,6 +6161,7 @@ pub fn register(module: &::pyo3::Bound<'_, ::pyo3::types::PyModule>) -> ::pyo3::
             PyScimUser
         ]
     )?;
+    register_submodule!(module, "search", [PySearchObjectsResponse, PySearchResult])?;
     register_submodule!(
         module,
         "shares",

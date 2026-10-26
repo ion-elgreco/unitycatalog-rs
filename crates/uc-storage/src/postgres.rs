@@ -15,8 +15,8 @@ use async_trait::async_trait;
 use bytes::BytesMut;
 use deadpool::managed::{self, Metrics, Object, Pool, RecycleError, RecycleResult};
 use sqlparser::ast::{
-    self, AlterTableOperation, ColumnDef, ColumnOption, ColumnOptionDef, DataType, Ident,
-    ObjectName,
+    self, AlterTableOperation, ColumnDef, ColumnOption, ColumnOptionDef, CreateIndex, DataType,
+    Ident, IndexType, ObjectName,
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
@@ -36,6 +36,35 @@ const DEFAULT_POOL_SIZE: usize = 20;
 const WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 const NOW_MILLIS: &str = "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)";
+
+/// The words of `columns` as PostgreSQL's `simple` text search
+/// configuration finds them: lowercase, not stemmed. A full-text index is a
+/// GIN index of this expression, and [`text_match`] must write the same
+/// one, so that the planner uses the index.
+fn document(columns: &[&str]) -> String {
+    let text: Vec<String> = columns
+        .iter()
+        .map(|c| format!("coalesce({c}, '')"))
+        .collect();
+    format!("to_tsvector('simple', {})", text.join(" || ' ' || "))
+}
+
+fn text_match(columns: &[&str], param: &str) -> String {
+    format!("{} @@ to_tsquery('simple', {param})", document(columns))
+}
+
+/// Each word of `text` as the start of a word, all of them required:
+/// `'sales':* & 'ord':*`. PostgreSQL's parser splits words at characters
+/// that are not letters or digits, `_` too, so these words split there as
+/// well; no character of the query syntax is left.
+fn text_query(text: &str) -> Option<String> {
+    let words: Vec<String> = text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(|w| format!("'{}':*", w.to_lowercase()))
+        .collect();
+    (!words.is_empty()).then(|| words.join(" & "))
+}
 
 /// A PostgreSQL server and how to sign in.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,11 +231,14 @@ fn parse(pg: &PostgresConfig) -> Result<Parsed, String> {
 }
 
 /// The catalog's DDL as PostgreSQL runs it: text columns sort and compare
-/// by byte (`COLLATE "C"`), as on Turso, whatever the database's locale.
-/// sqlparser reads the SQL and writes it again, without its comments.
+/// by byte (`COLLATE "C"`), as on Turso, whatever the database's locale,
+/// and Turso's full-text indexes (`USING fts`) are GIN indexes of
+/// [`document`]. sqlparser reads the SQL and writes it again, without its
+/// comments.
 pub fn ddl(sql: &str) -> StorageResult<String> {
     let mut statements = Parser::parse_sql(&PostgreSqlDialect {}, sql)
         .map_err(|e| StorageError::Other(format!("cannot read the SQL: {e}")))?;
+    let mut out = Vec::with_capacity(statements.len());
     for statement in &mut statements {
         match statement {
             ast::Statement::CreateTable(table) => {
@@ -219,11 +251,45 @@ pub fn ddl(sql: &str) -> StorageResult<String> {
                     }
                 }
             }
+            ast::Statement::CreateIndex(index) if is_full_text(index) => {
+                out.push(full_text_index(index));
+                continue;
+            }
             _ => {}
         }
+        out.push(statement.to_string());
     }
-    let statements: Vec<String> = statements.iter().map(ToString::to_string).collect();
-    Ok(statements.join(";\n"))
+    Ok(out.join(";\n"))
+}
+
+fn is_full_text(index: &CreateIndex) -> bool {
+    matches!(&index.using, Some(IndexType::Custom(m)) if m.value.eq_ignore_ascii_case("fts"))
+}
+
+/// `CREATE INDEX … USING fts (columns) WITH (…)` as a GIN index of the
+/// columns' [`document`]. Turso's settings in `WITH` do not apply.
+fn full_text_index(index: &CreateIndex) -> String {
+    let columns: Vec<String> = index
+        .columns
+        .iter()
+        .map(|c| c.column.expr.to_string())
+        .collect();
+    let columns: Vec<&str> = columns.iter().map(String::as_str).collect();
+    let name = index
+        .name
+        .as_ref()
+        .map(|n| format!("{n} "))
+        .unwrap_or_default();
+    let if_not_exists = if index.if_not_exists {
+        "IF NOT EXISTS "
+    } else {
+        ""
+    };
+    format!(
+        "CREATE INDEX {if_not_exists}{name}ON {} USING GIN ({})",
+        index.table_name,
+        document(&columns)
+    )
 }
 
 /// `COLLATE "C"` for a text column, unless it names a collation.
@@ -543,6 +609,14 @@ impl Exec for PostgresStorage {
     fn for_update(&self) -> &'static str {
         " FOR UPDATE"
     }
+
+    fn text_match(&self, columns: &[&str], param: &str) -> String {
+        text_match(columns, param)
+    }
+
+    fn text_query(&self, text: &str) -> Option<String> {
+        text_query(text)
+    }
 }
 
 impl PostgresStorage {
@@ -602,6 +676,14 @@ impl Exec for PostgresTransaction {
 
     fn for_update(&self) -> &'static str {
         " FOR UPDATE"
+    }
+
+    fn text_match(&self, columns: &[&str], param: &str) -> String {
+        text_match(columns, param)
+    }
+
+    fn text_query(&self, text: &str) -> Option<String> {
+        text_query(text)
     }
 }
 
@@ -733,5 +815,32 @@ mod tests {
              INSERT INTO t (a) VALUES ('TEXT')"
         );
         assert!(ddl("CREATE TABLE (").is_err());
+    }
+
+    #[test]
+    fn ddl_makes_full_text_indexes_gin_indexes() {
+        let sql = "CREATE INDEX t_search ON t USING fts (name, comment) \
+                   WITH (tokenizer = 'ngram');\n\
+                   CREATE INDEX t_name ON t (name);";
+        assert_eq!(
+            ddl(sql).unwrap(),
+            "CREATE INDEX t_search ON t USING GIN (to_tsvector('simple', \
+             coalesce(name, '') || ' ' || coalesce(comment, '')));\n\
+             CREATE INDEX t_name ON t(name)"
+        );
+        assert_eq!(
+            text_match(&["t.name", "t.comment"], "$1"),
+            "to_tsvector('simple', coalesce(t.name, '') || ' ' || coalesce(t.comment, '')) \
+             @@ to_tsquery('simple', $1)"
+        );
+    }
+
+    #[test]
+    fn text_queries_are_word_prefixes() {
+        assert_eq!(
+            text_query("Sales_ORD (2024) a:b").as_deref(),
+            Some("'sales':* & 'ord':* & '2024':* & 'a':* & 'b':*")
+        );
+        assert_eq!(text_query("'-* !"), None);
     }
 }
