@@ -243,6 +243,19 @@ pre,
   height: 1em;
 }
 
+/* A text with a logo before it, such as a table's format; the text stays
+   on the line's baseline. */
+.uc-logo-text {
+  white-space: nowrap;
+}
+
+.uc-logo-text__logo {
+  width: 1.15em;
+  height: 1.15em;
+  margin-right: 6px;
+  vertical-align: -0.2em;
+}
+
 .uc-icon--catalog { color: var(--color-catalog); }
 .uc-icon--schema { color: var(--color-schema); }
 .uc-icon--table { color: var(--color-table); }

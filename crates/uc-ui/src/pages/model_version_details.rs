@@ -10,8 +10,8 @@ use super::model_details::is_pending;
 use crate::api;
 use crate::auth::use_manages;
 use crate::components::{
-    Card, DeleteButton, DeleteModal, DescriptionCard, EntityHeader, LoadError, Loaded, MetaGrid,
-    MetaRow, RawJsonCard, use_notify,
+    Card, DeleteButton, DeleteModal, DescriptionCard, EntityHeader, Label, LoadError, Loaded,
+    MetaGrid, MetaRow, RawJsonCard, use_notify,
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
@@ -67,6 +67,7 @@ fn VersionPage(catalog: String, schema: String, model: String, version: String) 
         Some(enum_name(v.status))
             .filter(|status| !status.is_empty())
             .into_iter()
+            .map(Label::from)
             .collect::<Vec<_>>()
     });
     let pending = field(info, is_pending);

@@ -8,8 +8,8 @@ use uc_common::{SecurableType, three_part_full_name};
 use crate::api;
 use crate::auth::use_manages;
 use crate::components::{
-    Card, CodeBlock, DeleteButton, DeleteModal, Description, DetailsTab, EntityHeader, Loaded,
-    MetaRow, PermissionsCard, Tabs,
+    Card, CodeBlock, DeleteButton, DeleteModal, Description, DetailsTab, EntityHeader, Label,
+    Loaded, MetaRow, PermissionsCard, Tabs,
 };
 use crate::kind::{Kind, function_language, function_returns};
 use crate::load::{Key, field, use_load};
@@ -42,6 +42,7 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
         [function_language(f), function_returns(f)]
             .into_iter()
             .flatten()
+            .map(Label::from)
             .collect::<Vec<_>>()
     });
     let parameters = field(info, |f: &FunctionInfo| {

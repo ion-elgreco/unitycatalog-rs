@@ -9,6 +9,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use super::icons::{ChevronRight, Notebook, RefreshCw};
+use super::label::{Label, LabelText};
 use crate::load::{Key, use_cache};
 use crate::util::{Route, catalog_href, schema_href};
 
@@ -87,9 +88,9 @@ pub fn Crumbs(route: Route) -> impl IntoView {
 pub fn EntityHeader(
     icon: AnyView,
     #[prop(into)] name: String,
-    /// Such as "MANAGED" and "DELTA" for a table.
+    /// Such as "MANAGED" and "DELTA", with its logo, for a table.
     #[prop(into, optional)]
-    badges: Signal<Vec<String>>,
+    badges: Signal<Vec<Label>>,
     /// What the Reload button loads again: the object, and the lists the
     /// page shows. None hides the button.
     #[prop(into, optional)]
@@ -106,7 +107,13 @@ pub fn EntityHeader(
                         badges
                             .get()
                             .into_iter()
-                            .map(|badge| view! { <span class="uc-badge uc-badge--type">{badge}</span> })
+                            .map(|badge| {
+                                view! {
+                                    <span class="uc-badge uc-badge--type">
+                                        <LabelText label=badge/>
+                                    </span>
+                                }
+                            })
                             .collect_view()
                     }}
                     {reload.map(|keys| view! { <ReloadButton keys/> })}

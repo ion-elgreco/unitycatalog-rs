@@ -15,7 +15,8 @@ use crate::components::edit_modal::Changes;
 use crate::components::icons::Plus;
 use crate::components::{
     Card, CreateObjectModal, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata,
-    Empty, EntityHeader, Loaded, MetaRow, PermissionsCard, Tabs, loaded_list, properties,
+    Empty, EntityHeader, Label, LabelText, Loaded, MetaRow, PermissionsCard, Tabs, loaded_list,
+    properties,
 };
 use crate::contents::Holder;
 use crate::kind::{Kind, schema_icon};
@@ -106,7 +107,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
         <EntityHeader
             icon=schema_icon()
             name=full_name.clone()
-            badges=vec!["Schema".to_string()]
+            badges=vec![Label::from("Schema")]
             reload
             actions=view! {
                 <EditMetadata name=schema.clone() comment properties=props save=save_metadata/>
@@ -263,7 +264,13 @@ fn Entries(kind: Kind, catalog: String, schema: String) -> impl IntoView {
                                             {entry
                                                 .cells
                                                 .into_iter()
-                                                .map(|cell| view! { <td class="uc-muted">{cell}</td> })
+                                                .map(|cell| {
+                                                    view! {
+                                                        <td class="uc-muted">
+                                                            <LabelText label=cell/>
+                                                        </td>
+                                                    }
+                                                })
                                                 .collect_view()}
                                             <td class="uc-muted">{or_dash(entry.owner)}</td>
                                             <td class="uc-muted uc-nowrap">

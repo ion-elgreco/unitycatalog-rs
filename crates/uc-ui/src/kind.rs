@@ -7,6 +7,7 @@ use uc_client::models::functions::v1::FunctionInfo;
 use uc_common::EpochMillis;
 
 use crate::api;
+use crate::components::Label;
 use crate::components::icons::{Box, Database, FunctionSquare, HardDrive, Notebook, Table};
 use crate::util::{enum_name, or_dash, schema_href};
 
@@ -27,7 +28,7 @@ pub struct Entry {
     pub created_at: EpochMillis,
     /// The values of the kind's own columns, in the order of
     /// [`Kind::columns`].
-    pub cells: Vec<String>,
+    pub cells: Vec<Label>,
 }
 
 impl Kind {
@@ -150,8 +151,8 @@ impl Kind {
                 .into_iter()
                 .map(|t| {
                     let cells = vec![
-                        or_dash(enum_name(t.table_type)),
-                        or_dash(t.data_source_format.map(enum_name)),
+                        or_dash(enum_name(t.table_type)).into(),
+                        Label::format(t.data_source_format),
                     ];
                     entry(t.name, t.comment, t.owner, t.created_at, cells)
                 })
@@ -160,7 +161,7 @@ impl Kind {
                 .await?
                 .into_iter()
                 .map(|v| {
-                    let cells = vec![or_dash(enum_name(v.volume_type))];
+                    let cells = vec![or_dash(enum_name(v.volume_type)).into()];
                     entry(v.name, v.comment, v.owner, v.created_at, cells)
                 })
                 .collect(),
@@ -169,8 +170,8 @@ impl Kind {
                 .into_iter()
                 .map(|f| {
                     let cells = vec![
-                        or_dash(function_language(&f)),
-                        or_dash(function_returns(&f)),
+                        or_dash(function_language(&f)).into(),
+                        or_dash(function_returns(&f)).into(),
                     ];
                     entry(f.name, f.comment, f.owner, f.created_at, cells)
                 })
@@ -190,7 +191,7 @@ fn entry(
     comment: Option<String>,
     owner: Option<String>,
     created_at: EpochMillis,
-    cells: Vec<String>,
+    cells: Vec<Label>,
 ) -> Entry {
     Entry {
         name,
