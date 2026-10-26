@@ -154,7 +154,7 @@ pub fn SearchResults() -> impl IntoView {
     view! {
         <div class="uc-page">
             <h1 class="uc-page__title">"Search"</h1>
-            <form class="uc-search-form" role="search" on:submit=submit>
+            <form class="uc-inline uc-search-form" role="search" on:submit=submit>
                 <div class="uc-search">
                     <Search/>
                     <input

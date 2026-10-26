@@ -1,53 +1,69 @@
 use async_trait::async_trait;
 
 use uc_api::SearchResult;
-use uc_common::{Error, Result, SecurableType};
+use uc_common::{Error, Result, SecurableType, schema_full_name, three_part_full_name};
 use uc_storage::{Row, StorageResult, Value};
 
-use crate::search::{SEARCHABLE, SearchOps};
-use crate::sql::{SqlMetastore, char_len, db_err};
+use crate::permissions::{Lineage, Node};
+use crate::search::{SearchHit, SearchOps};
+use crate::sql::rows::{CATALOG, FUNC, REGISTERED_MODEL, SCHEMA, TBL, VOLUME};
+use crate::sql::{SqlMetastore, char_len, db_err, starts_with};
 
-/// The table of each of [`SEARCHABLE`], in that order: the `kind` column
-/// of a result is its index.
-const TABLES: [&str; 6] = [
-    "catalog",
-    "schema",
-    "tbl",
-    "volume",
-    "func",
-    "registered_model",
+/// The types of the objects that a search finds, and their tables: the
+/// `kind` column of a result is its index.
+const SOURCES: [(SecurableType, &str); 6] = [
+    (SecurableType::Catalog, CATALOG.name),
+    (SecurableType::Schema, SCHEMA.name),
+    (SecurableType::Table, TBL.name),
+    (SecurableType::Volume, VOLUME.name),
+    (SecurableType::Function, FUNC.name),
+    (SecurableType::RegisteredModel, REGISTERED_MODEL.name),
 ];
 
 /// The group of a name in the order of the results, with the parameters
 /// `$2` (the text in lowercase), `$3` (its length) and `$4` (a `LIKE`
 /// pattern of it). Both engines make only ASCII letters lowercase here.
-const RANK: &str = "CASE WHEN lower(o.name) = $2 THEN 0 \
-                    WHEN substr(lower(o.name), 1, $3) = $2 THEN 1 \
-                    WHEN lower(o.name) LIKE $4 ESCAPE '\\' THEN 2 \
-                    ELSE 3 END";
+fn rank() -> String {
+    format!(
+        "CASE WHEN lower(o.name) = $2 THEN 0 WHEN {} THEN 1 \
+         WHEN lower(o.name) LIKE $4 ESCAPE '\\' THEN 2 ELSE 3 END",
+        starts_with("lower(o.name)", 2, 3)
+    )
+}
 
-/// The `SELECT` of the objects `o` of the type `SEARCHABLE[i]` that the
-/// condition `found` finds, with the names of their catalog and schema.
+/// The `SELECT` of the objects `o` of `SOURCES[i]` that the condition
+/// `found` finds, with the name, id and owner of their catalog and schema.
 fn part(i: usize, found: &str) -> String {
-    let (parents, catalog, schema) = match SEARCHABLE[i] {
-        SecurableType::Catalog => ("", "o.name", "CAST(NULL AS TEXT)"),
+    let (kind, table) = SOURCES[i];
+    // The rows of the catalog and the schema: a catalog or schema is its
+    // own.
+    let (parents, catalog, schema) = match kind {
+        SecurableType::Catalog => ("", "o", None),
         SecurableType::Schema => (
             " JOIN catalog c ON c.id_string = o.catalog_id",
-            "c.name",
-            "o.name",
+            "c",
+            Some("o"),
         ),
         _ => (
             " JOIN schema s ON s.id_string = o.schema_id \
              JOIN catalog c ON c.id_string = s.catalog_id",
-            "c.name",
-            "s.name",
+            "c",
+            Some("s"),
         ),
     };
+    let schema = |column: &str| match schema {
+        Some(schema) => format!("{schema}.{column}"),
+        None => "CAST(NULL AS TEXT)".to_string(),
+    };
     format!(
-        "SELECT {i} AS kind, o.id_string, {catalog} AS catalog_name, {schema} AS schema_name, \
-         o.name AS name, o.comment, o.owner, o.created_at, o.updated_at, {RANK} AS rank \
-         FROM {} o{parents} WHERE {found}",
-        TABLES[i]
+        "SELECT {i} AS kind, o.id_string, {catalog}.name AS catalog_name, {} AS schema_name, \
+         o.name AS name, o.comment, o.owner, o.created_at, o.updated_at, {} AS rank, \
+         {catalog}.id_string AS catalog_id, {catalog}.owner AS catalog_owner, \
+         {} AS schema_id, {} AS schema_owner FROM {table} o{parents} WHERE {found}",
+        schema("name"),
+        rank(),
+        schema("id_string"),
+        schema("owner"),
     )
 }
 
@@ -64,28 +80,51 @@ fn contains_pattern(text: &str) -> String {
     pattern
 }
 
-fn result(row: &Row) -> StorageResult<SearchResult> {
-    let kind = SEARCHABLE[usize::try_from(row.int(0)?).unwrap_or_default()];
+fn hit(row: &Row) -> StorageResult<SearchHit> {
+    let kind = SOURCES[usize::try_from(row.int(0)?).unwrap_or_default()].0;
+    let id = row.text(1)?;
     let catalog_name = row.text(2)?;
     let schema_name = row.opt_text(3)?;
     let name = row.text(4)?;
+    let owner = row.opt_text(6)?;
     let full_name = match (kind, &schema_name) {
         (SecurableType::Catalog, _) => name.clone(),
-        (SecurableType::Schema, _) | (_, None) => format!("{catalog_name}.{name}"),
-        (_, Some(schema)) => format!("{catalog_name}.{schema}.{name}"),
+        (SecurableType::Schema, _) | (_, None) => schema_full_name(&catalog_name, &name),
+        (_, Some(schema)) => three_part_full_name(&catalog_name, schema, &name),
     };
-    Ok(SearchResult {
+    let lineage = Lineage {
+        catalog: Some(Node {
+            kind: SecurableType::Catalog,
+            id: row.text(10)?,
+            owner: row.opt_text(11)?,
+        }),
+        schema: match row.opt_text(12)? {
+            Some(id) => Some(Node {
+                kind: SecurableType::Schema,
+                id,
+                owner: row.opt_text(13)?,
+            }),
+            None => None,
+        },
+        object: Some(Node {
+            kind,
+            id: id.clone(),
+            owner: owner.clone(),
+        }),
+    };
+    let result = SearchResult {
         securable_type: kind,
         full_name,
         catalog_name,
         schema_name,
         name,
         comment: row.opt_text(5)?,
-        owner: row.opt_text(6)?,
+        owner,
         created_at: row.int(7)?,
         updated_at: row.int(8)?,
-        id: row.text(1)?,
-    })
+        id,
+    };
+    Ok(SearchHit { result, lineage })
 }
 
 #[async_trait]
@@ -96,8 +135,8 @@ impl SearchOps for SqlMetastore {
         kind: Option<SecurableType>,
         offset: i64,
         limit: i64,
-    ) -> Result<Vec<SearchResult>> {
-        if let Some(kind) = kind.filter(|k| !SEARCHABLE.contains(k)) {
+    ) -> Result<Vec<SearchHit>> {
+        if let Some(kind) = kind.filter(|k| !SOURCES.iter().any(|(t, _)| t == k)) {
             return Err(Error::invalid_argument(format!(
                 "Search cannot find objects of the type {kind}"
             )));
@@ -107,8 +146,8 @@ impl SearchOps for SqlMetastore {
             return Ok(Vec::new());
         };
         let found = self.db.text_match(&["o.name", "o.comment"], "$1");
-        let parts: Vec<String> = (0..SEARCHABLE.len())
-            .filter(|&i| kind.is_none_or(|k| k == SEARCHABLE[i]))
+        let parts: Vec<String> = (0..SOURCES.len())
+            .filter(|&i| kind.is_none_or(|k| k == SOURCES[i].0))
             .map(|i| part(i, &found))
             .collect();
         let sql = format!(
@@ -130,7 +169,7 @@ impl SearchOps for SqlMetastore {
             .await
             .map_err(db_err("search"))?;
         rows.iter()
-            .map(|row| result(row).map_err(db_err("search")))
+            .map(|row| hit(row).map_err(db_err("search")))
             .collect()
     }
 }

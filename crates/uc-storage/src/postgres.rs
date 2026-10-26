@@ -41,10 +41,10 @@ const NOW_MILLIS: &str = "CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS B
 /// configuration finds them: lowercase, not stemmed. A full-text index is a
 /// GIN index of this expression, and [`text_match`] must write the same
 /// one, so that the planner uses the index.
-fn document(columns: &[&str]) -> String {
+fn document(columns: &[impl AsRef<str>]) -> String {
     let text: Vec<String> = columns
         .iter()
-        .map(|c| format!("coalesce({c}, '')"))
+        .map(|c| format!("coalesce({}, '')", c.as_ref()))
         .collect();
     format!("to_tsvector('simple', {})", text.join(" || ' ' || "))
 }
@@ -274,7 +274,6 @@ fn full_text_index(index: &CreateIndex) -> String {
         .iter()
         .map(|c| c.column.expr.to_string())
         .collect();
-    let columns: Vec<&str> = columns.iter().map(String::as_str).collect();
     let name = index
         .name
         .as_ref()
@@ -609,14 +608,6 @@ impl Exec for PostgresStorage {
     fn for_update(&self) -> &'static str {
         " FOR UPDATE"
     }
-
-    fn text_match(&self, columns: &[&str], param: &str) -> String {
-        text_match(columns, param)
-    }
-
-    fn text_query(&self, text: &str) -> Option<String> {
-        text_query(text)
-    }
 }
 
 impl PostgresStorage {
@@ -638,6 +629,14 @@ impl Storage for PostgresStorage {
     async fn begin_snapshot(&self) -> StorageResult<Box<dyn Transaction>> {
         self.begin_with("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
             .await
+    }
+
+    fn text_match(&self, columns: &[&str], param: &str) -> String {
+        text_match(columns, param)
+    }
+
+    fn text_query(&self, text: &str) -> Option<String> {
+        text_query(text)
     }
 }
 
@@ -676,14 +675,6 @@ impl Exec for PostgresTransaction {
 
     fn for_update(&self) -> &'static str {
         " FOR UPDATE"
-    }
-
-    fn text_match(&self, columns: &[&str], param: &str) -> String {
-        text_match(columns, param)
-    }
-
-    fn text_query(&self, text: &str) -> Option<String> {
-        text_query(text)
     }
 }
 

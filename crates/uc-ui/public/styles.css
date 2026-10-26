@@ -383,21 +383,12 @@ pre,
 .uc-header__search .uc-input:focus::placeholder { color: var(--placeholder); }
 .uc-header__search .uc-search:focus-within .uc-icon { color: var(--muted-foreground); }
 
-.uc-search__panel {
-  position: absolute;
-  top: calc(100% + 6px);
+/* A `uc-menu__panel` as wide as the box. */
+.uc-header__search .uc-search__panel {
   left: 0;
-  right: 0;
-  z-index: 50;
   display: flex;
   flex-direction: column;
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--popover);
-  color: var(--popover-foreground);
-  box-shadow: var(--shadow-md);
-  animation: uc-pop 0.15s ease-out;
+  min-width: 0;
 }
 
 .uc-search__note {
@@ -1426,12 +1417,6 @@ pre,
 .uc-search input { padding-left: 36px; }
 
 /* The search page's field and its button. */
-.uc-search-form {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .uc-search-form .uc-search { max-width: 520px; }
 
 /* A secret, hidden until shown, with its copy button. */

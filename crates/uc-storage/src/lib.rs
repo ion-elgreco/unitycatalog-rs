@@ -220,17 +220,6 @@ pub trait Exec: Send + Sync {
     /// Appended to a `SELECT` in a transaction: lock the rows it reads
     /// until the transaction ends.
     fn for_update(&self) -> &'static str;
-
-    /// An SQL condition: `columns` hold the words of a [`Exec::text_query`],
-    /// bound to the parameter `param` (such as `$1`). The full-text index
-    /// of those columns, in that order, answers it; the DDL makes it with
-    /// `CREATE INDEX … USING fts (columns)`. Turso finds a word anywhere in
-    /// a word of the text, PostgreSQL at the start of one.
-    fn text_match(&self, columns: &[&str], param: &str) -> String;
-
-    /// The parameter of [`Exec::text_match`] that matches all the words of
-    /// `text`; `None` when `text` has no word that the index can find.
-    fn text_query(&self, text: &str) -> Option<String>;
 }
 
 /// A database the catalog runs on.
@@ -244,6 +233,18 @@ pub trait Storage: Exec {
     async fn begin_snapshot(&self) -> StorageResult<Box<dyn Transaction>> {
         self.begin().await
     }
+
+    /// An SQL condition: `columns` hold the words of a
+    /// [`Storage::text_query`], bound to the parameter `param` (such as
+    /// `$1`). The full-text index of those columns, in that order, answers
+    /// it; the DDL makes it with `CREATE INDEX … USING fts (columns)`. Turso
+    /// finds a word anywhere in a word of the text, PostgreSQL at the start
+    /// of one.
+    fn text_match(&self, columns: &[&str], param: &str) -> String;
+
+    /// The parameter of [`Storage::text_match`] that matches all the words
+    /// of `text`; `None` when `text` has no word that the index can find.
+    fn text_query(&self, text: &str) -> Option<String>;
 }
 
 /// A transaction. Dropping it without [`Transaction::commit`] rolls it back.

@@ -9,12 +9,14 @@ use leptos::ev;
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use leptos_router::hooks::{use_location, use_navigate};
+use leptos_router::hooks::use_navigate;
 use uc_client::models::search::v1::SearchResult;
 use wasm_bindgen::JsCast;
 
 use crate::api;
+use crate::components::dropdown::close_on_navigate;
 use crate::components::icons::Search;
+use crate::load::Load;
 use crate::search::{SearchType, page_href, result_href, result_parent, search, searchable};
 
 /// The results that the box shows.
@@ -22,13 +24,6 @@ const SHOWN: i32 = 8;
 
 /// The pause in the typing after which the box searches.
 const PAUSE: Duration = Duration::from_millis(200);
-
-#[derive(Clone)]
-enum Answer {
-    Waiting,
-    Ready(Vec<SearchResult>),
-    Failed(String),
-}
 
 /// Whether a key press in `target` types text: in a field, `/` is a
 /// character.
@@ -47,7 +42,7 @@ fn in_field(target: Option<web_sys::EventTarget>) -> bool {
 pub fn SearchBox() -> impl IntoView {
     let text = RwSignal::new(String::new());
     let open = RwSignal::new(false);
-    let answer = RwSignal::new(Answer::Waiting);
+    let answer: RwSignal<Load<Vec<SearchResult>>> = RwSignal::new(Load::Loading);
     // The marked option: a result, or "See all results" after them.
     let active: RwSignal<Option<usize>> = RwSignal::new(None);
     let input = NodeRef::<html::Input>::new();
@@ -56,18 +51,8 @@ pub fn SearchBox() -> impl IntoView {
     // Kept, so that the closures that use it are `Copy`.
     let navigate = StoredValue::new_local(use_navigate());
 
-    // A change of page closes the results. The same change can remove the
-    // box, and `open` with it: a read of a removed signal panics.
-    let pathname = use_location().pathname;
-    Effect::new(move |previous: Option<String>| {
-        let path = pathname.get();
-        if previous.is_some_and(|previous| previous != path)
-            && open.try_get_untracked() == Some(true)
-        {
-            open.set(false);
-        }
-        path
-    });
+    // A change of page closes the results.
+    close_on_navigate(open);
 
     let slash = window_event_listener(ev::keydown, move |e| {
         if e.key() != "/" || e.ctrl_key() || e.meta_key() || e.alt_key() || in_field(e.target()) {
@@ -87,7 +72,7 @@ pub fn SearchBox() -> impl IntoView {
         text.set(value.clone());
         if !searchable(&value) {
             open.set(false);
-            answer.set(Answer::Waiting);
+            answer.set(Load::Loading);
             return;
         }
         open.set(true);
@@ -102,8 +87,8 @@ pub fn SearchBox() -> impl IntoView {
                         return;
                     }
                     answer.set(match found {
-                        Ok(found) => Answer::Ready(found.results),
-                        Err(e) => Answer::Failed(api::failure(&e, "Failed to search")),
+                        Ok(found) => Load::Ready(found.results),
+                        Err(e) => Load::Failed(api::failure(&e, "Failed to search")),
                     });
                 });
             },
@@ -111,21 +96,12 @@ pub fn SearchBox() -> impl IntoView {
         );
     };
 
-    let results = move || match answer.get() {
-        Answer::Ready(results) => results,
-        _ => Vec::new(),
-    };
-    let count = move || {
-        answer.with(|a| match a {
-            Answer::Ready(results) => results.len(),
-            _ => 0,
-        })
-    };
+    let count = move || answer.with(|a| a.ready().map_or(0, Vec::len));
     // Close the results and empty the box, after a choice.
     let done = move || {
         searches.update_value(|n| *n += 1);
         text.set(String::new());
-        answer.set(Answer::Waiting);
+        answer.set(Load::Loading);
         open.set(false);
         active.set(None);
         if let Some(input) = input.get_untracked() {
@@ -146,12 +122,8 @@ pub fn SearchBox() -> impl IntoView {
         go(href);
     };
     let keys = move |e: ev::KeyboardEvent| {
-        let results = answer.with_untracked(|a| match a {
-            Answer::Ready(results) => results.clone(),
-            _ => Vec::new(),
-        });
         // The results, then "See all results".
-        let last = results.len();
+        let last = answer.with_untracked(|a| a.ready().map_or(0, Vec::len));
         match e.key().as_str() {
             "ArrowDown" if open.get_untracked() => {
                 e.prevent_default();
@@ -164,10 +136,13 @@ pub fn SearchBox() -> impl IntoView {
             "Enter" => {
                 e.prevent_default();
                 let value = text.get_untracked();
-                let href = match active.get_untracked() {
-                    Some(i) if i < last => result_href(&results[i]),
-                    _ if searchable(&value) => page_href(&value, SearchType::All),
-                    _ => return,
+                let marked = active.get_untracked().and_then(|i| {
+                    answer.with_untracked(|a| a.ready().and_then(|r| r.get(i)).map(result_href))
+                });
+                let href = match marked {
+                    Some(href) => href,
+                    None if searchable(&value) => page_href(&value, SearchType::All),
+                    None => return,
                 };
                 go(&href);
             }
@@ -215,28 +190,32 @@ pub fn SearchBox() -> impl IntoView {
                 // the click on a link still counts.
                 <div
                     id="uc-search-results"
-                    class="uc-search__panel"
+                    class="uc-menu__panel uc-search__panel"
                     role="listbox"
                     aria-label="Search results"
                     on:mousedown=|e| e.prevent_default()
                 >
-                    {move || match answer.get() {
-                        Answer::Waiting => {
-                            view! { <p class="uc-search__note uc-muted">"Searching…"</p> }
-                                .into_any()
-                        }
-                        Answer::Failed(message) => {
-                            view! { <p class="uc-search__note uc-error">{message}</p> }
-                                .into_any()
-                        }
-                        Answer::Ready(list) if list.is_empty() => {
-                            view! { <p class="uc-search__note uc-muted">"No results."</p> }
-                                .into_any()
-                        }
-                        Answer::Ready(_) => ().into_any(),
+                    {move || {
+                        answer.with(|a| match a {
+                            Load::Loading => {
+                                view! { <p class="uc-search__note uc-muted">"Searching…"</p> }
+                                    .into_any()
+                            }
+                            Load::Failed(message) => {
+                                let message = message.clone();
+                                view! { <p class="uc-search__note uc-error">{message}</p> }
+                                    .into_any()
+                            }
+                            Load::Ready(list) if list.is_empty() => {
+                                view! { <p class="uc-search__note uc-muted">"No results."</p> }
+                                    .into_any()
+                            }
+                            Load::Ready(_) => ().into_any(),
+                        })
                     }}
                     {move || {
-                        results()
+                        answer
+                            .with(|a| a.ready().cloned().unwrap_or_default())
                             .into_iter()
                             .enumerate()
                             .map(|(i, result)| {

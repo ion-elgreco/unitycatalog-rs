@@ -44,7 +44,7 @@ pub use model::ModelOps;
 pub use permissions::{Lineage, Node, PathOwner, PermissionOps};
 pub use schema::{PropertyChanges, SchemaOps};
 pub use scim::{ScimOps, SeedReport, SeedUser};
-pub use search::{SEARCHABLE, SearchOps};
+pub use search::{SearchHit, SearchOps};
 pub use secrets::{CachedStore, DatabaseStore, OpenError, SecretRef, SecretStore, SecretValue};
 pub use sharing::SharingOps;
 pub use sql::SqlMetastore;

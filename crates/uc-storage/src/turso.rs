@@ -211,14 +211,6 @@ impl Exec for TursoStorage {
     fn for_update(&self) -> &'static str {
         ""
     }
-
-    fn text_match(&self, columns: &[&str], param: &str) -> String {
-        text_match(columns, param)
-    }
-
-    fn text_query(&self, text: &str) -> Option<String> {
-        text_query(text)
-    }
 }
 
 #[async_trait]
@@ -232,6 +224,14 @@ impl Storage for TursoStorage {
         Ok(Box::new(TursoTransaction {
             writer: Some(writer),
         }))
+    }
+
+    fn text_match(&self, columns: &[&str], param: &str) -> String {
+        text_match(columns, param)
+    }
+
+    fn text_query(&self, text: &str) -> Option<String> {
+        text_query(text)
     }
 }
 
@@ -269,14 +269,6 @@ impl Exec for TursoTransaction {
 
     fn for_update(&self) -> &'static str {
         ""
-    }
-
-    fn text_match(&self, columns: &[&str], param: &str) -> String {
-        text_match(columns, param)
-    }
-
-    fn text_query(&self, text: &str) -> Option<String> {
-        text_query(text)
     }
 }
 

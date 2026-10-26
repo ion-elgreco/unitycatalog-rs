@@ -13,7 +13,7 @@ use rstest::rstest;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use common::{assert_error, assert_status, json_body, req, req_bearer, req_json, seeded};
+use common::{assert_error, assert_status, json_body, req, req_json, seeded, signed};
 
 async fn call(app: &Router, request: axum::http::Request<axum::body::Body>) -> Value {
     let resp = app.clone().oneshot(request).await.unwrap();
@@ -237,23 +237,6 @@ async fn follows_writes(#[future(awt)] seeded: Router) {
     assert_eq!((found, next), (vec![], None));
 }
 
-/// A request signed in with `token`.
-fn signed(
-    method: Method,
-    path: &str,
-    body: Option<Value>,
-    token: &str,
-) -> axum::http::Request<axum::body::Body> {
-    let mut request = match body {
-        Some(body) => req_json(method, path, body),
-        None => req_bearer(method, path, token),
-    };
-    request
-        .headers_mut()
-        .insert("authorization", format!("Bearer {token}").parse().unwrap());
-    request
-}
-
 /// Each result needs the right of its type's `get`: hidden objects do not
 /// fill pages.
 #[tokio::test]
@@ -358,5 +341,5 @@ async fn shows_only_what_the_caller_may_see() {
         let Some(token) = next else { break };
         query = format!("query=orders&max_results=1&page_token={token}");
     }
-    assert_eq!(pages, [vec!["c.s.orders"], vec!["c"], vec!["c.s"], vec![]]);
+    assert_eq!(pages, [["c.s.orders"], ["c"], ["c.s"]]);
 }

@@ -22,18 +22,7 @@ pub fn Dropdown(
 ) -> impl IntoView {
     let open = RwSignal::new(false);
     let trigger = NodeRef::<html::Button>::new();
-    // A change of page closes the menu. The same change can remove this
-    // dropdown, and `open` with it: a read of a removed signal panics.
-    let pathname = use_location().pathname;
-    Effect::new(move |previous: Option<String>| {
-        let path = pathname.get();
-        if previous.is_some_and(|previous| previous != path)
-            && open.try_get_untracked() == Some(true)
-        {
-            open.set(false);
-        }
-        path
-    });
+    close_on_navigate(open);
     view! {
         <div class="uc-menu">
             <button
@@ -55,6 +44,22 @@ pub fn Dropdown(
             </Show>
         </div>
     }
+}
+
+/// A change of page sets `open` to false. The same change can remove the
+/// view that owns `open`, and `open` with it: a read of a removed signal
+/// panics.
+pub fn close_on_navigate(open: RwSignal<bool>) {
+    let pathname = use_location().pathname;
+    Effect::new(move |previous: Option<String>| {
+        let path = pathname.get();
+        if previous.is_some_and(|previous| previous != path)
+            && open.try_get_untracked() == Some(true)
+        {
+            open.set(false);
+        }
+        path
+    });
 }
 
 /// The open menu, below the button and to its right edge, over a backdrop

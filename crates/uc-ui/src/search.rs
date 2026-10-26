@@ -5,6 +5,7 @@
 use leptos::prelude::*;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use uc_client::models::search::v1::{SearchObjectsResponse, SearchResult};
+use uc_common::{SecurableType, schema_full_name};
 
 use crate::api;
 use crate::kind::{Kind, catalog_icon, schema_icon};
@@ -39,15 +40,16 @@ impl SearchType {
     /// Its `securable_type` in the API, and its `?type=` on the search
     /// page; none for all.
     pub fn param(self) -> Option<&'static str> {
-        match self {
-            SearchType::All => None,
-            SearchType::Catalog => Some("catalog"),
-            SearchType::Schema => Some("schema"),
-            SearchType::Object(Kind::Tables) => Some("table"),
-            SearchType::Object(Kind::Volumes) => Some("volume"),
-            SearchType::Object(Kind::Functions) => Some("function"),
-            SearchType::Object(Kind::Models) => Some("registered_model"),
-        }
+        let securable = match self {
+            SearchType::All => return None,
+            SearchType::Catalog => SecurableType::Catalog,
+            SearchType::Schema => SecurableType::Schema,
+            SearchType::Object(Kind::Tables) => SecurableType::Table,
+            SearchType::Object(Kind::Volumes) => SecurableType::Volume,
+            SearchType::Object(Kind::Functions) => SecurableType::Function,
+            SearchType::Object(Kind::Models) => SecurableType::RegisteredModel,
+        };
+        Some(securable.as_str())
     }
 
     /// The type that `param` names; all for another value.
@@ -114,10 +116,9 @@ pub fn result_parent(result: &SearchResult) -> Option<String> {
     match SearchType::of(result) {
         SearchType::All | SearchType::Catalog => None,
         SearchType::Schema => Some(result.catalog_name.clone()),
-        SearchType::Object(_) => Some(format!(
-            "{}.{}",
-            result.catalog_name,
-            result.schema_name.as_deref().unwrap_or_default()
+        SearchType::Object(_) => Some(schema_full_name(
+            &result.catalog_name,
+            result.schema_name.as_deref().unwrap_or_default(),
         )),
     }
 }
