@@ -495,31 +495,30 @@ pre,
 .uc-theme svg { width: 16px; height: 16px; }
 
 /* The page below the header: the path, then the sidebar card and the
-   page beside it, on the gray background. It scrolls as one. */
+   page beside it, on the gray background. The window does not scroll:
+   the sidebar fills the height and only the page beside it scrolls. */
 .uc-body {
   display: flex;
   flex: 1;
   min-height: 0;
   flex-direction: column;
   gap: 18px;
-  padding: 22px 32px 48px;
-  overflow: auto;
+  padding: 22px 32px 0;
+  overflow: hidden;
 }
 
 .uc-columns {
   display: flex;
   flex: 1;
-  align-items: flex-start;
+  min-height: 0;
   gap: 24px;
 }
 
 .uc-sidebar {
-  position: sticky;
-  top: 0;
   display: flex;
   flex: 0 0 256px;
   width: 256px;
-  max-height: calc(100vh - 56px - 44px);
+  margin-bottom: 24px;
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -600,13 +599,28 @@ pre,
 .uc-sidebar__link.is-active { font-weight: 500; }
 .uc-sidebar__link svg { width: 16px; height: 16px; }
 
+/* The scrollbar sits at the window's edge, and the 4px on the top and the
+   left keep the cards' shadows and focus rings inside the scroll box. The
+   page starts level with the sidebar's top. */
 .uc-main {
   display: flex;
   flex: 1;
   min-width: 0;
   flex-direction: column;
   gap: 20px;
+  margin: -4px -32px 0 -4px;
+  padding: 4px 32px 48px 4px;
+  overflow-y: auto;
 }
+
+/* Scrolled, the top 4px turn into a border, where a scroll box draws no
+   content: the page is cut level with the sidebar's top and does not move. */
+.uc-main.is-scrolled {
+  border-top: 4px solid transparent;
+  padding-top: 0;
+}
+
+.uc-main > * { flex-shrink: 0; }
 
 /* ---------- The catalog tree ---------- */
 
