@@ -68,6 +68,9 @@ fn Layout() -> impl IntoView {
         })
     };
     let nav_open = RwSignal::new(true);
+    // Scrolled, the page is cut level with the sidebar's top; at the top,
+    // the focus rings of its first row show above that line.
+    let scrolled = RwSignal::new(false);
     let toggle_label = move || {
         if nav_open.get() {
             "Collapse navigation"
@@ -161,7 +164,16 @@ fn Layout() -> impl IntoView {
                             }}
                         </Show>
                     </aside>
-                    <main class="uc-main">
+                    <main
+                        class="uc-main"
+                        class:is-scrolled=move || scrolled.get()
+                        on:scroll=move |e| {
+                            let now = event_target::<web_sys::Element>(&e).scroll_top() > 0;
+                            if scrolled.get_untracked() != now {
+                                scrolled.set(now);
+                            }
+                        }
+                    >
                         <Outlet/>
                     </main>
                 </div>
