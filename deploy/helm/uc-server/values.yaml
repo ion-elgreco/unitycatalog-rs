@@ -207,9 +207,11 @@ server:
     enableStartupProbe: true
     startupProbe: {}
 
-  jwtKeypairSecret:
-    # -- An existing secret with `private_key.pem`, the RSA key that signs
-    # the server's tokens; by default the chart makes one at install.
+  keysSecret:
+    # -- An existing secret with the server's keys: `private_key.pem`, the
+    # RSA key that signs its tokens, and `secrets_key.pem`, the P-256 key
+    # that seals the secrets of storage credentials. By default the chart
+    # makes one at install.
     name: ""
     create: true
 

@@ -55,8 +55,8 @@ The chart sets the server's settings as `UC_*` environment variables. For the
 | `server.deployment.enableStartupProbe`, `startupProbe` | `true`, `{}` | The startup probe, and its spec instead of the default. |
 | `server.deployment.enableLivenessProbe`, `livenessProbe` | `true`, `{}` | The liveness probe, the same way. |
 | `server.deployment.enableReadinessProbe`, `readinessProbe` | `true`, `{}` | The readiness probe, the same way. |
-| `server.jwtKeypairSecret.name` | `""` | The Secret of the signing key; default `<release>-uc-server-server-jwt-key`. |
-| `server.jwtKeypairSecret.create` | `true` | Make the Secret at install when it does not exist. |
+| `server.keysSecret.name` | `""` | The Secret of the server's keys, `private_key.pem` (`auth.signing_key_file`) and `secrets_key.pem` (`secrets.key_file`); default `<release>-uc-server-server-keys`. |
+| `server.keysSecret.create` | `true` | Make the Secret at install when it does not exist. |
 | `server.logLevel` | `info` | `RUST_LOG`. |
 | `auth.enabled` | `false` | Sign-in and privilege checks. |
 | `auth.users` | `[]` | Users that the server makes at start when they are missing: `email`, `name`, `externalId`, `privileges` (on the metastore). |

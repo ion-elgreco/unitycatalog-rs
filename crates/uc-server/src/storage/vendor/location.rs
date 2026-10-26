@@ -172,7 +172,7 @@ fn azure_identity(name: &str, entry: &settings::Location) -> Result<azure::Ident
             Ok(azure::Identity::ServicePrincipal {
                 tenant_id: tenant_id.clone(),
                 client_id: client_id.clone(),
-                client_secret: client_secret.clone(),
+                client_secret: client_secret.as_str().into(),
             })
         }
         ((None, None, None), Some(id)) => Ok(azure::Identity::Managed(id.clone())),
@@ -204,7 +204,7 @@ fn gcp_identity(name: &str, entry: &settings::Location) -> Result<gcp::Identity,
             };
             let json = std::fs::read_to_string(file).map_err(|e| failed(e.to_string()))?;
             serde_json::from_str::<serde_json::Value>(&json).map_err(|e| failed(e.to_string()))?;
-            Ok(gcp::Identity::Key(json))
+            Ok(gcp::Identity::Key(json.into()))
         }
         (None, None) => Err(format!(
             "[locations.{name}] needs gcp_service_account or gcp_service_account_key"

@@ -27,8 +27,27 @@ The server signs its tokens with an RSA key. `uc-server keygen` makes one:
 ```
 
 Without `signing_key_file`, the server makes a new key in memory at each start: its tokens end
-when it stops, and replicas refuse each other's tokens. A new key ends the tokens of the old one,
-but not personal access tokens. Keep the key secret.
+when it stops, and replicas refuse each other's tokens. Keep the key secret.
+
+### A new signing key
+
+The file can hold several keys, newest first: the first key signs, and each key checks the tokens
+that it signed. Personal access tokens do not use the key. To change the key and keep the
+sign-ins:
+
+1. Put a new key first in the file, and restart the server:
+
+    ```bash
+    (umask 077 && { uc-server keygen; cat signing-key.pem; } > new.pem) && mv new.pem signing-key.pem
+    ```
+
+2. After `access_token_timeout` (default `24h`), the tokens of the old key have expired. Remove
+   the old key from the file, and restart the server again.
+
+A server refuses the tokens of a key that is not in its file. Thus, give servers that share
+sign-ins the new key in two steps: first put it last in the file and restart each server, then
+move it first and restart each server again. To end all sign-ins at once, replace the file with
+only a new key.
 
 ## The first users
 

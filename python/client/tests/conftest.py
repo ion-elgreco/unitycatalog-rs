@@ -2,8 +2,9 @@
 
 The server is `UC_TEST_SERVER_BIN`, or the debug build of this repository,
 which cargo builds first. It gets no settings but its own: an empty `uc.toml`
-and the `UC_*` variables here, with a signing key of `uc-server keygen`, so
-that `uc-server token` gives the admin's token.
+and the `UC_*` variables here, with a signing key and a secrets key of
+`uc-server keygen`, so that `uc-server token` gives the admin's token and
+credentials can keep secrets.
 
 With `UC_TEST_SERVER_URL` the tests use that server instead, such as the
 upstream Java server (`just test-upstream`). Then only the tests marked
@@ -126,6 +127,8 @@ def _running_server(root: Path, settings: dict[str, str]) -> Iterator[Server]:
     binary = _server_binary()
     key = root / "signing-key.pem"
     key.write_text(_output([binary, "keygen"]))
+    secrets_key = root / "secrets-key.pem"
+    secrets_key.write_text(_output([binary, "keygen", "--secrets"]))
     port = _free_port()
     env = {
         **os.environ,
@@ -135,6 +138,7 @@ def _running_server(root: Path, settings: dict[str, str]) -> Iterator[Server]:
         "UC_DB_URL": "memory",
         "UC_LOG_DIR": str(root / "logs"),
         "UC_AUTH_SIGNING_KEY_FILE": str(key),
+        "UC_SECRETS_KEY_FILE": str(secrets_key),
         **settings,
     }
     address = f"http://127.0.0.1:{port}"

@@ -1,8 +1,10 @@
 //! The metastore's settings.
 
-use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
 
 use uc_storage::{DatabaseConfig, PostgresConfig};
+
+use crate::{DatabaseStore, SecretStore};
 
 /// The metastore's settings: where the catalog lives, and the server
 /// settings it applies.
@@ -13,40 +15,43 @@ pub struct MetastoreConfig {
     pub storage: ManagedStorageConfig,
     /// Managed-table server settings.
     pub tables: TableSettings,
+    /// Where the secrets of credentials go (`[secrets]`).
+    pub secrets: Arc<dyn SecretStore>,
 }
 
 impl MetastoreConfig {
-    pub fn new(database: DatabaseConfig) -> Self {
+    pub fn new(database: DatabaseConfig, secrets: Arc<dyn SecretStore>) -> Self {
         Self {
             database,
             storage: ManagedStorageConfig::default(),
             tables: TableSettings::default(),
+            secrets,
         }
-    }
-
-    /// Turso in memory.
-    pub fn in_memory() -> Self {
-        Self::new(DatabaseConfig::Memory)
-    }
-
-    /// Turso in the file `path`.
-    pub fn file(path: impl Into<PathBuf>) -> Self {
-        Self::new(DatabaseConfig::File(path.into()))
     }
 
     /// For tests: Turso in memory; or, when `UC_TEST_POSTGRES_URL` names a
     /// PostgreSQL database, a new schema in it, so that the whole test
-    /// suite runs on either engine.
+    /// suite runs on either engine. With a database store whose key the
+    /// tests of one process share.
     pub fn for_tests() -> Self {
-        match std::env::var("UC_TEST_POSTGRES_URL") {
+        static STORE: OnceLock<Arc<DatabaseStore>> = OnceLock::new();
+        let store = STORE
+            .get_or_init(|| Arc::new(DatabaseStore::generate().expect("a secrets key for tests")));
+        let database = match std::env::var("UC_TEST_POSTGRES_URL") {
             Ok(url) if !url.trim().is_empty() => {
                 let mut pg = PostgresConfig::new(url.trim());
                 pg.schema = Some(format!("uc_test_{}", uuid::Uuid::new_v4().simple()));
                 pg.pool_size = Some(4);
-                Self::new(DatabaseConfig::Postgres(pg))
+                DatabaseConfig::Postgres(pg)
             }
-            _ => Self::in_memory(),
-        }
+            _ => DatabaseConfig::Memory,
+        };
+        Self::new(database, store.clone())
+    }
+
+    pub fn with_secrets(mut self, secrets: Arc<dyn SecretStore>) -> Self {
+        self.secrets = secrets;
+        self
     }
 
     pub fn with_storage(mut self, storage: ManagedStorageConfig) -> Self {

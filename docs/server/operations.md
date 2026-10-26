@@ -34,8 +34,10 @@ uc admin backup > snapshot.json
 uc admin restore --path snapshot.json
 ```
 
-A restore replaces the whole catalog. The snapshot has credentials and the hashes of tokens: keep
-it secret. It has no data of your tables and volumes.
+A restore replaces the whole catalog. The snapshot has credentials, with their secrets sealed
+([The secrets key](database.md#the-secrets-key)), and the hashes of tokens: keep it secret. The
+server that restores it needs the secrets key that sealed them. The snapshot has no data of your
+tables and volumes.
 
 The audit log, backups and restores need a signed-in admin, also when sign-in is off: such as the
 `admin` user of [`uc-server token`](auth.md#the-first-users).

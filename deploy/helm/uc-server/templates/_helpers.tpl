@@ -44,8 +44,8 @@ app.kubernetes.io/component: server
 {{- end }}
 {{- end }}
 
-{{- define "unitycatalog.server.jwtKeypairSecretName" -}}
-{{- default (printf "%s-jwt-key" (include "unitycatalog.server.fullname" .)) .Values.server.jwtKeypairSecret.name }}
+{{- define "unitycatalog.server.keysSecretName" -}}
+{{- default (printf "%s-keys" (include "unitycatalog.server.fullname" .)) .Values.server.keysSecret.name }}
 {{- end }}
 
 {{/*

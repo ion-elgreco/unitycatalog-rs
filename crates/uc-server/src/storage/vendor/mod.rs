@@ -17,7 +17,7 @@ use async_trait::async_trait;
 
 use uc_api::{AwsCredentials, CredentialInfo, TemporaryCredentials};
 use uc_common::{Error, NormalizedUrl, Result, UriScheme, now_epoch_millis};
-use uc_metastore::DynMetastore;
+use uc_metastore::{DynMetastore, SecretValue};
 
 use uc_common::settings::{self, Settings};
 
@@ -70,7 +70,7 @@ pub struct CredentialContext {
 #[derive(Debug, Clone)]
 pub struct StorageCredential {
     pub info: CredentialInfo,
-    pub secret: Option<String>,
+    pub secret: Option<SecretValue>,
 }
 
 impl CredentialContext {
@@ -198,6 +198,8 @@ pub struct StorageConfig {
     pub gcp_endpoint: Option<String>,
     /// `[locations.<name>]`.
     pub locations: Vec<Location>,
+    /// `secrets.cache_*`: the sign-ins of Azure identities kept in memory.
+    pub sign_in_cache: Option<crate::storage::secrets::CacheConfig>,
 }
 
 impl StorageConfig {
@@ -240,6 +242,7 @@ impl StorageConfig {
             gcp_key_file: identity.gcp.json_key_file.clone(),
             gcp_endpoint: endpoint(&identity.gcp.endpoint, "identity.gcp.endpoint")?,
             locations,
+            sign_in_cache: None,
         })
     }
 }
@@ -261,7 +264,7 @@ fn azure_identity(
             Ok(Some(azure::Identity::ServicePrincipal {
                 tenant_id: tenant_id.clone(),
                 client_id: client_id.clone(),
-                client_secret: client_secret.clone(),
+                client_secret: client_secret.as_str().into(),
             }))
         }
         (_, Some(_)) => Err(
@@ -285,7 +288,7 @@ impl CloudVendor {
         let gcp = gcp::GcpVendor::new(config.gcp_key_file);
         Self {
             aws: aws::AwsVendor::new(config.aws, config.s3_store),
-            azure: azure::AzureVendor::new(config.azure),
+            azure: azure::AzureVendor::new(config.azure, config.sign_in_cache),
             gcp: match config.gcp_endpoint {
                 Some(url) => gcp.with_endpoints(Some(format!("{url}/v1/token")), None, Some(url)),
                 None => gcp,

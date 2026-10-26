@@ -53,7 +53,10 @@ server:
 
 - In the identity provider, allow the redirect URI `https://uc.example.com/auth/callback`.
 - For an auth proxy instead of OpenID Connect, set `auth.forward`.
-- At install, the chart makes a Secret with the key that signs the server's tokens, and keeps it.
+- At install, the chart makes a Secret with the server's keys, and keeps it: `private_key.pem`
+  signs its tokens, and `secrets_key.pem` seals the secrets of credentials. To change a key, see
+  [A new signing key](auth.md#a-new-signing-key) and
+  [A new secrets key](database.md#a-new-secrets-key): replicas need the two steps.
 - Before an admin can sign in, get a token of the server's `admin` user:
   `kubectl -n uc exec deploy/uc-uc-server-server -- uc-server token`.
 

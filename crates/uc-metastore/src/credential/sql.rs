@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 use uuid::Uuid;
 
 use uc_api::{
@@ -13,12 +14,12 @@ use uc_common::{
     require_non_empty, validate_sql_object_name,
 };
 
-use crate::CredentialOps;
 use crate::sql::rows::CREDENTIAL;
 use crate::sql::{
-    SqlMetastore, create_err_as, db_err, enum_str, insert, parse_enum, select_one, touch_audit,
-    update,
+    SqlMetastore, create_err_as, db_err, enum_str, insert, parse_enum, select, select_one,
+    touch_audit, update,
 };
+use crate::{CredentialOps, RefreshReport, SecretRef, SecretValue};
 use uc_storage::Value;
 
 /// A storage credential row, keyed by its UUID. External locations link to
@@ -43,7 +44,9 @@ pub(crate) struct CredentialRow {
     pub(crate) azure_directory_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) azure_application_id: Option<String>,
-    /// Only credential vending reads it: no answer of the API holds it.
+    /// The reference of the secret store ([`crate::secrets`]): for the
+    /// database store, the sealed secret. Only credential vending reads the
+    /// secret, and no answer of the API holds it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) azure_client_secret: Option<String>,
     pub(crate) azure_managed_identity: bool,
@@ -56,7 +59,7 @@ pub(crate) struct CredentialRow {
     pub(crate) gcp_key_email: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) gcp_key_id: Option<String>,
-    /// Only credential vending reads it: no answer of the API holds it.
+    /// The reference of the secret store, as `azure_client_secret`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) gcp_json_key: Option<String>,
     pub(crate) created_at: i64,
@@ -212,10 +215,33 @@ impl Identity {
     }
 }
 
+/// The column of a secret.
+#[derive(Debug, Clone, Copy)]
+enum SecretColumn {
+    AzureClientSecret,
+    GcpJsonKey,
+}
+
+impl SecretColumn {
+    fn name(self) -> &'static str {
+        match self {
+            Self::AzureClientSecret => "azure_client_secret",
+            Self::GcpJsonKey => "gcp_json_key",
+        }
+    }
+}
+
+/// The secret of a new identity, until the secret store has it.
+struct PendingSecret {
+    column: SecretColumn,
+    secret: SecretValue,
+}
+
 impl CredentialRow {
-    /// Replace the identity of the credential. An AWS role gets a new
-    /// external id, as upstream.
-    fn set_identity(&mut self, identity: Identity) {
+    /// Replace the identity of the credential; its secret, if it has one,
+    /// for the secret store. An AWS role gets a new external id, as
+    /// upstream.
+    fn set_identity(&mut self, identity: Identity) -> Option<PendingSecret> {
         self.aws_role_arn = None;
         self.aws_external_id = None;
         self.azure_directory_id = None;
@@ -236,7 +262,10 @@ impl CredentialRow {
             Identity::AzureServicePrincipal(principal) => {
                 self.azure_directory_id = Some(principal.directory_id);
                 self.azure_application_id = Some(principal.application_id);
-                self.azure_client_secret = Some(principal.client_secret);
+                return Some(PendingSecret {
+                    column: SecretColumn::AzureClientSecret,
+                    secret: SecretValue::from(principal.client_secret),
+                });
             }
             Identity::AzureManagedIdentity(identity) => {
                 self.azure_managed_identity = true;
@@ -250,9 +279,20 @@ impl CredentialRow {
             Identity::GcpServiceAccountKey(key) => {
                 self.gcp_key_email = Some(key.email);
                 self.gcp_key_id = key.id;
-                self.gcp_json_key = Some(key.json);
+                return Some(PendingSecret {
+                    column: SecretColumn::GcpJsonKey,
+                    secret: SecretValue::from(key.json),
+                });
             }
         }
+        None
+    }
+
+    /// The reference of the credential's secret, if it has one.
+    fn secret_ref(&self) -> Option<&String> {
+        self.azure_client_secret
+            .as_ref()
+            .or(self.gcp_json_key.as_ref())
     }
 
     /// An error unless the credential can reach `url`: S3 needs an AWS
@@ -260,7 +300,7 @@ impl CredentialRow {
     /// identity.
     pub(crate) fn check_reaches(&self, url: &NormalizedUrl) -> Result<()> {
         let azure = self.azure_application_id.is_some() || self.azure_managed_identity;
-        let gcp = self.gcp_service_account || self.gcp_json_key.is_some();
+        let gcp = self.gcp_service_account || self.gcp_key_email.is_some();
         let need = match url.scheme() {
             UriScheme::File => return Ok(()),
             UriScheme::S3 if self.aws_role_arn.is_some() => return Ok(()),
@@ -294,6 +334,50 @@ impl SqlMetastore {
             &[name.into()],
         )
         .await
+    }
+
+    /// Give the secret store the secret of `row`'s new identity, and keep
+    /// its reference in the row.
+    async fn store_secret(&self, row: &mut CredentialRow, pending: PendingSecret) -> Result<()> {
+        let reference = self
+            .secrets
+            .put(&row.id_string, &pending.secret)
+            .await?
+            .into_string();
+        match pending.column {
+            SecretColumn::AzureClientSecret => row.azure_client_secret = Some(reference),
+            SecretColumn::GcpJsonKey => row.gcp_json_key = Some(reference),
+        }
+        Ok(())
+    }
+
+    /// Remove from the secret store a secret that no row keeps. A failure
+    /// only leaves the secret in the store.
+    async fn drop_secret(&self, owner: &str, reference: Option<String>) {
+        let Some(reference) = reference else {
+            return;
+        };
+        if let Err(error) = self.secrets.delete(owner, &SecretRef::new(reference)).await {
+            warn!(credential = owner, %error, "cannot remove an old secret from the secret store");
+        }
+    }
+
+    /// The secret of `row`, if it has one, from the secret store.
+    async fn open_secret(&self, row: &CredentialRow) -> Result<Option<SecretValue>> {
+        let Some(reference) = row.secret_ref() else {
+            return Ok(None);
+        };
+        let cannot = |reason: &str| {
+            format!(
+                "The server cannot open the secret of credential {}: {reason}.",
+                row.name
+            )
+        };
+        self.secrets
+            .get(&row.id_string, &SecretRef::new(reference.as_str()))
+            .await
+            .map(Some)
+            .map_err(|e| Error::new(e.code(), cannot(e.message())))
     }
 }
 
@@ -342,14 +426,21 @@ impl CredentialOps for SqlMetastore {
             updated_at: now,
             updated_by: created_by.map(str::to_string),
         };
-        row.set_identity(identity);
+        if let Some(pending) = row.set_identity(identity) {
+            self.store_secret(&mut row, pending).await?;
+        }
 
-        insert(self.db.as_ref(), &CREDENTIAL, &row)
+        let inserted = insert(self.db.as_ref(), &CREDENTIAL, &row)
             .await
             .map_err(create_err_as(
                 ErrorCode::StorageCredentialAlreadyExists,
                 format!("Storage credential already exists: {}", req.name),
-            ))?;
+            ));
+        if let Err(error) = inserted {
+            self.drop_secret(&row.id_string, row.secret_ref().cloned())
+                .await;
+            return Err(error);
+        }
         row.try_into()
     }
 
@@ -360,16 +451,70 @@ impl CredentialOps for SqlMetastore {
             .and_then(TryInto::try_into)
     }
 
-    async fn get_with_secret(&self, name: &str) -> Result<(CredentialInfo, Option<String>)> {
+    async fn get_with_secret(&self, name: &str) -> Result<(CredentialInfo, Option<SecretValue>)> {
         let row = self
             .credential_row(name)
             .await?
             .ok_or_else(|| Error::not_found(format!("Storage credential not found: {name}")))?;
-        let secret = row
-            .azure_client_secret
-            .clone()
-            .or_else(|| row.gcp_json_key.clone());
+        let secret = self.open_secret(&row).await?;
         Ok((row.try_into()?, secret))
+    }
+
+    async fn refresh_secrets(&self) -> Result<RefreshReport> {
+        let mut report = RefreshReport::default();
+        if !self.secrets.refreshes() {
+            return Ok(report);
+        }
+        let rows: Vec<CredentialRow> = select(
+            self.db.as_ref(),
+            &CREDENTIAL,
+            "WHERE azure_client_secret IS NOT NULL OR gcp_json_key IS NOT NULL ORDER BY name",
+            &[],
+        )
+        .await?;
+        for row in rows {
+            let (column, reference) = match (&row.azure_client_secret, &row.gcp_json_key) {
+                (Some(reference), _) => (SecretColumn::AzureClientSecret, reference),
+                (None, Some(reference)) => (SecretColumn::GcpJsonKey, reference),
+                (None, None) => continue,
+            };
+            let refreshed = match self
+                .secrets
+                .refresh(&row.id_string, &SecretRef::new(reference.as_str()))
+                .await
+            {
+                Ok(Some(refreshed)) => refreshed.into_string(),
+                Ok(None) => continue,
+                Err(_) => {
+                    report.unreadable.push(row.name);
+                    continue;
+                }
+            };
+            // Another server may have refreshed it first; then the secret
+            // that this one stored is not used.
+            let column = column.name();
+            let written = self
+                .db
+                .execute(
+                    &format!(
+                        "UPDATE credential SET {column} = $1 WHERE id_string = $2 AND {column} = $3"
+                    ),
+                    &[
+                        refreshed.as_str().into(),
+                        row.id_string.as_str().into(),
+                        reference.as_str().into(),
+                    ],
+                )
+                .await
+                .map_err(db_err("refresh secrets"))?;
+            let unused = match written {
+                0 => refreshed,
+                _ => reference.clone(),
+            };
+            report.refreshed += written as usize;
+            self.drop_secret(&row.id_string, Some(unused)).await;
+        }
+        Ok(report)
     }
 
     async fn update(
@@ -392,6 +537,8 @@ impl CredentialOps for SqlMetastore {
             .credential_row(name)
             .await?
             .ok_or_else(|| Error::not_found(format!("Storage credential not found: {name}")))?;
+        let old_secret = row.secret_ref().cloned();
+        let replaced = identity.is_some();
 
         // External locations link to the credential by id, so a rename is a
         // field update. Upstream rejects any new name that exists, the
@@ -403,7 +550,7 @@ impl CredentialOps for SqlMetastore {
             row.name = new_name;
         }
         if let Some(identity) = identity {
-            row.set_identity(identity);
+            let pending = row.set_identity(identity);
             let urls = self
                 .db
                 .query(
@@ -416,6 +563,9 @@ impl CredentialOps for SqlMetastore {
                 let url = url.text(0).map_err(db_err("update credential"))?;
                 row.check_reaches(&NormalizedUrl::parse(&url)?)?;
             }
+            if let Some(pending) = pending {
+                self.store_secret(&mut row, pending).await?;
+            }
         }
         if let Some(c) = req.comment {
             row.comment = Some(c);
@@ -427,12 +577,23 @@ impl CredentialOps for SqlMetastore {
             .map_err(create_err_as(
                 ErrorCode::StorageCredentialAlreadyExists,
                 format!("Storage credential already exists: {}", row.name),
-            ))?;
-        if written == 0 {
-            return Err(Error::not_found(format!(
-                "Storage credential not found: {name}"
-            )));
+            ))
+            .and_then(|written| match written {
+                0 => Err(Error::not_found(format!(
+                    "Storage credential not found: {name}"
+                ))),
+                _ => Ok(()),
+            });
+        let new_secret = row.secret_ref().cloned();
+        if replaced && old_secret != new_secret {
+            // The row keeps one of the two secrets: remove the other.
+            let unused = match written {
+                Ok(()) => old_secret,
+                Err(_) => new_secret,
+            };
+            self.drop_secret(&row.id_string, unused).await;
         }
+        written?;
         row.try_into()
     }
 
@@ -468,7 +629,10 @@ impl CredentialOps for SqlMetastore {
         ] {
             tx.execute(sql, &id).await.map_err(&failed)?;
         }
-        tx.commit().await.map_err(&failed)
+        tx.commit().await.map_err(&failed)?;
+        self.drop_secret(&existing.id_string, existing.secret_ref().cloned())
+            .await;
+        Ok(())
     }
 
     async fn list(
