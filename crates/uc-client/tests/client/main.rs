@@ -11,6 +11,7 @@ mod coverage;
 mod credentials;
 mod delta;
 mod errors;
+mod files;
 mod functions;
 mod iceberg;
 mod models;

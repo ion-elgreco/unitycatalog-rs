@@ -1,23 +1,24 @@
 //! The tabs of a detail page, as the console's: Overview, Details and
-//! Permissions, underlined in the primary color. A tab's panel is built
-//! when the tab first shows, then kept and only hidden, so that what it
-//! loaded and holds, such as vended credentials, stays.
+//! Permissions, underlined in the primary color; volumes and tables also
+//! have Files. A tab's panel is built when the tab first shows, then kept
+//! and only hidden, so that what it loaded and holds, such as vended
+//! credentials, stays.
 
 use leptos::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Tab {
     Overview,
+    Files,
     Details,
     Permissions,
 }
 
 impl Tab {
-    const ALL: [Tab; 3] = [Tab::Overview, Tab::Details, Tab::Permissions];
-
     fn label(self) -> &'static str {
         match self {
             Tab::Overview => "Overview",
+            Tab::Files => "Files",
             Tab::Details => "Details",
             Tab::Permissions => "Permissions",
         }
@@ -27,18 +28,26 @@ impl Tab {
 #[component]
 pub fn Tabs(
     #[prop(into)] overview: ViewFn,
+    /// The Files tab, after Overview; none without it.
+    #[prop(into, optional)]
+    files: Option<ViewFn>,
     #[prop(into)] details: ViewFn,
     #[prop(into)] permissions: ViewFn,
 ) -> impl IntoView {
     let tab = RwSignal::new(Tab::Overview);
-    let panels = [
-        (Tab::Overview, overview),
-        (Tab::Details, details),
-        (Tab::Permissions, permissions),
-    ];
+    let panels: Vec<(Tab, ViewFn)> = [
+        Some((Tab::Overview, overview)),
+        files.map(|files| (Tab::Files, files)),
+        Some((Tab::Details, details)),
+        Some((Tab::Permissions, permissions)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let tabs: Vec<Tab> = panels.iter().map(|(this, _)| *this).collect();
     view! {
         <div class="uc-tabs" role="tablist">
-            {Tab::ALL
+            {tabs
                 .into_iter()
                 .map(|this| {
                     view! {

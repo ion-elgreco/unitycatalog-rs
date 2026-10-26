@@ -85,6 +85,21 @@ storage_options = {
 
 Give these to a reader of the table, such as deltalake or Polars.
 
+## Files
+
+The server reads and writes the files of a volume, and reads the files of a table, so the client
+needs no storage credentials:
+
+```python
+root = "/Volumes/main/default/landing"
+client.upload_file(f"{root}/data/a.csv", b"id,name\n1,x\n", overwrite=True)
+for entry in client.list_directory_contents(f"{root}/data").contents:
+    print(entry.name, entry.file_size)
+data = client.download_file(f"{root}/data/a.csv").contents
+```
+
+See [Files API](rest-apis.md#files-api).
+
 ## Reference
 
 The [Python API](../reference/python/index.md) lists every method, class and enum, with its

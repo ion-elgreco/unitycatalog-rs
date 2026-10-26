@@ -90,6 +90,7 @@ nav:
           - unitycatalog.credentials: reference/python/credentials.md
           - unitycatalog.delta: reference/python/delta.md
           - unitycatalog.external_locations: reference/python/external_locations.md
+          - unitycatalog.files: reference/python/files.md
           - unitycatalog.functions: reference/python/functions.md
           - unitycatalog.health: reference/python/health.md
           - unitycatalog.iceberg: reference/python/iceberg.md

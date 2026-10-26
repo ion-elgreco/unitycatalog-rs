@@ -34,6 +34,7 @@ use uc_common::{ErrorCode, ErrorResponse, SecurableType};
         (name = "Health",               description = "Liveness, readiness, and generic health probes"),
         (name = "Admin",                description = "Operator endpoints — backup, restore"),
         (name = "Sharing",              description = "Delta Sharing — shares, recipients, recipient-protocol reads"),
+        (name = "Files",                description = "Files of volumes and tables, as the Databricks Files API"),
     ),
 )]
 pub struct ApiDoc;

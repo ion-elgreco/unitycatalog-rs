@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+package unitycatalog.files.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/protobuf/empty.proto";
+import "olai/trestle/v1/annotations.proto";
+
+// The files of volumes and tables, as the Databricks Files API has them. A path is
+// `/Volumes/<catalog>/<schema>/<volume>/<path in the volume>` or
+// `/Tables/<catalog>/<schema>/<table>/<path in the table>`. Table files are read-only.
+//
+// No message here is a `google.api.resource`: every RPC is on the root client.
+
+// A file or directory in a directory.
+message DirectoryEntry {
+  // Absolute path of the file or directory.
+  string path = 1;
+  // Name of the file or directory: the last part of its path.
+  string name = 2;
+  // Whether the entry is a directory.
+  bool is_directory = 3;
+  // Size of the file, in bytes. Absent for a directory.
+  optional int64 file_size = 4;
+  // Time at which the file was last changed, in epoch milliseconds. Absent for a directory.
+  optional int64 last_modified = 5;
+}
+
+message ListDirectoryContentsRequest {
+  // Absolute path of the directory.
+  string directory_path = 1 [(google.api.field_behavior) = REQUIRED];
+  // The maximum number of entries to return. The server returns at most 1000.
+  optional int32 page_size = 2;
+  // Opaque token of the page to return: the `next_page_token` of the page before.
+  optional string page_token = 3;
+}
+
+message ListDirectoryContentsResponse {
+  // The files and directories of the directory, directories first.
+  repeated DirectoryEntry contents = 1;
+  // Opaque token of the next page. Absent on the last page.
+  optional string next_page_token = 2;
+}
+
+message GetDirectoryMetadataRequest {
+  // Absolute path of the directory.
+  string directory_path = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message CreateDirectoryRequest {
+  // Absolute path of the directory.
+  string directory_path = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message DeleteDirectoryRequest {
+  // Absolute path of the directory.
+  string directory_path = 1 [(google.api.field_behavior) = REQUIRED];
+  // Also delete the files and directories in it. Without it, a directory that holds anything is
+  // an error. Not in the Databricks Files API.
+  optional bool recursive = 2;
+}
+
+message DownloadFileRequest {
+  // Absolute path of the file.
+  string file_path = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A file and its metadata.
+message DownloadFileResponse {
+  // The bytes of the file.
+  bytes contents = 1 [(olai.trestle.v1.raw_body) = true];
+  // Size of the file, in bytes.
+  optional int64 content_length = 2 [(olai.trestle.v1.response_header) = "Content-Length"];
+  // Media type of the file.
+  optional string content_type = 3 [(olai.trestle.v1.response_header) = "Content-Type"];
+  // Time at which the file was last changed, as an HTTP date.
+  optional string last_modified = 4 [(olai.trestle.v1.response_header) = "Last-Modified"];
+}
+
+message GetFileMetadataRequest {
+  // Absolute path of the file.
+  string file_path = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// The metadata of a file. The response has no body.
+message GetFileMetadataResponse {
+  // Size of the file, in bytes.
+  optional int64 content_length = 1 [(olai.trestle.v1.response_header) = "Content-Length"];
+  // Media type of the file.
+  optional string content_type = 2 [(olai.trestle.v1.response_header) = "Content-Type"];
+  // Time at which the file was last changed, as an HTTP date.
+  optional string last_modified = 3 [(olai.trestle.v1.response_header) = "Last-Modified"];
+}
+
+message UploadFileRequest {
+  // Absolute path of the file.
+  string file_path = 1 [(google.api.field_behavior) = REQUIRED];
+  // The bytes of the file.
+  bytes contents = 2 [
+    (google.api.field_behavior) = REQUIRED,
+    (olai.trestle.v1.raw_body) = true
+  ];
+  // Whether to replace a file that is already there. Without it, an existing file is an error.
+  optional bool overwrite = 3;
+}
+
+message DeleteFileRequest {
+  // Absolute path of the file.
+  string file_path = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Files: list, read and write the files of volumes, and list and read the files of tables.
+service FilesService {
+  // List the files and directories of a directory. Needs `READ VOLUME` on a volume, or `SELECT` on
+  // a table.
+  rpc ListDirectoryContents(ListDirectoryContentsRequest) returns (ListDirectoryContentsResponse) {
+    option (google.api.http) = {get: "/api/2.0/fs/directories/{directory_path=**}"};
+  }
+
+  // Check that a directory exists. A missing directory is status 404.
+  rpc GetDirectoryMetadata(GetDirectoryMetadataRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      custom: {
+        kind: "HEAD"
+        path: "/api/2.0/fs/directories/{directory_path=**}"
+      }
+    };
+  }
+
+  // Create a directory and its parents. In object storage, a directory exists only through its
+  // files, so this only checks the path. Only in volumes; needs ownership of the volume.
+  rpc CreateDirectory(CreateDirectoryRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {put: "/api/2.0/fs/directories/{directory_path=**}"};
+  }
+
+  // Delete a directory: an empty one, or with `recursive`, one and what it holds. Only in volumes;
+  // needs ownership of the volume.
+  rpc DeleteDirectory(DeleteDirectoryRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.0/fs/directories/{directory_path=**}"};
+  }
+
+  // Read a file. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+  rpc DownloadFile(DownloadFileRequest) returns (DownloadFileResponse) {
+    option (google.api.http) = {get: "/api/2.0/fs/files/{file_path=**}"};
+  }
+
+  // Get the metadata of a file. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+  rpc GetFileMetadata(GetFileMetadataRequest) returns (GetFileMetadataResponse) {
+    option (google.api.http) = {
+      custom: {
+        kind: "HEAD"
+        path: "/api/2.0/fs/files/{file_path=**}"
+      }
+    };
+  }
+
+  // Write a file, and create its directories. Only in volumes; needs ownership of the volume.
+  rpc UploadFile(UploadFileRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      put: "/api/2.0/fs/files/{file_path=**}"
+      body: "contents"
+    };
+  }
+
+  // Delete a file. Only in volumes; needs ownership of the volume.
+  rpc DeleteFile(DeleteFileRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/api/2.0/fs/files/{file_path=**}"};
+  }
+}

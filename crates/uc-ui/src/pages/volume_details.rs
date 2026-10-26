@@ -1,5 +1,5 @@
 //! A volume's page, as the console's `VolumeDetails`: its description, its
-//! details, its credentials and grants; "Edit" and "Delete".
+//! files, its details, its credentials and grants; "Edit" and "Delete".
 
 use leptos::prelude::*;
 use uc_client::models::volumes::v1::VolumeInfo;
@@ -10,7 +10,7 @@ use crate::auth::use_manages;
 use crate::components::edit_modal::Changes;
 use crate::components::{
     CredentialsCard, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata,
-    EntityHeader, Loaded, MetaRow, PermissionsCard, Tabs, Vendable,
+    EntityHeader, FilesCard, Loaded, MetaRow, PermissionsCard, Tabs, Vendable,
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
@@ -82,6 +82,7 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
         async move { saving.await.map(|_| ()) }
     };
     let reload = vec![Key::Volume(full_name.clone())];
+    let files_root = StoredValue::new(format!("/Volumes/{catalog}/{schema}/{volume}"));
 
     view! {
         <EntityHeader
@@ -99,6 +100,7 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
             <Loaded state=info>
                 <Tabs
                     overview=move || view! { <DescriptionCard comment noun="volume" save=save_comment/> }
+                    files=move || view! { <FilesCard root=files_root.get_value() writable=manages/> }
                     details=move || {
                         view! { <DetailsTab rows=field(info, volume_rows) json=field(info, pretty_json)/> }
                     }

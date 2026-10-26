@@ -16,4 +16,10 @@ extend google.protobuf.FieldOptions {
   // (for an `optional` field) `null`. Proto3 JSON leaves such values out, which a server that
   // requires the key refuses.
   bool emit_unpopulated = 51002;
+
+  // The HTTP body as raw bytes instead of JSON, on a `bytes` field. In a request message, the
+  // field that the rule's `body` names: the client sends its bytes. In a response message, the
+  // client reads the response body into it; the other fields of the message come from response
+  // headers.
+  bool raw_body = 51003;
 }

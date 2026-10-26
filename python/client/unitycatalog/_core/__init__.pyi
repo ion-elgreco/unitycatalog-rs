@@ -15,6 +15,7 @@ from . import catalogs
 from . import credentials
 from . import delta
 from . import external_locations
+from . import files
 from . import functions
 from . import health
 from . import iceberg
@@ -48,6 +49,7 @@ __all__ = [
     "credentials",
     "delta",
     "external_locations",
+    "files",
     "functions",
     "health",
     "iceberg",
@@ -779,6 +781,139 @@ class Client:
     ) -> asyncio.Future[external_locations.ExternalLocationInfo]:
         r"""
         Like `create_external_location`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def list_directory_contents(
+        self,
+        directory_path: builtins.str,
+        *,
+        page_size: typing.Optional[builtins.int] = None,
+        page_token: typing.Optional[builtins.str] = None,
+    ) -> files.ListDirectoryContentsResponse:
+        r"""
+        List the files and directories of a directory. Needs `READ VOLUME` on a volume, or `SELECT` on
+        a table.
+
+        Args:
+            page_size: The maximum number of entries to return. The server returns at most 1000.
+            page_token: Opaque token of the page to return: the `next_page_token` of the page before.
+
+        Returns:
+            The requested resource
+        """
+    def list_directory_contents_async(
+        self,
+        directory_path: builtins.str,
+        *,
+        page_size: typing.Optional[builtins.int] = None,
+        page_token: typing.Optional[builtins.str] = None,
+    ) -> asyncio.Future[files.ListDirectoryContentsResponse]:
+        r"""
+        Like `list_directory_contents`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_directory_metadata(self, directory_path: builtins.str) -> builtins.bool:
+        r"""
+        Check that a directory exists. A missing directory is status 404.
+        """
+    def get_directory_metadata_async(
+        self, directory_path: builtins.str
+    ) -> asyncio.Future[builtins.bool]:
+        r"""
+        Like `get_directory_metadata`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def create_directory(self, directory_path: builtins.str) -> None:
+        r"""
+        Create a directory and its parents. In object storage, a directory exists only through its files, so
+        this only checks the path. Only in volumes; needs ownership of the volume.
+        """
+    def create_directory_async(
+        self, directory_path: builtins.str
+    ) -> asyncio.Future[None]:
+        r"""
+        Like `create_directory`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def delete_directory(
+        self,
+        directory_path: builtins.str,
+        *,
+        recursive: typing.Optional[builtins.bool] = None,
+    ) -> None:
+        r"""
+        Delete a directory: an empty one, or with `recursive`, one and what it holds. Only in volumes; needs
+        ownership of the volume.
+
+        Args:
+            recursive: Also delete the files and directories in it. Without it, a directory that holds
+                       anything is an error. Not in the Databricks Files API.
+        """
+    def delete_directory_async(
+        self,
+        directory_path: builtins.str,
+        *,
+        recursive: typing.Optional[builtins.bool] = None,
+    ) -> asyncio.Future[None]:
+        r"""
+        Like `delete_directory`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def download_file(self, file_path: builtins.str) -> files.DownloadFileResponse:
+        r"""
+        Read a file. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+
+        Returns:
+            A file and its metadata.
+        """
+    def download_file_async(
+        self, file_path: builtins.str
+    ) -> asyncio.Future[files.DownloadFileResponse]:
+        r"""
+        Like `download_file`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_file_metadata(
+        self, file_path: builtins.str
+    ) -> files.GetFileMetadataResponse:
+        r"""
+        Get the metadata of a file. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+
+        Returns:
+            The metadata of a file. The response has no body.
+        """
+    def get_file_metadata_async(
+        self, file_path: builtins.str
+    ) -> asyncio.Future[files.GetFileMetadataResponse]:
+        r"""
+        Like `get_file_metadata`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def upload_file(
+        self,
+        file_path: builtins.str,
+        contents: bytes,
+        *,
+        overwrite: typing.Optional[builtins.bool] = None,
+    ) -> None:
+        r"""
+        Write a file, and create its directories. Only in volumes; needs ownership of the volume.
+
+        Args:
+            contents: The bytes of the file.
+            overwrite: Whether to replace a file that is already there. Without it, an existing file is
+                       an error.
+        """
+    def upload_file_async(
+        self,
+        file_path: builtins.str,
+        contents: bytes,
+        *,
+        overwrite: typing.Optional[builtins.bool] = None,
+    ) -> asyncio.Future[None]:
+        r"""
+        Like `upload_file`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def delete_file(self, file_path: builtins.str) -> None:
+        r"""
+        Delete a file. Only in volumes; needs ownership of the volume.
+        """
+    def delete_file_async(self, file_path: builtins.str) -> asyncio.Future[None]:
+        r"""
+        Like `delete_file`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
     def list_functions(
         self,

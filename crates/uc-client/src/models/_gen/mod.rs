@@ -70,6 +70,12 @@ pub mod external_locations {
     }
 }
 
+pub mod files {
+    pub mod v1 {
+        include!("./unitycatalog.files.v1.rs");
+    }
+}
+
 pub mod functions {
     pub mod v1 {
         include!("./unitycatalog.functions.v1.rs");

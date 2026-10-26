@@ -1,5 +1,5 @@
 //! A table's page, as the console's `TableDetails`: its description and
-//! columns, its details, its credentials and grants; "Delete".
+//! columns, its files, its details, its credentials and grants; "Delete".
 
 use leptos::prelude::*;
 use uc_client::models::tables::v1::TableInfo;
@@ -9,7 +9,7 @@ use crate::api;
 use crate::auth::use_manages;
 use crate::components::{
     ColumnsCard, CredentialsCard, DeleteButton, DeleteModal, DescriptionCard, DetailsTab,
-    EntityHeader, Loaded, MetaRow, PermissionsCard, Tabs, Vendable, properties,
+    EntityHeader, FilesCard, Loaded, MetaRow, PermissionsCard, Tabs, Vendable, properties,
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
@@ -63,6 +63,7 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
         }
     };
     let reload = vec![Key::Table(full_name.clone())];
+    let files_root = StoredValue::new(format!("/Tables/{catalog}/{schema}/{table}"));
 
     view! {
         <EntityHeader
@@ -81,6 +82,7 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
                             <ColumnsCard info full_name=name.get_value()/>
                         }
                     }
+                    files=move || view! { <FilesCard root=files_root.get_value()/> }
                     details=move || {
                         view! {
                             <DetailsTab

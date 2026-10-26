@@ -10,7 +10,7 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use futures::{StreamExt, TryStreamExt};
+use futures::StreamExt;
 use object_store::{ObjectStore, path::Path as ObjectPath};
 use tracing::warn;
 
@@ -18,8 +18,8 @@ use uc_common::{ManagedResource, NormalizedUrl, UriScheme};
 use uc_metastore::{CleanupClaim, DynMetastore};
 
 use crate::{
-    storage::ServerStorage,
     storage::vendor::{DynVendor, VendOp},
+    storage::{ServerStorage, delete_all},
 };
 
 /// The cleanup of dropped managed tables, volumes and models: the
@@ -171,15 +171,7 @@ async fn delete_local(path: PathBuf) -> Result<(), CleanupError> {
 
 async fn delete_objects(store: &dyn ObjectStore, prefix: &ObjectPath) -> Result<(), CleanupError> {
     let storage = |e: object_store::Error| CleanupError::Storage(e.to_string());
-    let locations = store
-        .list(Some(prefix))
-        .map_ok(|meta| meta.location)
-        .boxed();
-    store
-        .delete_stream(locations)
-        .try_for_each(|_| futures::future::ready(Ok(())))
-        .await
-        .map_err(storage)?;
+    delete_all(store, prefix).await.map_err(storage)?;
     // A file may appear after the listing above; keep the task if so.
     if store
         .list(Some(prefix))

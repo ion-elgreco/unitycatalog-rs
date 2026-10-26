@@ -11,7 +11,7 @@ use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     trace::TraceLayer,
 };
-use uc_common::{API_BASE, CONTROL_BASE};
+use uc_common::{API_BASE, CONTROL_BASE, FILES_BASE};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::{Config, SwaggerUi};
@@ -116,6 +116,7 @@ pub fn build_app(state: AppState) -> Router {
         .nest(API_BASE, routes::sharing::router())
         .nest(CONTROL_BASE, routes::control::router())
         .nest(CONTROL_BASE, routes::control::scim::router())
+        .nest(FILES_BASE, routes::files::router())
         .merge(routes::health::router())
         .split_for_parts();
 
@@ -208,7 +209,16 @@ async fn request_timeout(
     req: Request,
     next: middleware::Next,
 ) -> Response {
-    let Some(timeout) = timeout else {
+    // An upload to the Files API takes as long as its body, and a delete of
+    // a directory as long as what it holds.
+    let rest = req
+        .uri()
+        .path()
+        .strip_prefix(FILES_BASE)
+        .unwrap_or_default();
+    let long = (req.method() == Method::PUT && rest.starts_with("/files/"))
+        || (req.method() == Method::DELETE && rest.starts_with("/directories/"));
+    let Some(timeout) = timeout.filter(|_| !long) else {
         return next.run(req).await;
     };
     match tokio::time::timeout(timeout, next.run(req)).await {

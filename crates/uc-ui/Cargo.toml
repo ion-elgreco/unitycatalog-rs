@@ -31,12 +31,15 @@ js-sys = "=0.3.98"
 wasm-bindgen-futures = "=0.4.71"
 console_error_panic_hook = "0.1"
 web-sys = { version = "=0.3.98", features = [
+    "Blob",
     "Clipboard",
     "Document",
     "DomRect",
     "Element",
     "Event",
     "EventTarget",
+    "File",
+    "FileList",
     "FocusEvent",
     "History",
     "HtmlDocument",

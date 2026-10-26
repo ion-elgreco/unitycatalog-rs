@@ -49,6 +49,7 @@ use uc_client::models::catalogs::v1::*;
 use uc_client::models::credentials::v1::*;
 use uc_client::models::delta::v1::*;
 use uc_client::models::external_locations::v1::*;
+use uc_client::models::files::v1::*;
 use uc_client::models::functions::v1::*;
 use uc_client::models::health::v1::*;
 use uc_client::models::iceberg::v1::*;
@@ -1704,6 +1705,334 @@ impl PyClient {
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
             Ok(PyExternalLocationInfo::from(result))
+        })
+    }
+
+    /// List the files and directories of a directory. Needs `READ VOLUME` on a volume, or `SELECT` on
+    /// a table.
+    ///
+    /// Args:
+    ///     page_size: The maximum number of entries to return. The server returns at most 1000.
+    ///     page_token: Opaque token of the page to return: the `next_page_token` of the page before.
+    ///
+    /// Returns:
+    ///     The requested resource
+    #[pyo3(signature = (directory_path, *, page_size = None, page_token = None))]
+    pub fn list_directory_contents(
+        &self,
+        py: Python,
+        directory_path: String,
+        page_size: Option<i32>,
+        page_token: Option<String>,
+    ) -> PyUnityCatalogResult<PyListDirectoryContentsResponse> {
+        let request = self
+            .client
+            .list_directory_contents(directory_path)
+            .with_page_size(page_size)
+            .with_page_token(page_token);
+        let runtime = crate::codegen::runtime::rt();
+        py.detach(|| {
+            #[allow(clippy::let_unit_value)]
+            let result = runtime.block_on(request.into_future())?;
+            Ok::<_, PyUnityCatalogError>(PyListDirectoryContentsResponse::from(result))
+        })
+    }
+
+    /// Like `list_directory_contents`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (directory_path, *, page_size = None, page_token = None))]
+    pub fn list_directory_contents_async<'py>(
+        &self,
+        py: Python<'py>,
+        directory_path: String,
+        page_size: Option<i32>,
+        page_token: Option<String>,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyListDirectoryContentsResponse>>
+    {
+        let request = self
+            .client
+            .list_directory_contents(directory_path)
+            .with_page_size(page_size)
+            .with_page_token(page_token);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(PyListDirectoryContentsResponse::from(result))
+        })
+    }
+
+    /// Check that a directory exists. A missing directory is status 404.
+    #[pyo3(signature = (directory_path))]
+    pub fn get_directory_metadata(
+        &self,
+        py: Python,
+        directory_path: String,
+    ) -> PyUnityCatalogResult<bool> {
+        let request = self.client.get_directory_metadata(directory_path);
+        let runtime = crate::codegen::runtime::rt();
+        py.detach(|| {
+            #[allow(clippy::let_unit_value)]
+            let result = runtime.block_on(request.into_future())?;
+            Ok::<_, PyUnityCatalogError>(result)
+        })
+    }
+
+    /// Like `get_directory_metadata`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (directory_path))]
+    pub fn get_directory_metadata_async<'py>(
+        &self,
+        py: Python<'py>,
+        directory_path: String,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, bool>> {
+        let request = self.client.get_directory_metadata(directory_path);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(result)
+        })
+    }
+
+    /// Create a directory and its parents. In object storage, a directory exists only through its files, so
+    /// this only checks the path. Only in volumes; needs ownership of the volume.
+    #[pyo3(signature = (directory_path))]
+    pub fn create_directory(&self, py: Python, directory_path: String) -> PyUnityCatalogResult<()> {
+        let request = self.client.create_directory(directory_path);
+        let runtime = crate::codegen::runtime::rt();
+        py.detach(|| {
+            #[allow(clippy::let_unit_value)]
+            let result = runtime.block_on(request.into_future())?;
+            Ok::<_, PyUnityCatalogError>(result)
+        })
+    }
+
+    /// Like `create_directory`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (directory_path))]
+    pub fn create_directory_async<'py>(
+        &self,
+        py: Python<'py>,
+        directory_path: String,
+    ) -> ::pyo3::PyResult<
+        crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
+    > {
+        let request = self.client.create_directory(directory_path);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(crate::codegen::py_future::NoResult)
+        })
+    }
+
+    /// Delete a directory: an empty one, or with `recursive`, one and what it holds. Only in volumes; needs
+    /// ownership of the volume.
+    ///
+    /// Args:
+    ///     recursive: Also delete the files and directories in it. Without it, a directory that holds
+    ///                anything is an error. Not in the Databricks Files API.
+    #[pyo3(signature = (directory_path, *, recursive = None))]
+    pub fn delete_directory(
+        &self,
+        py: Python,
+        directory_path: String,
+        recursive: Option<bool>,
+    ) -> PyUnityCatalogResult<()> {
+        let request = self
+            .client
+            .delete_directory(directory_path)
+            .with_recursive(recursive);
+        let runtime = crate::codegen::runtime::rt();
+        py.detach(|| {
+            #[allow(clippy::let_unit_value)]
+            let result = runtime.block_on(request.into_future())?;
+            Ok::<_, PyUnityCatalogError>(result)
+        })
+    }
+
+    /// Like `delete_directory`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (directory_path, *, recursive = None))]
+    pub fn delete_directory_async<'py>(
+        &self,
+        py: Python<'py>,
+        directory_path: String,
+        recursive: Option<bool>,
+    ) -> ::pyo3::PyResult<
+        crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
+    > {
+        let request = self
+            .client
+            .delete_directory(directory_path)
+            .with_recursive(recursive);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(crate::codegen::py_future::NoResult)
+        })
+    }
+
+    /// Read a file. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+    ///
+    /// Returns:
+    ///     A file and its metadata.
+    #[pyo3(signature = (file_path))]
+    pub fn download_file(
+        &self,
+        py: Python,
+        file_path: String,
+    ) -> PyUnityCatalogResult<PyDownloadFileResponse> {
+        let request = self.client.download_file(file_path);
+        let runtime = crate::codegen::runtime::rt();
+        py.detach(|| {
+            #[allow(clippy::let_unit_value)]
+            let result = runtime.block_on(request.into_future())?;
+            Ok::<_, PyUnityCatalogError>(PyDownloadFileResponse::from(result))
+        })
+    }
+
+    /// Like `download_file`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (file_path))]
+    pub fn download_file_async<'py>(
+        &self,
+        py: Python<'py>,
+        file_path: String,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyDownloadFileResponse>> {
+        let request = self.client.download_file(file_path);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(PyDownloadFileResponse::from(result))
+        })
+    }
+
+    /// Get the metadata of a file. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+    ///
+    /// Returns:
+    ///     The metadata of a file. The response has no body.
+    #[pyo3(signature = (file_path))]
+    pub fn get_file_metadata(
+        &self,
+        py: Python,
+        file_path: String,
+    ) -> PyUnityCatalogResult<PyGetFileMetadataResponse> {
+        let request = self.client.get_file_metadata(file_path);
+        let runtime = crate::codegen::runtime::rt();
+        py.detach(|| {
+            #[allow(clippy::let_unit_value)]
+            let result = runtime.block_on(request.into_future())?;
+            Ok::<_, PyUnityCatalogError>(PyGetFileMetadataResponse::from(result))
+        })
+    }
+
+    /// Like `get_file_metadata`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (file_path))]
+    pub fn get_file_metadata_async<'py>(
+        &self,
+        py: Python<'py>,
+        file_path: String,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyGetFileMetadataResponse>> {
+        let request = self.client.get_file_metadata(file_path);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(PyGetFileMetadataResponse::from(result))
+        })
+    }
+
+    /// Write a file, and create its directories. Only in volumes; needs ownership of the volume.
+    ///
+    /// Args:
+    ///     contents: The bytes of the file.
+    ///     overwrite: Whether to replace a file that is already there. Without it, an existing file is
+    ///                an error.
+    #[pyo3(signature = (file_path, contents, *, overwrite = None))]
+    pub fn upload_file(
+        &self,
+        py: Python,
+        file_path: String,
+        contents: ::pyo3::pybacked::PyBackedBytes,
+        overwrite: Option<bool>,
+    ) -> PyUnityCatalogResult<()> {
+        let request = self
+            .client
+            .upload_file(file_path, contents.to_vec())
+            .with_overwrite(overwrite);
+        let runtime = crate::codegen::runtime::rt();
+        py.detach(|| {
+            #[allow(clippy::let_unit_value)]
+            let result = runtime.block_on(request.into_future())?;
+            Ok::<_, PyUnityCatalogError>(result)
+        })
+    }
+
+    /// Like `upload_file`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (file_path, contents, *, overwrite = None))]
+    pub fn upload_file_async<'py>(
+        &self,
+        py: Python<'py>,
+        file_path: String,
+        contents: ::pyo3::pybacked::PyBackedBytes,
+        overwrite: Option<bool>,
+    ) -> ::pyo3::PyResult<
+        crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
+    > {
+        let request = self
+            .client
+            .upload_file(file_path, contents.to_vec())
+            .with_overwrite(overwrite);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(crate::codegen::py_future::NoResult)
+        })
+    }
+
+    /// Delete a file. Only in volumes; needs ownership of the volume.
+    #[pyo3(signature = (file_path))]
+    pub fn delete_file(&self, py: Python, file_path: String) -> PyUnityCatalogResult<()> {
+        let request = self.client.delete_file(file_path);
+        let runtime = crate::codegen::runtime::rt();
+        py.detach(|| {
+            #[allow(clippy::let_unit_value)]
+            let result = runtime.block_on(request.into_future())?;
+            Ok::<_, PyUnityCatalogError>(result)
+        })
+    }
+
+    /// Like `delete_file`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (file_path))]
+    pub fn delete_file_async<'py>(
+        &self,
+        py: Python<'py>,
+        file_path: String,
+    ) -> ::pyo3::PyResult<
+        crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
+    > {
+        let request = self.client.delete_file(file_path);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(crate::codegen::py_future::NoResult)
         })
     }
 
@@ -6054,6 +6383,16 @@ pub fn register(module: &::pyo3::Bound<'_, ::pyo3::types::PyModule>) -> ::pyo3::
             PyExternalLocationInfo,
             PyListExternalLocationsResponse,
             PyExternalLocationClient
+        ]
+    )?;
+    register_submodule!(
+        module,
+        "files",
+        [
+            PyDirectoryEntry,
+            PyDownloadFileResponse,
+            PyGetFileMetadataResponse,
+            PyListDirectoryContentsResponse
         ]
     )?;
     register_submodule!(

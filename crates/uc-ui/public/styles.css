@@ -1235,6 +1235,35 @@ pre,
 
 .uc-table .uc-mono { white-space: pre-wrap; }
 
+/* ---------- Files: the folder path, the entries ---------- */
+
+.uc-files__path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.uc-files__path .uc-btn--link { font-size: 14px; }
+.uc-files__sep { color: var(--muted-foreground); }
+.uc-files__here { font-weight: 600; }
+
+.uc-files__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.uc-files__actions {
+  display: inline-flex;
+  gap: 2px;
+  justify-content: flex-end;
+}
+
+.uc-files__more { margin-top: 12px; }
+
 /* ---------- The details grid: label and value ---------- */
 
 .uc-meta {
