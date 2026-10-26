@@ -1,10 +1,11 @@
 //! Background storage cleanup. Upstream `StorageCleanupWorker`.
 //!
 //! Dropping a managed table, volume, model or model version queues a task
-//! (see [`uc_metastore::CleanupOps`]). The worker claims one ready
-//! task per poll, deletes everything under its location within the attempt
-//! timeout, checks that nothing remains, and then finishes the task. A
-//! failure is logged and retried after the backoff.
+//! (see [`uc_metastore::CleanupOps`]). Each poll works through the ready
+//! tasks one at a time: the worker claims a task, deletes everything under
+//! its location within the attempt timeout, checks that nothing remains,
+//! and then finishes the task. A failure is logged and retried after the
+//! backoff, and ends the poll.
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
@@ -211,6 +212,17 @@ fn validate_task(claim: &CleanupClaim) -> Result<NormalizedUrl, CleanupError> {
     Ok(location)
 }
 
+/// What one [`StorageCleanupWorker::run_once`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Attempt {
+    /// No task was ready.
+    Idle,
+    /// A task was cleaned up and finished.
+    Finished,
+    /// A task failed and waits for the retry backoff.
+    Failed,
+}
+
 /// Processes cleanup tasks. See the module docs.
 pub struct StorageCleanupWorker {
     metastore: DynMetastore,
@@ -231,21 +243,21 @@ impl StorageCleanupWorker {
         }
     }
 
-    /// Claim and process at most one task. `false` when no task was ready;
-    /// `true` when a task was claimed, even if it needs a retry.
-    pub async fn run_once(&self) -> uc_common::Result<bool> {
+    /// Claim and process at most one task.
+    pub async fn run_once(&self) -> uc_common::Result<Attempt> {
         let tasks = self.metastore.cleanup();
         let Some(claim) = tasks
             .claim(self.config.lease_duration, self.config.initial_delay)
             .await?
         else {
-            return Ok(false);
+            return Ok(Attempt::Idle);
         };
         let attempt = tokio::time::timeout(self.config.attempt_timeout, self.cleanup(&claim));
         let outcome = attempt.await.unwrap_or(Err(CleanupError::TimedOut));
         match outcome {
             Ok(()) => {
                 tasks.finish(&claim.resource_id, &claim.lease_token).await?;
+                Ok(Attempt::Finished)
             }
             Err(error) => {
                 warn!(
@@ -263,9 +275,19 @@ impl StorageCleanupWorker {
                         self.config.retry_backoff,
                     )
                     .await?;
+                Ok(Attempt::Failed)
             }
         }
-        Ok(true)
+    }
+
+    /// Process ready tasks until none is left or one fails; the number
+    /// finished.
+    pub async fn run_ready(&self) -> uc_common::Result<usize> {
+        let mut finished = 0;
+        while self.run_once().await? == Attempt::Finished {
+            finished += 1;
+        }
+        Ok(finished)
     }
 
     async fn cleanup(&self, claim: &CleanupClaim) -> Result<(), CleanupError> {
@@ -280,7 +302,7 @@ impl StorageCleanupWorker {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(self.config.poll_interval).await;
-                if let Err(error) = self.run_once().await {
+                if let Err(error) = self.run_ready().await {
                     warn!(%error, "storage cleanup poll failed; will retry on the next interval");
                 }
             }
