@@ -1,9 +1,11 @@
 //! The server's own tokens, after upstream `SecurityContext`: RS512 JWTs
 //! from the `internal` issuer, which always expire.
 //!
-//! The RSA key comes from `auth.signing_key_file`, or the server makes one
-//! in memory at start. The server never writes it. The key id is the key's
-//! JWK thumbprint (RFC 7638).
+//! The RSA keys come from `auth.signing_key_file`, newest first: the first
+//! signs, and each checks the tokens it signed, so a new key can replace an
+//! old one while the old one's tokens live on. Without the file, the server
+//! makes one key in memory at start. The server never writes keys. A key's
+//! id is its JWK thumbprint (RFC 7638), in the `kid` of its tokens.
 
 use std::path::Path;
 use std::time::Duration;
@@ -47,8 +49,9 @@ pub struct TokenClaims {
 
 pub struct SecurityContext {
     encoding: EncodingKey,
-    decoding: DecodingKey,
     key_id: String,
+    /// Each key of the file, with its id: the signing key first.
+    decoding: Vec<(String, DecodingKey)>,
 }
 
 fn internal(context: &str, e: impl std::fmt::Display) -> Error {
@@ -68,6 +71,31 @@ fn new_key() -> Result<RsaPrivateKey> {
     RsaPrivateKey::new(&mut rand::rngs::OsRng, 2048).map_err(|e| internal("make an RSA key", e))
 }
 
+/// The RSA keys of the PEM file `path`, in their order: PKCS#8, as
+/// `openssl genpkey` and `uc-server keygen` make them, or PKCS#1, as Helm's
+/// `genPrivateKey`.
+pub fn read_keys(path: &Path) -> Result<Vec<RsaPrivateKey>> {
+    let pem = std::fs::read_to_string(path)
+        .map_err(|e| internal(&format!("read {}", path.display()), e))?;
+    let not_a_key = || {
+        Error::internal(format!(
+            "{} is not an RSA private key in PEM",
+            path.display()
+        ))
+    };
+    let keys = uc_common::pem::blocks(&pem)
+        .map(|block| {
+            RsaPrivateKey::from_pkcs8_pem(block)
+                .or_else(|_| RsaPrivateKey::from_pkcs1_pem(block))
+                .map_err(|_| not_a_key())
+        })
+        .collect::<Result<Vec<_>>>()?;
+    match keys.is_empty() {
+        true => Err(not_a_key()),
+        false => Ok(keys),
+    }
+}
+
 /// The RFC 7638 thumbprint of the RSA public key with the base64url
 /// modulus `n` and exponent `e`: the SHA-256 of its required members, in
 /// order and without spaces.
@@ -79,40 +107,53 @@ fn thumbprint(n: &str, e: &str) -> String {
 impl SecurityContext {
     /// A new key in memory: its tokens end with this process.
     pub fn generate() -> Result<Self> {
-        Self::new(&new_key()?)
+        Self::new(&[new_key()?])
     }
 
-    /// The key of the PEM file `path`: PKCS#8, as `openssl genpkey` and
-    /// `uc-server keygen` make it, or PKCS#1, as Helm's `genPrivateKey`.
+    /// The keys of the PEM file `path` ([`read_keys`]): the first signs.
     pub fn from_pem_file(path: &Path) -> Result<Self> {
-        let pem = std::fs::read_to_string(path)
-            .map_err(|e| internal(&format!("read {}", path.display()), e))?;
-        let key = RsaPrivateKey::from_pkcs8_pem(&pem)
-            .or_else(|_| RsaPrivateKey::from_pkcs1_pem(&pem))
-            .map_err(|_| {
-                Error::internal(format!(
-                    "{} is not an RSA private key in PEM",
-                    path.display()
-                ))
-            })?;
-        Self::new(&key)
+        Self::new(&read_keys(path)?)
     }
 
-    fn new(key: &RsaPrivateKey) -> Result<Self> {
-        let pkcs1 = key
+    /// `keys`, at least one: the first signs.
+    fn new(keys: &[RsaPrivateKey]) -> Result<Self> {
+        let first = keys
+            .first()
+            .ok_or_else(|| Error::internal("no signing key"))?;
+        let pkcs1 = first
             .to_pkcs1_der()
             .map_err(|e| internal("encode private key", e))?;
-        let (n, e) = (
-            URL_SAFE_NO_PAD.encode(key.n().to_bytes_be()),
-            URL_SAFE_NO_PAD.encode(key.e().to_bytes_be()),
-        );
-        let decoding =
-            DecodingKey::from_rsa_components(&n, &e).map_err(|e| internal("public key", e))?;
+        let decoding = keys
+            .iter()
+            .map(|key| {
+                let (n, e) = (
+                    URL_SAFE_NO_PAD.encode(key.n().to_bytes_be()),
+                    URL_SAFE_NO_PAD.encode(key.e().to_bytes_be()),
+                );
+                let decoding = DecodingKey::from_rsa_components(&n, &e)
+                    .map_err(|e| internal("public key", e))?;
+                Ok((thumbprint(&n, &e), decoding))
+            })
+            .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             encoding: EncodingKey::from_rsa_der(pkcs1.as_bytes()),
+            key_id: decoding[0].0.clone(),
             decoding,
-            key_id: thumbprint(&n, &e),
         })
+    }
+
+    /// The ids of the keys, the signing key first.
+    pub fn key_ids(&self) -> impl Iterator<Item = &str> {
+        self.decoding.iter().map(|(id, _)| id.as_str())
+    }
+
+    /// The key that checks `token`: the key its `kid` names.
+    fn decoding_key(&self, token: &str) -> Option<&DecodingKey> {
+        let kid = jsonwebtoken::decode_header(token).ok()?.kid?;
+        self.decoding
+            .iter()
+            .find(|(id, _)| *id == kid)
+            .map(|(_, key)| key)
     }
 
     /// Upstream `createAccessToken`: a token for `principal` that expires
@@ -162,7 +203,7 @@ impl SecurityContext {
         validation.set_issuer(&[LOGIN_ISSUER]);
         validation.validate_aud = false;
         validation.leeway = 0;
-        jsonwebtoken::decode::<T>(token, &self.decoding, &validation)
+        jsonwebtoken::decode::<T>(token, self.decoding_key(token)?, &validation)
             .ok()
             .map(|data| data.claims)
     }
@@ -177,8 +218,9 @@ impl SecurityContext {
         peek.validate_exp = false;
         peek.validate_aud = false;
         peek.required_spec_claims.clear();
-        let unverified = jsonwebtoken::decode::<serde_json::Value>(token, &self.decoding, &peek)
-            .map_err(|_| unauthenticated())?;
+        let unverified =
+            jsonwebtoken::decode::<serde_json::Value>(token, &self.decoding[0].1, &peek)
+                .map_err(|_| unauthenticated())?;
         if unverified.claims.get("iss").and_then(|i| i.as_str()) != Some(INTERNAL_ISSUER) {
             return Err(Error::new(
                 ErrorCode::PermissionDenied,
@@ -190,7 +232,8 @@ impl SecurityContext {
         validation.set_issuer(&[INTERNAL_ISSUER]);
         validation.validate_aud = false;
         validation.leeway = 0;
-        jsonwebtoken::decode::<TokenClaims>(token, &self.decoding, &validation)
+        let key = self.decoding_key(token).ok_or_else(unauthenticated)?;
+        jsonwebtoken::decode::<TokenClaims>(token, key, &validation)
             .map(|data| data.claims)
             .map_err(|_| unauthenticated())
     }
@@ -296,6 +339,54 @@ mod tests {
             "{}",
             error.message()
         );
+    }
+
+    /// A new key first in the file signs; the old key, after it, still
+    /// checks the tokens it signed. Helm's PKCS#1 and keygen's PKCS#8 mix.
+    #[test]
+    fn a_new_key_signs_while_the_old_one_still_checks() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("signing-key.pem");
+        let old = new_key().unwrap().to_pkcs1_pem(LineEnding::LF).unwrap();
+        let new = generate_key_pem().unwrap();
+        std::fs::write(&file, old.as_bytes()).unwrap();
+        let before = SecurityContext::from_pem_file(&file).unwrap();
+        let old_token = before
+            .create_access_token("alice", Duration::from_secs(60))
+            .unwrap();
+        let old_state = before
+            .sign_login_state(&serde_json::json!({ "n": 1 }), Duration::from_secs(60))
+            .unwrap();
+
+        std::fs::write(&file, format!("{new}\n{}", old.as_str())).unwrap();
+        let rotated = SecurityContext::from_pem_file(&file).unwrap();
+        assert_eq!(rotated.key_ids().nth(1), Some(before.key_id.as_str()));
+        assert_eq!(rotated.verify(&old_token).unwrap().sub, "alice");
+        assert!(
+            rotated
+                .verify_login_state::<serde_json::Value>(&old_state)
+                .is_some()
+        );
+        let new_token = rotated
+            .create_access_token("bob", Duration::from_secs(60))
+            .unwrap();
+        let header = jsonwebtoken::decode_header(&new_token).unwrap();
+        assert_eq!(header.kid.as_deref(), Some(rotated.key_id.as_str()));
+        assert_ne!(rotated.key_id, before.key_id);
+        // A server that still has only the old key refuses the new tokens.
+        assert_eq!(
+            before.verify(&new_token).unwrap_err().code(),
+            ErrorCode::Unauthenticated
+        );
+
+        // Without the old key, its tokens end.
+        std::fs::write(&file, &new).unwrap();
+        let after = SecurityContext::from_pem_file(&file).unwrap();
+        assert_eq!(
+            after.verify(&old_token).unwrap_err().code(),
+            ErrorCode::Unauthenticated
+        );
+        assert_eq!(after.verify(&new_token).unwrap().sub, "bob");
     }
 
     #[test]

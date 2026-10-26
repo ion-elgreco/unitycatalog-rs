@@ -7,6 +7,7 @@
 
 pub mod cleanup;
 pub mod s3_region;
+pub mod secrets;
 pub mod vendor;
 
 use std::sync::Arc;

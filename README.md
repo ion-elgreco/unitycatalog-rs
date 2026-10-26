@@ -80,6 +80,9 @@ data_dir = "/var/lib/uc"           # the embedded database; default .uc
 [db]
 url = "postgresql://uc@postgres.example.com:5432/uc?sslmode=verify-full"
 
+[secrets]
+key_file = "/etc/uc/secrets-key.pem"  # the key of the secrets of credentials
+
 [auth]
 enabled = true
 allowed_issuers = ["https://accounts.google.com"]

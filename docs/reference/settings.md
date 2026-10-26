@@ -104,7 +104,7 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 | `cedar` | `UC_AUTH_CEDAR` | `false` | Check privileges with the Cedar policy engine. |
 | `cedar_policies` | `UC_AUTH_CEDAR_POLICIES` | none | Files of Cedar policies, on top of the default policies. |
 | **Tokens** |  |  | The server's own tokens, and the identity tokens that clients exchange for them, such as with `uc auth login`. |
-| `signing_key_file` | `UC_AUTH_SIGNING_KEY_FILE` | none | The PEM file of the RSA key that signs the server's tokens. Without it, the server makes a key in memory at each start. See [The signing key](../server/auth.md#the-signing-key). |
+| `signing_key_file` | `UC_AUTH_SIGNING_KEY_FILE` | none | The PEM file of the RSA keys of the server's tokens, newest first: the first signs. Without it, the server makes a key in memory at each start. See [The signing key](../server/auth.md#the-signing-key). |
 | `access_token_timeout` | `UC_AUTH_ACCESS_TOKEN_TIMEOUT` | `24h` | The life of the server's access tokens. |
 | `cookie_timeout` | `UC_AUTH_COOKIE_TIMEOUT` | `5d` | The life of the `UC_TOKEN` cookie of the web UI. |
 | `allowed_issuers` | `UC_AUTH_ALLOWED_ISSUERS` | none | The issuers of identity tokens that the server exchanges: exact, or with `*` for one DNS label. |
@@ -141,6 +141,15 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 | `cleanup_poll_interval` | `UC_STORAGE_CLEANUP_POLL_INTERVAL` | `1m` | How often the cleanup of dropped managed data looks for work. |
 | `cleanup_attempt_timeout` | `UC_STORAGE_CLEANUP_ATTEMPT_TIMEOUT` | `30m` | How long one cleanup can take. |
 | `cleanup_lease_duration` | `UC_STORAGE_CLEANUP_LEASE_DURATION` | `2h` | How long a server holds a cleanup task. |
+
+## `[secrets]`
+
+| Setting | Variable | Default | Description |
+| --- | --- | --- | --- |
+| `store` | `UC_SECRETS_STORE` | `database` | Where the secrets of credentials go. `database`: in the database, sealed with `key_file`. |
+| `key_file` | `UC_SECRETS_KEY_FILE` | none | The PEM file of the P-256 keys that seal the secrets, newest first. Without it, the server makes a new key in memory at each start, so the secrets cannot be opened after it stops. See [The secrets key](../server/database.md#the-secrets-key). |
+| `cache_capacity` | `UC_SECRETS_CACHE_CAPACITY` | `500` | The most secrets, and Azure sign-ins, that the server keeps in memory. `0` keeps none. |
+| `cache_ttl` | `UC_SECRETS_CACHE_TTL` | `10m` | How long a secret stays in memory after the store gives it. |
 
 ## `[tables]`
 

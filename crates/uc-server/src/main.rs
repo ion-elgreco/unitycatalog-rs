@@ -15,6 +15,7 @@ use uc_server::{
     build_app, build_observability_app,
     observability::telemetry::init_tracing,
     server::{banner, options, serve},
+    storage::secrets::Secrets,
     storage::vendor::{CloudVendor, Location, S3Location, credential_for_url},
 };
 
@@ -28,7 +29,7 @@ async fn main() -> ExitCode {
     let done = match options::parse(std::env::args().skip(1)) {
         options::Command::Run(options) => run(options).await,
         options::Command::Token(options) => token(options),
-        options::Command::Keygen(output) => keygen(output.as_deref()),
+        options::Command::Keygen(options) => keygen(options),
         options::Command::Exit(code, text) => {
             match code {
                 0 => print!("{text}"),
@@ -46,11 +47,15 @@ async fn main() -> ExitCode {
     }
 }
 
-/// `uc-server keygen`: print a new signing key, or write it to `output`, a
-/// new file that only its owner reads.
-fn keygen(output: Option<&std::path::Path>) -> Result<(), String> {
-    let pem = generate_key_pem().map_err(|e| e.message().to_string())?;
-    let Some(path) = output else {
+/// `uc-server keygen`: print a new key, an RSA signing key or a P-256
+/// secrets key, or write it to a new file that only its owner reads.
+fn keygen(options: options::KeygenOptions) -> Result<(), String> {
+    let pem = match options.secrets {
+        true => uc_metastore::DatabaseStore::generate_key_pem(),
+        false => generate_key_pem(),
+    }
+    .map_err(|e| e.message().to_string())?;
+    let Some(path) = options.output.as_deref() else {
         print!("{pem}");
         return Ok(());
     };
@@ -61,7 +66,7 @@ fn keygen(output: Option<&std::path::Path>) -> Result<(), String> {
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
     let mut file = options.open(path).map_err(cannot)?;
     std::io::Write::write_all(&mut file, pem.as_bytes()).map_err(cannot)?;
-    eprintln!("Wrote a new signing key to {}.", path.display());
+    eprintln!("Wrote a new key to {}.", path.display());
     Ok(())
 }
 
@@ -147,11 +152,17 @@ async fn run(options: options::Options) -> Result<(), String> {
         "starting uc-server",
     );
 
-    let metastore = SqlMetastore::connect(cfg.metastore_config())
+    // The store of the secrets of storage credentials: `[secrets]`.
+    let lasting_catalog = !matches!(cfg.database, uc_metastore::DatabaseConfig::Memory);
+    let secrets = Secrets::open(&cfg.secrets, lasting_catalog)?;
+    let metastore = SqlMetastore::connect(cfg.metastore_config(secrets.store.clone()))
         .await
         .map_err(|e| format!("failed to open the catalog database: {e}"))?;
 
     let mut state = AppState::new(metastore).with_authz(authorization);
+    // Secrets that the store keeps in an older form, such as sealed with an
+    // older key: in their current form, so that old keys can go.
+    secrets.refresh(&state.metastore).await?;
     if authorization {
         uc_server::authn::security::initialize_admin(&state.metastore)
             .await
@@ -225,7 +236,8 @@ async fn run(options: options::Options) -> Result<(), String> {
         Some(path) => {
             let security = SecurityContext::from_pem_file(path)
                 .map_err(|e| format!("cannot load the signing key: {}", e.message()))?;
-            info!(file = %path.display(), "signing key loaded");
+            let key_ids: Vec<&str> = security.key_ids().collect();
+            info!(file = %path.display(), ?key_ids, "signing keys loaded");
             security
         }
         None => {

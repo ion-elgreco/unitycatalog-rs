@@ -57,6 +57,7 @@ p521 = { version = "0.13", features = ["ecdsa"] }
 reqwest.workspace = true
 percent-encoding.workspace = true
 sha2.workspace = true
+moka = { version = "0.12", features = ["sync"] }
 hex.workspace = true
 
 metrics.workspace = true

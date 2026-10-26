@@ -25,6 +25,11 @@ hex.workspace = true
 futures.workspace = true
 chrono.workspace = true
 tokio = { workspace = true, features = ["sync", "time", "rt"] }
+base64 = "0.22"
+hpke = { version = "0.15", default-features = false, features = ["aes", "alloc", "getrandom", "nistp"] }
+moka = { version = "0.12", features = ["future"] }
+p256 = { version = "0.14", default-features = false, features = ["arithmetic", "getrandom", "pem"] }
+secret-vault-value = "1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

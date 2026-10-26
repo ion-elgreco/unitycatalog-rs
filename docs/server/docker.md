@@ -23,13 +23,17 @@ docker run -d --name uc -p 8080:8080 -v uc-data:/data \
 
 ## Sign-in
 
-Make a signing key, start the server with sign-in, and get a token of its `admin` user:
+Make a signing key and a secrets key, start the server with sign-in, and get a token of its
+`admin` user:
 
 ```sh
 docker run --rm -v uc-data:/data ghcr.io/ion-elgreco/unitycatalog-rs:0.0.0-dev \
   keygen --output /data/signing-key.pem
+docker run --rm -v uc-data:/data ghcr.io/ion-elgreco/unitycatalog-rs:0.0.0-dev \
+  keygen --secrets --output /data/secrets-key.pem
 docker run -d --name uc -p 8080:8080 -v uc-data:/data \
   -e UC_AUTH_ENABLED=true -e UC_AUTH_SIGNING_KEY_FILE=/data/signing-key.pem \
+  -e UC_SECRETS_KEY_FILE=/data/secrets-key.pem \
   ghcr.io/ion-elgreco/unitycatalog-rs:0.0.0-dev
 export UC_CLI_TOKEN=$(docker exec uc uc-server token)
 ```

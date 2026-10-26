@@ -4,6 +4,7 @@
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use uc_common::settings::{Settings, invalid};
@@ -54,6 +55,8 @@ pub struct ServerConfig {
     /// `[auth]`: sign-in, privilege checks and the web UI's sign-in
     /// ([`Self::sign_in`]).
     pub auth: uc_common::settings::Auth,
+    /// `[secrets]`: the store of the secrets of storage credentials.
+    pub secrets: crate::storage::secrets::SecretsConfig,
     /// The `uc.toml` that was read.
     pub file: Option<PathBuf>,
 }
@@ -123,7 +126,11 @@ impl ServerConfig {
             }
         }
         let cleanup = crate::storage::cleanup::CleanupConfig::from_settings(storage)?;
-        let credentials = crate::storage::vendor::StorageConfig::from_settings(&settings)?;
+        let secrets = crate::storage::secrets::SecretsConfig::from_settings(&settings.secrets)?;
+        let credentials = crate::storage::vendor::StorageConfig {
+            sign_in_cache: secrets.cache,
+            ..crate::storage::vendor::StorageConfig::from_settings(&settings)?
+        };
 
         Ok(Self {
             data_dir,
@@ -148,6 +155,7 @@ impl ServerConfig {
             credentials,
             aws_identity_arn: identity.aws.arn.clone(),
             auth: auth.clone(),
+            secrets,
             file: file.clone(),
         })
     }
@@ -162,12 +170,17 @@ impl ServerConfig {
         crate::authn::idp::AuthSettings::new(&self.auth)
     }
 
-    /// Metastore settings derived from this config.
-    pub fn metastore_config(&self) -> uc_metastore::MetastoreConfig {
+    /// Metastore settings derived from this config, with the secret store
+    /// that the server opened at start.
+    pub fn metastore_config(
+        &self,
+        secrets: Arc<dyn uc_metastore::SecretStore>,
+    ) -> uc_metastore::MetastoreConfig {
         uc_metastore::MetastoreConfig {
             database: self.database.clone(),
             storage: self.storage.clone(),
             tables: self.tables.clone(),
+            secrets,
         }
     }
 }

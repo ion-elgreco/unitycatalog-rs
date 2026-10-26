@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 
 use uc_api::{GcpOauthToken, TemporaryCredentials};
 use uc_common::{Error, Result, now_epoch_millis};
+use uc_metastore::SecretValue;
 
 use super::{CredentialContext, StorageCredential};
 use crate::http::outbound::SendOnIo;
@@ -34,7 +35,7 @@ pub enum Identity {
     /// it impersonates.
     ServiceAccount(Option<String>),
     /// The JSON key of a service account.
-    Key(String),
+    Key(SecretValue),
 }
 
 impl Identity {
@@ -129,7 +130,7 @@ impl GcpVendor {
     async fn identity_token(&self, identity: &Identity) -> Result<Token> {
         let email = match identity {
             Identity::Key(json) => {
-                let key: Value = serde_json::from_str(json)
+                let key: Value = serde_json::from_str(json.as_sensitive_str())
                     .map_err(|e| Error::failed_precondition(format!("service account key: {e}")))?;
                 return self.service_account_token(&key).await;
             }
