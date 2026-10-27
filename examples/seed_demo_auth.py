@@ -9,7 +9,8 @@ with the uc.toml of setup.py:
 
     uv run --no-sync examples/seed_demo_auth.py .uc-demo-auth
 
-A server that has catalogs gets no dummy data.
+A server that has catalogs gets no dummy data, but the volume
+`unity.default.images` gets the logo of unitycatalog-rs, as in seed_demo.py.
 """
 
 import argparse
@@ -21,7 +22,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from seed_demo import seed
+from seed_demo import images, seed
 from unitycatalog import Client
 from unitycatalog.credentials import AwsIamRoleRequest
 from unitycatalog.permissions import PermissionsChange
@@ -71,6 +72,7 @@ def main() -> None:
         print(
             f"The server has catalogs, so it gets no dummy data: {', '.join(existing)}."
         )
+        images(alice)
         return
     # With authorization on, a catalog's storage root must be under an
     # external location. Its credential needs a role ARN, but RustFS takes
@@ -114,6 +116,7 @@ def main() -> None:
         "sales.eu",
         changes=[PermissionsChange(bob, add=["USE SCHEMA", "SELECT", "READ VOLUME"])],
     )
+    images(alice)
     print("alice's dummy data is in RustFS, and bob reads sales.eu.")
 
 

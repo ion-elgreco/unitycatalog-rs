@@ -6,7 +6,7 @@ a web UI and the `uc` CLI, and keeps the catalog in an embedded database (Turso)
 
 The web UI, with sign-in through FerrisKey, as in `just demo-auth`:
 
-![Sign in with an OpenID Connect provider, create a catalog, browse to a table, delete the catalog, and log out in the web UI](.github/assets/web-ui.gif)
+![Sign in with an OpenID Connect provider, create a catalog, find a table with the search box, browse to a volume, view an image of its files, delete the catalog, and log out in the web UI](.github/assets/web-ui.gif)
 
 The terminal UI of `uc`:
 
