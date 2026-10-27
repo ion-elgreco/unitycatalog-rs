@@ -620,7 +620,10 @@ pub async fn delete_directory(
 
 #[utoipa::path(
     get, path = "/files/{file_path}",
-    params(("file_path" = String, Path, description = "Absolute path of the file, such as `/Volumes/<catalog>/<schema>/<volume>/<file>`, over several segments")),
+    params(
+        ("file_path" = String, Path, description = "Absolute path of the file, such as `/Volumes/<catalog>/<schema>/<volume>/<file>`, over several segments"),
+        ("Range" = Option<String>, Header, description = "The bytes to read: `bytes=a-b`, `bytes=a-` or `bytes=-n`"),
+    ),
     responses(
         (status = 200, description = "The bytes of the file", content_type = "application/octet-stream"),
         (status = 206, description = "The bytes of the range of the `Range` header"),

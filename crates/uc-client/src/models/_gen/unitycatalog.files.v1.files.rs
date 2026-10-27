@@ -1228,6 +1228,15 @@ pub struct DownloadFileRequest {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub file_path: ::buffa::alloc::string::String,
+    /// The bytes to read, as an HTTP `Range` header has them: `bytes=0-1023`, `bytes=1024-` or
+    /// `bytes=-1024`. The answer is then status 206, with those bytes.
+    ///
+    /// Field 2: `range`
+    #[serde(
+        rename = "range",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub range: ::core::option::Option<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1237,6 +1246,7 @@ impl ::core::fmt::Debug for DownloadFileRequest {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("DownloadFileRequest")
             .field("file_path", &self.file_path)
+            .field("range", &self.range)
             .finish()
     }
 }
@@ -1248,6 +1258,16 @@ impl DownloadFileRequest {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str =
         "type.googleapis.com/unitycatalog.files.v1.DownloadFileRequest";
+}
+
+impl DownloadFileRequest {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::range`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_range(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.range = Some(value.into());
+        self
+    }
 }
 
 impl ::buffa::DefaultInstance for DownloadFileRequest {
@@ -1279,6 +1299,9 @@ impl ::buffa::Message for DownloadFileRequest {
         if !self.file_path.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.file_path) as u32;
         }
+        if let Some(ref v) = self.range {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -1290,6 +1313,11 @@ impl ::buffa::Message for DownloadFileRequest {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(&self.file_path, buf);
+        }
+        if let Some(ref v) = self.range {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -1316,6 +1344,20 @@ impl ::buffa::Message for DownloadFileRequest {
                 }
                 ::buffa::types::merge_string(&mut self.file_path, buf)?;
             }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.range
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -1326,6 +1368,7 @@ impl ::buffa::Message for DownloadFileRequest {
 
     fn clear(&mut self) {
         self.file_path.clear();
+        self.range = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -1406,6 +1449,16 @@ pub struct DownloadFileResponse {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub last_modified: ::core::option::Option<::buffa::alloc::string::String>,
+    /// For a `range`, the bytes that the answer holds and the size of the file, such as
+    /// `bytes 0-1023/4096`.
+    ///
+    /// Field 5: `content_range`
+    #[serde(
+        rename = "content_range",
+        alias = "contentRange",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub content_range: ::core::option::Option<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1418,6 +1471,7 @@ impl ::core::fmt::Debug for DownloadFileResponse {
             .field("content_length", &self.content_length)
             .field("content_type", &self.content_type)
             .field("last_modified", &self.last_modified)
+            .field("content_range", &self.content_range)
             .finish()
     }
 }
@@ -1453,6 +1507,14 @@ impl DownloadFileResponse {
     ///Sets [`Self::last_modified`] to `Some(value)`, consuming and returning `self`.
     pub fn with_last_modified(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
         self.last_modified = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::content_range`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_content_range(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.content_range = Some(value.into());
         self
     }
 }
@@ -1495,6 +1557,9 @@ impl ::buffa::Message for DownloadFileResponse {
         if let Some(ref v) = self.last_modified {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
         }
+        if let Some(ref v) = self.content_range {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -1518,6 +1583,11 @@ impl ::buffa::Message for DownloadFileResponse {
         }
         if let Some(ref v) = self.last_modified {
             ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.content_range {
+            ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(v, buf);
         }
@@ -1585,6 +1655,20 @@ impl ::buffa::Message for DownloadFileResponse {
                     buf,
                 )?;
             }
+            5u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 5u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.content_range
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -1598,6 +1682,7 @@ impl ::buffa::Message for DownloadFileResponse {
         self.content_length = ::core::option::Option::None;
         self.content_type = ::core::option::Option::None;
         self.last_modified = ::core::option::Option::None;
+        self.content_range = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }

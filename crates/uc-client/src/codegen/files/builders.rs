@@ -158,6 +158,13 @@ impl DownloadFileBuilder {
         };
         Self { client, request }
     }
+
+    /// The bytes to read, as an HTTP `Range` header has them: `bytes=0-1023`, `bytes=1024-` or
+    /// `bytes=-1024`. The answer is then status 206, with those bytes.
+    pub fn with_range(mut self, range: impl Into<Option<String>>) -> Self {
+        self.request.range = range.into();
+        self
+    }
 }
 
 impl IntoFuture for DownloadFileBuilder {

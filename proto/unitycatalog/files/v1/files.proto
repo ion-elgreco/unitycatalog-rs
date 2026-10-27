@@ -64,6 +64,9 @@ message DeleteDirectoryRequest {
 message DownloadFileRequest {
   // Absolute path of the file.
   string file_path = 1 [(google.api.field_behavior) = REQUIRED];
+  // The bytes to read, as an HTTP `Range` header has them: `bytes=0-1023`, `bytes=1024-` or
+  // `bytes=-1024`. The answer is then status 206, with those bytes.
+  optional string range = 2 [(olai.trestle.v1.request_header) = "Range"];
 }
 
 // A file and its metadata.
@@ -76,6 +79,9 @@ message DownloadFileResponse {
   optional string content_type = 3 [(olai.trestle.v1.response_header) = "Content-Type"];
   // Time at which the file was last changed, as an HTTP date.
   optional string last_modified = 4 [(olai.trestle.v1.response_header) = "Last-Modified"];
+  // For a `range`, the bytes that the answer holds and the size of the file, such as
+  // `bytes 0-1023/4096`.
+  optional string content_range = 5 [(olai.trestle.v1.response_header) = "Content-Range"];
 }
 
 message GetFileMetadataRequest {
@@ -140,7 +146,7 @@ service FilesService {
     option (google.api.http) = {delete: "/api/2.0/fs/directories/{directory_path=**}"};
   }
 
-  // Read a file. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+  // Read a file, or a range of its bytes. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
   rpc DownloadFile(DownloadFileRequest) returns (DownloadFileResponse) {
     option (google.api.http) = {get: "/api/2.0/fs/files/{file_path=**}"};
   }

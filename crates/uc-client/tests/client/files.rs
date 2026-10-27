@@ -52,6 +52,13 @@ async fn volume_files() {
     let file = uc.download_file("/Volumes/c/s/v/dir/a.txt").await.unwrap();
     assert_eq!(file.contents, b"hello");
     assert_eq!(file.content_length, Some(5));
+    let part = uc
+        .download_file("/Volumes/c/s/v/dir/a.txt")
+        .with_range("bytes=1-3".to_string())
+        .await
+        .unwrap();
+    assert_eq!(part.contents, b"ell");
+    assert_eq!(part.content_range.as_deref(), Some("bytes 1-3/5"));
     assert_eq!(
         file.content_type.as_deref(),
         Some("application/octet-stream")

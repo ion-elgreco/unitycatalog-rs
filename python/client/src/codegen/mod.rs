@@ -1879,17 +1879,22 @@ impl PyClient {
         })
     }
 
-    /// Read a file. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+    /// Read a file, or a range of its bytes. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+    ///
+    /// Args:
+    ///     range: The bytes to read, as an HTTP `Range` header has them: `bytes=0-1023`, `bytes=1024-` or
+    ///            `bytes=-1024`. The answer is then status 206, with those bytes.
     ///
     /// Returns:
     ///     A file and its metadata.
-    #[pyo3(signature = (file_path))]
+    #[pyo3(signature = (file_path, *, range = None))]
     pub fn download_file(
         &self,
         py: Python,
         file_path: String,
+        range: Option<String>,
     ) -> PyUnityCatalogResult<PyDownloadFileResponse> {
-        let request = self.client.download_file(file_path);
+        let request = self.client.download_file(file_path).with_range(range);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
@@ -1899,13 +1904,14 @@ impl PyClient {
     }
 
     /// Like `download_file`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (file_path))]
+    #[pyo3(signature = (file_path, *, range = None))]
     pub fn download_file_async<'py>(
         &self,
         py: Python<'py>,
         file_path: String,
+        range: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyDownloadFileResponse>> {
-        let request = self.client.download_file(file_path);
+        let request = self.client.download_file(file_path).with_range(range);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

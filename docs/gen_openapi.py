@@ -142,6 +142,9 @@ class Api:
         pool.Add(next(f for f in fds.file if f.name == TRESTLE))
         self.raw_body_option = pool.FindExtensionByName("olai.trestle.v1.raw_body")
         self.header_option = pool.FindExtensionByName("olai.trestle.v1.response_header")
+        self.request_header_option = pool.FindExtensionByName(
+            "olai.trestle.v1.request_header"
+        )
         for f in fds.file:
             locations = {
                 tuple(loc.path): loc.leading_comments
@@ -227,6 +230,10 @@ class Api:
     def response_header(self, f: descriptor_pb2.FieldDescriptorProto) -> str | None:
         """The response header that a field of a response comes from, if any."""
         return self.trestle_options(f).Extensions[self.header_option] or None
+
+    def request_header(self, f: descriptor_pb2.FieldDescriptorProto) -> str | None:
+        """The request header that a field of a request goes in, if any."""
+        return self.trestle_options(f).Extensions[self.request_header_option] or None
 
     def raw_body(self, f: descriptor_pb2.FieldDescriptorProto) -> bool:
         """Whether a field is the HTTP body as raw bytes."""
@@ -339,11 +346,15 @@ class Api:
             query_fields = [f for f in rest if f.name != body]
         else:
             body_fields, query_fields = [], rest
+        headers = {
+            f.name: name for f in query_fields if (name := self.request_header(f))
+        }
+        query_fields = [f for f in query_fields if f.name not in headers]
 
         def parameter(f, where):
             description = msg.field_comments.get(fields.index(f), "")
             p = {
-                "name": self.json_name(f, msg.package),
+                "name": headers.get(f.name) or self.json_name(f, msg.package),
                 "in": where,
                 "required": where == "path" or self.required(f),
                 "schema": self.field_schema(f),
@@ -359,8 +370,10 @@ class Api:
         }
         if method_comment:
             op["description"] = method_comment
-        parameters = [parameter(f, "path") for f in path_fields] + [
-            parameter(f, "query") for f in query_fields
+        parameters = [
+            *(parameter(f, "path") for f in path_fields),
+            *(parameter(f, "query") for f in query_fields),
+            *(parameter(f, "header") for f in fields if f.name in headers),
         ]
         if parameters:
             op["parameters"] = parameters

@@ -69,6 +69,12 @@ class DownloadFileResponse:
         r"""
         Time at which the file was last changed, as an HTTP date.
         """
+    @property
+    def content_range(self) -> typing.Optional[builtins.str]:
+        r"""
+        For a `range`, the bytes that the answer holds and the size of the file, such as
+        `bytes 0-1023/4096`.
+        """
     def __eq__(self, other: builtins.object, /) -> builtins.bool: ...
     def __repr__(self) -> builtins.str: ...
 

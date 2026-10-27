@@ -8683,6 +8683,7 @@ dependencies = [
  "buffa",
  "buffa-types",
  "console_error_panic_hook",
+ "csv",
  "futures",
  "gloo-timers",
  "js-sys",

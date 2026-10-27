@@ -217,6 +217,8 @@ def test_files(uc: Calls, schema: tuple[str, str]) -> None:
     assert (entry.path, entry.file_size) == (f"{root}/dir/a.txt", 6)
     file = uc.download_file(f"{root}/dir/a.txt")
     assert (file.contents, file.content_length) == (b"hello!", 6)
+    part = uc.download_file(f"{root}/dir/a.txt", range="bytes=-2")
+    assert (part.contents, part.content_range) == (b"o!", "bytes 4-5/6")
     assert uc.get_file_metadata(f"{root}/dir/a.txt").content_length == 6
 
     uc.create_directory(f"{root}/empty")

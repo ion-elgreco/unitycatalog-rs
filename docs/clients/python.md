@@ -96,6 +96,7 @@ client.upload_file(f"{root}/data/a.csv", b"id,name\n1,x\n", overwrite=True)
 for entry in client.list_directory_contents(f"{root}/data").contents:
     print(entry.name, entry.file_size)
 data = client.download_file(f"{root}/data/a.csv").contents
+head = client.download_file(f"{root}/data/a.csv", range="bytes=0-1023").contents
 ```
 
 See [Files API](rest-apis.md#files-api).

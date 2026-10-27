@@ -107,7 +107,7 @@ impl FileClient {
         Ok(())
     }
 
-    /// Read a file. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+    /// Read a file, or a range of its bytes. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
     pub async fn download_file(
         &self,
         request: &DownloadFileRequest,
@@ -117,7 +117,11 @@ impl FileClient {
             encode_path_value(&request.file_path, true)
         );
         let url = self.base_url.join(&formatted_path)?;
-        let response = self.client.get(url).send().await?;
+        let mut builder = self.client.get(url);
+        if let Some(ref value) = request.range {
+            builder = builder.header("Range", value.as_str());
+        }
+        let response = builder.send().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -136,6 +140,10 @@ impl FileClient {
             .map(str::to_string);
         output.last_modified = headers
             .get("Last-Modified")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        output.content_range = headers
+            .get("Content-Range")
             .and_then(|value| value.to_str().ok())
             .map(str::to_string);
         Ok(output)

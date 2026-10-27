@@ -6219,6 +6219,13 @@ impl PyDownloadFileResponse {
         self.0.last_modified.clone()
     }
 
+    /// For a `range`, the bytes that the answer holds and the size of the file, such as
+    /// `bytes 0-1023/4096`.
+    #[getter]
+    fn content_range(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.content_range.clone()
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -6227,6 +6234,7 @@ impl PyDownloadFileResponse {
                 ("content_length", false),
                 ("content_type", false),
                 ("last_modified", false),
+                ("content_range", false),
             ],
         )
     }

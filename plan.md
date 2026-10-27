@@ -85,6 +85,10 @@ from the first plan: writes need ownership, because upstream has no `WRITE VOLUM
 - Python: `bytes` fields and parameters are Python `bytes` (getters return `Cow<[u8]>`, inputs
   take `PyBackedBytes`); the stubs say `bytes`.
 
+- `(olai.trestle.v1.request_header)`: a request field that goes in an HTTP request header, such
+  as `range` of `DownloadFile` in `Range`. Builders and bindings take it as an optional argument
+  (`.with_range(..)`, `range=`); the server emitter refuses it, as raw bodies.
+
 The clients hold a whole file in memory: the generated client has no streamed bodies. The web UI
 reads an upload into memory too; downloads are plain links, which the browser streams.
 
@@ -98,6 +102,26 @@ page of what it holds ("The folder holds 1 folder and 1 file.") and then shows a
 `recursive`, as the catalog's force box; Delete waits for the box. A folder that is not there
 shows as empty, for object storage.
 
+Clicking a file opens the viewer (`FileViewer`, a wide `Modal` without OK; the logic in
+`crates/uc-ui/src/preview.rs`, tested natively). It reads 512 KiB at a time with `range`, and the
+next part when the reader scrolls near the end, up to 10 MiB (the user's choice, 2026-10-27: scroll,
+no buttons); a table shows 200 more rows of what it read first. A preview that does not fill the
+viewer, such as one line of minified JSON, reads on by itself. It shows:
+
+| File | Preview |
+| --- | --- |
+| Text: `.txt`, `.log`, `.md`, `.yaml`, `.sql`, `.py` and others | The text |
+| `.json`, `.crc` | Pretty-printed; one document per line for NDJSON and Delta logs |
+| `.ndjson`, `.jsonl` | One pretty-printed document per line |
+| `.csv`, `.tsv` | A table, 200 rows at a time (the `csv` crate) |
+| Images: `.png`, `.jpg`, `.gif`, `.webp`, `.svg`, `.bmp`, `.avif` | The image, up to 10 MiB, from a blob with its media type |
+| Binary (NUL bytes or not UTF-8): Parquet, Avro, Lance | "No preview", and Download |
+
+`just demo` puts the logo of unitycatalog-rs, as PNG and SVG, into the volume
+`unity.default.images`, also into a demo from before (`examples/demo-files/`). An SVG takes the room
+of the viewer, as its own size can be tiny. The user chose (2026-10-27) not to preview Parquet. Text is never rendered as HTML, and an SVG
+shows as an image, which runs no scripts.
+
 ### Tests
 
 - `crates/uc-server/tests/files.rs`: files and folders of a volume, ranges, paging, read-only
@@ -108,7 +132,8 @@ shows as empty, for object storage.
   paging, vended credentials, directories).
 - Trestle: `raw_bodies_and_paths_of_several_segments` and the Python and stub checks of the
   `rest_client_e2e` fixture.
-- By hand (kit in `/tmp/uc-files-ui`): 12 browser checks of the tab; `databricks-sdk`
+- By hand (kit in `/tmp/uc-files-ui`): 12 browser checks of the tab and 12 of the viewer
+  (`viewer.py`, with scrolling, the 10 MiB limit and one-line JSON); `databricks-sdk`
   `WorkspaceClient.files` for all 8 calls, and `download_to` of a 60 MB file.
 
 ### Not done

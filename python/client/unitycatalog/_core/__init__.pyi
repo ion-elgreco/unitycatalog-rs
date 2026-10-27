@@ -854,15 +854,21 @@ class Client:
         r"""
         Like `delete_directory`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def download_file(self, file_path: builtins.str) -> files.DownloadFileResponse:
+    def download_file(
+        self, file_path: builtins.str, *, range: typing.Optional[builtins.str] = None
+    ) -> files.DownloadFileResponse:
         r"""
-        Read a file. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+        Read a file, or a range of its bytes. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+
+        Args:
+            range: The bytes to read, as an HTTP `Range` header has them: `bytes=0-1023`, `bytes=1024-` or
+                   `bytes=-1024`. The answer is then status 206, with those bytes.
 
         Returns:
             A file and its metadata.
         """
     def download_file_async(
-        self, file_path: builtins.str
+        self, file_path: builtins.str, *, range: typing.Optional[builtins.str] = None
     ) -> asyncio.Future[files.DownloadFileResponse]:
         r"""
         Like `download_file`, but returns an `asyncio.Future` of the result. Call it in a running event loop.

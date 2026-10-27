@@ -56,6 +56,11 @@ of their names and comments. Press `/` to go to it.
 The **Files** tab of a volume or table shows the files in its storage location. Click a folder to
 open it, and a name in the path above the list to go back. The download button gets a file.
 
+Click a file to view it. The viewer shows text, JSON (pretty-printed; for a Delta log, one document
+per line), CSV and TSV files as a table, and images (PNG, JPEG, GIF, WebP, SVG, BMP, AVIF, up to
+10 MB). It reads a large file 512 KB at a time: scroll down for more, up to 10 MB. Parquet, Avro
+and other binary files have no preview: download them.
+
 The owner of a volume also sees **Upload** (one or more files, with a box to replace files that
 are there), **New folder**, and a delete button in each row. For a folder that holds files, the
 dialog says what it holds; tick the box to delete them too. The files of a table are read-only. See [Files API](rest-apis.md#files-api).

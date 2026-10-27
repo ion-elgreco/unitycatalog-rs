@@ -886,7 +886,7 @@ impl Client {
         )
     }
 
-    /// Read a file. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+    /// Read a file, or a range of its bytes. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
     ///
     /// # Arguments
     ///

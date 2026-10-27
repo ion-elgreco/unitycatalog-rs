@@ -22,4 +22,8 @@ extend google.protobuf.FieldOptions {
   // client reads the response body into it; the other fields of the message come from response
   // headers.
   bool raw_body = 51003;
+
+  // The HTTP request header that this field of a request message goes in, instead of the query
+  // or the body, such as `Range`. On a `string` field.
+  string request_header = 51004;
 }
