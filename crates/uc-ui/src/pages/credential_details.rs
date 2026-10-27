@@ -12,8 +12,8 @@ use super::credentials::{Identity, IdentityFields, IdentityForm, IdentityKind, i
 use crate::api;
 use crate::auth::use_manages;
 use crate::components::{
-    Card, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, Empty, EntityHeader, Loaded,
-    MetaRow, Modal, ObjectRow, PermissionsCard, Tabs, TextField, loaded_list, use_notify,
+    Card, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, Empty, EntityHeader, Label,
+    Loaded, MetaRow, Modal, ObjectRow, PermissionsCard, Tabs, TextField, loaded_list, use_notify,
 };
 use crate::contents::Holder;
 use crate::load::{Key, Load, field, use_cache, use_load};
@@ -107,7 +107,7 @@ fn CredentialPage(name: String) -> impl IntoView {
         <EntityHeader
             icon=Section::Credentials.icon()
             name=name.clone()
-            badges=vec!["Credential".to_string()]
+            badges=vec![Label::from("Credential")]
             reload
             actions=view! {
                 <EditCredential name=name.clone() current comment/>

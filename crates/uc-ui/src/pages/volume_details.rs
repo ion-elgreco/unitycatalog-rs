@@ -10,7 +10,7 @@ use crate::auth::use_manages;
 use crate::components::edit_modal::Changes;
 use crate::components::{
     CredentialsCard, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata,
-    EntityHeader, FilesCard, Loaded, MetaRow, PermissionsCard, Tabs, Vendable,
+    EntityHeader, FilesCard, Label, Loaded, MetaRow, PermissionsCard, Tabs, Vendable,
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
@@ -39,9 +39,10 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
     let manages = use_manages(owner);
     let comment = field(info, |v: &VolumeInfo| v.comment.clone().unwrap_or_default());
     let badges = field(info, |v: &VolumeInfo| {
-        let mut badges: Vec<String> = Some(enum_name(v.volume_type))
+        let mut badges: Vec<Label> = Some(enum_name(v.volume_type))
             .filter(|kind| !kind.is_empty())
             .into_iter()
+            .map(Label::from)
             .collect();
         badges.push("VOLUME".into());
         badges

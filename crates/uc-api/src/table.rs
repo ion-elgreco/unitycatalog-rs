@@ -43,6 +43,7 @@ pub enum DataSourceFormat {
     Parquet,
     Orc,
     Text,
+    Lance,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -243,6 +244,7 @@ mod tests {
             (DataSourceFormat::Parquet, "PARQUET"),
             (DataSourceFormat::Orc, "ORC"),
             (DataSourceFormat::Text, "TEXT"),
+            (DataSourceFormat::Lance, "LANCE"),
         ]);
         assert_wire_names(&[
             (TableType::Managed, "MANAGED"),

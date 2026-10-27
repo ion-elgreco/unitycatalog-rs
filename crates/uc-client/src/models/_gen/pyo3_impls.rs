@@ -1582,6 +1582,7 @@ impl PyDataSourceFormat {
             6i32 => ::core::option::Option::Some("PARQUET"),
             7i32 => ::core::option::Option::Some("ORC"),
             8i32 => ::core::option::Option::Some("TEXT"),
+            9i32 => ::core::option::Option::Some("LANCE"),
             _ => ::core::option::Option::None,
         }
     }
@@ -1612,10 +1613,11 @@ impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyDataSourceFormat {
             "PARQUET" => 6i32,
             "ORC" => 7i32,
             "TEXT" => 8i32,
+            "LANCE" => 9i32,
             other => {
                 return ::core::result::Result::Err(::pyo3::exceptions::PyValueError::new_err(
                     ::std::format!(
-                        "invalid DataSourceFormat: {:?}; expected one of: DELTA, ICEBERG, CSV, JSON, AVRO, PARQUET, ORC, TEXT",
+                        "invalid DataSourceFormat: {:?}; expected one of: DELTA, ICEBERG, CSV, JSON, AVRO, PARQUET, ORC, TEXT, LANCE",
                         other
                     ),
                 ));

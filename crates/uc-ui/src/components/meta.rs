@@ -5,6 +5,7 @@
 use leptos::prelude::*;
 
 use super::card::Card;
+use super::label::{Label, LabelText};
 
 /// The Details tab: the grid, the properties of an object that has them,
 /// and the raw JSON.
@@ -27,13 +28,13 @@ pub fn DetailsTab(
 #[derive(Clone, PartialEq)]
 pub struct MetaRow {
     pub label: &'static str,
-    pub value: String,
+    pub value: Label,
     /// In the code font: ids and locations.
     pub mono: bool,
 }
 
 impl MetaRow {
-    pub fn new(label: &'static str, value: impl Into<String>) -> Self {
+    pub fn new(label: &'static str, value: impl Into<Label>) -> Self {
         Self {
             label,
             value: value.into(),
@@ -41,7 +42,7 @@ impl MetaRow {
         }
     }
 
-    pub fn mono(label: &'static str, value: impl Into<String>) -> Self {
+    pub fn mono(label: &'static str, value: impl Into<Label>) -> Self {
         Self {
             label,
             value: value.into(),
@@ -61,7 +62,9 @@ pub fn MetaGrid(#[prop(into)] rows: Signal<Vec<MetaRow>>) -> impl IntoView {
                         let class = if row.mono { "uc-mono" } else { "" };
                         view! {
                             <dt>{row.label}</dt>
-                            <dd class=class>{row.value}</dd>
+                            <dd class=class>
+                                <LabelText label=row.value/>
+                            </dd>
                         }
                     })
                     .collect_view()

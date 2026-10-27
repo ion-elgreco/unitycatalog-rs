@@ -47,6 +47,8 @@ enum DataSourceFormat {
   PARQUET = 6;
   ORC = 7;
   TEXT = 8;
+  // A Lance dataset. Upstream's API has no LANCE.
+  LANCE = 9;
 }
 
 // The type of a table.

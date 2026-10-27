@@ -202,6 +202,36 @@ async fn external_table_rules(#[future(awt)] seeded: Router) {
     let table = json_body(assert_status(resp, StatusCode::OK, "external").await).await;
     assert_eq!(table["storage_location"], "s3://bucket/ext");
 
+    // A Lance table is external; the server does not manage Lance data.
+    let mut lance = external(Some("s3://bucket/lance"));
+    lance["name"] = json!("lance");
+    lance["data_source_format"] = json!("LANCE");
+    let resp = seeded
+        .clone()
+        .oneshot(req_json(Method::POST, "/tables", lance.clone()))
+        .await
+        .unwrap();
+    assert_status(resp, StatusCode::OK, "lance").await;
+    let resp = seeded
+        .clone()
+        .oneshot(req(Method::GET, "/tables/main.default.lance"))
+        .await
+        .unwrap();
+    let got = json_body(assert_status(resp, StatusCode::OK, "get lance").await).await;
+    assert_eq!(got["data_source_format"], "LANCE");
+    lance["name"] = json!("managed_lance");
+    lance["table_type"] = json!("MANAGED");
+    let resp = seeded
+        .clone()
+        .oneshot(req_json(Method::POST, "/tables", lance))
+        .await
+        .unwrap();
+    let err = assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    assert_eq!(
+        err["message"],
+        "Managed table creation is only supported for Delta and Iceberg formats."
+    );
+
     // Native Iceberg tables come from the Iceberg REST catalog only.
     let mut iceberg = external(Some("s3://bucket/ice"));
     iceberg["data_source_format"] = json!("ICEBERG");

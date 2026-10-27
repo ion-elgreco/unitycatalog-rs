@@ -9,7 +9,7 @@ use crate::api;
 use crate::auth::use_auth;
 use crate::components::icons::X;
 use crate::components::{
-    AdminOnly, Card, DeleteButton, DeleteModal, Empty, EntityHeader, Loaded, use_notify,
+    AdminOnly, Card, DeleteButton, DeleteModal, Empty, EntityHeader, Label, Loaded, use_notify,
 };
 use crate::load::{Key, Load, use_cache, use_load};
 use crate::util::{Section, or_dash, route_params};
@@ -235,7 +235,7 @@ fn GroupPage(name: String) -> impl IntoView {
         <EntityHeader
             icon=Section::Groups.icon()
             name=name.clone()
-            badges=vec!["Group".to_string()]
+            badges=vec![Label::from("Group")]
             reload
             actions=view! { <DeleteButton open=delete_open when=admin/> }.into_any()
         />

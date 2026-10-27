@@ -12,7 +12,7 @@ use crate::components::edit_modal::Changes;
 use crate::components::icons::Plus;
 use crate::components::{
     Card, CreateModal, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata, Empty,
-    EntityHeader, Loaded, MetaRow, NewObject, ObjectRow, PermissionsCard, Tabs, counted,
+    EntityHeader, Label, Loaded, MetaRow, NewObject, ObjectRow, PermissionsCard, Tabs, counted,
     loaded_list, properties,
 };
 use crate::contents::Holder;
@@ -113,7 +113,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
         <EntityHeader
             icon=catalog_icon()
             name=catalog.clone()
-            badges=vec!["Catalog".to_string()]
+            badges=vec![Label::from("Catalog")]
             reload
             actions=view! {
                 <EditMetadata name=catalog.clone() comment properties=props save=save_metadata/>

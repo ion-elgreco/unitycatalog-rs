@@ -37,7 +37,7 @@ const SCALARS: [ColumnTypeName; 9] = [
     ColumnTypeName::Variant,
 ];
 
-const FORMATS: [DataSourceFormat; 8] = [
+const FORMATS: [DataSourceFormat; 9] = [
     DataSourceFormat::Delta,
     DataSourceFormat::Iceberg,
     DataSourceFormat::Csv,
@@ -46,6 +46,7 @@ const FORMATS: [DataSourceFormat; 8] = [
     DataSourceFormat::Parquet,
     DataSourceFormat::Orc,
     DataSourceFormat::Text,
+    DataSourceFormat::Lance,
 ];
 
 /// The property that names the id of a managed Delta table: the id of

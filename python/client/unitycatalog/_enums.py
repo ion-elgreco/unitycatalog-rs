@@ -212,6 +212,8 @@ class DataSourceFormat(enum.StrEnum):
     PARQUET = "PARQUET"
     ORC = "ORC"
     TEXT = "TEXT"
+    LANCE = "LANCE"
+    """A Lance dataset. Upstream's API has no LANCE."""
 
 
 class TableType(enum.StrEnum):

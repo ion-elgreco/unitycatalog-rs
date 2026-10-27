@@ -324,6 +324,8 @@ pub enum DataSourceFormat {
     PARQUET = 6i32,
     ORC = 7i32,
     TEXT = 8i32,
+    /// A Lance dataset. Upstream's API has no LANCE.
+    LANCE = 9i32,
 }
 
 impl DataSourceFormat {
@@ -354,6 +356,9 @@ impl DataSourceFormat {
     ///Idiomatic alias for [`Self::TEXT`]; `Debug` prints the variant name.
     #[allow(non_upper_case_globals)]
     pub const Text: Self = Self::TEXT;
+    ///Idiomatic alias for [`Self::LANCE`]; `Debug` prints the variant name.
+    #[allow(non_upper_case_globals)]
+    pub const Lance: Self = Self::LANCE;
 }
 
 impl ::core::default::Default for DataSourceFormat {
@@ -453,6 +458,7 @@ impl ::buffa::Enumeration for DataSourceFormat {
             6i32 => ::core::option::Option::Some(Self::PARQUET),
             7i32 => ::core::option::Option::Some(Self::ORC),
             8i32 => ::core::option::Option::Some(Self::TEXT),
+            9i32 => ::core::option::Option::Some(Self::LANCE),
             _ => ::core::option::Option::None,
         }
     }
@@ -472,6 +478,7 @@ impl ::buffa::Enumeration for DataSourceFormat {
             Self::PARQUET => "PARQUET",
             Self::ORC => "ORC",
             Self::TEXT => "TEXT",
+            Self::LANCE => "LANCE",
         }
     }
 
@@ -488,6 +495,7 @@ impl ::buffa::Enumeration for DataSourceFormat {
             "PARQUET" => ::core::option::Option::Some(Self::PARQUET),
             "ORC" => ::core::option::Option::Some(Self::ORC),
             "TEXT" => ::core::option::Option::Some(Self::TEXT),
+            "LANCE" => ::core::option::Option::Some(Self::LANCE),
             _ => ::core::option::Option::None,
         }
     }
@@ -503,6 +511,7 @@ impl ::buffa::Enumeration for DataSourceFormat {
             Self::PARQUET,
             Self::ORC,
             Self::TEXT,
+            Self::LANCE,
         ]
     }
 }
