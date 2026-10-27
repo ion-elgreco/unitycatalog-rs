@@ -10,6 +10,7 @@ The server has upstream's REST APIs, so clients of upstream's server use it as t
 | `/api/2.1/unity-catalog/iceberg/v1` | Iceberg REST catalog | Iceberg clients, such as PyIceberg. |
 | `/api/2.1/unity-catalog/delta-sharing` | Delta Sharing | Recipients of shares. |
 | `/api/1.0/unity-control` | Control plane | Token exchange, and SCIM users and groups. |
+| `/api/2.0/fs` | Files API | The files of volumes and, read-only, of tables, as the Databricks Files API has them. |
 
 With sign-in on, each request needs a token: `Authorization: Bearer <token>`. See
 [Sign-in and authorization](../server/auth.md).
@@ -46,6 +47,44 @@ print(catalog.list_namespaces())
 ```
 
 The server gives the client temporary credentials for each table that it loads.
+
+## Files API
+
+The server reads and writes the files with the credentials of the volume or table, so the caller
+needs no storage credentials. A path is `/Volumes/<catalog>/<schema>/<volume>/...`, or
+`/Tables/<catalog>/<schema>/<table>/...` for the files of a table:
+
+```bash
+fs=http://localhost:8080/api/2.0/fs
+curl -X PUT --data-binary @a.csv "$fs/files/Volumes/main/default/landing/data/a.csv?overwrite=true"
+curl "$fs/directories/Volumes/main/default/landing/data"
+curl -o a.csv "$fs/files/Volumes/main/default/landing/data/a.csv"
+curl "$fs/directories/Tables/main/default/events/_delta_log"
+```
+
+| Method | Path | Does |
+| --- | --- | --- |
+| `GET` | `/directories/<path>` | Lists a directory: `contents`, a page at a time (`page_size`, at most 1000, and `page_token`). |
+| `HEAD` | `/directories/<path>` | 200 when the directory exists. |
+| `PUT` | `/directories/<path>` | Creates a directory. |
+| `DELETE` | `/directories/<path>` | Deletes an empty directory; with `recursive=true`, a directory and what it holds. |
+| `GET` | `/files/<path>` | Downloads a file; takes a `Range` header. |
+| `HEAD` | `/files/<path>` | The file's `Content-Length`, `Content-Type` and `Last-Modified`. |
+| `PUT` | `/files/<path>` | Uploads the body as the file; `overwrite=true` replaces a file that is there. |
+| `DELETE` | `/files/<path>` | Deletes a file. |
+
+- **Privileges**: reads need `READ VOLUME` on a volume or `SELECT` on a table, as their temporary
+  credentials. Writes need ownership of the volume: upstream has no `WRITE VOLUME` privilege.
+- **`recursive`** is ours: the Databricks Files API deletes only empty directories.
+- **Tables are read-only**: a file written or deleted outside the table's commits would break the
+  table, so writes under `/Tables` fail.
+- **Directories**: in object storage, a directory exists only through its files. Creating one
+  there only checks the path, and a directory without files is not found. Local storage has real
+  directories.
+- **Databricks SDK**: `WorkspaceClient(...).files` works for these calls. For a file of 50 MB or
+  more, the SDK starts a multipart upload, which the server does not have. Set
+  `disable_experimental_files_api_client=True` in the SDK's `Config`: it then sends each upload
+  as one `PUT`.
 
 ## Delta Sharing
 

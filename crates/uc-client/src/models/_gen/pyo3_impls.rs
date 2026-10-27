@@ -6111,6 +6111,265 @@ impl ::core::convert::From<PyListExternalLocationsResponse>
     }
 }
 
+/// A file or directory in a directory.
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
+    name = "DirectoryEntry",
+    eq,
+    frozen,
+    module = "unitycatalog._core.files",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyDirectoryEntry(pub super::files::v1::DirectoryEntry);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PyDirectoryEntry {
+    /// Absolute path of the file or directory.
+    #[getter]
+    fn path(&self) -> ::std::string::String {
+        self.0.path.clone()
+    }
+
+    /// Name of the file or directory: the last part of its path.
+    #[getter]
+    fn name(&self) -> ::std::string::String {
+        self.0.name.clone()
+    }
+
+    /// Whether the entry is a directory.
+    #[getter]
+    fn is_directory(&self) -> bool {
+        self.0.is_directory
+    }
+
+    /// Size of the file, in bytes. Absent for a directory.
+    #[getter]
+    fn file_size(&self) -> ::core::option::Option<i64> {
+        self.0.file_size
+    }
+
+    /// Time at which the file was last changed, in epoch milliseconds. Absent for a directory.
+    #[getter]
+    fn last_modified(&self) -> ::core::option::Option<i64> {
+        self.0.last_modified
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[
+                ("path", false),
+                ("name", false),
+                ("is_directory", false),
+                ("file_size", false),
+                ("last_modified", false),
+            ],
+        )
+    }
+}
+
+impl ::core::convert::From<super::files::v1::DirectoryEntry> for PyDirectoryEntry {
+    fn from(value: super::files::v1::DirectoryEntry) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyDirectoryEntry> for super::files::v1::DirectoryEntry {
+    fn from(value: PyDirectoryEntry) -> Self {
+        value.0
+    }
+}
+
+/// A file and its metadata.
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
+    name = "DownloadFileResponse",
+    eq,
+    frozen,
+    module = "unitycatalog._core.files",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyDownloadFileResponse(pub super::files::v1::DownloadFileResponse);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PyDownloadFileResponse {
+    /// The bytes of the file.
+    #[getter]
+    fn contents(&self) -> ::std::borrow::Cow<'_, [u8]> {
+        ::std::borrow::Cow::Borrowed(&self.0.contents)
+    }
+
+    /// Size of the file, in bytes.
+    #[getter]
+    fn content_length(&self) -> ::core::option::Option<i64> {
+        self.0.content_length
+    }
+
+    /// Media type of the file.
+    #[getter]
+    fn content_type(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.content_type.clone()
+    }
+
+    /// Time at which the file was last changed, as an HTTP date.
+    #[getter]
+    fn last_modified(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.last_modified.clone()
+    }
+
+    /// For a `range`, the bytes that the answer holds and the size of the file, such as
+    /// `bytes 0-1023/4096`.
+    #[getter]
+    fn content_range(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.content_range.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[
+                ("contents", false),
+                ("content_length", false),
+                ("content_type", false),
+                ("last_modified", false),
+                ("content_range", false),
+            ],
+        )
+    }
+}
+
+impl ::core::convert::From<super::files::v1::DownloadFileResponse> for PyDownloadFileResponse {
+    fn from(value: super::files::v1::DownloadFileResponse) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyDownloadFileResponse> for super::files::v1::DownloadFileResponse {
+    fn from(value: PyDownloadFileResponse) -> Self {
+        value.0
+    }
+}
+
+/// The metadata of a file. The response has no body.
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
+    name = "GetFileMetadataResponse",
+    eq,
+    frozen,
+    module = "unitycatalog._core.files",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyGetFileMetadataResponse(pub super::files::v1::GetFileMetadataResponse);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PyGetFileMetadataResponse {
+    /// Size of the file, in bytes.
+    #[getter]
+    fn content_length(&self) -> ::core::option::Option<i64> {
+        self.0.content_length
+    }
+
+    /// Media type of the file.
+    #[getter]
+    fn content_type(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.content_type.clone()
+    }
+
+    /// Time at which the file was last changed, as an HTTP date.
+    #[getter]
+    fn last_modified(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.last_modified.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[
+                ("content_length", false),
+                ("content_type", false),
+                ("last_modified", false),
+            ],
+        )
+    }
+}
+
+impl ::core::convert::From<super::files::v1::GetFileMetadataResponse>
+    for PyGetFileMetadataResponse
+{
+    fn from(value: super::files::v1::GetFileMetadataResponse) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyGetFileMetadataResponse>
+    for super::files::v1::GetFileMetadataResponse
+{
+    fn from(value: PyGetFileMetadataResponse) -> Self {
+        value.0
+    }
+}
+
+#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+#[::pyo3::pyclass(
+    name = "ListDirectoryContentsResponse",
+    eq,
+    frozen,
+    module = "unitycatalog._core.files",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyListDirectoryContentsResponse(pub super::files::v1::ListDirectoryContentsResponse);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3_stub_gen::derive::gen_stub_pymethods]
+#[::pyo3::pymethods]
+impl PyListDirectoryContentsResponse {
+    /// The files and directories of the directory, directories first.
+    #[getter]
+    fn contents(&self) -> ::std::vec::Vec<PyDirectoryEntry> {
+        self.0
+            .contents
+            .iter()
+            .cloned()
+            .map(PyDirectoryEntry::from)
+            .collect()
+    }
+
+    /// Opaque token of the next page. Absent on the last page.
+    #[getter]
+    fn next_page_token(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.next_page_token.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[("contents", false), ("next_page_token", false)],
+        )
+    }
+}
+
+impl ::core::convert::From<super::files::v1::ListDirectoryContentsResponse>
+    for PyListDirectoryContentsResponse
+{
+    fn from(value: super::files::v1::ListDirectoryContentsResponse) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyListDirectoryContentsResponse>
+    for super::files::v1::ListDirectoryContentsResponse
+{
+    fn from(value: PyListDirectoryContentsResponse) -> Self {
+        value.0
+    }
+}
+
 /// The function to create.
 #[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(

@@ -202,6 +202,36 @@ def test_volumes(uc: Calls, schema: tuple[str, str]) -> None:
     assert uc.list_volumes(catalog, schema_name) == []
 
 
+def test_files(uc: Calls, schema: tuple[str, str]) -> None:
+    catalog, schema_name = schema
+    uc.create_volume(catalog, schema_name, "files", "MANAGED")
+    root = f"/Volumes/{catalog}/{schema_name}/files"
+    uc.upload_file(f"{root}/dir/a.txt", b"hello")
+    with pytest.raises(ConflictError):
+        uc.upload_file(f"{root}/dir/a.txt", b"again")
+    uc.upload_file(f"{root}/dir/a.txt", b"hello!", overwrite=True)
+
+    listing = uc.list_directory_contents(root)
+    assert [(e.name, e.is_directory) for e in listing.contents] == [("dir", True)]
+    [entry] = uc.list_directory_contents(f"{root}/dir", page_size=10).contents
+    assert (entry.path, entry.file_size) == (f"{root}/dir/a.txt", 6)
+    file = uc.download_file(f"{root}/dir/a.txt")
+    assert (file.contents, file.content_length) == (b"hello!", 6)
+    part = uc.download_file(f"{root}/dir/a.txt", range="bytes=-2")
+    assert (part.contents, part.content_range) == (b"o!", "bytes 4-5/6")
+    assert uc.get_file_metadata(f"{root}/dir/a.txt").content_length == 6
+
+    uc.create_directory(f"{root}/empty")
+    assert uc.get_directory_metadata(f"{root}/empty") is True
+    uc.delete_directory(f"{root}/empty")
+    assert uc.get_directory_metadata(f"{root}/empty") is False
+    with pytest.raises(BadRequestError):
+        uc.delete_directory(f"{root}/dir")
+    uc.delete_directory(f"{root}/dir", recursive=True)
+    with pytest.raises(NotFoundError):
+        uc.download_file(f"{root}/dir/a.txt")
+
+
 def test_search(uc: Calls, schema: tuple[str, str]) -> None:
     catalog, schema_name = schema
     name = unique("orders")

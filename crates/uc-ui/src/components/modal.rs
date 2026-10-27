@@ -1,5 +1,5 @@
 //! A dialog, as the console's `EntityFormDialog`: a title, a close button,
-//! a body, Cancel and OK. Escape, the close button, Cancel and a click on
+//! a body, Cancel and OK; or only Close, for a dialog that shows something. Escape, the close button, Cancel and a click on
 //! the backdrop close it; Enter in a field submits it. It takes the focus
 //! when it opens, keeps Tab inside, and gives the focus back when it
 //! closes. A dialog can open over another: Escape closes the top one.
@@ -32,13 +32,19 @@ pub fn Modal(
     /// The title: a text, or a closure for one that changes.
     #[prop(into)]
     title: TextProp,
-    ok_text: &'static str,
+    /// What OK says. Without it, the dialog has no OK, and Cancel says
+    /// "Close".
+    #[prop(optional)]
+    ok_text: Option<&'static str>,
     /// What OK says while the call runs.
     #[prop(default = "Saving…")]
     busy_text: &'static str,
     /// A red title and a red OK button, for deletes.
     #[prop(optional)]
     danger: bool,
+    /// As wide as the window allows, for what a dialog shows.
+    #[prop(optional)]
+    wide: bool,
     /// A call runs: OK says `busy_text` and waits for it.
     #[prop(into, optional)]
     busy: Signal<bool>,
@@ -46,7 +52,7 @@ pub fn Modal(
     #[prop(into, optional)]
     disabled: Signal<bool>,
     #[prop(into)] on_cancel: Callback<()>,
-    #[prop(into)] on_ok: Callback<()>,
+    #[prop(into, optional)] on_ok: Option<Callback<()>>,
     children: ChildrenFn,
 ) -> impl IntoView {
     view! {
@@ -58,6 +64,7 @@ pub fn Modal(
                 ok_text
                 busy_text
                 danger
+                wide
                 busy
                 disabled
                 on_cancel
@@ -72,13 +79,14 @@ pub fn Modal(
 #[component]
 fn Dialog(
     title: TextProp,
-    ok_text: &'static str,
+    ok_text: Option<&'static str>,
     busy_text: &'static str,
     danger: bool,
+    wide: bool,
     busy: Signal<bool>,
     disabled: Signal<bool>,
     on_cancel: Callback<()>,
-    on_ok: Callback<()>,
+    on_ok: Option<Callback<()>>,
     content: ChildrenFn,
 ) -> impl IntoView {
     // Its place in the stack of open dialogs: Escape is for the top one.
@@ -117,7 +125,10 @@ fn Dialog(
     let pressed_on_backdrop = StoredValue::new(false);
     let submit = move |e: ev::SubmitEvent| {
         e.prevent_default();
-        if !busy.get_untracked() && !disabled.get_untracked() {
+        if let Some(on_ok) = on_ok
+            && !busy.get_untracked()
+            && !disabled.get_untracked()
+        {
             on_ok.run(());
         }
     };
@@ -126,6 +137,17 @@ fn Dialog(
     } else {
         ("uc-dialog", "uc-btn")
     };
+    let panel_class = match wide {
+        true => format!("{panel_class} uc-dialog--wide"),
+        false => panel_class.to_string(),
+    };
+    let ok = ok_text.map(|ok_text| {
+        view! {
+            <button type="submit" class=ok_class disabled=move || disabled.get() || busy.get()>
+                {move || if busy.get() { busy_text } else { ok_text }}
+            </button>
+        }
+    });
     view! {
         <div
             class="uc-dialog-backdrop"
@@ -165,15 +187,9 @@ fn Dialog(
                         class="uc-btn uc-btn--outline"
                         on:click=move |_| on_cancel.run(())
                     >
-                        "Cancel"
+                        {if ok_text.is_some() { "Cancel" } else { "Close" }}
                     </button>
-                    <button
-                        type="submit"
-                        class=ok_class
-                        disabled=move || disabled.get() || busy.get()
-                    >
-                        {move || if busy.get() { busy_text } else { ok_text }}
-                    </button>
+                    {ok}
                 </div>
             </form>
         </div>

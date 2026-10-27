@@ -19,6 +19,21 @@ thread_local! {
     };
 }
 
+/// A size in bytes, as `512 B`, `1.5 KB` or `12.3 MB`: kilo is 1024.
+pub fn format_size(bytes: i64) -> String {
+    const UNITS: [&str; 5] = ["KB", "MB", "GB", "TB", "PB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut size = bytes as f64 / 1024.0;
+    let mut unit = 0;
+    while size >= 1024.0 && unit < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit += 1;
+    }
+    format!("{size:.1} {}", UNITS[unit])
+}
+
 /// The console's `formatTimestamp`: `Date.toLocaleString()`, such as
 /// `6/5/2026, 7:14:51 PM`. A dash for 0, a time that the server did not
 /// send, as the console's pages show a missing value.
@@ -55,5 +70,19 @@ pub fn enum_name<E: Enumeration>(value: EnumValue<E>) -> String {
     match value.as_known() {
         Some(known) if known.to_i32() != 0 => known.proto_name().to_string(),
         _ => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_size;
+
+    #[test]
+    fn sizes() {
+        assert_eq!(format_size(0), "0 B");
+        assert_eq!(format_size(1023), "1023 B");
+        assert_eq!(format_size(1536), "1.5 KB");
+        assert_eq!(format_size(5 * 1024 * 1024), "5.0 MB");
+        assert_eq!(format_size(3 * 1024_i64.pow(4)), "3.0 TB");
     }
 }

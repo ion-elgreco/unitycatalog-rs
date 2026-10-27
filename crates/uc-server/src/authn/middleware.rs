@@ -27,7 +27,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use uc_common::{API_BASE, CONTROL_BASE, Error, ErrorCode, Result};
+use uc_common::{API_BASE, CONTROL_BASE, Error, ErrorCode, FILES_BASE, Result};
 
 use crate::{
     authn::{principal::Principal, security::ADMIN},
@@ -94,7 +94,7 @@ fn forwarded_user(state: &AppState, req: &Request<Body>) -> Option<String> {
 }
 
 /// Upstream guards the API and control-plane paths, except token exchange;
-/// client credentials sign in too.
+/// client credentials sign in too. The Files API is guarded as the API.
 fn requires_sign_in(path: &str) -> bool {
     let under = |base: &str| {
         path == base
@@ -104,7 +104,7 @@ fn requires_sign_in(path: &str) -> bool {
     };
     let signs_in = path.strip_prefix(CONTROL_BASE) == Some("/auth/tokens")
         || path.strip_prefix(API_BASE) == Some("/oauth/token");
-    (under(API_BASE) || under(CONTROL_BASE)) && !signs_in
+    (under(API_BASE) || under(CONTROL_BASE) || under(FILES_BASE)) && !signs_in
 }
 
 pub(crate) fn bearer_token(headers: &HeaderMap) -> Option<String> {

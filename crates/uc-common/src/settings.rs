@@ -97,10 +97,11 @@ pub struct Server {
     #[serde(deserialize_with = "some")]
     pub obs_port: Option<u16>,
     /// The largest request body, in bytes (default 10 MiB, as Armeria).
+    /// Not for uploads to the Files API, which stream to storage.
     #[serde(deserialize_with = "scalar")]
     pub max_request_length: usize,
     /// The time a request may take (default `10s`, as Armeria; `0s`
-    /// for none).
+    /// for none). Not for uploads and directory deletes of the Files API.
     #[serde(deserialize_with = "duration")]
     pub request_timeout: Duration,
     /// Requests per second and client address; 0 for no limit.

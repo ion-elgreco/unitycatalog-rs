@@ -1262,6 +1262,62 @@ pre,
 
 .uc-table .uc-mono { white-space: pre-wrap; }
 
+/* ---------- Files: the folder path, the entries ---------- */
+
+.uc-files__path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.uc-files__path .uc-btn--link { font-size: 14px; }
+.uc-files__sep { color: var(--muted-foreground); }
+.uc-files__here { font-weight: 600; }
+
+.uc-files__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.uc-files__actions {
+  display: inline-flex;
+  gap: 2px;
+  justify-content: flex-end;
+}
+
+.uc-files__more { margin-top: 12px; }
+
+/* The file viewer, in a wide dialog. */
+.uc-dialog.uc-dialog--wide { max-width: min(1100px, 94vw); }
+
+.uc-viewer__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* What the viewer shows grows as it is scrolled: one scroll area. */
+.uc-viewer__scroll { max-height: 65vh; overflow: auto; }
+.uc-viewer__scroll .uc-code { max-height: none; overflow: visible; }
+.uc-viewer__more { padding: 8px 0; text-align: center; }
+
+.uc-viewer__image {
+  display: block;
+  max-width: 100%;
+  max-height: 65vh;
+  margin: 0 auto;
+}
+
+.uc-viewer__image--vector {
+  width: 100%;
+  object-fit: contain;
+}
+
 /* ---------- The details grid: label and value ---------- */
 
 .uc-meta {

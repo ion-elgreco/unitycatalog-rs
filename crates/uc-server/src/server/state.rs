@@ -10,6 +10,7 @@ use crate::{
     authn::security::SecurityContext,
     authz::{PermissionEnforcer, PolicyEngine},
     observability::audit::sink::{self as audit_sink, AuditHandle},
+    storage::StoreCache,
     storage::s3_region::S3Regions,
     storage::vendor::{CredentialVendor, DynVendor, PlaceholderVendor},
 };
@@ -63,6 +64,8 @@ pub struct AppStateInner {
     pub external_local_roots: Arc<Vec<PathBuf>>,
     /// The regions of S3 buckets, configured or discovered.
     pub s3_regions: Arc<S3Regions>,
+    /// The stores that the Files API opened, with their credentials.
+    pub stores: StoreCache,
     /// The server's AWS role (upstream `aws.masterRoleArn`), shown as
     /// `unity_catalog_iam_arn` on AWS IAM role credentials.
     pub aws_identity_arn: Option<Arc<str>>,
@@ -92,6 +95,7 @@ impl AppState {
             delta_api_only: false,
             iceberg_writes_enabled: true,
             s3_regions: Arc::new(S3Regions::default()),
+            stores: StoreCache::default(),
             external_local_roots: Arc::new(Vec::new()),
             audit,
             readiness: Default::default(),

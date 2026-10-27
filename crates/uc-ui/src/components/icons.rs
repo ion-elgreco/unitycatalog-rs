@@ -332,3 +332,48 @@ pub fn ScrollText(#[prop(optional)] class: Option<&'static str>) -> impl IntoVie
         class,
     )
 }
+
+/// `folder`.
+#[component]
+pub fn Folder(#[prop(optional)] class: Option<&'static str>) -> impl IntoView {
+    icon(
+        r#"<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>"#,
+        class,
+    )
+}
+
+/// `folder-plus`.
+#[component]
+pub fn FolderPlus(#[prop(optional)] class: Option<&'static str>) -> impl IntoView {
+    icon(
+        r#"<path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>"#,
+        class,
+    )
+}
+
+/// `file`.
+#[component]
+pub fn File(#[prop(optional)] class: Option<&'static str>) -> impl IntoView {
+    icon(
+        r#"<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>"#,
+        class,
+    )
+}
+
+/// `upload`.
+#[component]
+pub fn Upload(#[prop(optional)] class: Option<&'static str>) -> impl IntoView {
+    icon(
+        r#"<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>"#,
+        class,
+    )
+}
+
+/// `download`.
+#[component]
+pub fn Download(#[prop(optional)] class: Option<&'static str>) -> impl IntoView {
+    icon(
+        r#"<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>"#,
+        class,
+    )
+}

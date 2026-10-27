@@ -34,3 +34,6 @@ pub const API_BASE: &str = "/api/2.1/unity-catalog";
 /// The path of the control plane, as upstream's server has it: the token
 /// exchange and SCIM are below it.
 pub const CONTROL_BASE: &str = "/api/1.0/unity-control";
+
+/// The path of the Files API, as Databricks has it.
+pub const FILES_BASE: &str = "/api/2.0/fs";

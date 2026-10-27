@@ -22,7 +22,8 @@ When the server needs a sign-in, the UI shows its login page first: see
 - **Catalogs**, on the left, is the tree of catalogs, schemas, and the tables, volumes, functions
   and models of each schema. Click a name to open its page.
 - Each page has three tabs: **Overview** (the description and what the object holds),
-  **Details** (its fields, properties and JSON) and **Permissions**.
+  **Details** (its fields, properties and JSON) and **Permissions**. Volumes and tables also have
+  **Files**.
 - **Create**: **Create catalog** on the list of catalogs, **Create schema** on a catalog, and
   **New** on a schema, for a table, volume, SQL function or registered model. A new table is
   managed, or external at a storage location, with any number of columns. The Iceberg REST
@@ -49,6 +50,20 @@ of their names and comments. Press `/` to go to it.
   objects whose comment holds its words. You see only the objects that you may read.
 - On Turso, a word matches anywhere in a word: `rders` finds `sales_orders`. On PostgreSQL, a word
   matches the start of a word: `ord` finds `sales_orders`, `rders` does not.
+
+## Files
+
+The **Files** tab of a volume or table shows the files in its storage location. Click a folder to
+open it, and a name in the path above the list to go back. The download button gets a file.
+
+Click a file to view it. The viewer shows text, JSON (pretty-printed; for a Delta log, one document
+per line), CSV and TSV files as a table, and images (PNG, JPEG, GIF, WebP, SVG, BMP, AVIF, up to
+10 MB). It reads a large file 512 KB at a time: scroll down for more, up to 10 MB. Parquet, Avro
+and other binary files have no preview: download them.
+
+The owner of a volume also sees **Upload** (one or more files, with a box to replace files that
+are there), **New folder**, and a delete button in each row. For a folder that holds files, the
+dialog says what it holds; tick the box to delete them too. The files of a table are read-only. See [Files API](rest-apis.md#files-api).
 
 ## Permissions
 

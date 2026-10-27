@@ -9,6 +9,7 @@ use crate::codegen::credentials::*;
 use crate::codegen::delta_api::*;
 use crate::codegen::delta_commits::*;
 use crate::codegen::external_locations::*;
+use crate::codegen::files::*;
 use crate::codegen::functions::*;
 use crate::codegen::health::*;
 use crate::codegen::iceberg::*;
@@ -35,6 +36,7 @@ use uc_client::models::catalogs::v1::*;
 use uc_client::models::credentials::v1::*;
 use uc_client::models::delta::v1::*;
 use uc_client::models::external_locations::v1::*;
+use uc_client::models::files::v1::*;
 use uc_client::models::functions::v1::*;
 use uc_client::models::health::v1::*;
 use uc_client::models::iceberg::v1::*;
@@ -141,6 +143,11 @@ impl Client {
             self.client.clone(),
             self.base_url.clone(),
         )
+    }
+
+    ///Low-level `files` client exposing request/response passthrough methods.
+    pub fn files_client(&self) -> crate::codegen::files::FileClient {
+        crate::codegen::files::FileClient::new(self.client.clone(), self.base_url.clone())
     }
 
     ///Low-level `functions` client exposing request/response passthrough methods.
@@ -819,6 +826,117 @@ impl Client {
                 self.client.clone(),
                 self.base_url.clone(),
             ),
+        )
+    }
+
+    /// List the files and directories of a directory. Needs `READ VOLUME` on a volume, or `SELECT` on
+    /// a table.
+    ///
+    /// # Arguments
+    ///
+    /// * `directory_path` - Absolute path of the directory.
+    pub fn list_directory_contents(
+        &self,
+        directory_path: impl Into<String>,
+    ) -> ListDirectoryContentsBuilder {
+        ListDirectoryContentsBuilder::new(
+            crate::codegen::files::FileClient::new(self.client.clone(), self.base_url.clone()),
+            directory_path,
+        )
+    }
+
+    /// Check that a directory exists. A missing directory is status 404.
+    ///
+    /// # Arguments
+    ///
+    /// * `directory_path` - Absolute path of the directory.
+    pub fn get_directory_metadata(
+        &self,
+        directory_path: impl Into<String>,
+    ) -> GetDirectoryMetadataBuilder {
+        GetDirectoryMetadataBuilder::new(
+            crate::codegen::files::FileClient::new(self.client.clone(), self.base_url.clone()),
+            directory_path,
+        )
+    }
+
+    /// Create a directory and its parents. In object storage, a directory exists only through its
+    /// files, so this only checks the path. Only in volumes; needs ownership of the volume.
+    ///
+    /// # Arguments
+    ///
+    /// * `directory_path` - Absolute path of the directory.
+    pub fn create_directory(&self, directory_path: impl Into<String>) -> CreateDirectoryBuilder {
+        CreateDirectoryBuilder::new(
+            crate::codegen::files::FileClient::new(self.client.clone(), self.base_url.clone()),
+            directory_path,
+        )
+    }
+
+    /// Delete a directory: an empty one, or with `recursive`, one and what it holds. Only in volumes;
+    /// needs ownership of the volume.
+    ///
+    /// # Arguments
+    ///
+    /// * `directory_path` - Absolute path of the directory.
+    pub fn delete_directory(&self, directory_path: impl Into<String>) -> DeleteDirectoryBuilder {
+        DeleteDirectoryBuilder::new(
+            crate::codegen::files::FileClient::new(self.client.clone(), self.base_url.clone()),
+            directory_path,
+        )
+    }
+
+    /// Read a file, or a range of its bytes. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - Absolute path of the file.
+    pub fn download_file(&self, file_path: impl Into<String>) -> DownloadFileBuilder {
+        DownloadFileBuilder::new(
+            crate::codegen::files::FileClient::new(self.client.clone(), self.base_url.clone()),
+            file_path,
+        )
+    }
+
+    /// Get the metadata of a file. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - Absolute path of the file.
+    pub fn get_file_metadata(&self, file_path: impl Into<String>) -> GetFileMetadataBuilder {
+        GetFileMetadataBuilder::new(
+            crate::codegen::files::FileClient::new(self.client.clone(), self.base_url.clone()),
+            file_path,
+        )
+    }
+
+    /// Write a file, and create its directories. Only in volumes; needs ownership of the volume.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - Absolute path of the file.
+    /// * `contents` - The bytes of the file.
+    pub fn upload_file(
+        &self,
+        file_path: impl Into<String>,
+        contents: Vec<u8>,
+    ) -> UploadFileBuilder {
+        UploadFileBuilder::new(
+            crate::codegen::files::FileClient::new(self.client.clone(), self.base_url.clone()),
+            file_path,
+            contents,
+        )
+    }
+
+    /// Delete a file. Only in volumes; needs ownership of the volume.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - Absolute path of the file.
+    pub fn delete_file(&self, file_path: impl Into<String>) -> DeleteFileBuilder {
+        DeleteFileBuilder::new(
+            crate::codegen::files::FileClient::new(self.client.clone(), self.base_url.clone()),
+            file_path,
         )
     }
 

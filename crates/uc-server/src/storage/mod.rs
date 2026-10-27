@@ -11,21 +11,23 @@ pub mod secrets;
 pub mod vendor;
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use futures::{StreamExt, stream::BoxStream};
+use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use object_store::{
     ObjectStore, StaticCredentialProvider,
     aws::AmazonS3Builder,
     azure::{AzureConfigKey, MicrosoftAzureBuilder},
     client::SpawnedReqwestConnector,
     gcp::{GcpCredential, GoogleCloudStorageBuilder},
+    list::PaginatedListStore,
     local::LocalFileSystem,
     path::Path as ObjectPath,
 };
 
 use uc_api::TemporaryCredentials;
-use uc_common::{NormalizedUrl, UriScheme};
+use uc_common::{NormalizedUrl, UriScheme, now_epoch_millis};
 use uc_metastore::DynMetastore;
 use uc_storage::runtime::io_handle;
 
@@ -68,29 +70,138 @@ impl ServerStorage {
         location: &NormalizedUrl,
         op: VendOp,
     ) -> Result<(Arc<dyn ObjectStore>, ObjectPath), StorageError> {
-        let path = ObjectPath::from(location.path().trim_matches('/'));
+        let opened = self.open_store(location, op).await?;
+        Ok((opened.store, opened.root))
+    }
+
+    /// A store that can reach `location`, with its paged listing and the
+    /// time at which its credentials expire.
+    pub async fn open_store(
+        &self,
+        location: &NormalizedUrl,
+        op: VendOp,
+    ) -> Result<Opened, StorageError> {
+        let root = ObjectPath::from(location.path().trim_matches('/'));
         if location.scheme() == UriScheme::File {
-            return Ok((Arc::new(LocalFileSystem::new()), path));
+            return Ok(Opened {
+                store: Arc::new(LocalFileSystem::new()),
+                pages: None,
+                root,
+                expires_at: None,
+            });
         }
         let credential = credential_for_url(&self.metastore, location.as_str()).await?;
         // Neither an external location nor a location of the settings: the
         // environment's credentials.
         if credential.is_none() && !self.vendor.covers(location) {
-            let store = build_store(location, None, self.vendor.s3_store())?;
-            return Ok((store, path));
+            let (store, pages) = build_store(location, None, self.vendor.s3_store())?;
+            return Ok(Opened {
+                store,
+                pages,
+                root,
+                expires_at: None,
+            });
         }
         let ctx = CredentialContext::new(location.clone(), op.privileges(), credential);
         let credentials = self.vendor.vend(&ctx).await?;
-        let store = build_store(location, Some(&credentials), self.vendor.s3_store())?;
-        Ok((store, path))
+        let (store, pages) = build_store(location, Some(&credentials), self.vendor.s3_store())?;
+        Ok(Opened {
+            store,
+            pages,
+            root,
+            expires_at: credentials.expiration_time,
+        })
     }
 }
+
+/// A store opened for a location.
+pub struct Opened {
+    pub store: Arc<dyn ObjectStore>,
+    /// The same store as a [`PaginatedListStore`]: S3, Azure and GCS list a
+    /// page per request; local files have none.
+    pub pages: Option<Arc<dyn PaginatedListStore>>,
+    /// The location's path in the store.
+    pub root: ObjectPath,
+    /// When the vended credentials of the store expire, in epoch
+    /// milliseconds; `None` without vended credentials.
+    expires_at: Option<i64>,
+}
+
+/// Opened stores by location and operation, kept until shortly before
+/// their credentials expire: one vend serves many requests, and requests
+/// that come at the same time wait for one open.
+#[derive(Clone)]
+pub struct StoreCache(moka::future::Cache<(String, VendOp), Arc<Opened>>);
+
+/// How long a store is kept at most. Grants are checked on every request;
+/// this bounds how long a changed storage credential takes to apply.
+const STORE_TTL: Duration = Duration::from_secs(5 * 60);
+
+/// How long before its credentials expire a store is dropped.
+const EXPIRY_MARGIN: Duration = Duration::from_secs(2 * 60);
+
+struct StoreExpiry;
+
+impl moka::Expiry<(String, VendOp), Arc<Opened>> for StoreExpiry {
+    fn expire_after_create(
+        &self,
+        _key: &(String, VendOp),
+        opened: &Arc<Opened>,
+        _created_at: Instant,
+    ) -> Option<Duration> {
+        let Some(expires_at) = opened.expires_at else {
+            return Some(STORE_TTL);
+        };
+        let left = u64::try_from(expires_at - now_epoch_millis()).unwrap_or(0);
+        Some(
+            Duration::from_millis(left)
+                .saturating_sub(EXPIRY_MARGIN)
+                .min(STORE_TTL),
+        )
+    }
+}
+
+impl Default for StoreCache {
+    fn default() -> Self {
+        Self(
+            moka::future::Cache::builder()
+                .max_capacity(1_000)
+                .expire_after(StoreExpiry)
+                .build(),
+        )
+    }
+}
+
+impl StoreCache {
+    /// [`ServerStorage::open_store`], or the store opened before for the
+    /// same location and operation.
+    pub async fn open(
+        &self,
+        metastore: &DynMetastore,
+        vendor: &DynVendor,
+        location: &NormalizedUrl,
+        op: VendOp,
+    ) -> Result<Arc<Opened>, StorageError> {
+        let key = (location.as_str().to_string(), op);
+        let open = async {
+            let storage = ServerStorage::new(metastore.clone(), vendor.clone());
+            storage.open_store(location, op).await.map(Arc::new)
+        };
+        self.0
+            .try_get_with(key, open)
+            .await
+            .map_err(|e| StorageError(e.0.clone()))
+    }
+}
+
+/// The store of `location` with `credentials`, and its paged listing.
+type Built = (Arc<dyn ObjectStore>, Option<Arc<dyn PaginatedListStore>>);
 
 fn build_store(
     location: &NormalizedUrl,
     credentials: Option<&TemporaryCredentials>,
     s3_store: Option<&S3Store>,
-) -> Result<Arc<dyn ObjectStore>, StorageError> {
+) -> Result<Built, StorageError> {
     let url = location.as_str();
     Ok(match location.scheme() {
         UriScheme::S3 => {
@@ -114,7 +225,8 @@ fn build_store(
                     builder = builder.with_token(token);
                 }
             }
-            Arc::new(builder.build()?)
+            let store = Arc::new(builder.build()?);
+            (store.clone(), Some(store))
         }
         UriScheme::Gs => {
             let mut builder = GoogleCloudStorageBuilder::from_env()
@@ -127,7 +239,8 @@ fn build_store(
                 let provider = StaticCredentialProvider::new(GcpCredential { bearer });
                 builder = builder.with_credentials(Arc::new(provider));
             }
-            Arc::new(builder.build()?)
+            let store = Arc::new(builder.build()?);
+            (store.clone(), Some(store))
         }
         UriScheme::Abfs | UriScheme::Abfss => {
             let mut builder = MicrosoftAzureBuilder::from_env()
@@ -139,10 +252,24 @@ fn build_store(
             if let Some(sas) = sas {
                 builder = builder.with_config(AzureConfigKey::SasKey, sas);
             }
-            Arc::new(builder.build()?)
+            let store = Arc::new(builder.build()?);
+            (store.clone(), Some(store))
         }
-        UriScheme::File => Arc::new(LocalFileSystem::new()),
+        UriScheme::File => (Arc::new(LocalFileSystem::new()), None),
     })
+}
+
+/// Delete every object under `prefix`, in batches where the store has
+/// them (S3, Azure, GCS).
+pub async fn delete_all(store: &dyn ObjectStore, prefix: &ObjectPath) -> object_store::Result<()> {
+    let locations = store
+        .list(Some(prefix))
+        .map_ok(|meta| meta.location)
+        .boxed();
+    store
+        .delete_stream(locations)
+        .try_for_each(|_| futures::future::ready(Ok(())))
+        .await
 }
 
 /// Whether two objects hold the same bytes. Both are read in step, so
@@ -256,7 +383,7 @@ mod tests {
             region: "us-east-1".into(),
         };
         let location = NormalizedUrl::parse("s3://bucket/tables/t1").unwrap();
-        let s3 = build_store(&location, Some(&credentials), Some(&store)).unwrap();
+        let (s3, _) = build_store(&location, Some(&credentials), Some(&store)).unwrap();
         let path = ObjectPath::from("tables/t1/part-0");
         s3.put(&path, PutPayload::from_static(b"x")).await.unwrap();
         assert_eq!(*seen.lock().unwrap(), ["PUT /bucket/tables/t1/part-0"]);

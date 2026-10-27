@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from google.api import annotations_pb2, field_behavior_pb2
-from google.protobuf import descriptor_pb2
+from google.protobuf import descriptor_pb2, descriptor_pool
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "reference" / "openapi.json"
@@ -60,6 +60,9 @@ GROUPS = {
     "Health": ["HealthService"],
 }
 DEFAULT_GROUP = "Unity Catalog REST API"
+# The options of trestle (proto/olai/trestle/v1/annotations.proto): a field of a response that
+# comes from a response header, and a field that is the HTTP body as raw bytes.
+TRESTLE = "olai/trestle/v1/annotations.proto"
 # Words of service names that are acronyms or brand names.
 WORDS = {"Api": "API", "Scim": "SCIM", "Rest": "REST"}
 
@@ -116,6 +119,11 @@ class Enum:
     value_comments: dict[int, str]
 
 
+BINARY = {
+    "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
+}
+
+
 def comment(locations: dict[tuple[int, ...], str], path: tuple[int, ...]) -> str:
     text = locations.get(path, "").strip("\n")
     return "\n".join(line.removeprefix(" ") for line in text.splitlines()).strip()
@@ -129,6 +137,14 @@ class Api:
             tuple[str, descriptor_pb2.ServiceDescriptorProto, str, list[str]]
         ] = []
         fds = descriptor_pb2.FileDescriptorSet.FromString(descriptor_set.read_bytes())
+        # trestle's options, which protobuf parses once the default pool knows them.
+        pool = descriptor_pool.Default()
+        pool.Add(next(f for f in fds.file if f.name == TRESTLE))
+        self.raw_body_option = pool.FindExtensionByName("olai.trestle.v1.raw_body")
+        self.header_option = pool.FindExtensionByName("olai.trestle.v1.response_header")
+        self.request_header_option = pool.FindExtensionByName(
+            "olai.trestle.v1.request_header"
+        )
         for f in fds.file:
             locations = {
                 tuple(loc.path): loc.leading_comments
@@ -203,6 +219,25 @@ class Api:
         if f.json_name and f.json_name != lower_camel(f.name):
             return f.json_name
         return f.name
+
+    @staticmethod
+    def trestle_options(
+        f: descriptor_pb2.FieldDescriptorProto,
+    ) -> descriptor_pb2.FieldOptions:
+        """The options of `f`, parsed again, with trestle's."""
+        return descriptor_pb2.FieldOptions.FromString(f.options.SerializeToString())
+
+    def response_header(self, f: descriptor_pb2.FieldDescriptorProto) -> str | None:
+        """The response header that a field of a response comes from, if any."""
+        return self.trestle_options(f).Extensions[self.header_option] or None
+
+    def request_header(self, f: descriptor_pb2.FieldDescriptorProto) -> str | None:
+        """The request header that a field of a request goes in, if any."""
+        return self.trestle_options(f).Extensions[self.request_header_option] or None
+
+    def raw_body(self, f: descriptor_pb2.FieldDescriptorProto) -> bool:
+        """Whether a field is the HTTP body as raw bytes."""
+        return self.trestle_options(f).Extensions[self.raw_body_option]
 
     @staticmethod
     def required(f: descriptor_pb2.FieldDescriptorProto) -> bool:
@@ -311,11 +346,15 @@ class Api:
             query_fields = [f for f in rest if f.name != body]
         else:
             body_fields, query_fields = [], rest
+        headers = {
+            f.name: name for f in query_fields if (name := self.request_header(f))
+        }
+        query_fields = [f for f in query_fields if f.name not in headers]
 
         def parameter(f, where):
             description = msg.field_comments.get(fields.index(f), "")
             p = {
-                "name": self.json_name(f, msg.package),
+                "name": headers.get(f.name) or self.json_name(f, msg.package),
                 "in": where,
                 "required": where == "path" or self.required(f),
                 "schema": self.field_schema(f),
@@ -331,12 +370,16 @@ class Api:
         }
         if method_comment:
             op["description"] = method_comment
-        parameters = [parameter(f, "path") for f in path_fields] + [
-            parameter(f, "query") for f in query_fields
+        parameters = [
+            *(parameter(f, "path") for f in path_fields),
+            *(parameter(f, "query") for f in query_fields),
+            *(parameter(f, "header") for f in fields if f.name in headers),
         ]
         if parameters:
             op["parameters"] = parameters
-        if body_fields:
+        if body_fields and all(self.raw_body(f) for f in body_fields):
+            op["requestBody"] = {"required": True, "content": BINARY}
+        elif body_fields:
             media = (
                 "application/x-www-form-urlencoded"
                 if full_method in FORM_METHODS
@@ -353,20 +396,45 @@ class Api:
         if method.output_type == ".google.protobuf.Empty":
             op["responses"] = {"200": {"description": "Done: an empty body."}}
         else:
-            out = self.messages.get(method.output_type)
-            description = (
-                summary(out.comment)
-                if out and out.comment
-                else self.schema_names.get(method.output_type, "")
-            )
-            schema = WELL_KNOWN.get(method.output_type) or self.ref(method.output_type)
-            op["responses"] = {
-                "200": {
-                    "description": description or "OK",
-                    "content": {"application/json": {"schema": schema}},
-                }
-            }
+            op["responses"] = {"200": self.response(method.output_type)}
         return op
+
+    def response(self, output_type: str) -> dict:
+        """The answer of an RPC: its body, and the headers that fields come from."""
+        out = self.messages.get(output_type)
+        description = (
+            summary(out.comment)
+            if out and out.comment
+            else self.schema_names.get(output_type, "")
+        )
+        answer: dict = {"description": description or "OK"}
+        fields = list(out.proto.field) if out else []
+        named = [(f, self.response_header(f)) for f in fields]
+        headers = {name: f for f, name in named if name is not None}
+        body = [f for f, name in named if name is None]
+        raw = any(self.raw_body(f) for f in body)
+        if not headers and not raw:
+            schema = WELL_KNOWN.get(output_type) or self.ref(output_type)
+            answer["content"] = {"application/json": {"schema": schema}}
+            return answer
+        if raw:
+            answer["content"] = BINARY
+        elif body:
+            answer["content"] = {
+                "application/json": {"schema": self.object_schema(out, body)}
+            }
+        answer["headers"] = {
+            name: {
+                "schema": self.field_schema(f),
+                **(
+                    {"description": text}
+                    if (text := out.field_comments.get(fields.index(f), ""))
+                    else {}
+                ),
+            }
+            for name, f in headers.items()
+        }
+        return answer
 
     def document(self) -> dict:
         version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"][

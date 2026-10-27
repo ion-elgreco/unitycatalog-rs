@@ -5,20 +5,29 @@ client, which `just develop` installs into .venv:
     uv run --no-sync examples/seed_demo.py http://127.0.0.1:8080 .uc-demo/storage
 
 The catalogs keep their managed data in the storage folder. A server that
-has catalogs gets no dummy data.
+has catalogs gets no dummy data, but the volume `unity.default.images` gets
+the logo of unitycatalog-rs, as PNG and SVG, for the file viewer of the web
+UI: also a demo from before the volume.
 """
 
 import argparse
 import json
 from pathlib import Path
 
-from unitycatalog import Client, ColumnTypeName
+from unitycatalog import Client, ColumnTypeName, NotFoundError
 from unitycatalog.functions import (
     CreateFunction,
     FunctionParameterInfo,
     FunctionParameterInfos,
 )
 from unitycatalog.tables import ColumnInfo
+
+# The files of the volume `unity.default.images`: their names and where they are.
+ROOT = Path(__file__).resolve().parents[1]
+IMAGES = [
+    ("uc-rs-logo.png", ROOT / "examples/demo-files/uc-rs-logo.png"),
+    ("uc-rs-logo.svg", ROOT / "docs/assets/logo-light.svg"),
+]
 
 # A column type: its type name, its type text and its type in Delta's schema.
 Type = tuple[ColumnTypeName, str, str]
@@ -250,6 +259,21 @@ def seed(client: Client, root: str) -> None:
     )
 
 
+def images(client: Client) -> None:
+    """The volume `unity.default.images`, made if it is not there, with the
+    files of `IMAGES`; nothing without the schema `unity.default`."""
+    try:
+        volumes = {v.name for v in client.list_volumes("unity", "default")}
+    except NotFoundError:
+        return
+    if "images" not in volumes:
+        client.create_volume("unity", "default", "images", "MANAGED", comment="Images")
+    for name, path in IMAGES:
+        client.upload_file(
+            f"/Volumes/unity/default/images/{name}", path.read_bytes(), overwrite=True
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Put dummy data into a uc-server.")
     parser.add_argument(
@@ -265,10 +289,11 @@ def main() -> None:
         print(
             f"The server has catalogs, so it gets no dummy data: {', '.join(existing)}."
         )
-        return
-    seed(client, args.storage.resolve().as_uri())
-    catalogs = ", ".join(sorted(c.name for c in client.list_catalogs()))
-    print(f"The demo data is in place. Catalogs: {catalogs}.")
+    else:
+        seed(client, args.storage.resolve().as_uri())
+        catalogs = ", ".join(sorted(c.name for c in client.list_catalogs()))
+        print(f"The demo data is in place. Catalogs: {catalogs}.")
+    images(client)
 
 
 if __name__ == "__main__":

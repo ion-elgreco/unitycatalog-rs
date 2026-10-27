@@ -11,7 +11,7 @@ use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     trace::TraceLayer,
 };
-use uc_common::{API_BASE, CONTROL_BASE};
+use uc_common::{API_BASE, CONTROL_BASE, FILES_BASE};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::{Config, SwaggerUi};
@@ -116,6 +116,7 @@ pub fn build_app(state: AppState) -> Router {
         .nest(API_BASE, routes::sharing::router())
         .nest(CONTROL_BASE, routes::control::router())
         .nest(CONTROL_BASE, routes::control::scim::router())
+        .nest(FILES_BASE, routes::files::router())
         .merge(routes::health::router())
         .split_for_parts();
 
@@ -208,7 +209,12 @@ async fn request_timeout(
     req: Request,
     next: middleware::Next,
 ) -> Response {
-    let Some(timeout) = timeout else {
+    let long = req
+        .uri()
+        .path()
+        .strip_prefix(FILES_BASE)
+        .is_some_and(|path| routes::files::takes_long(req.method(), path));
+    let Some(timeout) = timeout.filter(|_| !long) else {
         return next.run(req).await;
     };
     match tokio::time::timeout(timeout, next.run(req)).await {
