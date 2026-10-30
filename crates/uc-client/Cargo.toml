@@ -9,7 +9,7 @@ authors.workspace = true
 
 [features]
 # The PyO3 classes of the models, for the Python client (`python/client`).
-python = ["dep:pyo3", "dep:pyo3-stub-gen"]
+python = ["dep:pyo3"]
 
 [dependencies]
 uc-common.workspace = true
@@ -22,7 +22,6 @@ url.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 pyo3 = { workspace = true, optional = true }
-pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 uc-server = { path = "../uc-server" }

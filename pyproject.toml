@@ -23,7 +23,7 @@ members = ["python/client", "python/cli", "python/server", "python/ui"]
 [dependency-groups]
 # The tests start a uc-server, built with cargo from this repository.
 # `just generate-stubs` formats the stubs with ruff.
-dev = ["maturin>=1,<2", "mypy>=1.18", "pytest>=8", "ruff>=0.15"]
+dev = ["maturin>=1.16,<2", "mypy>=1.18", "pytest>=8", "ruff>=0.15"]
 # The engines of the integration tests (python/client/tests/integrations).
 # polars and deltalake have no free-threaded wheels: on free-threaded
 # Python, leave this group out with UV_NO_GROUP=integrations.

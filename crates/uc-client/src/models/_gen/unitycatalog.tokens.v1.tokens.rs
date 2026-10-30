@@ -354,7 +354,11 @@ pub struct CreatePat {
     /// Name of the token.
     ///
     /// Field 1: `name`
-    #[serde(rename = "name", with = "::buffa::json_helpers::proto_string")]
+    #[serde(
+        rename = "name",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
     pub name: ::buffa::alloc::string::String,
     /// Time at which the token expires, in epoch milliseconds. Without it the token does not expire.
     ///

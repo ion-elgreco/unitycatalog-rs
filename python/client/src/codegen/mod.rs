@@ -68,13 +68,11 @@ use uc_client::models::volumes::v1::*;
 use uc_client::models::*;
 
 /// A client of the API at one base URL.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(name = "Client", module = "unitycatalog._core")]
 pub struct PyClient {
     pub(crate) client: Client,
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyClient {
     /// A client of the API at `base_url`. `token`, when set, goes in every
@@ -5396,18 +5394,13 @@ impl PyClient {
         share: String,
         schema: String,
         table: String,
-    ) -> PyUnityCatalogResult<Vec<PySharingTableLine>> {
+    ) -> PyUnityCatalogResult<PySharingTableLine> {
         let request = self.client.sharing_get_table_metadata(share, schema, table);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
             let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PySharingTableLine::from)
-                    .collect::<Vec<_>>(),
-            )
+            Ok::<_, PyUnityCatalogError>(PySharingTableLine::from(result))
         })
     }
 
@@ -5419,7 +5412,7 @@ impl PyClient {
         share: String,
         schema: String,
         table: String,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, Vec<PySharingTableLine>>> {
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PySharingTableLine>> {
         let request = self.client.sharing_get_table_metadata(share, schema, table);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
@@ -5427,10 +5420,7 @@ impl PyClient {
                 .into_future()
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(result
-                .into_iter()
-                .map(PySharingTableLine::from)
-                .collect::<Vec<_>>())
+            Ok(PySharingTableLine::from(result))
         })
     }
 
@@ -5448,18 +5438,13 @@ impl PyClient {
         share: String,
         schema: String,
         table: String,
-    ) -> PyUnityCatalogResult<Vec<PySharingTableLine>> {
+    ) -> PyUnityCatalogResult<PySharingTableLine> {
         let request = self.client.sharing_query_table(share, schema, table);
         let runtime = crate::codegen::runtime::rt();
         py.detach(|| {
             #[allow(clippy::let_unit_value)]
             let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PySharingTableLine::from)
-                    .collect::<Vec<_>>(),
-            )
+            Ok::<_, PyUnityCatalogError>(PySharingTableLine::from(result))
         })
     }
 
@@ -5471,7 +5456,7 @@ impl PyClient {
         share: String,
         schema: String,
         table: String,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, Vec<PySharingTableLine>>> {
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PySharingTableLine>> {
         let request = self.client.sharing_query_table(share, schema, table);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
@@ -5479,10 +5464,7 @@ impl PyClient {
                 .into_future()
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(result
-                .into_iter()
-                .map(PySharingTableLine::from)
-                .collect::<Vec<_>>())
+            Ok(PySharingTableLine::from(result))
         })
     }
 
@@ -6287,279 +6269,290 @@ impl PyClient {
 
 /// The extension module, as Python imports it.
 pub const CORE_MODULE: &str = "unitycatalog._core";
+/// The submodules of the extension module.
+const SUBMODULES: &[&str] = &[
+    "admin",
+    "audit",
+    "auth",
+    "catalogs",
+    "credentials",
+    "delta",
+    "external_locations",
+    "files",
+    "functions",
+    "health",
+    "iceberg",
+    "metastore",
+    "models",
+    "permissions",
+    "recipients",
+    "schemas",
+    "scim",
+    "search",
+    "shares",
+    "sharing",
+    "tables",
+    "tokens",
+    "volumes",
+];
+/// The extension module `unitycatalog._core`.
+#[::pyo3::pymodule]
+#[pyo3(name = "_core", module = "unitycatalog")]
+pub mod extension_module {
+    use ::pyo3::prelude::*;
 
-/// Register the submodule `<CORE_MODULE>.<name>` with its classes. It also goes in
-/// `sys.modules`, so `import <CORE_MODULE>.<name>` finds it.
-///
-/// Usage:
-/// ```ignore
-/// register_submodule!(module, "tables", [PyColumnInfo, PyTableInfo])?;
-/// ```
-macro_rules! register_submodule {
-    ($parent:expr, $mod_name:expr, [$($type:ty),* $(,)?]) => {{
-        let py = $parent.py();
-        let child = ::pyo3::types::PyModule::new(py, $mod_name)?;
-        $(
-            child.add_class::<$type>()?;
-        )*
-        $parent.add_submodule(&child)?;
-        py.import("sys")?
-            .getattr("modules")?
-            .set_item(format!("{}.{}", CORE_MODULE, $mod_name), child)
-    }};
+    /// The version of the bindings crate.
+    #[pymodule_export]
+    #[allow(non_upper_case_globals)]
+    const __version__: &str = env!("CARGO_PKG_VERSION");
+    #[pymodule_export]
+    use super::PyClient;
+
+    #[pymodule_export]
+    use crate::codegen::error::{
+        BadRequestError, ConflictError, NotFoundError, PermissionDeniedError, RateLimitError,
+        ServerError, UnauthenticatedError, UnityCatalogError,
+    };
+
+    /// The classes of the `admin` API.
+    #[pymodule]
+    pub mod admin {
+        #[pymodule_export]
+        use super::super::{PyBackupResponse, PyRestoreResponse};
+    }
+
+    /// The classes of the `audit` API.
+    #[pymodule]
+    pub mod audit {
+        #[pymodule_export]
+        use super::super::{PyAuditEvent, PyListAuditEventsResponse};
+    }
+
+    /// The classes of the `auth` API.
+    #[pymodule]
+    pub mod auth {
+        #[pymodule_export]
+        use super::super::{PyAuthMode, PyOAuthTokenExchangeInfo, PyTokenResponse};
+    }
+
+    /// The classes of the `catalogs` API.
+    #[pymodule]
+    pub mod catalogs {
+        #[pymodule_export]
+        use super::super::{PyCatalogClient, PyCatalogInfo, PyListCatalogsResponse};
+    }
+
+    /// The classes of the `credentials` API.
+    #[pymodule]
+    pub mod credentials {
+        #[pymodule_export]
+        use super::super::{
+            PyAwsCredentials, PyAwsIamRoleRequest, PyAwsIamRoleResponse, PyAzureManagedIdentity,
+            PyAzureServicePrincipalRequest, PyAzureServicePrincipalResponse,
+            PyAzureUserDelegationSAS, PyCredentialClient, PyCredentialInfo, PyGcpOauthToken,
+            PyGcpServiceAccount, PyGcpServiceAccountKeyRequest, PyGcpServiceAccountKeyResponse,
+            PyListCredentialsResponse, PyTemporaryCredentials,
+        };
+    }
+
+    /// The classes of the `delta` API.
+    #[pymodule]
+    pub mod delta {
+        #[pymodule_export]
+        use super::super::{
+            PyColumnInfos, PyDeltaApiCommit, PyDeltaCatalogConfig, PyDeltaClusteringDomainMetadata,
+            PyDeltaCommitInfo, PyDeltaCommitMetadataProperties, PyDeltaCommitReport,
+            PyDeltaCredentialsResponse, PyDeltaDomainMetadataUpdates, PyDeltaFileSizeHistogram,
+            PyDeltaGetCommitsResponse, PyDeltaLoadTableResponse, PyDeltaMetadata,
+            PyDeltaMetricsReport, PyDeltaProtocol, PyDeltaRowTrackingDomainMetadata,
+            PyDeltaStagingTableResponse, PyDeltaStorageCredential, PyDeltaStorageCredentialConfig,
+            PyDeltaStructField, PyDeltaStructType, PyDeltaSuggestedProtocol, PyDeltaTableMetadata,
+            PyDeltaTableRequirement, PyDeltaTableUpdate, PyDeltaUniform, PyDeltaUniformIceberg,
+            PyDeltaUniformMetadata, PyDeltaUniformMetadataIceberg,
+        };
+    }
+
+    /// The classes of the `external_locations` API.
+    #[pymodule]
+    pub mod external_locations {
+        #[pymodule_export]
+        use super::super::{
+            PyExternalLocationClient, PyExternalLocationInfo, PyListExternalLocationsResponse,
+        };
+    }
+
+    /// The classes of the `files` API.
+    #[pymodule]
+    pub mod files {
+        #[pymodule_export]
+        use super::super::{
+            PyDirectoryEntry, PyDownloadFileResponse, PyGetFileMetadataResponse,
+            PyListDirectoryContentsResponse,
+        };
+    }
+
+    /// The classes of the `functions` API.
+    #[pymodule]
+    pub mod functions {
+        #[pymodule_export]
+        use super::super::{
+            PyCreateFunction, PyFunctionClient, PyFunctionInfo, PyFunctionParameterInfo,
+            PyFunctionParameterInfos, PyListFunctionsResponse,
+        };
+    }
+
+    /// The classes of the `health` API.
+    #[pymodule]
+    pub mod health {
+        #[pymodule_export]
+        use super::super::{PyHealthResponse, PyVersionResponse};
+    }
+
+    /// The classes of the `iceberg` API.
+    #[pymodule]
+    pub mod iceberg {
+        #[pymodule_export]
+        use super::super::{
+            PyIcebergBlobMetadata, PyIcebergConfigResponse, PyIcebergEncryptedKey,
+            PyIcebergListNamespacesResponse, PyIcebergListTablesResponse,
+            PyIcebergLoadCredentialsResponse, PyIcebergLoadTableResponse,
+            PyIcebergMetadataLogEntry, PyIcebergNamespaceResponse, PyIcebergPartitionField,
+            PyIcebergPartitionSpec, PyIcebergPartitionStatisticsFile, PyIcebergSchema,
+            PyIcebergSnapshot, PyIcebergSnapshotLogEntry, PyIcebergSnapshotReference,
+            PyIcebergSortField, PyIcebergSortOrder, PyIcebergStatisticsFile,
+            PyIcebergStorageCredential, PyIcebergStructField, PyIcebergTableIdentifier,
+            PyIcebergTableMetadata, PyIcebergTableRequirement, PyIcebergTableUpdate,
+            PyIcebergUpdateNamespacePropertiesResponse,
+        };
+    }
+
+    /// The classes of the `metastore` API.
+    #[pymodule]
+    pub mod metastore {
+        #[pymodule_export]
+        use super::super::PyGetMetastoreSummaryResponse;
+    }
+
+    /// The classes of the `models` API.
+    #[pymodule]
+    pub mod models {
+        #[pymodule_export]
+        use super::super::{
+            PyListModelVersionsResponse, PyListRegisteredModelsResponse, PyModelVersionInfo,
+            PyRegisteredModelClient, PyRegisteredModelInfo,
+        };
+    }
+
+    /// The classes of the `permissions` API.
+    #[pymodule]
+    pub mod permissions {
+        #[pymodule_export]
+        use super::super::{PyPermissionsChange, PyPermissionsList, PyPrivilegeAssignment};
+    }
+
+    /// The classes of the `recipients` API.
+    #[pymodule]
+    pub mod recipients {
+        #[pymodule_export]
+        use super::super::{PyListRecipientsResponse, PyRecipientClient, PyRecipientInfo};
+    }
+
+    /// The classes of the `schemas` API.
+    #[pymodule]
+    pub mod schemas {
+        #[pymodule_export]
+        use super::super::{PyListSchemasResponse, PySchemaClient, PySchemaInfo};
+    }
+
+    /// The classes of the `scim` API.
+    #[pymodule]
+    pub mod scim {
+        #[pymodule_export]
+        use super::super::{
+            PyListScimGroupsResponse, PyListScimResourceTypesResponse, PyListScimSchemasResponse,
+            PyListScimUsersResponse, PyScimAuthenticationScheme, PyScimBulkConfig, PyScimBulkOp,
+            PyScimBulkOpResult, PyScimBulkResponse, PyScimEmail, PyScimFilterConfig, PyScimGroup,
+            PyScimGroupMember, PyScimMeta, PyScimPatchOperation, PyScimPhoto, PyScimResourceType,
+            PyScimRole, PyScimSchema, PyScimSchemaAttribute, PyScimServiceProviderConfig,
+            PyScimSupported, PyScimUser,
+        };
+    }
+
+    /// The classes of the `search` API.
+    #[pymodule]
+    pub mod search {
+        #[pymodule_export]
+        use super::super::{PySearchObjectsResponse, PySearchResult};
+    }
+
+    /// The classes of the `shares` API.
+    #[pymodule]
+    pub mod shares {
+        #[pymodule_export]
+        use super::super::{PyListSharesResponse, PyShareClient, PyShareInfo, PySharedDataObject};
+    }
+
+    /// The classes of the `sharing` API.
+    #[pymodule]
+    pub mod sharing {
+        #[pymodule_export]
+        use super::super::{
+            PyRecipientProfile, PySharingFormat, PySharingGetTableVersionResponse,
+            PySharingListSchemasResponse, PySharingListSharesResponse, PySharingListTablesResponse,
+            PySharingMetadata, PySharingProtocol, PySharingSchema, PySharingShare, PySharingTable,
+            PySharingTableLine,
+        };
+    }
+
+    /// The classes of the `tables` API.
+    #[pymodule]
+    pub mod tables {
+        #[pymodule_export]
+        use super::super::{
+            PyColumnInfo, PyDependency, PyDependencyList, PyFunctionDependency,
+            PyListTablesResponse, PyStagingTableInfo, PyTableClient, PyTableDependency,
+            PyTableInfo, PyUpdateColumn,
+        };
+    }
+
+    /// The classes of the `tokens` API.
+    #[pymodule]
+    pub mod tokens {
+        #[pymodule_export]
+        use super::super::{PyListPatsResponse, PyPatInfo, PyTokenClient};
+    }
+
+    /// The classes of the `volumes` API.
+    #[pymodule]
+    pub mod volumes {
+        #[pymodule_export]
+        use super::super::{PyListVolumesResponseContent, PyVolumeClient, PyVolumeInfo};
+    }
+
+    /// Put the submodules in `sys.modules`. The import system puts the module there
+    /// before it runs this. Not handed the module, so the stubs still describe the
+    /// module in full.
+    #[pymodule_init]
+    fn init(py: Python<'_>) -> PyResult<()> {
+        crate::codegen::runtime::init_async_runtime();
+        let modules = py.import("sys")?.getattr("modules")?;
+        match modules.get_item(super::CORE_MODULE) {
+            Ok(module) => super::add_submodules_to_sys_modules(module.cast()?),
+            Err(_) => Ok(()),
+        }
+    }
 }
 
-/// Add the generated classes to the extension module `module`.
-pub fn register(module: &::pyo3::Bound<'_, ::pyo3::types::PyModule>) -> ::pyo3::PyResult<()> {
-    crate::codegen::runtime::init_async_runtime();
-    crate::codegen::error::add_exceptions(module)?;
-    module.add_class::<PyClient>()?;
-    register_submodule!(module, "admin", [PyBackupResponse, PyRestoreResponse])?;
-    register_submodule!(module, "audit", [PyAuditEvent, PyListAuditEventsResponse])?;
-    register_submodule!(
-        module,
-        "auth",
-        [PyAuthMode, PyOAuthTokenExchangeInfo, PyTokenResponse]
-    )?;
-    register_submodule!(
-        module,
-        "catalogs",
-        [PyCatalogInfo, PyListCatalogsResponse, PyCatalogClient]
-    )?;
-    register_submodule!(
-        module,
-        "credentials",
-        [
-            PyAwsCredentials,
-            PyAwsIamRoleRequest,
-            PyAwsIamRoleResponse,
-            PyAzureManagedIdentity,
-            PyAzureServicePrincipalRequest,
-            PyAzureServicePrincipalResponse,
-            PyAzureUserDelegationSAS,
-            PyCredentialInfo,
-            PyGcpOauthToken,
-            PyGcpServiceAccount,
-            PyGcpServiceAccountKeyRequest,
-            PyGcpServiceAccountKeyResponse,
-            PyListCredentialsResponse,
-            PyTemporaryCredentials,
-            PyCredentialClient
-        ]
-    )?;
-    register_submodule!(
-        module,
-        "delta",
-        [
-            PyColumnInfos,
-            PyDeltaApiCommit,
-            PyDeltaCatalogConfig,
-            PyDeltaClusteringDomainMetadata,
-            PyDeltaCommitInfo,
-            PyDeltaCommitMetadataProperties,
-            PyDeltaCommitReport,
-            PyDeltaCredentialsResponse,
-            PyDeltaDomainMetadataUpdates,
-            PyDeltaFileSizeHistogram,
-            PyDeltaGetCommitsResponse,
-            PyDeltaLoadTableResponse,
-            PyDeltaMetadata,
-            PyDeltaMetricsReport,
-            PyDeltaProtocol,
-            PyDeltaRowTrackingDomainMetadata,
-            PyDeltaStagingTableResponse,
-            PyDeltaStorageCredential,
-            PyDeltaStorageCredentialConfig,
-            PyDeltaStructField,
-            PyDeltaStructType,
-            PyDeltaSuggestedProtocol,
-            PyDeltaTableMetadata,
-            PyDeltaTableRequirement,
-            PyDeltaTableUpdate,
-            PyDeltaUniform,
-            PyDeltaUniformIceberg,
-            PyDeltaUniformMetadata,
-            PyDeltaUniformMetadataIceberg
-        ]
-    )?;
-    register_submodule!(
-        module,
-        "external_locations",
-        [
-            PyExternalLocationInfo,
-            PyListExternalLocationsResponse,
-            PyExternalLocationClient
-        ]
-    )?;
-    register_submodule!(
-        module,
-        "files",
-        [
-            PyDirectoryEntry,
-            PyDownloadFileResponse,
-            PyGetFileMetadataResponse,
-            PyListDirectoryContentsResponse
-        ]
-    )?;
-    register_submodule!(
-        module,
-        "functions",
-        [
-            PyCreateFunction,
-            PyFunctionInfo,
-            PyFunctionParameterInfo,
-            PyFunctionParameterInfos,
-            PyListFunctionsResponse,
-            PyFunctionClient
-        ]
-    )?;
-    register_submodule!(module, "health", [PyHealthResponse, PyVersionResponse])?;
-    register_submodule!(
-        module,
-        "iceberg",
-        [
-            PyIcebergBlobMetadata,
-            PyIcebergConfigResponse,
-            PyIcebergEncryptedKey,
-            PyIcebergListNamespacesResponse,
-            PyIcebergListTablesResponse,
-            PyIcebergLoadCredentialsResponse,
-            PyIcebergLoadTableResponse,
-            PyIcebergMetadataLogEntry,
-            PyIcebergNamespaceResponse,
-            PyIcebergPartitionField,
-            PyIcebergPartitionSpec,
-            PyIcebergPartitionStatisticsFile,
-            PyIcebergSchema,
-            PyIcebergSnapshot,
-            PyIcebergSnapshotLogEntry,
-            PyIcebergSnapshotReference,
-            PyIcebergSortField,
-            PyIcebergSortOrder,
-            PyIcebergStatisticsFile,
-            PyIcebergStorageCredential,
-            PyIcebergStructField,
-            PyIcebergTableIdentifier,
-            PyIcebergTableMetadata,
-            PyIcebergTableRequirement,
-            PyIcebergTableUpdate,
-            PyIcebergUpdateNamespacePropertiesResponse
-        ]
-    )?;
-    register_submodule!(module, "metastore", [PyGetMetastoreSummaryResponse])?;
-    register_submodule!(
-        module,
-        "models",
-        [
-            PyListModelVersionsResponse,
-            PyListRegisteredModelsResponse,
-            PyModelVersionInfo,
-            PyRegisteredModelInfo,
-            PyRegisteredModelClient
-        ]
-    )?;
-    register_submodule!(
-        module,
-        "permissions",
-        [
-            PyPermissionsChange,
-            PyPermissionsList,
-            PyPrivilegeAssignment
-        ]
-    )?;
-    register_submodule!(
-        module,
-        "recipients",
-        [PyListRecipientsResponse, PyRecipientInfo, PyRecipientClient]
-    )?;
-    register_submodule!(
-        module,
-        "schemas",
-        [PyListSchemasResponse, PySchemaInfo, PySchemaClient]
-    )?;
-    register_submodule!(
-        module,
-        "scim",
-        [
-            PyListScimGroupsResponse,
-            PyListScimResourceTypesResponse,
-            PyListScimSchemasResponse,
-            PyListScimUsersResponse,
-            PyScimAuthenticationScheme,
-            PyScimBulkConfig,
-            PyScimBulkOp,
-            PyScimBulkOpResult,
-            PyScimBulkResponse,
-            PyScimEmail,
-            PyScimFilterConfig,
-            PyScimGroup,
-            PyScimGroupMember,
-            PyScimMeta,
-            PyScimPatchOperation,
-            PyScimPhoto,
-            PyScimResourceType,
-            PyScimRole,
-            PyScimSchema,
-            PyScimSchemaAttribute,
-            PyScimServiceProviderConfig,
-            PyScimSupported,
-            PyScimUser
-        ]
-    )?;
-    register_submodule!(module, "search", [PySearchObjectsResponse, PySearchResult])?;
-    register_submodule!(
-        module,
-        "shares",
-        [
-            PyListSharesResponse,
-            PyShareInfo,
-            PySharedDataObject,
-            PyShareClient
-        ]
-    )?;
-    register_submodule!(
-        module,
-        "sharing",
-        [
-            PyRecipientProfile,
-            PySharingFormat,
-            PySharingGetTableVersionResponse,
-            PySharingListSchemasResponse,
-            PySharingListSharesResponse,
-            PySharingListTablesResponse,
-            PySharingMetadata,
-            PySharingProtocol,
-            PySharingSchema,
-            PySharingShare,
-            PySharingTable,
-            PySharingTableLine
-        ]
-    )?;
-    register_submodule!(
-        module,
-        "tables",
-        [
-            PyColumnInfo,
-            PyDependency,
-            PyDependencyList,
-            PyFunctionDependency,
-            PyListTablesResponse,
-            PyStagingTableInfo,
-            PyTableDependency,
-            PyTableInfo,
-            PyUpdateColumn,
-            PyTableClient
-        ]
-    )?;
-    register_submodule!(
-        module,
-        "tokens",
-        [PyListPatsResponse, PyPatInfo, PyTokenClient]
-    )?;
-    register_submodule!(
-        module,
-        "volumes",
-        [PyListVolumesResponseContent, PyVolumeInfo, PyVolumeClient]
-    )?;
+/// Put the submodules of the extension module `module` in `sys.modules`, so that
+/// `import <module>.<submodule>` finds them. The module does this on import; call it
+/// for a module made otherwise, such as with `wrap_pymodule!`.
+pub fn add_submodules_to_sys_modules(
+    module: &::pyo3::Bound<'_, ::pyo3::types::PyModule>,
+) -> ::pyo3::PyResult<()> {
+    let modules = module.py().import("sys")?.getattr("modules")?;
+    let name = module.name()?;
+    for submodule in SUBMODULES {
+        modules.set_item(format!("{name}.{submodule}"), module.getattr(*submodule)?)?;
+    }
     Ok(())
 }

@@ -123,17 +123,16 @@ values: `dict`, `list`, `str`, `int`, `float`, `bool` and `None`.
 
 ```
 python/client/
-├── Cargo.toml           crate uc-py: cdylib `_core`, and the stub generator
+├── Cargo.toml           crate uc-py: cdylib `_core`
 ├── pyproject.toml       maturin; module unitycatalog._core; the extras
 ├── src/
-│   ├── lib.rs           the module `unitycatalog._core`
-│   ├── codegen/         the bindings, generated (just generate): Client, the handles, the exceptions, the Tokio runtime
-│   └── bin/stub_gen.rs  the stub generator (pyo3-stub-gen)
+│   ├── lib.rs           mounts codegen/
+│   └── codegen/         the bindings, generated (just generate): the module `unitycatalog._core`, Client, the handles, the exceptions, the Tokio runtime
 ├── unitycatalog/
 │   ├── __init__.py      the public names
 │   ├── _enums.py        the enums, generated (just generate)
 │   ├── <package>.py     a module per API package, generated (just generate): its classes and enums
-│   └── _core/           the generated stubs
+│   └── _core/           the stubs, generated (just generate-stubs)
 └── tests/               pytest, against a uc-server
     └── integrations/    polars, deltalake, obstore and pyiceberg against it; S3 from moto
 ```
@@ -210,9 +209,10 @@ group out there with `UV_NO_GROUP=integrations`.
 
 `just generate` writes the bindings in `src/codegen/`, the model classes of
 `uc-client` and `unitycatalog/_enums.py` from the protos. Do not change
-them by hand. The stubs in `unitycatalog/_core/` come from the Rust code:
-its doc comments and types. After `just generate`, run
-`just generate-stubs` (it uses the venv in .venv) and commit the
+them by hand. The stubs in `unitycatalog/_core/` come from the built
+extension: maturin reads the doc comments and types that PyO3's
+`experimental-inspect` puts in it. After `just generate`, run
+`just generate-stubs` (it uses maturin of the venv in .venv) and commit the
 stubs. It formats them with ruff; ruff does not lint them. CI fails when
 they differ from the code.
 

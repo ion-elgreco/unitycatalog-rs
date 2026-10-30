@@ -8,13 +8,11 @@ use uc_client::models::schemas::v1::*;
 use uc_client::models::*;
 
 /// The requests on one `SchemaInfo`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(name = "SchemaClient", module = "unitycatalog._core.schemas")]
 pub struct PySchemaClient {
     pub(crate) client: SchemaClient,
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PySchemaClient {
     /// Get a schema.

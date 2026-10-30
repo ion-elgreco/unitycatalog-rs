@@ -9,7 +9,7 @@ use pyo3::types::{PyDict, PyList, PyString};
 type ClientError = uc_client::error::Error;
 /// The result of a binding call.
 pub type PyUnityCatalogResult<T> = ::core::result::Result<T, PyUnityCatalogError>;
-/// The error of a binding call: a client error, raised as a `UnityCatalogError`, or a Python error, raised as is.
+/// The error of a binding call: a client error (raised as a `UnityCatalogError`) or a Python error.
 #[derive(Debug)]
 pub enum PyUnityCatalogError {
     /// A client error.
@@ -47,9 +47,7 @@ impl ::core::convert::From<PyUnityCatalogError> for PyErr {
     }
 }
 
-/// An error answer of the server, or a request that got no answer. A subclass tells the
-/// kind of HTTP error status.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
+/// An error answer of the server, or a request that got no answer.
 #[::pyo3::pyclass(
     extends = PyException,
     subclass,
@@ -64,7 +62,6 @@ pub struct UnityCatalogError {
     details: Py<PyList>,
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl UnityCatalogError {
     #[new]
@@ -84,8 +81,8 @@ impl UnityCatalogError {
         }
     }
 
-    /// The fields come from the constructor. `BaseException.__init__` takes no keyword
-    /// arguments, so this one sets `args` to the message, as that one would.
+    /// Sets `args` to the message, as `BaseException.__init__` (which takes no keyword
+    /// arguments) would.
     #[pyo3(signature = (message, code = None, status = None, details = None))]
     #[allow(unused_variables)]
     fn __init__(
@@ -104,8 +101,7 @@ impl UnityCatalogError {
         &self.message
     }
 
-    /// The error code of the answer, such as `NOT_FOUND`. `None` when the answer has
-    /// none, or when the request got no answer.
+    /// The error code of the answer, such as `NOT_FOUND`, if any.
     #[getter]
     fn code(&self) -> Option<&str> {
         self.code.as_deref()
@@ -118,9 +114,6 @@ impl UnityCatalogError {
     }
 
     /// The details of the answer.
-    #[gen_stub(
-        override_return_type(type_repr = "list[typing.Any]", imports = ("typing"))
-    )]
     #[getter]
     fn details<'py>(&self, py: Python<'py>) -> Bound<'py, PyList> {
         self.details.bind(py).clone()
@@ -147,7 +140,7 @@ impl UnityCatalogError {
         Ok(format!("{}({})", slf.get_type().name()?, parts.join(", ")))
     }
 
-    /// The class and the arguments that make the exception again, for `pickle`.
+    /// For `pickle`.
     #[allow(clippy::type_complexity)]
     fn __reduce__<'py>(
         slf: &Bound<'py, Self>,
@@ -167,7 +160,6 @@ impl UnityCatalogError {
 }
 
 /// The server answered `400 Bad Request`: the request is not valid.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     extends = UnityCatalogError,
     frozen,
@@ -175,7 +167,6 @@ impl UnityCatalogError {
     module = "unitycatalog._core",
 )]
 pub struct BadRequestError;
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl BadRequestError {
     #[new]
@@ -193,7 +184,6 @@ impl BadRequestError {
 }
 
 /// The server answered `401 Unauthorized`: the request has no valid credentials.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     extends = UnityCatalogError,
     frozen,
@@ -201,7 +191,6 @@ impl BadRequestError {
     module = "unitycatalog._core",
 )]
 pub struct UnauthenticatedError;
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl UnauthenticatedError {
     #[new]
@@ -219,7 +208,6 @@ impl UnauthenticatedError {
 }
 
 /// The server answered `403 Forbidden`: the caller may not do this.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     extends = UnityCatalogError,
     frozen,
@@ -227,7 +215,6 @@ impl UnauthenticatedError {
     module = "unitycatalog._core",
 )]
 pub struct PermissionDeniedError;
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PermissionDeniedError {
     #[new]
@@ -245,7 +232,6 @@ impl PermissionDeniedError {
 }
 
 /// The server answered `404 Not Found`: the resource does not exist.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     extends = UnityCatalogError,
     frozen,
@@ -253,7 +239,6 @@ impl PermissionDeniedError {
     module = "unitycatalog._core",
 )]
 pub struct NotFoundError;
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl NotFoundError {
     #[new]
@@ -271,7 +256,6 @@ impl NotFoundError {
 }
 
 /// The server answered `409 Conflict`: the resource exists or changed.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     extends = UnityCatalogError,
     frozen,
@@ -279,7 +263,6 @@ impl NotFoundError {
     module = "unitycatalog._core",
 )]
 pub struct ConflictError;
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl ConflictError {
     #[new]
@@ -297,7 +280,6 @@ impl ConflictError {
 }
 
 /// The server answered `429 Too Many Requests`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     extends = UnityCatalogError,
     frozen,
@@ -305,7 +287,6 @@ impl ConflictError {
     module = "unitycatalog._core",
 )]
 pub struct RateLimitError;
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl RateLimitError {
     #[new]
@@ -323,7 +304,6 @@ impl RateLimitError {
 }
 
 /// The server answered with a `5xx` status: it failed to do the request.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     extends = UnityCatalogError,
     frozen,
@@ -331,7 +311,6 @@ impl RateLimitError {
     module = "unitycatalog._core",
 )]
 pub struct ServerError;
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl ServerError {
     #[new]
@@ -346,19 +325,6 @@ impl ServerError {
         PyClassInitializer::from(UnityCatalogError::new(py, message, code, status, details))
             .add_subclass(Self)
     }
-}
-
-/// Add the exception classes to the extension module `module`.
-pub fn add_exceptions(module: &Bound<'_, ::pyo3::types::PyModule>) -> PyResult<()> {
-    module.add_class::<UnityCatalogError>()?;
-    module.add_class::<BadRequestError>()?;
-    module.add_class::<UnauthenticatedError>()?;
-    module.add_class::<PermissionDeniedError>()?;
-    module.add_class::<NotFoundError>()?;
-    module.add_class::<ConflictError>()?;
-    module.add_class::<RateLimitError>()?;
-    module.add_class::<ServerError>()?;
-    Ok(())
 }
 
 /// The exception of a client error: the subclass of its HTTP status.

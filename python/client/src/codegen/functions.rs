@@ -8,13 +8,11 @@ use uc_client::models::functions::v1::*;
 use uc_client::models::*;
 
 /// The requests on one `FunctionInfo`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(name = "FunctionClient", module = "unitycatalog._core.functions")]
 pub struct PyFunctionClient {
     pub(crate) client: FunctionClient,
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyFunctionClient {
     /// Get a function.

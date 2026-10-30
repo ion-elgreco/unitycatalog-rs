@@ -82,9 +82,8 @@ where
     })
 }
 
-/// Percent-encode a value for a URL path. `keep_slash` keeps `/`, for a value that
-/// spans several path segments; such a value follows a `/` of the template, so its own
-/// leading `/` is dropped.
+/// Percent-encode a URL path value. `keep_slash` keeps `/` (for a multi-segment value)
+/// and drops a leading one.
 fn encode_path_value(value: &impl ::std::fmt::Display, keep_slash: bool) -> String {
     use ::std::fmt::Write as _;
     let value = value.to_string();

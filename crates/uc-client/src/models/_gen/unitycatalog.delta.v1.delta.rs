@@ -2156,7 +2156,8 @@ pub struct DeltaGetCommits {
     #[serde(
         rename = "start_version",
         alias = "startVersion",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub start_version: i64,
     /// Last version to return (inclusive). It does not change `latest_table_version`.
@@ -5102,7 +5103,11 @@ pub struct DeltaStructField {
     /// Whether the field can hold null values.
     ///
     /// Field 3: `nullable`
-    #[serde(rename = "nullable", with = "::buffa::json_helpers::proto_bool")]
+    #[serde(
+        rename = "nullable",
+        with = "::buffa::json_helpers::proto_bool",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_false"
+    )]
     pub nullable: bool,
     /// Metadata of the field, such as `comment` or `delta.columnMapping.id`. An empty object when
     /// there is none.
@@ -5337,6 +5342,7 @@ pub struct DeltaClusteringDomainMetadata {
     #[serde(
         rename = "clusteringColumns",
         alias = "clustering_columns",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     #[serde(serialize_with = "crate::models::json_value::repeated")]
@@ -6394,7 +6400,8 @@ pub struct DeltaCreateTableRequest {
     #[serde(
         rename = "last-commit-timestamp-ms",
         alias = "last_commit_timestamp_ms",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub last_commit_timestamp_ms: i64,
     /// UniForm conversion metadata. With it, the table is UniForm-enabled; the client writes the
@@ -8612,6 +8619,7 @@ pub struct DeltaTableUpdate {
     #[serde(
         rename = "partition-columns",
         alias = "partition_columns",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub partition_columns: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,

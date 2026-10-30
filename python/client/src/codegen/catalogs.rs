@@ -8,13 +8,11 @@ use uc_client::models::catalogs::v1::*;
 use uc_client::models::*;
 
 /// The requests on one `CatalogInfo`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(name = "CatalogClient", module = "unitycatalog._core.catalogs")]
 pub struct PyCatalogClient {
     pub(crate) client: CatalogClient,
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyCatalogClient {
     /// Get a catalog.

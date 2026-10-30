@@ -2566,6 +2566,7 @@ pub struct IcebergTableIdentifier {
     /// Field 1: `namespace`
     #[serde(
         rename = "namespace",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub namespace: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
@@ -3221,7 +3222,8 @@ pub struct IcebergSchema {
     #[serde(
         rename = "schema-id",
         alias = "schema_id",
-        with = "::buffa::json_helpers::int32"
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
     )]
     pub schema_id: i32,
     /// Ids of the fields that identify a row.
@@ -3239,6 +3241,7 @@ pub struct IcebergSchema {
     /// Field 4: `fields`
     #[serde(
         rename = "fields",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub fields: ::buffa::alloc::vec::Vec<IcebergStructField>,
@@ -3482,7 +3485,11 @@ pub struct IcebergStructField {
     /// Id of the field, unique in the table schema.
     ///
     /// Field 1: `id`
-    #[serde(rename = "id", with = "::buffa::json_helpers::int32")]
+    #[serde(
+        rename = "id",
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
+    )]
     pub id: i32,
     /// Name of the field.
     ///
@@ -3496,7 +3503,11 @@ pub struct IcebergStructField {
     /// Whether the field cannot be null.
     ///
     /// Field 3: `required`
-    #[serde(rename = "required", with = "::buffa::json_helpers::proto_bool")]
+    #[serde(
+        rename = "required",
+        with = "::buffa::json_helpers::proto_bool",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_false"
+    )]
     pub required: bool,
     /// The Iceberg type of the field (JSON `type`): a string for a primitive type (`long`,
     /// `decimal(10,2)`, `fixed[16]`), an object for a `struct`, `list` or `map` type.
@@ -3845,7 +3856,8 @@ pub struct IcebergPartitionSpec {
     #[serde(
         rename = "spec-id",
         alias = "spec_id",
-        with = "::buffa::json_helpers::int32"
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
     )]
     pub spec_id: i32,
     /// The partition fields. None for an unpartitioned table.
@@ -3853,6 +3865,7 @@ pub struct IcebergPartitionSpec {
     /// Field 2: `fields`
     #[serde(
         rename = "fields",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub fields: ::buffa::alloc::vec::Vec<IcebergPartitionField>,
@@ -4029,7 +4042,8 @@ pub struct IcebergPartitionField {
     #[serde(
         rename = "source-id",
         alias = "source_id",
-        with = "::buffa::json_helpers::int32"
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
     )]
     pub source_id: i32,
     /// Id of the partition field. In requests, 0 lets the server assign it.
@@ -4267,7 +4281,8 @@ pub struct IcebergSortOrder {
     #[serde(
         rename = "order-id",
         alias = "order_id",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub order_id: i64,
     /// The sort fields, in order. None for the unsorted order.
@@ -4275,6 +4290,7 @@ pub struct IcebergSortOrder {
     /// Field 2: `fields`
     #[serde(
         rename = "fields",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub fields: ::buffa::alloc::vec::Vec<IcebergSortField>,
@@ -4450,7 +4466,8 @@ pub struct IcebergSortField {
     #[serde(
         rename = "source-id",
         alias = "source_id",
-        with = "::buffa::json_helpers::int32"
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
     )]
     pub source_id: i32,
     /// The transform, as in a partition field, such as `identity`.
@@ -4687,7 +4704,8 @@ pub struct IcebergSnapshot {
     #[serde(
         rename = "snapshot-id",
         alias = "snapshot_id",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub snapshot_id: i64,
     /// Id of the parent snapshot. Absent for a snapshot without a parent.
@@ -4706,7 +4724,8 @@ pub struct IcebergSnapshot {
     #[serde(
         rename = "sequence-number",
         alias = "sequence_number",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub sequence_number: i64,
     /// Time at which the snapshot was made, in epoch milliseconds.
@@ -4715,7 +4734,8 @@ pub struct IcebergSnapshot {
     #[serde(
         rename = "timestamp-ms",
         alias = "timestamp_ms",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub timestamp_ms: i64,
     /// Location of the manifest list of the snapshot.
@@ -5512,7 +5532,8 @@ pub struct IcebergSnapshotLogEntry {
     #[serde(
         rename = "snapshot-id",
         alias = "snapshot_id",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub snapshot_id: i64,
     /// Time at which the snapshot became current, in epoch milliseconds.
@@ -5521,7 +5542,8 @@ pub struct IcebergSnapshotLogEntry {
     #[serde(
         rename = "timestamp-ms",
         alias = "timestamp_ms",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub timestamp_ms: i64,
     #[serde(skip)]
@@ -5700,7 +5722,8 @@ pub struct IcebergMetadataLogEntry {
     #[serde(
         rename = "timestamp-ms",
         alias = "timestamp_ms",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub timestamp_ms: i64,
     #[serde(skip)]
@@ -5870,7 +5893,8 @@ pub struct IcebergStatisticsFile {
     #[serde(
         rename = "snapshot-id",
         alias = "snapshot_id",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub snapshot_id: i64,
     /// Location of the statistics file.
@@ -5889,7 +5913,8 @@ pub struct IcebergStatisticsFile {
     #[serde(
         rename = "file-size-in-bytes",
         alias = "file_size_in_bytes",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub file_size_in_bytes: i64,
     /// Size of the file footer, in bytes.
@@ -5898,7 +5923,8 @@ pub struct IcebergStatisticsFile {
     #[serde(
         rename = "file-footer-size-in-bytes",
         alias = "file_footer_size_in_bytes",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub file_footer_size_in_bytes: i64,
     /// Base64-encoded key metadata of an encrypted file.
@@ -5916,6 +5942,7 @@ pub struct IcebergStatisticsFile {
     #[serde(
         rename = "blob-metadata",
         alias = "blob_metadata",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub blob_metadata: ::buffa::alloc::vec::Vec<IcebergBlobMetadata>,
@@ -6194,7 +6221,8 @@ pub struct IcebergBlobMetadata {
     #[serde(
         rename = "snapshot-id",
         alias = "snapshot_id",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub snapshot_id: i64,
     /// Sequence number of the snapshot that the blob was computed from.
@@ -6203,7 +6231,8 @@ pub struct IcebergBlobMetadata {
     #[serde(
         rename = "sequence-number",
         alias = "sequence_number",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub sequence_number: i64,
     /// Ids of the fields that the blob was computed from.
@@ -6211,6 +6240,7 @@ pub struct IcebergBlobMetadata {
     /// Field 4: `fields`
     #[serde(
         rename = "fields",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub fields: ::buffa::alloc::vec::Vec<i32>,
@@ -6548,7 +6578,8 @@ pub struct IcebergPartitionStatisticsFile {
     #[serde(
         rename = "snapshot-id",
         alias = "snapshot_id",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub snapshot_id: i64,
     /// Location of the statistics file.
@@ -6567,7 +6598,8 @@ pub struct IcebergPartitionStatisticsFile {
     #[serde(
         rename = "file-size-in-bytes",
         alias = "file_size_in_bytes",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub file_size_in_bytes: i64,
     #[serde(skip)]
@@ -7081,7 +7113,8 @@ pub struct IcebergTableMetadata {
     #[serde(
         rename = "format-version",
         alias = "format_version",
-        with = "::buffa::json_helpers::int32"
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
     )]
     pub format_version: i32,
     /// UUID of the table.
@@ -7090,13 +7123,18 @@ pub struct IcebergTableMetadata {
     #[serde(
         rename = "table-uuid",
         alias = "table_uuid",
-        with = "::buffa::json_helpers::proto_string"
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub table_uuid: ::buffa::alloc::string::String,
     /// Base location of the table.
     ///
     /// Field 3: `location`
-    #[serde(rename = "location", with = "::buffa::json_helpers::proto_string")]
+    #[serde(
+        rename = "location",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
     pub location: ::buffa::alloc::string::String,
     /// The highest sequence number of the table. Absent (0) in format version 1.
     ///
@@ -7104,7 +7142,8 @@ pub struct IcebergTableMetadata {
     #[serde(
         rename = "last-sequence-number",
         alias = "last_sequence_number",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub last_sequence_number: i64,
     /// Time at which the table was last changed, in epoch milliseconds.
@@ -7113,7 +7152,8 @@ pub struct IcebergTableMetadata {
     #[serde(
         rename = "last-updated-ms",
         alias = "last_updated_ms",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub last_updated_ms: i64,
     /// The highest field id of the table.
@@ -7122,7 +7162,8 @@ pub struct IcebergTableMetadata {
     #[serde(
         rename = "last-column-id",
         alias = "last_column_id",
-        with = "::buffa::json_helpers::int32"
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
     )]
     pub last_column_id: i32,
     /// Format version 1 only: the current schema.
@@ -7138,6 +7179,7 @@ pub struct IcebergTableMetadata {
     /// Field 8: `schemas`
     #[serde(
         rename = "schemas",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub schemas: ::buffa::alloc::vec::Vec<IcebergSchema>,
@@ -7147,7 +7189,8 @@ pub struct IcebergTableMetadata {
     #[serde(
         rename = "current-schema-id",
         alias = "current_schema_id",
-        with = "::buffa::json_helpers::int32"
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
     )]
     pub current_schema_id: i32,
     /// Format version 1 only: the fields of the default partition spec.
@@ -7166,6 +7209,7 @@ pub struct IcebergTableMetadata {
     #[serde(
         rename = "partition-specs",
         alias = "partition_specs",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub partition_specs: ::buffa::alloc::vec::Vec<IcebergPartitionSpec>,
@@ -7175,7 +7219,8 @@ pub struct IcebergTableMetadata {
     #[serde(
         rename = "default-spec-id",
         alias = "default_spec_id",
-        with = "::buffa::json_helpers::int32"
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
     )]
     pub default_spec_id: i32,
     /// The highest partition field id of the table.
@@ -7184,7 +7229,8 @@ pub struct IcebergTableMetadata {
     #[serde(
         rename = "last-partition-id",
         alias = "last_partition_id",
-        with = "::buffa::json_helpers::int32"
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
     )]
     pub last_partition_id: i32,
     /// Properties of the table.
@@ -7242,6 +7288,7 @@ pub struct IcebergTableMetadata {
     #[serde(
         rename = "sort-orders",
         alias = "sort_orders",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub sort_orders: ::buffa::alloc::vec::Vec<IcebergSortOrder>,
@@ -7251,7 +7298,8 @@ pub struct IcebergTableMetadata {
     #[serde(
         rename = "default-sort-order-id",
         alias = "default_sort_order_id",
-        with = "crate::models::json_int64::int64"
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
     )]
     pub default_sort_order_id: i64,
     /// The branches and tags of the table, by name. Absent in format version 1.
@@ -10102,7 +10150,8 @@ pub struct IcebergTableUpdate {
     #[serde(
         rename = "snapshot-ids",
         alias = "snapshot_ids",
-        with = "crate::models::json_int64::repeated_int64"
+        with = "crate::models::json_int64::repeated_int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec"
     )]
     pub snapshot_ids: ::buffa::alloc::vec::Vec<i64>,
     /// `set-location`: the new base location of the table.
@@ -10118,6 +10167,7 @@ pub struct IcebergTableUpdate {
     /// Field 19: `updates`
     #[serde(
         rename = "updates",
+        skip_serializing_if = "::buffa::__private::HashMap::is_empty",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub updates:
@@ -10127,6 +10177,7 @@ pub struct IcebergTableUpdate {
     /// Field 20: `removals`
     #[serde(
         rename = "removals",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub removals: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
@@ -10136,6 +10187,7 @@ pub struct IcebergTableUpdate {
     #[serde(
         rename = "spec-ids",
         alias = "spec_ids",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub spec_ids: ::buffa::alloc::vec::Vec<i32>,
@@ -10162,6 +10214,7 @@ pub struct IcebergTableUpdate {
     #[serde(
         rename = "schema-ids",
         alias = "schema_ids",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub schema_ids: ::buffa::alloc::vec::Vec<i32>,
@@ -12434,6 +12487,7 @@ pub struct ReportIcebergMetricsRequest {
     #[serde(
         rename = "projected-field-ids",
         alias = "projected_field_ids",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub projected_field_ids: ::buffa::alloc::vec::Vec<i32>,
@@ -12443,6 +12497,7 @@ pub struct ReportIcebergMetricsRequest {
     #[serde(
         rename = "projected-field-names",
         alias = "projected_field_names",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub projected_field_names: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,

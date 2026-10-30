@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 
 #[cfg(feature = "python")]
+#[allow(clippy::clone_on_copy)]
 pub mod pyo3_impls;
 pub use catalogs::v1::CatalogInfo;
 pub use credentials::v1::CredentialInfo;

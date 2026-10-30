@@ -34,6 +34,6 @@ build-backend = "maturin"
 
 [tool.maturin]
 module-name = "unitycatalog._core"
-# The Python package `unitycatalog/` is next to this file. pyo3-stub-gen
-# writes the stubs of `unitycatalog._core` under it.
+# The Python package `unitycatalog/` is next to this file. `just
+# generate-stubs` writes the stubs of `unitycatalog._core` under it.
 python-source = "."

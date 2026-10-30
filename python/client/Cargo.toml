@@ -11,26 +11,17 @@ readme = "README.md"
 
 [lib]
 name = "_core"
-# `rlib` for the stub generator, `src/bin/stub_gen.rs`.
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
 # No Rust tests: a test binary of an extension module cannot link, as it
 # does not link Python. The Python tests in tests/ cover the crate.
 test = false
 doctest = false
-
-[[bin]]
-name = "stub_gen"
-doc = false
-required-features = ["stub-gen"]
 
 [features]
 # An extension module leaves Python's symbols to the Python that loads it,
 # so cargo builds it without a Python interpreter.
 default = ["extension-module"]
 extension-module = ["pyo3/extension-module"]
-# The stub generator. It runs Python, so `just generate-stubs` builds it
-# without `extension-module`.
-stub-gen = []
 
 [dependencies]
 # `python`: the PyO3 classes of the models, which the bindings in src/codegen return.
@@ -38,7 +29,6 @@ uc-client = { workspace = true, features = ["python"] }
 
 pyo3.workspace = true
 pyo3-async-runtimes.workspace = true
-pyo3-stub-gen.workspace = true
 
 futures.workspace = true
 serde_json.workspace = true

@@ -8,13 +8,11 @@ use uc_client::models::tokens::v1::*;
 use uc_client::models::*;
 
 /// The requests on one `PatInfo`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(name = "TokenClient", module = "unitycatalog._core.tokens")]
 pub struct PyTokenClient {
     pub(crate) client: TokenClient,
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyTokenClient {
     /// Revoke a personal access token. Only its owner or an admin can revoke it.

@@ -234,19 +234,11 @@ impl IcebergClient {
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
-        let headers = response.headers().clone();
         let result = response.bytes().await?;
         let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
-        let mut output: IcebergLoadTableResponse = if result.trim_ascii().is_empty() {
-            Default::default()
-        } else {
-            ::buffa::json::with_json_parse_options(&options, || serde_json::from_slice(&result))?
-        };
-        output.etag = headers
-            .get("ETag")
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
-        Ok(output)
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
     }
 
     /// Get the metadata of a table, with credentials for its files.
@@ -269,19 +261,11 @@ impl IcebergClient {
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
-        let headers = response.headers().clone();
         let result = response.bytes().await?;
         let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
-        let mut output: IcebergLoadTableResponse = if result.trim_ascii().is_empty() {
-            Default::default()
-        } else {
-            ::buffa::json::with_json_parse_options(&options, || serde_json::from_slice(&result))?
-        };
-        output.etag = headers
-            .get("ETag")
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
-        Ok(output)
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
     }
 
     /// Check that a table exists. A table that does not exist is a not-found error.
@@ -323,19 +307,11 @@ impl IcebergClient {
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
-        let headers = response.headers().clone();
         let result = response.bytes().await?;
         let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
-        let mut output: IcebergLoadTableResponse = if result.trim_ascii().is_empty() {
-            Default::default()
-        } else {
-            ::buffa::json::with_json_parse_options(&options, || serde_json::from_slice(&result))?
-        };
-        output.etag = headers
-            .get("ETag")
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
-        Ok(output)
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
     }
 
     /// Drop a native Iceberg table. UniForm tables are dropped through the Unity Catalog API.

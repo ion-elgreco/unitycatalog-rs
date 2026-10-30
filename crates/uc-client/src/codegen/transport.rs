@@ -32,8 +32,7 @@ impl ::std::fmt::Debug for HttpClient {
 }
 
 impl HttpClient {
-    /// A transport that sends its requests with `client`, without a token or a
-    /// `User-Agent` of its own.
+    /// A transport over `client`, without a token or `User-Agent`.
     pub fn new(client: reqwest::Client) -> Self {
         Self {
             client,
