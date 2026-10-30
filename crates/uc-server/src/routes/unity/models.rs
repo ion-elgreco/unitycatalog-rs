@@ -46,7 +46,7 @@ pub async fn create_registered_model(
     let parent = schema_full_name(&req.catalog_name, &req.schema_name);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Schema,
         &parent,
         rules::create_model,
@@ -86,7 +86,7 @@ pub async fn list_registered_models(
             &params.page,
         )
         .await?;
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let registered_models = authz::filter_children(
         &state,
         &access,
@@ -127,7 +127,7 @@ pub async fn get_registered_model(
 ) -> ApiResult<Json<RegisteredModelInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::RegisteredModel,
         &full_name,
         rules::get_model,
@@ -154,7 +154,7 @@ pub async fn update_registered_model(
 ) -> ApiResult<Json<RegisteredModelInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::RegisteredModel,
         &full_name,
         rules::own_child,
@@ -190,7 +190,7 @@ pub async fn delete_registered_model(
 ) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::RegisteredModel,
         &full_name,
         rules::own_child,
@@ -221,7 +221,7 @@ pub async fn create_model_version(
     let parent = three_part_full_name(&req.catalog_name, &req.schema_name, &req.model_name);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::RegisteredModel,
         &parent,
         rules::own_child,
@@ -254,7 +254,7 @@ pub async fn list_model_versions(
 ) -> ApiResult<Json<ListModelVersionsResponse>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::RegisteredModel,
         &full_name,
         rules::get_model,
@@ -287,7 +287,7 @@ pub async fn get_model_version(
 ) -> ApiResult<Json<ModelVersionInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::RegisteredModel,
         &full_name,
         rules::get_model,
@@ -320,7 +320,7 @@ pub async fn update_model_version(
 ) -> ApiResult<Json<ModelVersionInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::RegisteredModel,
         &full_name,
         rules::own_child,
@@ -351,7 +351,7 @@ pub async fn delete_model_version(
 ) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::RegisteredModel,
         &full_name,
         rules::own_child,
@@ -390,7 +390,7 @@ pub async fn finalize_model_version(
     }
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::RegisteredModel,
         &full_name,
         rules::own_child,

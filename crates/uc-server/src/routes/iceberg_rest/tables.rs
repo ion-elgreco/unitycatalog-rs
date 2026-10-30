@@ -96,7 +96,7 @@ async fn load_privileges(
     if !state.authorization_enabled {
         return Ok(VendOp::ReadWrite);
     }
-    let access = authz::Access::load(state, &principal.username).await?;
+    let access = authz::Access::load(state, principal).await?;
     let lineage = authz::lineage(state, SecurableType::Table, full_name).await?;
     let can_write = access.owner(&lineage, authz::Level::Object)
         || access.all(
@@ -171,7 +171,7 @@ pub async fn list_tables(
     })
     .await?;
     // Each table the caller may read (upstream `GET_TABLE` filter).
-    let access = authz::Access::load(&state, &principal.username).await?;
+    let access = authz::Access::load(&state, &principal).await?;
     let schema = schema_full_name(&catalog, &namespace);
     let tables = authz::filter_children(
         &state,
@@ -213,7 +213,7 @@ pub async fn table_exists(
     let full_name = three_part_full_name(&catalog, &namespace, &table);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::get_table,
@@ -311,7 +311,7 @@ pub async fn load_table(
     let full_name = three_part_full_name(&catalog, &namespace, &table);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::get_table,
@@ -364,7 +364,7 @@ pub async fn load_credentials(
     let full_name = three_part_full_name(&catalog, &namespace, &table);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::get_table,
@@ -454,7 +454,7 @@ pub async fn report_metrics(
     let full_name = three_part_full_name(&catalog, &namespace, &table);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::get_table,
@@ -584,7 +584,7 @@ pub async fn create_table(
     let location = req.location.as_deref().filter(|l| !l.is_empty());
     authz::check_create(
         &state,
-        &principal.username,
+        &principal,
         &schema_full_name(&catalog, &namespace),
         location.map(Some),
         rules::create_table,
@@ -725,7 +725,7 @@ pub async fn commit_table(
         let external = location.filter(|l| !l.contains(MANAGED_STORAGE_PREFIX));
         authz::check_create(
             &state,
-            &principal.username,
+            &principal,
             &schema_full_name(&catalog, &namespace),
             external.map(Some),
             rules::create_table,
@@ -734,7 +734,7 @@ pub async fn commit_table(
     } else {
         authz::check(
             &state,
-            &principal.username,
+            &principal,
             SecurableType::Table,
             &full_name,
             rules::update_table,
@@ -847,7 +847,7 @@ pub async fn drop_table(
     let full_name = three_part_full_name(&catalog, &namespace, &table);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::own_child,
@@ -910,7 +910,7 @@ pub async fn rename_table(
     let full_name = three_part_full_name(&catalog, &from, &source.name);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::rename_table,

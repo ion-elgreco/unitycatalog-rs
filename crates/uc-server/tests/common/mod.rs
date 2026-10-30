@@ -2,6 +2,8 @@
 //! by only some tests looks "unused" to clippy in the others. Allow that.
 #![allow(dead_code)]
 
+pub mod idp;
+
 use axum::{
     Router,
     body::Body,

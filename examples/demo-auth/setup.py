@@ -205,10 +205,13 @@ oidc_client_id = {q(CLIENT_ID)}
 oidc_client_secret = {q(secret)}
 # "Log out" in the web UI ends the FerrisKey session too.
 oidc_end_session = true
-# The token exchange, which `uc auth login` uses.
-allowed_issuers = [{q(issuer)}]
-audiences = [{q(CLIENT_ID)}]
 admin_principals = ["alice@example.com"]
+
+# FerrisKey's tokens, which `uc auth login` exchanges.
+[[auth.issuers]]
+name = "ferriskey"
+issuer = {q(issuer)}
+audiences = [{q(CLIENT_ID)}]
 
 # The users, which the server makes at start when they are missing.
 {users}

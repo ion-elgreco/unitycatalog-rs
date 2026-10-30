@@ -6,7 +6,8 @@
 //!
 //! - `GET /auth/login?rd=<path>` sends the browser to the provider.
 //! - `GET /auth/callback` takes the code, checks the ID token, and sets the
-//!   `UC_TOKEN` cookie of the token exchange for the user its email names;
+//!   `UC_TOKEN` cookie of the token exchange for the user it names, as the
+//!   provider's `[[auth.issuers]]` block says (`crate::authn::idp::resolve`);
 //!   then it returns the browser to `rd`.
 //! - A sign-in that fails returns the browser to the web UI's login page,
 //!   `/login?error=<code>`, which tells the user what failed ([`Failure`]).
@@ -434,7 +435,7 @@ pub enum Failure {
     /// `token`: the provider did not take the code, or the ID token is
     /// invalid, is for another client, or has another nonce.
     Token,
-    /// `user`: no active user has the ID token's email.
+    /// `user`: the ID token names no active user.
     User,
     /// `server`: the server failed.
     Server,
@@ -637,8 +638,15 @@ pub async fn callback(
         return failed(Failure::Token, "the nonce does not match".into());
     }
 
-    // The user that the token exchange would sign in.
-    let principal = match idp::resolve_principal(&state, idp::ID_TOKEN, claims).await {
+    // The user that the token exchange would sign in, named as the
+    // provider's `[[auth.issuers]]` block says; without one, by `email`,
+    // else `sub`, and never made here.
+    let block = state
+        .auth
+        .issuer(&oidc.issuer)
+        .cloned()
+        .unwrap_or_else(|| idp::IssuerSettings::implicit(&oidc.issuer));
+    let principal = match idp::resolve(&state, &block, claims, idp::TokenKind::IdToken).await {
         Ok(principal) => principal,
         Err(e) if e.code() == ErrorCode::InvalidArgument => {
             let email = claims

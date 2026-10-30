@@ -365,7 +365,7 @@ async fn open(
 ) -> ApiResult<Target> {
     let write = op == VendOp::ReadWrite;
     let full_name = path.full_name();
-    let user = &principal.username;
+    let user = principal;
     // The check's error comes first: it is a 404 for a missing securable.
     let location = match path.root {
         Root::Volumes => {

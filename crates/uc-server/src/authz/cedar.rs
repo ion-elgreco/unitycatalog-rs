@@ -132,8 +132,12 @@ fn default_policies() -> Result<PolicySet> {
 
 #[async_trait]
 impl PolicyEngine for CedarEngine {
-    async fn grants(&self, principal: &str) -> Result<Box<dyn Grants>> {
-        let grants = self.metastore.permissions().grants_of(principal).await?;
+    async fn grants(&self, principal: &str, groups: &[String]) -> Result<Box<dyn Grants>> {
+        let grants = self
+            .metastore
+            .permissions()
+            .grants_of(principal, groups)
+            .await?;
         Ok(Box::new(CedarGrants {
             authorizer: self.authorizer.clone(),
             policies: self.policies.clone(),

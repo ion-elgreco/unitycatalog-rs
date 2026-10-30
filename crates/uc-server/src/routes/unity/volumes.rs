@@ -34,14 +34,7 @@ pub async fn create_volume(
         uc_api::VolumeType::External => Some(req.storage_location.as_deref()),
         _ => None,
     };
-    authz::check_create(
-        &state,
-        &principal.username,
-        &parent,
-        external,
-        rules::create_volume,
-    )
-    .await?;
+    authz::check_create(&state, &principal, &parent, external, rules::create_volume).await?;
     Ok(Json(
         state
             .metastore
@@ -72,7 +65,7 @@ pub async fn list_volumes(
         .volumes()
         .list(&params.catalog_name, &params.schema_name, &params.page)
         .await?;
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let schema = schema_full_name(&params.catalog_name, &params.schema_name);
     let volumes = authz::filter_children(
         &state,
@@ -105,7 +98,7 @@ pub async fn get_volume(
 ) -> ApiResult<Json<VolumeInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Volume,
         &name,
         rules::get_volume,
@@ -132,7 +125,7 @@ pub async fn update_volume(
 ) -> ApiResult<Json<VolumeInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Volume,
         &name,
         rules::own_child,
@@ -163,7 +156,7 @@ pub async fn delete_volume(
 ) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Volume,
         &name,
         rules::own_child,
