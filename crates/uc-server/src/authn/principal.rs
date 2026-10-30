@@ -10,6 +10,10 @@ pub struct Principal {
     pub username: String,
     /// `false` for the anonymous fallback (no or unrecognised token).
     pub authenticated: bool,
+    /// The groups that the caller's token names (`groups_claim` of its
+    /// issuer). They count when a group of that name exists in the server;
+    /// the memberships of the server's own groups are read with the grants.
+    pub groups: Vec<String>,
 }
 
 impl Principal {
@@ -17,6 +21,7 @@ impl Principal {
         Self {
             username: "anonymous".to_string(),
             authenticated: false,
+            groups: Vec::new(),
         }
     }
 
@@ -24,7 +29,14 @@ impl Principal {
         Self {
             username: username.into(),
             authenticated: true,
+            groups: Vec::new(),
         }
+    }
+
+    /// With the groups of the caller's token.
+    pub fn with_groups(mut self, groups: Vec<String>) -> Self {
+        self.groups = groups;
+        self
     }
 
     /// The caller recorded as `owner` / `created_by` / `updated_by`. Like

@@ -69,10 +69,23 @@ auth:
   # - email: etl@example.com
   #   externalId: <the id of the ETL job's OAuth client>
   users: []
-  # -- Allowed token issuers (exact, or `*` for one DNS label).
-  allowedIssuers: https://accounts.google.com
-  # -- Expected token audiences; `*` alone disables the check.
-  audiences: ""
+  # -- The identity providers whose tokens the server takes
+  # (`[[auth.issuers]]` in its uc.toml): at the token exchange of
+  # `uc auth login`, and with `direct` on every request, as a service
+  # principal or a service account signs in.
+  # - name: entra
+  #   issuer: https://login.microsoftonline.com/<tenant>/v2.0
+  #   audiences: ["api://uc"]
+  #   direct: true
+  #   principalClaims: [preferred_username, oid]
+  #   clientClaims: [azp, appid]
+  #   groupsClaim: roles
+  #   createUsers: true
+  #   displayName: "{app_displayname}"
+  # - name: google
+  #   issuer: https://accounts.google.com
+  #   audiences: [<client id>]
+  issuers: []
   # -- Sign-in to the web UI: the server signs users in with an OpenID
   # Connect provider (`UC_AUTH_MODE=oidc`); a user signs in when `users` (or
   # SCIM) has their email.

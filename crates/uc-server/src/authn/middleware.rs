@@ -2,7 +2,9 @@
 //!
 //! A request carries its token as `Authorization: Bearer <token>` or in the
 //! `UC_TOKEN` cookie. Tokens are UC access tokens (RS512 JWTs this server
-//! signed, see [`crate::authn::security`]), personal access tokens, or Delta
+//! signed, see [`crate::authn::security`]), the tokens of the identity
+//! providers of `[[auth.issuers]]` with `direct = true`
+//! ([`crate::authn::idp::accept`]), personal access tokens, or Delta
 //! Sharing recipient tokens on the sharing endpoints.
 //!
 //! With authorization on, every request to the API and the control plane
@@ -30,7 +32,11 @@ use axum::{
 use uc_common::{API_BASE, CONTROL_BASE, Error, ErrorCode, FILES_BASE, Result};
 
 use crate::{
-    authn::{principal::Principal, security::ADMIN},
+    authn::{
+        idp,
+        principal::Principal,
+        security::{ADMIN, INTERNAL_ISSUER},
+    },
     http::error::ApiError,
     server::state::AppState,
 };
@@ -138,6 +144,11 @@ pub(crate) fn token_cookie(value: &str, max_age: Duration, secure: bool) -> Resu
 
 /// The caller a token names. `active_user` requires the caller to be an
 /// active user, as upstream does whenever authorization is on.
+///
+/// A JWT is read by its `iss`: `internal` is the server's own, checked with
+/// its signing key; another issuer must be an `[[auth.issuers]]` block with
+/// `direct = true`, whose tokens [`idp::accept`] checks and names; anything
+/// else is invalid. Other tokens are personal access tokens.
 async fn authenticate(
     state: &AppState,
     token: &str,
@@ -157,12 +168,38 @@ async fn authenticate(
         };
     }
     let principal = if looks_like_jwt(token) {
-        state
-            .security
-            .as_ref()
-            .ok_or_else(invalid)?
-            .verify(token)?
-            .sub
+        let decoded = idp::decode(token).map_err(|_| invalid())?;
+        match idp::claim(&decoded.claims, "iss") {
+            Some(INTERNAL_ISSUER) => {
+                state
+                    .security
+                    .as_ref()
+                    .ok_or_else(invalid)?
+                    .verify(token)?
+                    .sub
+            }
+            Some(iss) => match state.auth.issuer(iss) {
+                Some(issuer) if issuer.direct => {
+                    // `accept` named an active user already.
+                    let accepted = idp::accept(state, issuer, token, &decoded).await?;
+                    return Ok(
+                        Principal::authenticated(accepted.principal).with_groups(accepted.groups)
+                    );
+                }
+                Some(issuer) => {
+                    tracing::debug!(
+                        issuer = %issuer.name,
+                        "token refused: the issuer's tokens are taken at the exchange only"
+                    );
+                    return Err(invalid());
+                }
+                None => {
+                    tracing::debug!(%iss, "token refused: no auth.issuers block has the issuer");
+                    return Err(invalid());
+                }
+            },
+            None => return Err(invalid()),
+        }
     } else {
         state
             .metastore

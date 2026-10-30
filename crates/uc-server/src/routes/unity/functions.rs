@@ -34,7 +34,7 @@ pub async fn create_function(
     );
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Schema,
         &parent,
         rules::create_function,
@@ -70,7 +70,7 @@ pub async fn list_functions(
         .functions()
         .list(&params.catalog_name, &params.schema_name, &params.page)
         .await?;
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let schema = schema_full_name(&params.catalog_name, &params.schema_name);
     let functions = authz::filter_children(
         &state,
@@ -103,7 +103,7 @@ pub async fn get_function(
 ) -> ApiResult<Json<FunctionInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Function,
         &name,
         rules::get_function,
@@ -128,7 +128,7 @@ pub async fn delete_function(
 ) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Function,
         &name,
         rules::own_child,

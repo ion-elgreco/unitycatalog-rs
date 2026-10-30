@@ -39,7 +39,7 @@ pub async fn create_external_location(
     principal: Principal,
     Json(req): Json<CreateExternalLocation>,
 ) -> ApiResult<Json<ExternalLocationInfo>> {
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     if access.enabled() {
         let credential =
             authz::lineage(&state, SecurableType::Credential, &req.credential_name).await?;
@@ -69,7 +69,7 @@ pub async fn list_external_locations(
     Query(page): Query<Pagination>,
 ) -> ApiResult<Json<ListExternalLocationsResponse>> {
     let (external_locations, next) = state.metastore.external_locations().list(&page).await?;
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let external_locations = external_locations
         .into_iter()
         .filter(|el| rules::get_external_location(&access, &lineage_of(el)))
@@ -95,7 +95,7 @@ pub async fn get_external_location(
     Path(name): Path<String>,
 ) -> ApiResult<Json<ExternalLocationInfo>> {
     let info = state.metastore.external_locations().get(&name).await?;
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     access.check(rules::get_external_location(&access, &lineage_of(&info)))?;
     Ok(Json(info))
 }
@@ -116,7 +116,7 @@ pub async fn update_external_location(
     Path(name): Path<String>,
     Json(req): Json<UpdateExternalLocation>,
 ) -> ApiResult<Json<ExternalLocationInfo>> {
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     if access.enabled() {
         let location = authz::lineage(&state, SecurableType::ExternalLocation, &name).await?;
         let credential = match req.credential_name.as_deref() {
@@ -160,7 +160,7 @@ pub async fn delete_external_location(
 ) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::ExternalLocation,
         &name,
         rules::admin_or_owner,

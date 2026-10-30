@@ -56,7 +56,7 @@ pub async fn temp_table_credentials(
     Json(req): Json<GenerateTemporaryTableCredential>,
 ) -> ApiResult<Json<TemporaryCredentials>> {
     let write = req.operation != TableOperation::Read;
-    authz::check_table_id(&state, &principal.username, &req.table_id, |a, l| {
+    authz::check_table_id(&state, &principal, &req.table_id, |a, l| {
         rules::vend_table(a, l, write)
     })
     .await?;
@@ -98,7 +98,7 @@ pub async fn temp_volume_credentials(
     if req.volume_id.is_empty() {
         return Err(Error::invalid_argument("Volume ID is required.").into());
     }
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     if access.enabled() {
         let lineage = state
             .metastore
@@ -137,7 +137,7 @@ pub async fn temp_model_version_credentials(
     let write = req.operation != ModelVersionOperation::ReadModelVersion;
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::RegisteredModel,
         &full_name,
         |a, l| rules::vend_model(a, l, write),
@@ -212,7 +212,7 @@ pub async fn temp_path_credentials(
     principal: Principal,
     Json(req): Json<GenerateTemporaryPathCredential>,
 ) -> ApiResult<Json<TemporaryCredentials>> {
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     if access.enabled() {
         let owner = authz::path_owner(&state, &req.url).await?;
         if owner == PathOwner::Unowned {

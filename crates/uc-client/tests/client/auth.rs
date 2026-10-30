@@ -209,8 +209,12 @@ async fn server_with_idp(idp: &Idp) -> Url {
     let metastore = metastore().await;
     initialize_admin(&metastore).await.unwrap();
     let settings = AuthSettings::new(&uc_common::settings::Auth {
-        allowed_issuers: vec![idp.issuer.clone()],
-        audiences: vec!["uc".into()],
+        issuers: vec![uc_common::settings::Issuer {
+            name: "idp".into(),
+            issuer: idp.issuer.clone(),
+            audiences: vec!["uc".into()],
+            ..Default::default()
+        }],
         access_token_timeout: Duration::from_secs(3600),
         ..Default::default()
     });

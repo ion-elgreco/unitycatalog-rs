@@ -39,7 +39,7 @@ pub async fn create_schema(
     Json(req): Json<CreateSchema>,
 ) -> ApiResult<Json<SchemaInfo>> {
     let catalog = authz::lineage(&state, SecurableType::Catalog, &req.catalog_name).await?;
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let storage_root =
         authz::storage_root_allowed(&state, &access, req.storage_root.as_deref()).await?;
     access.check(rules::create_schema(&access, &catalog) && storage_root.unwrap_or(true))?;
@@ -73,7 +73,7 @@ pub async fn list_schemas(
         .schemas()
         .list(&params.catalog_name, &params.page)
         .await?;
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let schemas = match access.enabled() {
         false => schemas,
         true => {
@@ -108,7 +108,7 @@ pub async fn get_schema(
 ) -> ApiResult<Json<SchemaInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Schema,
         &full_name,
         rules::get_schema,
@@ -136,7 +136,7 @@ pub async fn update_schema(
 ) -> ApiResult<Json<SchemaInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Schema,
         &full_name,
         rules::update_schema,
@@ -173,7 +173,7 @@ pub async fn delete_schema(
 ) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Schema,
         &full_name,
         rules::update_schema,

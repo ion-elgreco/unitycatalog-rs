@@ -60,8 +60,7 @@ The chart sets the server's settings as `UC_*` environment variables. For the
 | `server.logLevel` | `info` | `RUST_LOG`. |
 | `auth.enabled` | `false` | Sign-in and privilege checks. |
 | `auth.users` | `[]` | Users that the server makes at start when they are missing: `email`, `name`, `externalId`, `privileges` (on the metastore). |
-| `auth.allowedIssuers` | `https://accounts.google.com` | The issuers of tokens that the server exchanges. |
-| `auth.audiences` | `""` | The audiences of those tokens; `*` alone accepts all. |
+| `auth.issuers` | `[]` | The identity providers whose tokens the server takes (`[[auth.issuers]]`): `name`, `issuer`, `audiences`, `direct`, `principalClaims`, `clientClaims`, `groupsClaim`, `createUsers`, `displayName`. See [Identity providers](../server/auth.md#identity-providers). |
 | `auth.oidc.issuer` | `""` | The OpenID Connect provider of the web UI's sign-in. |
 | `auth.oidc.clientSecretName` | `""` | A Secret with `clientId` and `clientSecret`. |
 | `auth.oidc.scopes` | `openid email profile` | The scopes that the server asks for. |

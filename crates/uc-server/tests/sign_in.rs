@@ -453,8 +453,9 @@ async fn refuses_sign_ins_that_do_not_check_out() {
         ))
         .await
         .unwrap();
-    // Upstream: a token of this server with another issuer.
-    assert_eq!(catalogs.status(), StatusCode::FORBIDDEN);
+    // Its issuer is neither the server's nor an `[[auth.issuers]]` block:
+    // refused as any such token is.
+    assert_eq!(catalogs.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
