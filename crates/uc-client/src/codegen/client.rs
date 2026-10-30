@@ -85,6 +85,15 @@ impl Client {
         )
     }
 
+    /// Create a new aggregate client whose bearer token comes from `source` at every
+    /// request ([`TokenSource`](crate::codegen::transport::TokenSource)).
+    pub fn new_with_token_source(
+        base_url: Url,
+        source: ::std::sync::Arc<dyn crate::codegen::transport::TokenSource>,
+    ) -> Self {
+        Self::new(HttpClient::default().with_token_source(source), base_url)
+    }
+
     /// The same client, sending `user_agent` as the `User-Agent` of every request.
     pub fn with_user_agent(mut self, user_agent: impl Into<String>) -> Self {
         self.client = self.client.with_user_agent(user_agent);

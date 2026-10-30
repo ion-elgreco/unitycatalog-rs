@@ -75,15 +75,47 @@ pub struct PyClient {
 
 #[pymethods]
 impl PyClient {
-    /// A client of the API at `base_url`. `token`, when set, goes in every
-    /// request as the bearer token.
+    /// A client of the API at `base_url`. `token`, when set, goes in every request as
+    /// the bearer token. `token_provider` is asked for the token instead: a
+    /// `TokenSource`, or a callable that returns the token, or a pair of the token
+    /// and the time it expires, in seconds since the epoch; a token with its expiry
+    /// is kept until a minute before it, a bare token is asked for at every request.
     #[new]
-    #[pyo3(signature = (base_url, token = None))]
-    pub fn new(base_url: String, token: Option<String>) -> PyResult<Self> {
+    #[pyo3(signature = (base_url, token = None, token_provider = None))]
+    pub fn new(
+        py: Python<'_>,
+        base_url: String,
+        token: Option<String>,
+        token_provider: Option<::pyo3::Py<::pyo3::PyAny>>,
+    ) -> PyResult<Self> {
         let base_url = base_url.parse().map_err(PyUnityCatalogError::from)?;
-        let client = match token {
-            Some(token) => Client::new_with_token(base_url, token),
-            None => Client::new_unauthenticated(base_url),
+        let client = match (token, token_provider) {
+            (Some(_), Some(_)) => {
+                return Err(::pyo3::exceptions::PyValueError::new_err(
+                    "token and token_provider cannot both be set",
+                ));
+            }
+            (Some(token), None) => Client::new_with_token(base_url, token),
+            (None, Some(provider)) => {
+                let source: ::std::sync::Arc<dyn uc_client::transport::TokenSource> =
+                    match provider.bind(py).cast::<RustTokenSource>() {
+                        Ok(source) => source.get().source.clone(),
+                        Err(_) => ::std::sync::Arc::new(PyTokenSource::new(provider)),
+                    };
+                Client::new_with_token_source(base_url, source)
+            }
+            (None, None) => {
+                let source = py
+                    .detach(|| {
+                        crate::codegen::runtime::rt()
+                            .block_on(uc_client::identity::detect(&base_url))
+                    })
+                    .map_err(|e| PyUnityCatalogError::from(uc_client::error::Error::Token(e)))?;
+                match source {
+                    Some(source) => Client::new_with_token_source(base_url, source),
+                    None => Client::new_unauthenticated(base_url),
+                }
+            }
         };
         let client = client.with_user_agent(concat!("unitycatalog-rs/", env!("CARGO_PKG_VERSION")));
         Ok(Self { client })
@@ -5931,6 +5963,88 @@ impl PyClient {
     }
 }
 
+/// A token source made in Rust, for `token_provider=`. The binding crate makes
+/// one from any `TokenSource` of the client crate.
+#[pyclass(name = "TokenSource", frozen, module = "unitycatalog._core")]
+pub struct RustTokenSource {
+    pub(crate) source: ::std::sync::Arc<dyn uc_client::transport::TokenSource>,
+}
+
+/// The bearer tokens of a `token_provider` callable: the token, or a
+/// `(token, expires_at)` pair with the expiry in seconds since the epoch, kept
+/// until a minute before it.
+pub struct PyTokenSource {
+    provider: ::pyo3::Py<::pyo3::PyAny>,
+    kept: ::std::sync::Mutex<Option<(String, ::std::time::Instant)>>,
+}
+
+impl PyTokenSource {
+    fn new(provider: ::pyo3::Py<::pyo3::PyAny>) -> Self {
+        Self {
+            provider,
+            kept: ::std::sync::Mutex::new(None),
+        }
+    }
+
+    /// Ask the callable: the token, and its expiry when it gives one.
+    fn ask(&self) -> PyResult<(String, Option<f64>)> {
+        ::pyo3::Python::attach(|py| {
+            let value = self.provider.bind(py).call0()?;
+            if let Ok(token) = value.extract::<String>() {
+                return Ok((token, None));
+            }
+            let (token, expires_at) = value
+                .extract::<(String, f64)>()
+                .map_err(|_| {
+                    ::pyo3::exceptions::PyTypeError::new_err(
+                        "token_provider must return the token, or a (token, \
+                                         expires_at) pair with the expiry in seconds since the epoch",
+                    )
+                })?;
+            Ok((token, Some(expires_at)))
+        })
+    }
+}
+
+impl ::std::fmt::Debug for PyTokenSource {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.debug_struct("PyTokenSource").finish_non_exhaustive()
+    }
+}
+
+impl uc_client::transport::TokenSource for PyTokenSource {
+    fn token(&self) -> uc_client::transport::TokenFuture<'_> {
+        Box::pin(async move {
+            if let Ok(kept) = self.kept.lock()
+                && let Some((token, until)) = kept.as_ref()
+                && ::std::time::Instant::now() < *until
+            {
+                return Ok(token.clone());
+            }
+            let (token, expires_at) = self
+                .ask()
+                .map_err(|e| Box::new(e) as uc_client::transport::TokenError)?;
+            if let Some(expires_at) = expires_at {
+                let now = ::std::time::SystemTime::now()
+                    .duration_since(::std::time::UNIX_EPOCH)
+                    .map_or(0.0, |d| d.as_secs_f64());
+                let left = expires_at - now - 60.0;
+                let left = if left.is_finite() {
+                    left.clamp(0.0, 1e9)
+                } else {
+                    0.0
+                };
+                let until =
+                    ::std::time::Instant::now() + ::std::time::Duration::from_secs_f64(left);
+                if let Ok(mut kept) = self.kept.lock() {
+                    *kept = Some((token.clone(), until));
+                }
+            }
+            Ok(token)
+        })
+    }
+}
+
 /// The extension module, as Python imports it.
 pub const CORE_MODULE: &str = "unitycatalog._core";
 /// The submodules of the extension module.
@@ -5958,6 +6072,7 @@ const SUBMODULES: &[&str] = &[
     "tables",
     "tokens",
     "volumes",
+    "identity",
 ];
 /// The extension module `unitycatalog._core`.
 #[::pyo3::pymodule]
@@ -5971,6 +6086,9 @@ pub mod extension_module {
     const __version__: &str = env!("CARGO_PKG_VERSION");
     #[pymodule_export]
     use super::PyClient;
+
+    #[pymodule_export]
+    use super::RustTokenSource;
 
     #[pymodule_export]
     use crate::codegen::error::{
@@ -6192,6 +6310,9 @@ pub mod extension_module {
         #[pymodule_export]
         use super::super::{PyListVolumesResponseContent, PyVolumeClient, PyVolumeInfo};
     }
+
+    #[pymodule_export]
+    use crate::identity::identity;
 
     /// Put the submodules in `sys.modules`. The import system puts the module there
     /// before it runs this. Not handed the module, so the stubs still describe the

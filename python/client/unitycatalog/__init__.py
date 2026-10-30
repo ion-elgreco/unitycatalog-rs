@@ -25,8 +25,14 @@ such as `unitycatalog.tables`, with the enums of that package.
 Enums are `enum.StrEnum` classes; a parameter takes a member or its name. An
 error answer raises `UnityCatalogError`, or the subclass of its HTTP status, such as
 `NotFoundError`.
+
+With sign-in, `Client(url, token=...)` sends a fixed token, and `Client(url)` signs in
+with the identity of the environment: an Azure or Google identity, an OAuth client, or
+a token in `UC_TOKEN`. `Client(url, token_provider=...)` names the token source: one
+of `unitycatalog.identity`, or a callable that returns the token.
 """
 
+from unitycatalog import identity
 from unitycatalog._core import (
     BadRequestError,
     Client,
@@ -93,4 +99,5 @@ __all__ = [
     "VolumeOperation",
     "VolumeType",
     "__version__",
+    "identity",
 ]

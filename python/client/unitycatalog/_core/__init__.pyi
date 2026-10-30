@@ -14,6 +14,7 @@ from . import (
     functions as functions,
     health as health,
     iceberg as iceberg,
+    identity as identity,
     metastore as metastore,
     models as models,
     permissions as permissions,
@@ -140,6 +141,7 @@ __all__ = [
     "PermissionDeniedError",
     "RateLimitError",
     "ServerError",
+    "TokenSource",
     "UnauthenticatedError",
     "UnityCatalogError",
     "admin",
@@ -153,6 +155,7 @@ __all__ = [
     "functions",
     "health",
     "iceberg",
+    "identity",
     "metastore",
     "models",
     "permissions",
@@ -191,10 +194,19 @@ class Client:
     """
     A client of the API at one base URL.
     """
-    def __new__(cls, /, base_url: str, token: str | None = None) -> Client:
+    def __new__(
+        cls,
+        /,
+        base_url: str,
+        token: str | None = None,
+        token_provider: Any | None = None,
+    ) -> Client:
         """
-        A client of the API at `base_url`. `token`, when set, goes in every
-        request as the bearer token.
+        A client of the API at `base_url`. `token`, when set, goes in every request as
+        the bearer token. `token_provider` is asked for the token instead: a
+        `TokenSource`, or a callable that returns the token, or a pair of the token
+        and the time it expires, in seconds since the epoch; a token with its expiry
+        is kept until a minute before it, a bare token is asked for at every request.
         """
     def catalog(self, /, catalog_name: str) -> CatalogClient:
         """
@@ -2854,6 +2866,13 @@ class ServerError(UnityCatalogError):
         status: SupportsIndex | None = None,
         details: list | None = None,
     ) -> ServerError: ...
+
+@final
+class TokenSource:
+    """
+    A token source made in Rust, for `token_provider=`. The binding crate makes
+    one from any `TokenSource` of the client crate.
+    """
 
 @final
 class UnauthenticatedError(UnityCatalogError):

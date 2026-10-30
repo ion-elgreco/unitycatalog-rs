@@ -94,6 +94,7 @@ nav:
           - unitycatalog.functions: reference/python/functions.md
           - unitycatalog.health: reference/python/health.md
           - unitycatalog.iceberg: reference/python/iceberg.md
+          - unitycatalog.identity: reference/python/identity.md
           - unitycatalog.metastore: reference/python/metastore.md
           - unitycatalog.models: reference/python/models.md
           - unitycatalog.permissions: reference/python/permissions.md

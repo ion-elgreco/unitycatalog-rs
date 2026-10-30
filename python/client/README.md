@@ -126,12 +126,14 @@ python/client/
 ├── Cargo.toml           crate uc-py: cdylib `_core`
 ├── pyproject.toml       maturin; module unitycatalog._core; the extras
 ├── src/
-│   ├── lib.rs           mounts codegen/
-│   └── codegen/         the bindings, generated (just generate): the module `unitycatalog._core`, Client, the handles, the exceptions, the Tokio runtime
+│   ├── lib.rs           mounts codegen/ and identity.rs
+│   ├── codegen/         the bindings, generated (just generate): the module `unitycatalog._core`, Client, the handles, the exceptions, the Tokio runtime
+│   └── identity.rs      the submodule `identity`: the token sources of cloud identities
 ├── unitycatalog/
 │   ├── __init__.py      the public names
 │   ├── _enums.py        the enums, generated (just generate)
 │   ├── <package>.py     a module per API package, generated (just generate): its classes and enums
+│   ├── identity.py      the token sources, from `_core.identity`
 │   └── _core/           the stubs, generated (just generate-stubs)
 └── tests/               pytest, against a uc-server
     └── integrations/    polars, deltalake, obstore and pyiceberg against it; S3 from moto
@@ -211,9 +213,9 @@ group out there with `UV_NO_GROUP=integrations`.
 `uc-client` and `unitycatalog/_enums.py` from the protos. Do not change
 them by hand. The stubs in `unitycatalog/_core/` come from the built
 extension: maturin reads the doc comments and types that PyO3's
-`experimental-inspect` puts in it. After `just generate`, run
-`just generate-stubs` (it uses maturin of the venv in .venv) and commit the
-stubs. It formats them with ruff; ruff does not lint them. CI fails when
+`experimental-inspect` puts in it. After `just generate`, or a change to
+`src/identity.rs`, run `just generate-stubs` (it uses maturin of the venv in
+.venv) and commit the stubs. It formats them with ruff; ruff does not lint them. CI fails when
 they differ from the code.
 
 On a `v*` tag, `.github/workflows/release-python.yml` builds the wheels
