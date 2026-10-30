@@ -65,6 +65,8 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
 # HTTP client
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+# The bearer tokens of cloud identities: the `identity` feature of uc-client.
+olai-http = "0.0.8"
 # The protobuf runtime of the generated models (`just generate`), with their JSON.
 buffa = { version = "0.7", features = ["json"] }
 buffa-types = { version = "0.7", features = ["json"] }

@@ -14,6 +14,7 @@ mod errors;
 mod files;
 mod functions;
 mod iceberg;
+mod identity;
 mod models;
 mod permissions;
 mod schemas;

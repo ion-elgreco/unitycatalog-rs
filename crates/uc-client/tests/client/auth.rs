@@ -3,10 +3,7 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use axum::{Json, Router, routing::get};
 use futures::TryStreamExt;
-use jsonwebtoken::{Algorithm, EncodingKey, Header};
-use serde_json::json;
 use url::Url;
 
 use uc_client::Client;
@@ -14,7 +11,9 @@ use uc_server::authn::idp::AuthSettings;
 use uc_server::authn::security::{ADMIN, initialize_admin};
 use uc_server::{AppState, build_app};
 
-use crate::common::{client, email, metastore, rejected, security, serve, server_with_keys, token};
+use crate::common::{
+    Idp, client, email, metastore, rejected, security, serve, server_with_keys, token,
+};
 
 const ALICE: &str = "alice@example.com";
 const TOKEN_EXCHANGE: &str = "urn:ietf:params:oauth:grant-type:token-exchange";
@@ -229,54 +228,4 @@ async fn server_with_idp(idp: &Idp) -> Url {
         .await
         .unwrap();
     url
-}
-
-/// The P-256 key of [`Idp`], a key for these tests only, in PKCS #8.
-const IDP_KEY: &str = "-----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg9bV2OxfT2NY4FhNp
-tB1eTLqKzvnAKPsbWpjnyDSUIL2hRANCAASTdscsBJf35ZbWbx/g//Vy1ff3ouV+
-+6X+vzSzOilBukWUMgs5eB7pEhpv4eu45k1jCFMdVSMjBNVRdkK0afBc
------END PRIVATE KEY-----";
-
-/// An identity provider in this process: OIDC discovery and the public
-/// key of [`IDP_KEY`] (its `x` and `y`), which signs its ID tokens.
-struct Idp {
-    issuer: String,
-    key: EncodingKey,
-}
-
-impl Idp {
-    async fn start() -> Self {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let issuer = format!("http://{}", listener.local_addr().unwrap());
-        let config = json!({ "issuer": issuer, "jwks_uri": format!("{issuer}/jwks") });
-        let jwks = json!({ "keys": [{
-            "kty": "EC", "kid": "p256", "use": "sig", "alg": "ES256", "crv": "P-256",
-            "x": "k3bHLASX9-WW1m8f4P_1ctX396Llfvul_r80szopQbo",
-            "y": "RZQyCzl4HukSGm_h67jmTWMIUx1VIyME1VF2QrRp8Fw",
-        }] });
-        let app = Router::new()
-            .route(
-                "/.well-known/openid-configuration",
-                get(move || async move { Json(config) }),
-            )
-            .route("/jwks", get(move || async move { Json(jwks) }));
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        Self {
-            issuer,
-            key: EncodingKey::from_ec_pem(IDP_KEY.as_bytes()).unwrap(),
-        }
-    }
-
-    /// An ID token of the user `email`, for the audience `uc`.
-    fn id_token(&self, email: &str) -> String {
-        let now = now_ms() / 1000;
-        let claims = json!({
-            "iss": self.issuer, "aud": "uc", "sub": email, "email": email,
-            "iat": now, "exp": now + 600,
-        });
-        let mut header = Header::new(Algorithm::ES256);
-        header.kid = Some("p256".into());
-        jsonwebtoken::encode(&header, &claims, &self.key).unwrap()
-    }
 }

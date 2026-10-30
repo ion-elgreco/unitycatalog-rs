@@ -82,7 +82,8 @@ A request signs in with one of these tokens:
   ([Identity providers](#identity-providers)). With `direct = true`, the server takes its tokens
   on every request: a service principal, a managed identity, a service account or a CI job sends
   the token that its environment gives it, and engines such as pyiceberg sign in with their own
-  `entra` or `google` auth.
+  `entra` or `google` auth. The [Python client](../clients/python.md#connect) and
+  [`uc`](../clients/cli.md#sign-in) find that identity in the environment themselves.
 
     ```toml
     [[auth.issuers]]

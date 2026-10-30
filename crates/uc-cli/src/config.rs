@@ -2,7 +2,8 @@
 //! variables `UC_CLI_SERVER` and `UC_CLI_TOKEN`, else `server` and `token`
 //! in the `[cli]` table of uc.toml. `uc_common::settings` reads those two
 //! sources into `Settings::cli`. Without a token, `uc` sends the one of its
-//! sign-in to the server ([`crate::sign_in`]).
+//! sign-in to the server ([`crate::sign_in`]), else it signs in with the
+//! identity of the environment ([`uc_client::identity`]).
 
 use std::path::PathBuf;
 
@@ -74,6 +75,25 @@ pub fn client(url: &str, token: Option<&str>) -> anyhow::Result<Client> {
     let root = root(url)?;
     let client = match token {
         Some(token) => Client::new_with_token(root, token),
+        None => Client::new_unauthenticated(root),
+    };
+    Ok(client.with_user_agent(concat!("uc/", env!("CARGO_PKG_VERSION"))))
+}
+
+/// The API client of the server at `url`: with `token`, as [`client`];
+/// without, signed in with the identity of the environment
+/// ([`uc_client::identity::detect`]) when it has one: an Azure or Google
+/// identity, an OAuth client, or a token in `UC_TOKEN`.
+pub async fn client_of_environment(url: &str, token: Option<&str>) -> anyhow::Result<Client> {
+    if token.is_some() {
+        return client(url, token);
+    }
+    let root = root(url)?;
+    let source = uc_client::identity::detect(&root)
+        .await
+        .map_err(|e| anyhow::anyhow!("cannot sign in with the identity of the environment: {e}"))?;
+    let client = match source {
+        Some(source) => Client::new_with_token_source(root, source),
         None => Client::new_unauthenticated(root),
     };
     Ok(client.with_user_agent(concat!("uc/", env!("CARGO_PKG_VERSION"))))

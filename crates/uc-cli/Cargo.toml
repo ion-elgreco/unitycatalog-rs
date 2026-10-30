@@ -14,7 +14,8 @@ path = "src/main.rs"
 [dependencies]
 # `ui`: the web UI's files, for `uc web`.
 uc-common = { workspace = true, features = ["ui"] }
-uc-client.workspace = true
+# `identity`: uc signs in with the identity of the environment when it has no token.
+uc-client = { workspace = true, features = ["identity"] }
 
 clap.workspace = true
 tokio = { workspace = true, features = ["process", "io-util", "io-std"] }

@@ -17,6 +17,7 @@ from unitycatalog import (
     ServerError,
     UnauthenticatedError,
     UnityCatalogError,
+    identity,
 )
 from unitycatalog.credentials import (
     AwsIamRoleRequest,
@@ -555,6 +556,36 @@ def test_personal_access_tokens(admin: Calls, uc: Calls, server) -> None:
     assert created.token_value not in repr(answer)
     admin.token(created.id).delete()
     assert created.id not in [p.id for p in admin.list_tokens()]
+
+
+def test_token_sources(server, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A callable: the token, or the token with its expiry.
+    calls: list[int] = []
+
+    def provider() -> str:
+        calls.append(1)
+        return server.token
+
+    Client(server.address, token_provider=provider).list_tokens()
+    assert calls == [1]
+    kept = Client(
+        server.address, token_provider=lambda: (server.token, time.time() + 3600)
+    )
+    kept.list_tokens()
+    kept.list_tokens()
+    # A source made in Rust: the token of a variable, read at each refresh.
+    monkeypatch.setenv("UC_TEST_TOKEN", server.token)
+    source = identity.token_env("UC_TEST_TOKEN")
+    Client(server.address, token_provider=source).list_tokens()
+    # A provider that returns something else fails the call, before the request.
+    with pytest.raises(UnityCatalogError, match="token_provider"):
+        Client(server.address, token_provider=lambda: 7).list_tokens()
+    with pytest.raises(ValueError, match="both"):
+        Client(server.address, token="t", token_provider=provider)
+    # Nothing in the environment: no identity to detect.
+    for var in ("UC_TOKEN", "UC_TOKEN_FILE", "UC_OAUTH_TOKEN_URL"):
+        monkeypatch.delenv(var, raising=False)
+    assert identity.detect(f"http://127.0.0.1:{_closed_port()}/") is None
 
 
 @pytest.mark.upstream

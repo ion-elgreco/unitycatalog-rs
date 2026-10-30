@@ -8,8 +8,12 @@ repository.workspace = true
 authors.workspace = true
 
 [features]
-# The PyO3 classes of the models, for the Python client (`python/client`).
-python = ["dep:pyo3"]
+# The PyO3 classes of the models, for the Python client (`python/client`), which also signs
+# in with the identity of the environment.
+python = ["dep:pyo3", "identity"]
+# `identity`: the token sources of cloud identities (Azure, Google, any OAuth client), on
+# olai-http's bearer providers.
+identity = ["dep:olai-http", "dep:tokio", "dep:base64"]
 
 [dependencies]
 uc-common.workspace = true
@@ -22,6 +26,10 @@ url.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 pyo3 = { workspace = true, optional = true }
+olai-http = { workspace = true, optional = true }
+# `gcloud auth print-identity-token`, and the `exp` of the token it prints.
+tokio = { workspace = true, features = ["process"], optional = true }
+base64 = { version = "0.22", optional = true }
 
 [dev-dependencies]
 uc-server = { path = "../uc-server" }

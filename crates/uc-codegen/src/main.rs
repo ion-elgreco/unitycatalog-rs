@@ -229,6 +229,8 @@ fn config(scratch: &Path) -> CodeGenConfig {
             json_query_packages: CAMEL_CASE_PACKAGES.iter().map(|p| p.to_string()).collect(),
             // `uc-client/<version>`; the web UI sends the browser's.
             user_agent: Some("uc-client".into()),
+            resource_features: false,
+            handler_impls: None,
         },
         output: CodeGenOutput {
             // No request extractors: the server is hand-written.
@@ -268,6 +270,11 @@ fn config(scratch: &Path) -> CodeGenConfig {
                 public_modules: true,
                 // `unitycatalog-rs/<version>`, the name of the package on PyPI.
                 user_agent: Some("unitycatalog-rs".into()),
+                exports: vec![],
+                // `Client(url)` without a token signs in with the identity of the environment.
+                default_token_source: Some("uc_client::identity::detect".into()),
+                // The hand-written `unitycatalog._core.identity`.
+                submodules: vec!["crate::identity::identity".into()],
             }),
         }),
     }
@@ -338,7 +345,7 @@ fn copy_tree(from: &Path, to: &Path, written: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(from)? {
         let path = entry?.path();
         let name = path.file_name().expect("a directory entry has a name");
-        if name == "_include.rs" || name == "client.pyi" {
+        if name == "_include.rs" {
             continue;
         }
         let target = to.join(name);

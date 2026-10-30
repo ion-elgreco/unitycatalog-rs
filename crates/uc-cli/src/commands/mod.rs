@@ -331,7 +331,8 @@ pub async fn run(global: &Global, settings: &Settings, entity: Entity) -> i32 {
         &origin,
         SignIns::of_user().as_ref(),
     );
-    let client = match config::client(&origin, token.as_ref().map(|(token, _)| token.as_str())) {
+    let given = token.as_ref().map(|(token, _)| token.as_str());
+    let client = match config::client_of_environment(&origin, given).await {
         Ok(client) => client,
         Err(e) => {
             eprintln!("Error: {e}");

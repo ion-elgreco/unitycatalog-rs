@@ -21,12 +21,9 @@ impl PyVolumeClient {
     ///     A volume: files in the third layer of the three-level namespace, below a schema.
     pub fn get(&self, py: Python) -> PyUnityCatalogResult<PyVolumeInfo> {
         let request = self.client.get();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyVolumeInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyVolumeInfo::from(result))
     }
 
     /// Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -65,12 +62,9 @@ impl PyVolumeClient {
             .update()
             .with_comment(comment)
             .with_new_name(new_name);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyVolumeInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyVolumeInfo::from(result))
     }
 
     /// Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -99,12 +93,9 @@ impl PyVolumeClient {
     /// Delete a volume.
     pub fn delete(&self, py: Python) -> PyUnityCatalogResult<()> {
         let request = self.client.delete();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `delete`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
