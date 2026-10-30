@@ -27,9 +27,8 @@ use std::process::{Command, Stdio};
 use olai_codegen::postprocess::{JsonFieldNames, ModelRewrites, field_options, space_items};
 use olai_codegen::{
     BindingsConfig, ClientProtocols, CodeGenConfig, CodeGenOutput, ErrorModuleConfig,
-    PyConstructors, PyErrorModuleConfig, PyPackageConfig, PythonOptions,
-    REQWEST_TRANSPORT_TYPE_PATH, RestClientOptions, Runtime, generate_code,
-    parse_file_descriptor_set,
+    PyPackageConfig, PythonOptions, REQWEST_TRANSPORT_TYPE_PATH, RestClientOptions, Runtime,
+    generate_code, parse_file_descriptor_set,
 };
 use protobuf::Message;
 use protobuf::descriptor::FileDescriptorSet;
@@ -243,7 +242,6 @@ fn config(scratch: &Path) -> CodeGenConfig {
             node: None,
             node_ts: None,
             wasm: None,
-            python_typings_filename: "client.pyi".into(),
         },
         generate_resource_enum: false,
         generate_store_integration: false,
@@ -255,32 +253,22 @@ fn config(scratch: &Path) -> CodeGenConfig {
             py_error_type: "PyUnityCatalogError".into(),
             py_result_type: "PyUnityCatalogResult".into(),
             napi_error_ext_trait: "NapiErrorExt".into(),
-            typings_package_filter: None,
             ts_error_base_class: "UnityCatalogError".into(),
             ts_error_code_prefix: "UC".into(),
-            python: PythonOptions {
-                frozen_models: true,
-                constructors: PyConstructors::Inputs,
-                python_repr: true,
-                module: Some("unitycatalog._core".into()),
-                async_methods: true,
-                runtime: true,
-                keyword_only: true,
-                str_enums: true,
-                hide_unspecified: true,
-                stub_gen: true,
-                error_module: Some(PyErrorModuleConfig {
-                    base_class: "UnityCatalogError".into(),
-                }),
-                package: Some(PyPackageConfig {
+            python: Some(PythonOptions {
+                package: PyPackageConfig {
                     dir: scratch.join("pkg"),
                     name: "unitycatalog".into(),
-                }),
+                },
+                error_base_class: "UnityCatalogError".into(),
+                module: "unitycatalog._core".into(),
+                async_methods: true,
+                keyword_only: true,
                 // `unitycatalog.tables` and so on, instead of `unitycatalog._core.tables`.
                 public_modules: true,
                 // `unitycatalog-rs/<version>`, the name of the package on PyPI.
                 user_agent: Some("unitycatalog-rs".into()),
-            },
+            }),
         }),
     }
 }

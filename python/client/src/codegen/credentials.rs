@@ -8,13 +8,11 @@ use uc_client::models::credentials::v1::*;
 use uc_client::models::*;
 
 /// The requests on one `CredentialInfo`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(name = "CredentialClient", module = "unitycatalog._core.credentials")]
 pub struct PyCredentialClient {
     pub(crate) client: CredentialClient,
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyCredentialClient {
     /// Get a credential.

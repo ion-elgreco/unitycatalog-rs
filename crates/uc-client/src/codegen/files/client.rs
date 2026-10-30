@@ -116,37 +116,20 @@ impl FileClient {
             "api/2.0/fs/files/{}",
             encode_path_value(&request.file_path, true)
         );
-        let url = self.base_url.join(&formatted_path)?;
-        let mut builder = self.client.get(url);
+        let mut url = self.base_url.join(&formatted_path)?;
         if let Some(ref value) = request.range {
-            builder = builder.header("Range", value.as_str());
+            url.query_pairs_mut()
+                .append_pair("range", &value.to_string());
         }
-        let response = builder.send().await?;
+        let response = self.client.get(url).send().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
-        let headers = response.headers().clone();
-        let mut output = DownloadFileResponse {
-            contents: response.bytes().await?.into(),
-            ..::core::default::Default::default()
-        };
-        output.content_length = headers
-            .get("Content-Length")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse().ok());
-        output.content_type = headers
-            .get("Content-Type")
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
-        output.last_modified = headers
-            .get("Last-Modified")
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
-        output.content_range = headers
-            .get("Content-Range")
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
-        Ok(output)
+        let result = response.bytes().await?;
+        let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
     }
 
     /// Get the metadata of a file. Needs `READ VOLUME` on a volume, or `SELECT` on a table.
@@ -163,27 +146,11 @@ impl FileClient {
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
-        let headers = response.headers().clone();
         let result = response.bytes().await?;
         let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
-        let mut output: GetFileMetadataResponse = if result.trim_ascii().is_empty() {
-            Default::default()
-        } else {
-            ::buffa::json::with_json_parse_options(&options, || serde_json::from_slice(&result))?
-        };
-        output.content_length = headers
-            .get("Content-Length")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse().ok());
-        output.content_type = headers
-            .get("Content-Type")
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
-        output.last_modified = headers
-            .get("Last-Modified")
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
-        Ok(output)
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
     }
 
     /// Write a file, and create its directories. Only in volumes; needs ownership of the volume.
@@ -197,13 +164,9 @@ impl FileClient {
             url.query_pairs_mut()
                 .append_pair("overwrite", &value.to_string());
         }
-        let response = self
-            .client
-            .put(url)
-            .header("content-type", "application/octet-stream")
-            .body(request.contents.clone())
-            .send()
-            .await?;
+        let mut body = request.clone();
+        body.file_path = Default::default();
+        let response = self.client.put(url).json(&body).send().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }

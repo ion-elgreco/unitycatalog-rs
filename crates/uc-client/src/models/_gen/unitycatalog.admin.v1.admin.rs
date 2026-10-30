@@ -127,7 +127,11 @@ pub struct BackupResponse {
     /// Version of the snapshot format. A restore takes only version 1.
     ///
     /// Field 1: `version`
-    #[serde(rename = "version", with = "crate::models::json_int64::int64")]
+    #[serde(
+        rename = "version",
+        with = "crate::models::json_int64::int64",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i64"
+    )]
     pub version: i64,
     /// The rows of each table, by table name. A row is a JSON object of its columns, as the table
     /// of the store has them.
@@ -135,6 +139,7 @@ pub struct BackupResponse {
     /// Field 2: `tables`
     #[serde(
         rename = "tables",
+        skip_serializing_if = "::buffa::__private::HashMap::is_empty",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     #[serde(serialize_with = "crate::models::json_value::map")]

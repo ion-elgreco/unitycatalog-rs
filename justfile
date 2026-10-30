@@ -242,23 +242,22 @@ pre-commit-check:
 generate:
     cargo run -q --profile {{ profile }} -p uc-codegen
 
-# Write the stubs of the Python client (python/client/unitycatalog/_core) from the Rust code, and format them with ruff
+# Write the stubs of the Python client (python/client/unitycatalog/_core) from the built extension module, with PyO3's introspection, and format them with ruff
 generate-stubs:
     #!/usr/bin/env bash
-    # pyo3-stub-gen's generator runs Python, so it is built without the
-    # `extension-module` feature. PYTHONHOME points it to Python's standard
-    # library, which uv's builds do not find when embedded; LD_LIBRARY_PATH
-    # to Python's shared library, on Linux. CI fails when the stubs differ
-    # from the Rust code.
+    # maturin builds the module and reads the stub types that PyO3's
+    # `experimental-inspect` puts in it. CI fails when the stubs differ from
+    # the Rust code.
     set -euo pipefail
     if [ ! -x "{{ python }}" ]; then
         echo "No Python at {{ python }}. Make the venv: just venv" >&2
         exit 1
     fi
-    home="$("{{ python }}" -c 'import sys; print(sys.base_prefix)')"
-    PYO3_PYTHON="{{ python }}" PYTHONHOME="$home" \
-        LD_LIBRARY_PATH="$home/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-        cargo run -q --profile {{ profile }} -p uc-py --no-default-features --features stub-gen --bin stub_gen
+    out="{{ justfile_directory() }}/target/stubs"
+    rm -rf "$out"
+    (cd python/client && "$(dirname "{{ python }}")/maturin" generate-stubs --quiet --out "$out")
+    rm -rf python/client/unitycatalog/_core
+    cp -R "$out/unitycatalog/_core" python/client/unitycatalog/_core
     "{{ python }}" -m ruff format --quiet python/client/unitycatalog/_core
 
 # Write the references of the docs site, which docs-build and docs-serve include: the OpenAPI document of the HTTP APIs (docs/reference/openapi.json) from the protos in proto/, through a descriptor set that protoc writes with their comments; and the Python client's pages (docs/reference/python/) from the package's stubs

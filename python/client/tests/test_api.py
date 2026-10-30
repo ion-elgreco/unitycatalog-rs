@@ -136,8 +136,6 @@ def test_stubs_match_the_extension() -> None:
             "-m",
             "mypy.stubtest",
             "unitycatalog._core",
-            "--allowlist",
-            "tests/stubtest_allowlist.txt",
         ],
         check=False,
         capture_output=True,

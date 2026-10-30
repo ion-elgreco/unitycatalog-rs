@@ -805,6 +805,7 @@ pub struct UpdatePermissions {
     /// Field 3: `changes`
     #[serde(
         rename = "changes",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub changes: ::buffa::alloc::vec::Vec<PermissionsChange>,

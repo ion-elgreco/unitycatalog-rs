@@ -8,7 +8,6 @@ use uc_client::models::external_locations::v1::*;
 use uc_client::models::*;
 
 /// The requests on one `ExternalLocationInfo`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(
     name = "ExternalLocationClient",
     module = "unitycatalog._core.external_locations"
@@ -17,7 +16,6 @@ pub struct PyExternalLocationClient {
     pub(crate) client: ExternalLocationClient,
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyExternalLocationClient {
     /// Get an external location.

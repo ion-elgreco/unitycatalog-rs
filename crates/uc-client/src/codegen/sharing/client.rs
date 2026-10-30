@@ -122,22 +122,11 @@ impl SharingClient {
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
-        let headers = response.headers().clone();
         let result = response.bytes().await?;
         let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
-        let mut output: SharingGetTableVersionResponse = if result.trim_ascii().is_empty() {
-            Default::default()
-        } else {
-            ::buffa::json::with_json_parse_options(&options, || serde_json::from_slice(&result))?
-        };
-        if let Some(value) = headers
-            .get("Delta-Table-Version")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse().ok())
-        {
-            output.version = value;
-        }
-        Ok(output)
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
     }
 
     /// Get the protocol and the metadata of a table. The response also has the version of the table
@@ -145,7 +134,7 @@ impl SharingClient {
     pub async fn sharing_get_table_metadata(
         &self,
         request: &SharingGetTableMetadataRequest,
-    ) -> Result<Vec<SharingTableLine>> {
+    ) -> Result<SharingTableLine> {
         let formatted_path = format!(
             "api/2.1/unity-catalog/delta-sharing/shares/{}/schemas/{}/tables/{}/metadata",
             encode_path_value(&request.share, false),
@@ -159,15 +148,9 @@ impl SharingClient {
         }
         let result = response.bytes().await?;
         let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
-        result
-            .split(|byte| *byte == b'\n')
-            .filter(|line| !line.trim_ascii().is_empty())
-            .map(|line| -> Result<SharingTableLine> {
-                Ok(::buffa::json::with_json_parse_options(&options, || {
-                    serde_json::from_slice(line)
-                })?)
-            })
-            .collect()
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
     }
 
     /// Read a table. The server does not read the Delta log: the answer is that of
@@ -175,7 +158,7 @@ impl SharingClient {
     pub async fn sharing_query_table(
         &self,
         request: &SharingQueryTableRequest,
-    ) -> Result<Vec<SharingTableLine>> {
+    ) -> Result<SharingTableLine> {
         let formatted_path = format!(
             "api/2.1/unity-catalog/delta-sharing/shares/{}/schemas/{}/tables/{}/query",
             encode_path_value(&request.share, false),
@@ -193,14 +176,8 @@ impl SharingClient {
         }
         let result = response.bytes().await?;
         let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
-        result
-            .split(|byte| *byte == b'\n')
-            .filter(|line| !line.trim_ascii().is_empty())
-            .map(|line| -> Result<SharingTableLine> {
-                Ok(::buffa::json::with_json_parse_options(&options, || {
-                    serde_json::from_slice(line)
-                })?)
-            })
-            .collect()
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
     }
 }

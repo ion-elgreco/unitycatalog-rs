@@ -1,12 +1,10 @@
 // @generated — do not edit by hand.
-//! The Tokio runtime of the bindings: one multi-thread runtime, made on first use. The
-//! methods block on it, and the `_async` methods run on it. It panics in a forked child,
-//! where Tokio's thread pool does not work.
+//! The Tokio runtime of the bindings, made on first use.
 
 use std::sync::OnceLock;
 use tokio::runtime::{Builder, Runtime};
 
-/// The runtime. It panics in a forked child process.
+/// The runtime. It panics in a forked child, where Tokio's thread pool does not work.
 pub fn rt() -> &'static Runtime {
     static RUNTIME: OnceLock<Runtime> = OnceLock::new();
     static PID: OnceLock<u32> = OnceLock::new();
@@ -28,9 +26,7 @@ pub fn rt() -> &'static Runtime {
     })
 }
 
-/// Make [`rt`] the runtime of `pyo3-async-runtimes`, so that the `_async` methods run
-/// on it. The generated `register` calls it; a second call keeps the runtime already
-/// installed.
+/// Make [`rt`] the runtime of `pyo3-async-runtimes`. A second call is a no-op.
 pub fn init_async_runtime() {
     let _ = ::pyo3_async_runtimes::tokio::init_with_runtime(rt());
 }

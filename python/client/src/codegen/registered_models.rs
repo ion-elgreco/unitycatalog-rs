@@ -8,13 +8,11 @@ use uc_client::models::models::v1::*;
 use uc_client::models::*;
 
 /// The requests on one `RegisteredModelInfo`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(name = "RegisteredModelClient", module = "unitycatalog._core.models")]
 pub struct PyRegisteredModelClient {
     pub(crate) client: RegisteredModelClient,
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyRegisteredModelClient {
     /// Get a registered model.

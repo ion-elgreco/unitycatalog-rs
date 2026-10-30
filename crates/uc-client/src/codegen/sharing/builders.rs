@@ -188,7 +188,7 @@ impl SharingGetTableMetadataBuilder {
 }
 
 impl IntoFuture for SharingGetTableMetadataBuilder {
-    type Output = Result<Vec<SharingTableLine>>;
+    type Output = Result<SharingTableLine>;
     type IntoFuture = BoxFut<'static, Self::Output>;
     fn into_future(self) -> Self::IntoFuture {
         let client = self.client;
@@ -223,7 +223,7 @@ impl SharingQueryTableBuilder {
 }
 
 impl IntoFuture for SharingQueryTableBuilder {
-    type Output = Result<Vec<SharingTableLine>>;
+    type Output = Result<SharingTableLine>;
     type IntoFuture = BoxFut<'static, Self::Output>;
     fn into_future(self) -> Self::IntoFuture {
         let client = self.client;

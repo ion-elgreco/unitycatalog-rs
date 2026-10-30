@@ -8,13 +8,11 @@ use uc_client::models::volumes::v1::*;
 use uc_client::models::*;
 
 /// The requests on one `VolumeInfo`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(name = "VolumeClient", module = "unitycatalog._core.volumes")]
 pub struct PyVolumeClient {
     pub(crate) client: VolumeClient,
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyVolumeClient {
     /// Get a volume.

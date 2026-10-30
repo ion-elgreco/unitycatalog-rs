@@ -8,13 +8,11 @@ use uc_client::models::shares::v1::*;
 use uc_client::models::*;
 
 /// The requests on one `ShareInfo`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(name = "ShareClient", module = "unitycatalog._core.shares")]
 pub struct PyShareClient {
     pub(crate) client: ShareClient,
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyShareClient {
     /// Get a share.

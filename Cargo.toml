@@ -147,12 +147,11 @@ opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
 tracing-opentelemetry = "0.32"
 
 # Python client (python/client/, crate uc-py). Its default feature turns on pyo3's
-# `extension-module`.
-pyo3 = { version = "0.28", features = ["abi3-py312", "chrono"] }
-pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
-pyo3-build-config = "0.28"
-# `infer_signature`: the stubs show the default values of the arguments.
-pyo3-stub-gen = { version = "0.23", default-features = false, features = ["infer_signature"] }
+# `extension-module`. `experimental-inspect`: the stub types of the classes, from which
+# `just generate-stubs` writes the stubs.
+pyo3 = { version = "0.30", features = ["abi3-py312", "chrono", "experimental-inspect"] }
+pyo3-async-runtimes = { version = "0.30", features = ["tokio-runtime"] }
+pyo3-build-config = "0.30"
 
 [profile.release]
 opt-level = 3

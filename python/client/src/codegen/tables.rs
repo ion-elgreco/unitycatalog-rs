@@ -8,13 +8,11 @@ use uc_client::models::tables::v1::*;
 use uc_client::models::*;
 
 /// The requests on one `TableInfo`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(name = "TableClient", module = "unitycatalog._core.tables")]
 pub struct PyTableClient {
     pub(crate) client: TableClient,
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyTableClient {
     /// Get a table.

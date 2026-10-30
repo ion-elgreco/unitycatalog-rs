@@ -1,5 +1,5 @@
 // @generated — do not edit by hand.
-/// `CredentialPurpose` of Python: a member of `unitycatalog._enums.CredentialPurpose`, or its name.
+/// A member of `unitycatalog._enums.CredentialPurpose`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyCredentialPurpose(pub super::credentials::v1::CredentialPurpose);
 impl PyCredentialPurpose {
@@ -27,6 +27,14 @@ impl ::core::convert::From<PyCredentialPurpose> for super::credentials::v1::Cred
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyCredentialPurpose {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "CredentialPurpose"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -52,6 +60,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyCredentialPurpose {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "CredentialPurpose");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -68,27 +78,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyCredentialPurpose {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyCredentialPurpose {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.CredentialPurpose".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.CredentialPurpose | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `ModelVersionOperation` of Python: a member of `unitycatalog._enums.ModelVersionOperation`, or its name.
+/// A member of `unitycatalog._enums.ModelVersionOperation`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyModelVersionOperation(pub super::credentials::v1::ModelVersionOperation);
 impl PyModelVersionOperation {
@@ -123,6 +113,14 @@ impl ::core::convert::From<PyModelVersionOperation>
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyModelVersionOperation {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "ModelVersionOperation"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -149,6 +147,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyModelVersionOperation {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "ModelVersionOperation");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -165,27 +165,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyModelVersionOperation {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyModelVersionOperation {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.ModelVersionOperation".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.ModelVersionOperation | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `PathOperation` of Python: a member of `unitycatalog._enums.PathOperation`, or its name.
+/// A member of `unitycatalog._enums.PathOperation`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyPathOperation(pub super::credentials::v1::PathOperation);
 impl PyPathOperation {
@@ -215,6 +195,14 @@ impl ::core::convert::From<PyPathOperation> for super::credentials::v1::PathOper
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyPathOperation {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "PathOperation"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -242,6 +230,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyPathOperation {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "PathOperation");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -256,27 +246,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyPathOperation {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyPathOperation {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.PathOperation".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.PathOperation | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `TableOperation` of Python: a member of `unitycatalog._enums.TableOperation`, or its name.
+/// A member of `unitycatalog._enums.TableOperation`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyTableOperation(pub super::credentials::v1::TableOperation);
 impl PyTableOperation {
@@ -305,6 +275,14 @@ impl ::core::convert::From<PyTableOperation> for super::credentials::v1::TableOp
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyTableOperation {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "TableOperation"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -331,6 +309,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyTableOperation {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "TableOperation");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -345,27 +325,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyTableOperation {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyTableOperation {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.TableOperation".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.TableOperation | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `VolumeOperation` of Python: a member of `unitycatalog._enums.VolumeOperation`, or its name.
+/// A member of `unitycatalog._enums.VolumeOperation`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyVolumeOperation(pub super::credentials::v1::VolumeOperation);
 impl PyVolumeOperation {
@@ -394,6 +354,14 @@ impl ::core::convert::From<PyVolumeOperation> for super::credentials::v1::Volume
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyVolumeOperation {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "VolumeOperation"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -420,6 +388,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyVolumeOperation {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "VolumeOperation");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -434,27 +404,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyVolumeOperation {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyVolumeOperation {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.VolumeOperation".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.VolumeOperation | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `DeltaCredentialOperation` of Python: a member of `unitycatalog._enums.DeltaCredentialOperation`, or its name.
+/// A member of `unitycatalog._enums.DeltaCredentialOperation`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyDeltaCredentialOperation(pub super::delta::v1::DeltaCredentialOperation);
 impl PyDeltaCredentialOperation {
@@ -487,6 +437,14 @@ impl ::core::convert::From<PyDeltaCredentialOperation>
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyDeltaCredentialOperation {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "DeltaCredentialOperation"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -512,6 +470,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyDeltaCredentialOperation {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "DeltaCredentialOperation");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -528,27 +488,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyDeltaCredentialOperation {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyDeltaCredentialOperation {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.DeltaCredentialOperation".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.DeltaCredentialOperation | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `DeltaMaintenanceOperation` of Python: a member of `unitycatalog._enums.DeltaMaintenanceOperation`, or its name.
+/// A member of `unitycatalog._enums.DeltaMaintenanceOperation`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyDeltaMaintenanceOperation(pub super::delta::v1::DeltaMaintenanceOperation);
 impl PyDeltaMaintenanceOperation {
@@ -582,6 +522,14 @@ impl ::core::convert::From<PyDeltaMaintenanceOperation>
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyDeltaMaintenanceOperation {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "DeltaMaintenanceOperation"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -608,6 +556,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyDeltaMaintenanceOperation {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "DeltaMaintenanceOperation");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -624,27 +574,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyDeltaMaintenanceOperation {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyDeltaMaintenanceOperation {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.DeltaMaintenanceOperation".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.DeltaMaintenanceOperation | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `DeltaTableType` of Python: a member of `unitycatalog._enums.DeltaTableType`, or its name.
+/// A member of `unitycatalog._enums.DeltaTableType`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyDeltaTableType(pub super::delta::v1::DeltaTableType);
 impl PyDeltaTableType {
@@ -672,6 +602,14 @@ impl ::core::convert::From<PyDeltaTableType> for super::delta::v1::DeltaTableTyp
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyDeltaTableType {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "DeltaTableType"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -697,6 +635,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyDeltaTableType {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "DeltaTableType");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -711,27 +651,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyDeltaTableType {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyDeltaTableType {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.DeltaTableType".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.DeltaTableType | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `FunctionParameterMode` of Python: a member of `unitycatalog._enums.FunctionParameterMode`, or its name.
+/// A member of `unitycatalog._enums.FunctionParameterMode`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyFunctionParameterMode(pub super::functions::v1::FunctionParameterMode);
 impl PyFunctionParameterMode {
@@ -763,6 +683,14 @@ impl ::core::convert::From<PyFunctionParameterMode>
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyFunctionParameterMode {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "FunctionParameterMode"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -787,6 +715,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyFunctionParameterMode {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "FunctionParameterMode");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -803,27 +733,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyFunctionParameterMode {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyFunctionParameterMode {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.FunctionParameterMode".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.FunctionParameterMode | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `FunctionParameterType` of Python: a member of `unitycatalog._enums.FunctionParameterType`, or its name.
+/// A member of `unitycatalog._enums.FunctionParameterType`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyFunctionParameterType(pub super::functions::v1::FunctionParameterType);
 impl PyFunctionParameterType {
@@ -856,6 +766,14 @@ impl ::core::convert::From<PyFunctionParameterType>
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyFunctionParameterType {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "FunctionParameterType"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -881,6 +799,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyFunctionParameterType {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "FunctionParameterType");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -897,27 +817,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyFunctionParameterType {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyFunctionParameterType {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.FunctionParameterType".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.FunctionParameterType | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `ParameterStyle` of Python: a member of `unitycatalog._enums.ParameterStyle`, or its name.
+/// A member of `unitycatalog._enums.ParameterStyle`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyParameterStyle(pub super::functions::v1::ParameterStyle);
 impl PyParameterStyle {
@@ -944,6 +844,14 @@ impl ::core::convert::From<PyParameterStyle> for super::functions::v1::Parameter
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyParameterStyle {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "ParameterStyle"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -965,6 +873,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyParameterStyle {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "ParameterStyle");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -979,27 +889,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyParameterStyle {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyParameterStyle {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.ParameterStyle".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.ParameterStyle | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `RoutineBody` of Python: a member of `unitycatalog._enums.RoutineBody`, or its name.
+/// A member of `unitycatalog._enums.RoutineBody`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyRoutineBody(pub super::functions::v1::RoutineBody);
 impl PyRoutineBody {
@@ -1027,6 +917,14 @@ impl ::core::convert::From<PyRoutineBody> for super::functions::v1::RoutineBody 
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyRoutineBody {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "RoutineBody"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -1052,6 +950,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyRoutineBody {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "RoutineBody");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -1066,27 +966,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyRoutineBody {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyRoutineBody {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.RoutineBody".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.RoutineBody | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `SecurityType` of Python: a member of `unitycatalog._enums.SecurityType`, or its name.
+/// A member of `unitycatalog._enums.SecurityType`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PySecurityType(pub super::functions::v1::SecurityType);
 impl PySecurityType {
@@ -1113,6 +993,14 @@ impl ::core::convert::From<PySecurityType> for super::functions::v1::SecurityTyp
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PySecurityType {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "SecurityType"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -1137,6 +1025,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PySecurityType {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "SecurityType");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -1151,27 +1041,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PySecurityType {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PySecurityType {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.SecurityType".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.SecurityType | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `SqlDataAccess` of Python: a member of `unitycatalog._enums.SqlDataAccess`, or its name.
+/// A member of `unitycatalog._enums.SqlDataAccess`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PySqlDataAccess(pub super::functions::v1::SqlDataAccess);
 impl PySqlDataAccess {
@@ -1200,6 +1070,14 @@ impl ::core::convert::From<PySqlDataAccess> for super::functions::v1::SqlDataAcc
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PySqlDataAccess {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "SqlDataAccess"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -1226,6 +1104,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PySqlDataAccess {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "SqlDataAccess");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -1240,27 +1120,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PySqlDataAccess {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PySqlDataAccess {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.SqlDataAccess".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.SqlDataAccess | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `ModelVersionStatus` of Python: a member of `unitycatalog._enums.ModelVersionStatus`, or its name.
+/// A member of `unitycatalog._enums.ModelVersionStatus`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyModelVersionStatus(pub super::models::v1::ModelVersionStatus);
 impl PyModelVersionStatus {
@@ -1290,6 +1150,14 @@ impl ::core::convert::From<PyModelVersionStatus> for super::models::v1::ModelVer
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyModelVersionStatus {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "ModelVersionStatus"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -1317,6 +1185,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyModelVersionStatus {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "ModelVersionStatus");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -1331,27 +1201,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyModelVersionStatus {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyModelVersionStatus {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.ModelVersionStatus".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.ModelVersionStatus | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `AuthenticationType` of Python: a member of `unitycatalog._enums.AuthenticationType`, or its name.
+/// A member of `unitycatalog._enums.AuthenticationType`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyAuthenticationType(pub super::recipients::v1::AuthenticationType);
 impl PyAuthenticationType {
@@ -1379,6 +1229,14 @@ impl ::core::convert::From<PyAuthenticationType> for super::recipients::v1::Auth
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyAuthenticationType {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "AuthenticationType"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -1404,6 +1262,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyAuthenticationType {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "AuthenticationType");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -1420,27 +1280,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyAuthenticationType {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyAuthenticationType {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.AuthenticationType".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.AuthenticationType | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `ColumnTypeName` of Python: a member of `unitycatalog._enums.ColumnTypeName`, or its name.
+/// A member of `unitycatalog._enums.ColumnTypeName`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyColumnTypeName(pub super::tables::v1::ColumnTypeName);
 impl PyColumnTypeName {
@@ -1488,6 +1328,14 @@ impl ::core::convert::From<PyColumnTypeName> for super::tables::v1::ColumnTypeNa
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyColumnTypeName {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "ColumnTypeName"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -1533,6 +1381,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyColumnTypeName {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "ColumnTypeName");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -1547,27 +1397,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyColumnTypeName {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyColumnTypeName {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.ColumnTypeName".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.ColumnTypeName | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `DataSourceFormat` of Python: a member of `unitycatalog._enums.DataSourceFormat`, or its name.
+/// A member of `unitycatalog._enums.DataSourceFormat`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyDataSourceFormat(pub super::tables::v1::DataSourceFormat);
 impl PyDataSourceFormat {
@@ -1602,6 +1432,14 @@ impl ::core::convert::From<PyDataSourceFormat> for super::tables::v1::DataSource
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyDataSourceFormat {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "DataSourceFormat"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -1634,6 +1472,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyDataSourceFormat {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "DataSourceFormat");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -1648,27 +1488,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyDataSourceFormat {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyDataSourceFormat {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.DataSourceFormat".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.DataSourceFormat | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `TableType` of Python: a member of `unitycatalog._enums.TableType`, or its name.
+/// A member of `unitycatalog._enums.TableType`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyTableType(pub super::tables::v1::TableType);
 impl PyTableType {
@@ -1700,6 +1520,14 @@ impl ::core::convert::From<PyTableType> for super::tables::v1::TableType {
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyTableType {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "TableType"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -1728,6 +1556,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyTableType {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "TableType");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -1742,27 +1572,7 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyTableType {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyTableType {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.TableType".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.TableType | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
-/// `VolumeType` of Python: a member of `unitycatalog._enums.VolumeType`, or its name.
+/// A member of `unitycatalog._enums.VolumeType`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyVolumeType(pub super::volumes::v1::VolumeType);
 impl PyVolumeType {
@@ -1790,6 +1600,14 @@ impl ::core::convert::From<PyVolumeType> for super::volumes::v1::VolumeType {
 
 impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyVolumeType {
     type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "VolumeType"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
@@ -1815,6 +1633,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyVolumeType {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "VolumeType");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
@@ -1829,29 +1649,8 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyVolumeType {
     }
 }
 
-impl ::pyo3_stub_gen::PyStubType for PyVolumeType {
-    fn type_output() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.VolumeType".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-
-    fn type_input() -> ::pyo3_stub_gen::TypeInfo {
-        ::pyo3_stub_gen::TypeInfo {
-            name: "_enums.VolumeType | str".to_string(),
-            source_module: None,
-            import: ::std::collections::HashSet::from(["unitycatalog._enums".into()]),
-            type_refs: ::std::collections::HashMap::new(),
-        }
-    }
-}
-
 /// A snapshot of the whole catalog: the rows of each table of the store. The audit log is not in
 /// it.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "BackupResponse",
     eq,
@@ -1862,7 +1661,6 @@ impl ::pyo3_stub_gen::PyStubType for PyVolumeType {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyBackupResponse(pub super::admin::v1::BackupResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyBackupResponse {
     /// Version of the snapshot format. A restore takes only version 1.
@@ -1873,19 +1671,16 @@ impl PyBackupResponse {
 
     /// The rows of each table, by table name. A row is a JSON object of its columns, as the table
     /// of the store has them.
-    #[gen_stub(
-        override_return_type(
-            type_repr = "dict[str, list[typing.Any]]",
-            imports = ("typing")
-        )
-    )]
     #[getter]
-    fn tables(&self, py: ::pyo3::Python<'_>) -> ::pyo3::PyResult<::pyo3::Py<::pyo3::PyAny>> {
+    fn tables(
+        &self,
+        py: ::pyo3::Python<'_>,
+    ) -> ::pyo3::PyResult<PyJson<JsonDict<JsonList<JsonAny>>>> {
         let dict = ::pyo3::types::PyDict::new(py);
         for (key, value) in &self.0.tables {
             ::pyo3::types::PyDictMethods::set_item(&dict, key, json_list_to_py(py, value)?)?;
         }
-        ::core::result::Result::Ok(dict.into_any().unbind())
+        ::core::result::Result::Ok(PyJson::new(dict.into_any().unbind()))
     }
 
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
@@ -1906,7 +1701,6 @@ impl ::core::convert::From<PyBackupResponse> for super::admin::v1::BackupRespons
 }
 
 /// What a restore imported.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "RestoreResponse",
     eq,
@@ -1917,7 +1711,6 @@ impl ::core::convert::From<PyBackupResponse> for super::admin::v1::BackupRespons
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyRestoreResponse(pub super::admin::v1::RestoreResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyRestoreResponse {
     /// Number of rows imported, by table name.
@@ -1950,7 +1743,6 @@ impl ::core::convert::From<PyRestoreResponse> for super::admin::v1::RestoreRespo
 }
 
 /// One request that could change the catalog: a `POST`, `PATCH`, `PUT` or `DELETE`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "AuditEvent",
     eq,
@@ -1961,7 +1753,6 @@ impl ::core::convert::From<PyRestoreResponse> for super::admin::v1::RestoreRespo
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyAuditEvent(pub super::audit::v1::AuditEvent);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyAuditEvent {
     /// Unique identifier of the event.
@@ -2027,7 +1818,6 @@ impl ::core::convert::From<PyAuditEvent> for super::audit::v1::AuditEvent {
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListAuditEventsResponse",
     eq,
@@ -2038,7 +1828,6 @@ impl ::core::convert::From<PyAuditEvent> for super::audit::v1::AuditEvent {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListAuditEventsResponse(pub super::audit::v1::ListAuditEventsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListAuditEventsResponse {
     /// The events, newest first.
@@ -2083,7 +1872,6 @@ impl ::core::convert::From<PyListAuditEventsResponse>
 }
 
 /// How the web UI signs in, and where its "Log out" goes.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "AuthMode",
     eq,
@@ -2094,7 +1882,6 @@ impl ::core::convert::From<PyListAuditEventsResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyAuthMode(pub super::auth::v1::AuthMode);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyAuthMode {
     /// How the web UI signs in: `oidc` (with the OpenID Connect provider of the server), `forward`
@@ -2130,7 +1917,6 @@ impl ::core::convert::From<PyAuthMode> for super::auth::v1::AuthMode {
 }
 
 /// An OAuth 2.0 token exchange response (RFC 8693): a Unity Catalog access token.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "OAuthTokenExchangeInfo",
     eq,
@@ -2141,7 +1927,6 @@ impl ::core::convert::From<PyAuthMode> for super::auth::v1::AuthMode {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyOAuthTokenExchangeInfo(pub super::auth::v1::OAuthTokenExchangeInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyOAuthTokenExchangeInfo {
     /// The Unity Catalog access token.
@@ -2195,7 +1980,6 @@ impl ::core::convert::From<PyOAuthTokenExchangeInfo> for super::auth::v1::OAuthT
 
 /// An OAuth 2.0 token response (RFC 6749, section 5.1). The access token is the personal access
 /// token itself.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "TokenResponse",
     eq,
@@ -2206,7 +1990,6 @@ impl ::core::convert::From<PyOAuthTokenExchangeInfo> for super::auth::v1::OAuthT
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyTokenResponse(pub super::auth::v1::TokenResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyTokenResponse {
     /// The access token: the personal access token of the request.
@@ -2259,7 +2042,6 @@ impl ::core::convert::From<PyTokenResponse> for super::auth::v1::TokenResponse {
 }
 
 /// A catalog: the first layer of the three-level namespace. It holds schemas.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "CatalogInfo",
     eq,
@@ -2270,7 +2052,6 @@ impl ::core::convert::From<PyTokenResponse> for super::auth::v1::TokenResponse {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyCatalogInfo(pub super::catalogs::v1::CatalogInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyCatalogInfo {
     /// Name of the catalog.
@@ -2373,7 +2154,6 @@ impl ::core::convert::From<PyCatalogInfo> for super::catalogs::v1::CatalogInfo {
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListCatalogsResponse",
     eq,
@@ -2384,7 +2164,6 @@ impl ::core::convert::From<PyCatalogInfo> for super::catalogs::v1::CatalogInfo {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListCatalogsResponse(pub super::catalogs::v1::ListCatalogsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListCatalogsResponse {
     /// The catalogs.
@@ -2425,7 +2204,6 @@ impl ::core::convert::From<PyListCatalogsResponse> for super::catalogs::v1::List
 }
 
 /// Temporary AWS credentials.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "AwsCredentials",
     eq,
@@ -2436,7 +2214,6 @@ impl ::core::convert::From<PyListCatalogsResponse> for super::catalogs::v1::List
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyAwsCredentials(pub super::credentials::v1::AwsCredentials);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyAwsCredentials {
     /// The access key ID of the temporary credentials.
@@ -2482,7 +2259,6 @@ impl ::core::convert::From<PyAwsCredentials> for super::credentials::v1::AwsCred
 }
 
 /// The AWS IAM role of a new or changed credential.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "AwsIamRoleRequest",
     eq,
@@ -2493,7 +2269,6 @@ impl ::core::convert::From<PyAwsCredentials> for super::credentials::v1::AwsCred
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyAwsIamRoleRequest(pub super::credentials::v1::AwsIamRoleRequest);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyAwsIamRoleRequest {
     #[new]
@@ -2532,7 +2307,6 @@ impl ::core::convert::From<PyAwsIamRoleRequest> for super::credentials::v1::AwsI
 }
 
 /// The AWS IAM role of a credential.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "AwsIamRoleResponse",
     eq,
@@ -2543,7 +2317,6 @@ impl ::core::convert::From<PyAwsIamRoleRequest> for super::credentials::v1::AwsI
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyAwsIamRoleResponse(pub super::credentials::v1::AwsIamRoleResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyAwsIamRoleResponse {
     /// ARN of the AWS IAM role that the server assumes to make temporary credentials.
@@ -2591,7 +2364,6 @@ impl ::core::convert::From<PyAwsIamRoleResponse> for super::credentials::v1::Aws
 }
 
 /// The Azure managed identity of a credential: the server's own Azure identity.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "AzureManagedIdentity",
     eq,
@@ -2602,7 +2374,6 @@ impl ::core::convert::From<PyAwsIamRoleResponse> for super::credentials::v1::Aws
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyAzureManagedIdentity(pub super::credentials::v1::AzureManagedIdentity);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyAzureManagedIdentity {
     #[new]
@@ -2647,7 +2418,6 @@ impl ::core::convert::From<PyAzureManagedIdentity>
 }
 
 /// The Azure service principal of a new or changed credential.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "AzureServicePrincipalRequest",
     eq,
@@ -2658,7 +2428,6 @@ impl ::core::convert::From<PyAzureManagedIdentity>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyAzureServicePrincipalRequest(pub super::credentials::v1::AzureServicePrincipalRequest);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyAzureServicePrincipalRequest {
     #[new]
@@ -2731,7 +2500,6 @@ impl ::core::convert::From<PyAzureServicePrincipalRequest>
 }
 
 /// The Azure service principal of a credential. The client secret is not returned.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "AzureServicePrincipalResponse",
     eq,
@@ -2744,7 +2512,6 @@ pub struct PyAzureServicePrincipalResponse(
     pub super::credentials::v1::AzureServicePrincipalResponse,
 );
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyAzureServicePrincipalResponse {
     /// ID of the Microsoft Entra ID tenant (directory) of the application.
@@ -2784,7 +2551,6 @@ impl ::core::convert::From<PyAzureServicePrincipalResponse>
 }
 
 /// A shared access signature (SAS) for Azure storage, signed with a user delegation key.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "AzureUserDelegationSAS",
     eq,
@@ -2795,7 +2561,6 @@ impl ::core::convert::From<PyAzureServicePrincipalResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyAzureUserDelegationSAS(pub super::credentials::v1::AzureUserDelegationSAS);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyAzureUserDelegationSAS {
     /// The SAS token.
@@ -2826,7 +2591,6 @@ impl ::core::convert::From<PyAzureUserDelegationSAS>
 }
 
 /// A credential that gives access to storage or to external services.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "CredentialInfo",
     eq,
@@ -2837,7 +2601,6 @@ impl ::core::convert::From<PyAzureUserDelegationSAS>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyCredentialInfo(pub super::credentials::v1::CredentialInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyCredentialInfo {
     /// Name of the credential.
@@ -2994,7 +2757,6 @@ impl ::core::convert::From<PyCredentialInfo> for super::credentials::v1::Credent
 }
 
 /// An OAuth token for Google Cloud Storage.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "GcpOauthToken",
     eq,
@@ -3005,7 +2767,6 @@ impl ::core::convert::From<PyCredentialInfo> for super::credentials::v1::Credent
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyGcpOauthToken(pub super::credentials::v1::GcpOauthToken);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyGcpOauthToken {
     /// The OAuth token.
@@ -3033,7 +2794,6 @@ impl ::core::convert::From<PyGcpOauthToken> for super::credentials::v1::GcpOauth
 
 /// The GCP service account of a credential: the server's own identity, or a service account that
 /// the server impersonates.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "GcpServiceAccount",
     eq,
@@ -3044,7 +2804,6 @@ impl ::core::convert::From<PyGcpOauthToken> for super::credentials::v1::GcpOauth
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyGcpServiceAccount(pub super::credentials::v1::GcpServiceAccount);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyGcpServiceAccount {
     #[new]
@@ -3085,7 +2844,6 @@ impl ::core::convert::From<PyGcpServiceAccount> for super::credentials::v1::GcpS
 }
 
 /// The GCP service account key of a new or changed credential.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "GcpServiceAccountKeyRequest",
     eq,
@@ -3096,7 +2854,6 @@ impl ::core::convert::From<PyGcpServiceAccount> for super::credentials::v1::GcpS
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyGcpServiceAccountKeyRequest(pub super::credentials::v1::GcpServiceAccountKeyRequest);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyGcpServiceAccountKeyRequest {
     #[new]
@@ -3138,7 +2895,6 @@ impl ::core::convert::From<PyGcpServiceAccountKeyRequest>
 }
 
 /// The GCP service account key of a credential. The key is not returned.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "GcpServiceAccountKeyResponse",
     eq,
@@ -3149,7 +2905,6 @@ impl ::core::convert::From<PyGcpServiceAccountKeyRequest>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyGcpServiceAccountKeyResponse(pub super::credentials::v1::GcpServiceAccountKeyResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyGcpServiceAccountKeyResponse {
     /// Email of the service account.
@@ -3185,7 +2940,6 @@ impl ::core::convert::From<PyGcpServiceAccountKeyResponse>
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListCredentialsResponse",
     eq,
@@ -3196,7 +2950,6 @@ impl ::core::convert::From<PyGcpServiceAccountKeyResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListCredentialsResponse(pub super::credentials::v1::ListCredentialsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListCredentialsResponse {
     /// The credentials.
@@ -3242,7 +2995,6 @@ impl ::core::convert::From<PyListCredentialsResponse>
 
 /// Temporary credentials for the cloud of a storage location.
 /// Empty for a local `file:` location.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "TemporaryCredentials",
     eq,
@@ -3253,7 +3005,6 @@ impl ::core::convert::From<PyListCredentialsResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyTemporaryCredentials(pub super::credentials::v1::TemporaryCredentials);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyTemporaryCredentials {
     /// Temporary credentials for AWS S3.
@@ -3330,7 +3081,6 @@ impl ::core::convert::From<PyTemporaryCredentials>
 }
 
 /// The columns of a Delta metadata change.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ColumnInfos",
     eq,
@@ -3341,7 +3091,6 @@ impl ::core::convert::From<PyTemporaryCredentials>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyColumnInfos(pub super::delta::v1::ColumnInfos);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyColumnInfos {
     #[new]
@@ -3383,7 +3132,6 @@ impl ::core::convert::From<PyColumnInfos> for super::delta::v1::ColumnInfos {
 }
 
 /// A commit of a catalog-managed table.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaApiCommit",
     eq,
@@ -3394,7 +3142,6 @@ impl ::core::convert::From<PyColumnInfos> for super::delta::v1::ColumnInfos {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaApiCommit(pub super::delta::v1::DeltaApiCommit);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaApiCommit {
     #[new]
@@ -3495,7 +3242,6 @@ impl ::core::convert::From<PyDeltaApiCommit> for super::delta::v1::DeltaApiCommi
 }
 
 /// The configuration of the Delta API for a catalog.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaCatalogConfig",
     eq,
@@ -3506,7 +3252,6 @@ impl ::core::convert::From<PyDeltaApiCommit> for super::delta::v1::DeltaApiCommi
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaCatalogConfig(pub super::delta::v1::DeltaCatalogConfig);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaCatalogConfig {
     /// The endpoints that the server supports, such as
@@ -3543,7 +3288,6 @@ impl ::core::convert::From<PyDeltaCatalogConfig> for super::delta::v1::DeltaCata
 }
 
 /// The domain metadata of a clustered table.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaClusteringDomainMetadata",
     eq,
@@ -3554,7 +3298,6 @@ impl ::core::convert::From<PyDeltaCatalogConfig> for super::delta::v1::DeltaCata
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaClusteringDomainMetadata(pub super::delta::v1::DeltaClusteringDomainMetadata);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaClusteringDomainMetadata {
     #[new]
@@ -3581,21 +3324,20 @@ impl PyDeltaClusteringDomainMetadata {
     /// The clustering columns. Each one is a list of strings: the path from the root of the schema to
     /// the column, with physical names when column mapping is on. An empty list is sent too: the
     /// table is clustered by no columns.
-    #[gen_stub(
-        override_return_type(type_repr = "list[list[typing.Any]]", imports = ("typing"))
-    )]
     #[getter]
     fn clustering_columns(
         &self,
         py: ::pyo3::Python<'_>,
-    ) -> ::pyo3::PyResult<::pyo3::Py<::pyo3::PyAny>> {
+    ) -> ::pyo3::PyResult<PyJson<JsonList<JsonList<JsonAny>>>> {
         let items = self
             .0
             .clustering_columns
             .iter()
             .map(|value| json_list_to_py(py, value))
             .collect::<::pyo3::PyResult<::std::vec::Vec<_>>>()?;
-        ::core::result::Result::Ok(::pyo3::types::PyList::new(py, items)?.into_any().unbind())
+        ::core::result::Result::Ok(PyJson::new(
+            ::pyo3::types::PyList::new(py, items)?.into_any().unbind(),
+        ))
     }
 
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
@@ -3620,7 +3362,6 @@ impl ::core::convert::From<PyDeltaClusteringDomainMetadata>
 }
 
 /// One Delta commit file.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaCommitInfo",
     eq,
@@ -3631,7 +3372,6 @@ impl ::core::convert::From<PyDeltaClusteringDomainMetadata>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaCommitInfo(pub super::delta::v1::DeltaCommitInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaCommitInfo {
     #[new]
@@ -3732,7 +3472,6 @@ impl ::core::convert::From<PyDeltaCommitInfo> for super::delta::v1::DeltaCommitI
 }
 
 /// The properties of a Delta metadata change.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaCommitMetadataProperties",
     eq,
@@ -3743,7 +3482,6 @@ impl ::core::convert::From<PyDeltaCommitInfo> for super::delta::v1::DeltaCommitI
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaCommitMetadataProperties(pub super::delta::v1::DeltaCommitMetadataProperties);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaCommitMetadataProperties {
     #[new]
@@ -3792,7 +3530,6 @@ impl ::core::convert::From<PyDeltaCommitMetadataProperties>
 }
 
 /// The metrics of a commit.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaCommitReport",
     eq,
@@ -3803,7 +3540,6 @@ impl ::core::convert::From<PyDeltaCommitMetadataProperties>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaCommitReport(pub super::delta::v1::DeltaCommitReport);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaCommitReport {
     #[new]
@@ -3951,7 +3687,6 @@ impl ::core::convert::From<PyDeltaCommitReport> for super::delta::v1::DeltaCommi
 }
 
 /// Temporary credentials for the data of a table.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaCredentialsResponse",
     eq,
@@ -3962,7 +3697,6 @@ impl ::core::convert::From<PyDeltaCommitReport> for super::delta::v1::DeltaCommi
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaCredentialsResponse(pub super::delta::v1::DeltaCredentialsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaCredentialsResponse {
     /// The temporary cloud storage credentials.
@@ -3998,7 +3732,6 @@ impl ::core::convert::From<PyDeltaCredentialsResponse>
 }
 
 /// Domain metadata entries, by domain name.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaDomainMetadataUpdates",
     eq,
@@ -4009,7 +3742,6 @@ impl ::core::convert::From<PyDeltaCredentialsResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaDomainMetadataUpdates(pub super::delta::v1::DeltaDomainMetadataUpdates);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaDomainMetadataUpdates {
     #[new]
@@ -4080,7 +3812,6 @@ impl ::core::convert::From<PyDeltaDomainMetadataUpdates>
 }
 
 /// A file size histogram of a commit.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaFileSizeHistogram",
     eq,
@@ -4091,7 +3822,6 @@ impl ::core::convert::From<PyDeltaDomainMetadataUpdates>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaFileSizeHistogram(pub super::delta::v1::DeltaFileSizeHistogram);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaFileSizeHistogram {
     #[new]
@@ -4178,7 +3908,6 @@ impl ::core::convert::From<PyDeltaFileSizeHistogram> for super::delta::v1::Delta
 }
 
 /// The commits that the server tracks for a table.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaGetCommitsResponse",
     eq,
@@ -4189,7 +3918,6 @@ impl ::core::convert::From<PyDeltaFileSizeHistogram> for super::delta::v1::Delta
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaGetCommitsResponse(pub super::delta::v1::DeltaGetCommitsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaGetCommitsResponse {
     /// The commits that are not backfilled yet, newest first.
@@ -4234,7 +3962,6 @@ impl ::core::convert::From<PyDeltaGetCommitsResponse>
 }
 
 /// A Delta table: its metadata and, for a MANAGED table, its commits that are not backfilled yet.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaLoadTableResponse",
     eq,
@@ -4245,7 +3972,6 @@ impl ::core::convert::From<PyDeltaGetCommitsResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaLoadTableResponse(pub super::delta::v1::DeltaLoadTableResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaLoadTableResponse {
     /// The metadata of the table.
@@ -4329,7 +4055,6 @@ impl ::core::convert::From<PyDeltaLoadTableResponse> for super::delta::v1::Delta
 
 /// A Delta metadata change to apply to the table with the commit. At least one field must be
 /// set.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaMetadata",
     eq,
@@ -4340,7 +4065,6 @@ impl ::core::convert::From<PyDeltaLoadTableResponse> for super::delta::v1::Delta
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaMetadata(pub super::delta::v1::DeltaMetadata);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaMetadata {
     #[new]
@@ -4417,7 +4141,6 @@ impl ::core::convert::From<PyDeltaMetadata> for super::delta::v1::DeltaMetadata 
 }
 
 /// The reported metrics.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaMetricsReport",
     eq,
@@ -4428,7 +4151,6 @@ impl ::core::convert::From<PyDeltaMetadata> for super::delta::v1::DeltaMetadata 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaMetricsReport(pub super::delta::v1::DeltaMetricsReport);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaMetricsReport {
     #[new]
@@ -4473,7 +4195,6 @@ impl ::core::convert::From<PyDeltaMetricsReport> for super::delta::v1::DeltaMetr
 }
 
 /// Delta protocol versions and features.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaProtocol",
     eq,
@@ -4484,7 +4205,6 @@ impl ::core::convert::From<PyDeltaMetricsReport> for super::delta::v1::DeltaMetr
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaProtocol(pub super::delta::v1::DeltaProtocol);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaProtocol {
     #[new]
@@ -4571,7 +4291,6 @@ impl ::core::convert::From<PyDeltaProtocol> for super::delta::v1::DeltaProtocol 
 }
 
 /// The domain metadata of a table with row tracking.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaRowTrackingDomainMetadata",
     eq,
@@ -4582,7 +4301,6 @@ impl ::core::convert::From<PyDeltaProtocol> for super::delta::v1::DeltaProtocol 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaRowTrackingDomainMetadata(pub super::delta::v1::DeltaRowTrackingDomainMetadata);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaRowTrackingDomainMetadata {
     #[new]
@@ -4627,7 +4345,6 @@ impl ::core::convert::From<PyDeltaRowTrackingDomainMetadata>
 
 /// A staging table: the table id and storage location that the server reserves for a new MANAGED
 /// table, and what the first commit must contain.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaStagingTableResponse",
     eq,
@@ -4638,7 +4355,6 @@ impl ::core::convert::From<PyDeltaRowTrackingDomainMetadata>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaStagingTableResponse(pub super::delta::v1::DeltaStagingTableResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaStagingTableResponse {
     /// Unique identifier of the table.
@@ -4696,36 +4412,30 @@ impl PyDeltaStagingTableResponse {
 
     /// Table properties that the table must have. Each value is a string, or `null` when any valid
     /// value is allowed.
-    #[gen_stub(
-        override_return_type(type_repr = "dict[str, typing.Any]", imports = ("typing"))
-    )]
     #[getter]
     fn required_properties(
         &self,
         py: ::pyo3::Python<'_>,
-    ) -> ::pyo3::PyResult<::pyo3::Py<::pyo3::PyAny>> {
+    ) -> ::pyo3::PyResult<PyJson<JsonDict<JsonAny>>> {
         let dict = ::pyo3::types::PyDict::new(py);
         for (key, value) in &self.0.required_properties {
             ::pyo3::types::PyDictMethods::set_item(&dict, key, json_value_to_py(py, value)?)?;
         }
-        ::core::result::Result::Ok(dict.into_any().unbind())
+        ::core::result::Result::Ok(PyJson::new(dict.into_any().unbind()))
     }
 
     /// Table properties that the table should have. Each value is a string, or `null` when the client
     /// makes the value.
-    #[gen_stub(
-        override_return_type(type_repr = "dict[str, typing.Any]", imports = ("typing"))
-    )]
     #[getter]
     fn suggested_properties(
         &self,
         py: ::pyo3::Python<'_>,
-    ) -> ::pyo3::PyResult<::pyo3::Py<::pyo3::PyAny>> {
+    ) -> ::pyo3::PyResult<PyJson<JsonDict<JsonAny>>> {
         let dict = ::pyo3::types::PyDict::new(py);
         for (key, value) in &self.0.suggested_properties {
             ::pyo3::types::PyDictMethods::set_item(&dict, key, json_value_to_py(py, value)?)?;
         }
-        ::core::result::Result::Ok(dict.into_any().unbind())
+        ::core::result::Result::Ok(PyJson::new(dict.into_any().unbind()))
     }
 
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
@@ -4763,7 +4473,6 @@ impl ::core::convert::From<PyDeltaStagingTableResponse>
 
 /// A temporary credential for a storage prefix. When more than one credential applies, use the
 /// one with the longest prefix.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaStorageCredential",
     eq,
@@ -4774,7 +4483,6 @@ impl ::core::convert::From<PyDeltaStagingTableResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaStorageCredential(pub super::delta::v1::DeltaStorageCredential);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaStorageCredential {
     /// The storage path prefix that the credential is for.
@@ -4837,7 +4545,6 @@ impl ::core::convert::From<PyDeltaStorageCredential> for super::delta::v1::Delta
 }
 
 /// Cloud credential settings. Only the keys of one cloud provider are set.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaStorageCredentialConfig",
     eq,
@@ -4848,7 +4555,6 @@ impl ::core::convert::From<PyDeltaStorageCredential> for super::delta::v1::Delta
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaStorageCredentialConfig(pub super::delta::v1::DeltaStorageCredentialConfig);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaStorageCredentialConfig {
     /// AWS access key id.
@@ -4912,7 +4618,6 @@ impl ::core::convert::From<PyDeltaStorageCredentialConfig>
 }
 
 /// A field of a Delta struct type, as in the Delta protocol schema format.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaStructField",
     eq,
@@ -4923,7 +4628,6 @@ impl ::core::convert::From<PyDeltaStorageCredentialConfig>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaStructField(pub super::delta::v1::DeltaStructField);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaStructField {
     #[new]
@@ -4963,17 +4667,15 @@ impl PyDeltaStructField {
     /// Data type of the field: a string for a primitive type (`long`, `decimal(10,2)`), or an object
     /// with a `type` of `array` (`element-type`, `contains-null`), `map` (`key-type`, `value-type`,
     /// `value-contains-null`), `struct` (`fields`) or `decimal` (`precision`, `scale`).
-    #[gen_stub(override_return_type(type_repr = "typing.Any", imports = ("typing")))]
     #[getter]
-    fn data_type(
-        &self,
-        py: ::pyo3::Python<'_>,
-    ) -> ::pyo3::PyResult<::core::option::Option<::pyo3::Py<::pyo3::PyAny>>> {
-        self.0
+    fn data_type(&self, py: ::pyo3::Python<'_>) -> ::pyo3::PyResult<PyJson<JsonAny>> {
+        let value = self
+            .0
             .data_type
             .as_option()
             .map(|value| json_value_to_py(py, value))
-            .transpose()
+            .transpose()?;
+        ::core::result::Result::Ok(PyJson::new(value.unwrap_or_else(|| py.None())))
     }
 
     /// Whether the field can hold null values.
@@ -4984,21 +4686,15 @@ impl PyDeltaStructField {
 
     /// Metadata of the field, such as `comment` or `delta.columnMapping.id`. An empty object when
     /// there is none.
-    #[gen_stub(
-        override_return_type(
-            type_repr = "typing.Optional[dict[str, typing.Any]]",
-            imports = ("typing")
-        )
-    )]
     #[getter]
     fn metadata(
         &self,
         py: ::pyo3::Python<'_>,
-    ) -> ::pyo3::PyResult<::core::option::Option<::pyo3::Py<::pyo3::PyAny>>> {
+    ) -> ::pyo3::PyResult<::core::option::Option<PyJson<JsonDict<JsonAny>>>> {
         self.0
             .metadata
             .as_option()
-            .map(|value| json_struct_to_py(py, value))
+            .map(|value| json_struct_to_py(py, value).map(PyJson::new))
             .transpose()
     }
 
@@ -5028,7 +4724,6 @@ impl ::core::convert::From<PyDeltaStructField> for super::delta::v1::DeltaStruct
 }
 
 /// A Delta struct type, such as the columns of a table.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaStructType",
     eq,
@@ -5039,7 +4734,6 @@ impl ::core::convert::From<PyDeltaStructField> for super::delta::v1::DeltaStruct
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaStructType(pub super::delta::v1::DeltaStructType);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaStructType {
     #[new]
@@ -5094,7 +4788,6 @@ impl ::core::convert::From<PyDeltaStructType> for super::delta::v1::DeltaStructT
 }
 
 /// Features that a client should enable when it can.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaSuggestedProtocol",
     eq,
@@ -5105,7 +4798,6 @@ impl ::core::convert::From<PyDeltaStructType> for super::delta::v1::DeltaStructT
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaSuggestedProtocol(pub super::delta::v1::DeltaSuggestedProtocol);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaSuggestedProtocol {
     /// The suggested reader features.
@@ -5141,7 +4833,6 @@ impl ::core::convert::From<PyDeltaSuggestedProtocol> for super::delta::v1::Delta
 }
 
 /// The metadata of a Delta table.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaTableMetadata",
     eq,
@@ -5152,7 +4843,6 @@ impl ::core::convert::From<PyDeltaSuggestedProtocol> for super::delta::v1::Delta
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaTableMetadata(pub super::delta::v1::DeltaTableMetadata);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaTableMetadata {
     /// Entity tag of the metadata. It changes when the metadata changes.
@@ -5267,7 +4957,6 @@ impl ::core::convert::From<PyDeltaTableMetadata> for super::delta::v1::DeltaTabl
 /// A precondition of a table update. The `type` says which field is set:
 /// - `assert-table-uuid`: `uuid`, the expected table id.
 /// - `assert-etag`: `etag`, the expected entity tag of the metadata.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaTableRequirement",
     eq,
@@ -5278,7 +4967,6 @@ impl ::core::convert::From<PyDeltaTableMetadata> for super::delta::v1::DeltaTabl
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaTableRequirement(pub super::delta::v1::DeltaTableRequirement);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaTableRequirement {
     #[new]
@@ -5361,7 +5049,6 @@ impl ::core::convert::From<PyDeltaTableRequirement> for super::delta::v1::DeltaT
 /// - `remove-domain-metadata`: `domains`.
 /// - `set-partition-columns`: `partition_columns`.
 /// - `update-metadata-snapshot-version`: `last_commit_version` and `last_commit_timestamp_ms`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaTableUpdate",
     eq,
@@ -5372,7 +5059,6 @@ impl ::core::convert::From<PyDeltaTableRequirement> for super::delta::v1::DeltaT
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaTableUpdate(pub super::delta::v1::DeltaTableUpdate);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaTableUpdate {
     #[new]
@@ -5488,16 +5174,13 @@ impl PyDeltaTableUpdate {
 
     /// For `set-properties`: property names to string values. For `set-domain-metadata`: domain
     /// names to their metadata objects.
-    #[gen_stub(
-        override_return_type(type_repr = "dict[str, typing.Any]", imports = ("typing"))
-    )]
     #[getter]
-    fn updates(&self, py: ::pyo3::Python<'_>) -> ::pyo3::PyResult<::pyo3::Py<::pyo3::PyAny>> {
+    fn updates(&self, py: ::pyo3::Python<'_>) -> ::pyo3::PyResult<PyJson<JsonDict<JsonAny>>> {
         let dict = ::pyo3::types::PyDict::new(py);
         for (key, value) in &self.0.updates {
             ::pyo3::types::PyDictMethods::set_item(&dict, key, json_value_to_py(py, value)?)?;
         }
-        ::core::result::Result::Ok(dict.into_any().unbind())
+        ::core::result::Result::Ok(PyJson::new(dict.into_any().unbind()))
     }
 
     /// For `remove-properties`: the property keys to remove.
@@ -5620,7 +5303,6 @@ impl ::core::convert::From<PyDeltaTableUpdate> for super::delta::v1::DeltaTableU
 }
 
 /// UniForm metadata committed with a Delta commit.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaUniform",
     eq,
@@ -5631,7 +5313,6 @@ impl ::core::convert::From<PyDeltaTableUpdate> for super::delta::v1::DeltaTableU
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaUniform(pub super::delta::v1::DeltaUniform);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaUniform {
     #[new]
@@ -5675,7 +5356,6 @@ impl ::core::convert::From<PyDeltaUniform> for super::delta::v1::DeltaUniform {
 }
 
 /// The Iceberg metadata of a UniForm table.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaUniformIceberg",
     eq,
@@ -5686,7 +5366,6 @@ impl ::core::convert::From<PyDeltaUniform> for super::delta::v1::DeltaUniform {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaUniformIceberg(pub super::delta::v1::DeltaUniformIceberg);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaUniformIceberg {
     #[new]
@@ -5776,7 +5455,6 @@ impl ::core::convert::From<PyDeltaUniformIceberg> for super::delta::v1::DeltaUni
 }
 
 /// UniForm conversion metadata. Only UniForm (Delta and Iceberg) tables have it.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaUniformMetadata",
     eq,
@@ -5787,7 +5465,6 @@ impl ::core::convert::From<PyDeltaUniformIceberg> for super::delta::v1::DeltaUni
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaUniformMetadata(pub super::delta::v1::DeltaUniformMetadata);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaUniformMetadata {
     #[new]
@@ -5832,7 +5509,6 @@ impl ::core::convert::From<PyDeltaUniformMetadata> for super::delta::v1::DeltaUn
 }
 
 /// The Iceberg metadata of a UniForm table.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DeltaUniformMetadataIceberg",
     eq,
@@ -5843,7 +5519,6 @@ impl ::core::convert::From<PyDeltaUniformMetadata> for super::delta::v1::DeltaUn
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDeltaUniformMetadataIceberg(pub super::delta::v1::DeltaUniformMetadataIceberg);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDeltaUniformMetadataIceberg {
     #[new]
@@ -5937,7 +5612,6 @@ impl ::core::convert::From<PyDeltaUniformMetadataIceberg>
 }
 
 /// An external location: a storage path and the credential that gives access to it.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ExternalLocationInfo",
     eq,
@@ -5948,7 +5622,6 @@ impl ::core::convert::From<PyDeltaUniformMetadataIceberg>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyExternalLocationInfo(pub super::external_locations::v1::ExternalLocationInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyExternalLocationInfo {
     /// Name of the external location.
@@ -6054,7 +5727,6 @@ impl ::core::convert::From<PyExternalLocationInfo>
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListExternalLocationsResponse",
     eq,
@@ -6067,7 +5739,6 @@ pub struct PyListExternalLocationsResponse(
     pub super::external_locations::v1::ListExternalLocationsResponse,
 );
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListExternalLocationsResponse {
     /// The external locations.
@@ -6112,7 +5783,6 @@ impl ::core::convert::From<PyListExternalLocationsResponse>
 }
 
 /// A file or directory in a directory.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DirectoryEntry",
     eq,
@@ -6123,7 +5793,6 @@ impl ::core::convert::From<PyListExternalLocationsResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDirectoryEntry(pub super::files::v1::DirectoryEntry);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDirectoryEntry {
     /// Absolute path of the file or directory.
@@ -6183,7 +5852,6 @@ impl ::core::convert::From<PyDirectoryEntry> for super::files::v1::DirectoryEntr
 }
 
 /// A file and its metadata.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DownloadFileResponse",
     eq,
@@ -6194,7 +5862,6 @@ impl ::core::convert::From<PyDirectoryEntry> for super::files::v1::DirectoryEntr
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDownloadFileResponse(pub super::files::v1::DownloadFileResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDownloadFileResponse {
     /// The bytes of the file.
@@ -6255,7 +5922,6 @@ impl ::core::convert::From<PyDownloadFileResponse> for super::files::v1::Downloa
 }
 
 /// The metadata of a file. The response has no body.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "GetFileMetadataResponse",
     eq,
@@ -6266,7 +5932,6 @@ impl ::core::convert::From<PyDownloadFileResponse> for super::files::v1::Downloa
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyGetFileMetadataResponse(pub super::files::v1::GetFileMetadataResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyGetFileMetadataResponse {
     /// Size of the file, in bytes.
@@ -6315,7 +5980,6 @@ impl ::core::convert::From<PyGetFileMetadataResponse>
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListDirectoryContentsResponse",
     eq,
@@ -6326,7 +5990,6 @@ impl ::core::convert::From<PyGetFileMetadataResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListDirectoryContentsResponse(pub super::files::v1::ListDirectoryContentsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListDirectoryContentsResponse {
     /// The files and directories of the directory, directories first.
@@ -6371,7 +6034,6 @@ impl ::core::convert::From<PyListDirectoryContentsResponse>
 }
 
 /// The function to create.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "CreateFunction",
     eq,
@@ -6382,7 +6044,6 @@ impl ::core::convert::From<PyListDirectoryContentsResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyCreateFunction(pub super::functions::v1::CreateFunction);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyCreateFunction {
     #[new]
@@ -6740,7 +6401,6 @@ impl ::core::convert::From<PyCreateFunction> for super::functions::v1::CreateFun
 
 /// A function: a user-defined function in the third layer of the three-level namespace, below a
 /// schema.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "FunctionInfo",
     eq,
@@ -6751,7 +6411,6 @@ impl ::core::convert::From<PyCreateFunction> for super::functions::v1::CreateFun
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyFunctionInfo(pub super::functions::v1::FunctionInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyFunctionInfo {
     /// Name of the function, relative to the parent schema.
@@ -6998,7 +6657,6 @@ impl ::core::convert::From<PyFunctionInfo> for super::functions::v1::FunctionInf
 }
 
 /// A parameter or result column of a function.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "FunctionParameterInfo",
     eq,
@@ -7009,7 +6667,6 @@ impl ::core::convert::From<PyFunctionInfo> for super::functions::v1::FunctionInf
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyFunctionParameterInfo(pub super::functions::v1::FunctionParameterInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyFunctionParameterInfo {
     #[new]
@@ -7245,7 +6902,6 @@ impl ::core::convert::From<PyFunctionParameterInfo>
 }
 
 /// The parameters of a function.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "FunctionParameterInfos",
     eq,
@@ -7256,7 +6912,6 @@ impl ::core::convert::From<PyFunctionParameterInfo>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyFunctionParameterInfos(pub super::functions::v1::FunctionParameterInfos);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyFunctionParameterInfos {
     #[new]
@@ -7302,7 +6957,6 @@ impl ::core::convert::From<PyFunctionParameterInfos>
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListFunctionsResponse",
     eq,
@@ -7313,7 +6967,6 @@ impl ::core::convert::From<PyFunctionParameterInfos>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListFunctionsResponse(pub super::functions::v1::ListFunctionsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListFunctionsResponse {
     /// The functions.
@@ -7358,7 +7011,6 @@ impl ::core::convert::From<PyListFunctionsResponse>
 }
 
 /// The state of the server.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "HealthResponse",
     eq,
@@ -7369,7 +7021,6 @@ impl ::core::convert::From<PyListFunctionsResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyHealthResponse(pub super::health::v1::HealthResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyHealthResponse {
     /// `ok`: the server answers requests.
@@ -7396,7 +7047,6 @@ impl ::core::convert::From<PyHealthResponse> for super::health::v1::HealthRespon
 }
 
 /// The server and its versions.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "VersionResponse",
     eq,
@@ -7407,7 +7057,6 @@ impl ::core::convert::From<PyHealthResponse> for super::health::v1::HealthRespon
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyVersionResponse(pub super::health::v1::VersionResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyVersionResponse {
     /// Name of the server: `unitycatalog-rs`.
@@ -7453,7 +7102,6 @@ impl ::core::convert::From<PyVersionResponse> for super::health::v1::VersionResp
 }
 
 /// A blob of a statistics file.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergBlobMetadata",
     eq,
@@ -7464,7 +7112,6 @@ impl ::core::convert::From<PyVersionResponse> for super::health::v1::VersionResp
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergBlobMetadata(pub super::iceberg::v1::IcebergBlobMetadata);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergBlobMetadata {
     #[new]
@@ -7566,7 +7213,6 @@ impl ::core::convert::From<PyIcebergBlobMetadata> for super::iceberg::v1::Iceber
 }
 
 /// The client configuration of a catalog.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergConfigResponse",
     eq,
@@ -7577,7 +7223,6 @@ impl ::core::convert::From<PyIcebergBlobMetadata> for super::iceberg::v1::Iceber
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergConfigResponse(pub super::iceberg::v1::IcebergConfigResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergConfigResponse {
     /// Properties that a client uses unless its own configuration sets them. Always empty.
@@ -7629,7 +7274,6 @@ impl ::core::convert::From<PyIcebergConfigResponse> for super::iceberg::v1::Iceb
 }
 
 /// An encryption key of a table, itself encrypted.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergEncryptedKey",
     eq,
@@ -7640,7 +7284,6 @@ impl ::core::convert::From<PyIcebergConfigResponse> for super::iceberg::v1::Iceb
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergEncryptedKey(pub super::iceberg::v1::IcebergEncryptedKey);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergEncryptedKey {
     #[new]
@@ -7731,7 +7374,6 @@ impl ::core::convert::From<PyIcebergEncryptedKey> for super::iceberg::v1::Iceber
 }
 
 /// A page of namespaces.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergListNamespacesResponse",
     eq,
@@ -7742,22 +7384,23 @@ impl ::core::convert::From<PyIcebergEncryptedKey> for super::iceberg::v1::Iceber
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergListNamespacesResponse(pub super::iceberg::v1::IcebergListNamespacesResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergListNamespacesResponse {
     /// The namespaces, each as the list of its levels: one level, the schema name.
-    #[gen_stub(
-        override_return_type(type_repr = "list[list[typing.Any]]", imports = ("typing"))
-    )]
     #[getter]
-    fn namespaces(&self, py: ::pyo3::Python<'_>) -> ::pyo3::PyResult<::pyo3::Py<::pyo3::PyAny>> {
+    fn namespaces(
+        &self,
+        py: ::pyo3::Python<'_>,
+    ) -> ::pyo3::PyResult<PyJson<JsonList<JsonList<JsonAny>>>> {
         let items = self
             .0
             .namespaces
             .iter()
             .map(|value| json_list_to_py(py, value))
             .collect::<::pyo3::PyResult<::std::vec::Vec<_>>>()?;
-        ::core::result::Result::Ok(::pyo3::types::PyList::new(py, items)?.into_any().unbind())
+        ::core::result::Result::Ok(PyJson::new(
+            ::pyo3::types::PyList::new(py, items)?.into_any().unbind(),
+        ))
     }
 
     /// Opaque token of the next page. Absent on the last page and when no page was asked for.
@@ -7791,7 +7434,6 @@ impl ::core::convert::From<PyIcebergListNamespacesResponse>
 }
 
 /// A page of tables: the tables of a namespace that have Iceberg metadata.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergListTablesResponse",
     eq,
@@ -7802,7 +7444,6 @@ impl ::core::convert::From<PyIcebergListNamespacesResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergListTablesResponse(pub super::iceberg::v1::IcebergListTablesResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergListTablesResponse {
     /// The tables.
@@ -7847,7 +7488,6 @@ impl ::core::convert::From<PyIcebergListTablesResponse>
 }
 
 /// Fresh credentials for the files of a table.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergLoadCredentialsResponse",
     eq,
@@ -7858,7 +7498,6 @@ impl ::core::convert::From<PyIcebergListTablesResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergLoadCredentialsResponse(pub super::iceberg::v1::IcebergLoadCredentialsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergLoadCredentialsResponse {
     /// The credentials. Empty for a local table.
@@ -7894,7 +7533,6 @@ impl ::core::convert::From<PyIcebergLoadCredentialsResponse>
 }
 
 /// The metadata of a table, with the properties a client needs to read and write its files.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergLoadTableResponse",
     eq,
@@ -7905,7 +7543,6 @@ impl ::core::convert::From<PyIcebergLoadCredentialsResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergLoadTableResponse(pub super::iceberg::v1::IcebergLoadTableResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergLoadTableResponse {
     /// Location of the current metadata file of the table. Absent for a staged create.
@@ -7968,7 +7605,6 @@ impl ::core::convert::From<PyIcebergLoadTableResponse>
 }
 
 /// An entry of the metadata log: a previous metadata file.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergMetadataLogEntry",
     eq,
@@ -7979,7 +7615,6 @@ impl ::core::convert::From<PyIcebergLoadTableResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergMetadataLogEntry(pub super::iceberg::v1::IcebergMetadataLogEntry);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergMetadataLogEntry {
     /// Location of the metadata file.
@@ -8019,7 +7654,6 @@ impl ::core::convert::From<PyIcebergMetadataLogEntry>
 }
 
 /// A namespace and its properties.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergNamespaceResponse",
     eq,
@@ -8030,7 +7664,6 @@ impl ::core::convert::From<PyIcebergMetadataLogEntry>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergNamespaceResponse(pub super::iceberg::v1::IcebergNamespaceResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergNamespaceResponse {
     /// The levels of the namespace: one level, the schema name.
@@ -8069,7 +7702,6 @@ impl ::core::convert::From<PyIcebergNamespaceResponse>
 }
 
 /// A partition field: a transform of a source column.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergPartitionField",
     eq,
@@ -8080,7 +7712,6 @@ impl ::core::convert::From<PyIcebergNamespaceResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergPartitionField(pub super::iceberg::v1::IcebergPartitionField);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergPartitionField {
     #[new]
@@ -8161,7 +7792,6 @@ impl ::core::convert::From<PyIcebergPartitionField> for super::iceberg::v1::Iceb
 }
 
 /// How a table is partitioned.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergPartitionSpec",
     eq,
@@ -8172,7 +7802,6 @@ impl ::core::convert::From<PyIcebergPartitionField> for super::iceberg::v1::Iceb
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergPartitionSpec(pub super::iceberg::v1::IcebergPartitionSpec);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergPartitionSpec {
     #[new]
@@ -8227,7 +7856,6 @@ impl ::core::convert::From<PyIcebergPartitionSpec> for super::iceberg::v1::Icebe
 }
 
 /// A file of partition statistics for a snapshot.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergPartitionStatisticsFile",
     eq,
@@ -8238,7 +7866,6 @@ impl ::core::convert::From<PyIcebergPartitionSpec> for super::iceberg::v1::Icebe
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergPartitionStatisticsFile(pub super::iceberg::v1::IcebergPartitionStatisticsFile);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergPartitionStatisticsFile {
     #[new]
@@ -8315,7 +7942,6 @@ impl ::core::convert::From<PyIcebergPartitionStatisticsFile>
 }
 
 /// An Iceberg table schema: a struct type with an id.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergSchema",
     eq,
@@ -8326,7 +7952,6 @@ impl ::core::convert::From<PyIcebergPartitionStatisticsFile>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergSchema(pub super::iceberg::v1::IcebergSchema);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergSchema {
     #[new]
@@ -8418,7 +8043,6 @@ impl ::core::convert::From<PyIcebergSchema> for super::iceberg::v1::IcebergSchem
 }
 
 /// A snapshot: the state of a table at a point in time.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergSnapshot",
     eq,
@@ -8429,7 +8053,6 @@ impl ::core::convert::From<PyIcebergSchema> for super::iceberg::v1::IcebergSchem
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergSnapshot(pub super::iceberg::v1::IcebergSnapshot);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergSnapshot {
     #[new]
@@ -8595,7 +8218,6 @@ impl ::core::convert::From<PyIcebergSnapshot> for super::iceberg::v1::IcebergSna
 }
 
 /// An entry of the snapshot log: when a snapshot became current.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergSnapshotLogEntry",
     eq,
@@ -8606,7 +8228,6 @@ impl ::core::convert::From<PyIcebergSnapshot> for super::iceberg::v1::IcebergSna
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergSnapshotLogEntry(pub super::iceberg::v1::IcebergSnapshotLogEntry);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergSnapshotLogEntry {
     /// Id of the snapshot.
@@ -8649,7 +8270,6 @@ impl ::core::convert::From<PyIcebergSnapshotLogEntry>
 ///
 /// `type` is `branch` (with `min-snapshots-to-keep`, `max-snapshot-age-ms` and `max-ref-age-ms`)
 /// or `tag` (with `max-ref-age-ms`).
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergSnapshotReference",
     eq,
@@ -8660,7 +8280,6 @@ impl ::core::convert::From<PyIcebergSnapshotLogEntry>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergSnapshotReference(pub super::iceberg::v1::IcebergSnapshotReference);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergSnapshotReference {
     /// Id of the snapshot that the reference points at.
@@ -8671,7 +8290,7 @@ impl PyIcebergSnapshotReference {
 
     /// The kind of reference: `branch` or `tag`.
     #[getter]
-    fn get_type(&self) -> ::std::string::String {
+    fn r#type(&self) -> ::std::string::String {
         self.0.r#type.clone()
     }
 
@@ -8724,7 +8343,6 @@ impl ::core::convert::From<PyIcebergSnapshotReference>
 }
 
 /// A sort field: a transform of a source column and a direction.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergSortField",
     eq,
@@ -8735,7 +8353,6 @@ impl ::core::convert::From<PyIcebergSnapshotReference>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergSortField(pub super::iceberg::v1::IcebergSortField);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergSortField {
     #[new]
@@ -8821,7 +8438,6 @@ impl ::core::convert::From<PyIcebergSortField> for super::iceberg::v1::IcebergSo
 }
 
 /// How the data files of a table are sorted.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergSortOrder",
     eq,
@@ -8832,7 +8448,6 @@ impl ::core::convert::From<PyIcebergSortField> for super::iceberg::v1::IcebergSo
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergSortOrder(pub super::iceberg::v1::IcebergSortOrder);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergSortOrder {
     #[new]
@@ -8887,7 +8502,6 @@ impl ::core::convert::From<PyIcebergSortOrder> for super::iceberg::v1::IcebergSo
 }
 
 /// A Puffin file of table statistics for a snapshot.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergStatisticsFile",
     eq,
@@ -8898,7 +8512,6 @@ impl ::core::convert::From<PyIcebergSortOrder> for super::iceberg::v1::IcebergSo
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergStatisticsFile(pub super::iceberg::v1::IcebergStatisticsFile);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergStatisticsFile {
     #[new]
@@ -9014,7 +8627,6 @@ impl ::core::convert::From<PyIcebergStatisticsFile> for super::iceberg::v1::Iceb
 }
 
 /// Credentials for the files below a location prefix.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergStorageCredential",
     eq,
@@ -9025,7 +8637,6 @@ impl ::core::convert::From<PyIcebergStatisticsFile> for super::iceberg::v1::Iceb
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergStorageCredential(pub super::iceberg::v1::IcebergStorageCredential);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergStorageCredential {
     /// The location prefix that the credentials are for.
@@ -9062,7 +8673,6 @@ impl ::core::convert::From<PyIcebergStorageCredential>
 }
 
 /// A field of a struct type, such as a column of a schema.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergStructField",
     eq,
@@ -9073,7 +8683,6 @@ impl ::core::convert::From<PyIcebergStorageCredential>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergStructField(pub super::iceberg::v1::IcebergStructField);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergStructField {
     #[new]
@@ -9149,17 +8758,15 @@ impl PyIcebergStructField {
 
     /// The Iceberg type of the field (JSON `type`): a string for a primitive type (`long`,
     /// `decimal(10,2)`, `fixed[16]`), an object for a `struct`, `list` or `map` type.
-    #[gen_stub(override_return_type(type_repr = "typing.Any", imports = ("typing")))]
     #[getter]
-    fn field_type(
-        &self,
-        py: ::pyo3::Python<'_>,
-    ) -> ::pyo3::PyResult<::core::option::Option<::pyo3::Py<::pyo3::PyAny>>> {
-        self.0
+    fn field_type(&self, py: ::pyo3::Python<'_>) -> ::pyo3::PyResult<PyJson<JsonAny>> {
+        let value = self
+            .0
             .field_type
             .as_option()
             .map(|value| json_value_to_py(py, value))
-            .transpose()
+            .transpose()?;
+        ::core::result::Result::Ok(PyJson::new(value.unwrap_or_else(|| py.None())))
     }
 
     /// Description of the field.
@@ -9170,32 +8777,28 @@ impl PyIcebergStructField {
 
     /// Value of the field in the rows written before the field was added, in Iceberg's JSON form
     /// for single values.
-    #[gen_stub(override_return_type(type_repr = "typing.Any", imports = ("typing")))]
     #[getter]
-    fn initial_default(
-        &self,
-        py: ::pyo3::Python<'_>,
-    ) -> ::pyo3::PyResult<::core::option::Option<::pyo3::Py<::pyo3::PyAny>>> {
-        self.0
+    fn initial_default(&self, py: ::pyo3::Python<'_>) -> ::pyo3::PyResult<PyJson<JsonAny>> {
+        let value = self
+            .0
             .initial_default
             .as_option()
             .map(|value| json_value_to_py(py, value))
-            .transpose()
+            .transpose()?;
+        ::core::result::Result::Ok(PyJson::new(value.unwrap_or_else(|| py.None())))
     }
 
     /// Value of the field when a writer does not give one, in Iceberg's JSON form for single
     /// values.
-    #[gen_stub(override_return_type(type_repr = "typing.Any", imports = ("typing")))]
     #[getter]
-    fn write_default(
-        &self,
-        py: ::pyo3::Python<'_>,
-    ) -> ::pyo3::PyResult<::core::option::Option<::pyo3::Py<::pyo3::PyAny>>> {
-        self.0
+    fn write_default(&self, py: ::pyo3::Python<'_>) -> ::pyo3::PyResult<PyJson<JsonAny>> {
+        let value = self
+            .0
             .write_default
             .as_option()
             .map(|value| json_value_to_py(py, value))
-            .transpose()
+            .transpose()?;
+        ::core::result::Result::Ok(PyJson::new(value.unwrap_or_else(|| py.None())))
     }
 
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
@@ -9227,7 +8830,6 @@ impl ::core::convert::From<PyIcebergStructField> for super::iceberg::v1::Iceberg
 }
 
 /// A table by its namespace and name.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergTableIdentifier",
     eq,
@@ -9238,7 +8840,6 @@ impl ::core::convert::From<PyIcebergStructField> for super::iceberg::v1::Iceberg
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergTableIdentifier(pub super::iceberg::v1::IcebergTableIdentifier);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergTableIdentifier {
     #[new]
@@ -9291,7 +8892,6 @@ impl ::core::convert::From<PyIcebergTableIdentifier>
 }
 
 /// Iceberg table metadata, in format version 1, 2 or 3.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergTableMetadata",
     eq,
@@ -9302,7 +8902,6 @@ impl ::core::convert::From<PyIcebergTableIdentifier>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergTableMetadata(pub super::iceberg::v1::IcebergTableMetadata);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergTableMetadata {
     /// The format version: 1, 2 or 3.
@@ -9575,7 +9174,6 @@ impl ::core::convert::From<PyIcebergTableMetadata> for super::iceberg::v1::Icebe
 /// - `assert-last-assigned-partition-id`: `last-assigned-partition-id`.
 /// - `assert-default-spec-id`: `default-spec-id`.
 /// - `assert-default-sort-order-id`: `default-sort-order-id`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergTableRequirement",
     eq,
@@ -9586,7 +9184,6 @@ impl ::core::convert::From<PyIcebergTableMetadata> for super::iceberg::v1::Icebe
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergTableRequirement(pub super::iceberg::v1::IcebergTableRequirement);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergTableRequirement {
     #[new]
@@ -9773,7 +9370,6 @@ impl ::core::convert::From<PyIcebergTableRequirement>
 /// - `remove-encryption-key`: `key-id`.
 /// The lists and the map are always sent, empty for the other actions; the server ignores the
 /// keys that an action does not read.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergTableUpdate",
     eq,
@@ -9784,7 +9380,6 @@ impl ::core::convert::From<PyIcebergTableRequirement>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyIcebergTableUpdate(pub super::iceberg::v1::IcebergTableUpdate);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergTableUpdate {
     #[new]
@@ -10201,7 +9796,6 @@ impl ::core::convert::From<PyIcebergTableUpdate> for super::iceberg::v1::Iceberg
 }
 
 /// The changes of a namespace properties update.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "IcebergUpdateNamespacePropertiesResponse",
     eq,
@@ -10214,7 +9808,6 @@ pub struct PyIcebergUpdateNamespacePropertiesResponse(
     pub super::iceberg::v1::IcebergUpdateNamespacePropertiesResponse,
 );
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyIcebergUpdateNamespacePropertiesResponse {
     /// Keys that were set.
@@ -10260,7 +9853,6 @@ impl ::core::convert::From<PyIcebergUpdateNamespacePropertiesResponse>
 }
 
 /// A summary of the metastore of the server.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "GetMetastoreSummaryResponse",
     eq,
@@ -10271,7 +9863,6 @@ impl ::core::convert::From<PyIcebergUpdateNamespacePropertiesResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyGetMetastoreSummaryResponse(pub super::metastore::v1::GetMetastoreSummaryResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyGetMetastoreSummaryResponse {
     /// Unique identifier of the metastore.
@@ -10301,7 +9892,6 @@ impl ::core::convert::From<PyGetMetastoreSummaryResponse>
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListModelVersionsResponse",
     eq,
@@ -10312,7 +9902,6 @@ impl ::core::convert::From<PyGetMetastoreSummaryResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListModelVersionsResponse(pub super::models::v1::ListModelVersionsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListModelVersionsResponse {
     /// The model versions.
@@ -10356,7 +9945,6 @@ impl ::core::convert::From<PyListModelVersionsResponse>
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListRegisteredModelsResponse",
     eq,
@@ -10367,7 +9955,6 @@ impl ::core::convert::From<PyListModelVersionsResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListRegisteredModelsResponse(pub super::models::v1::ListRegisteredModelsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListRegisteredModelsResponse {
     /// The registered models.
@@ -10412,7 +9999,6 @@ impl ::core::convert::From<PyListRegisteredModelsResponse>
 }
 
 /// A version of a registered model. The server gives each new version the next number.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ModelVersionInfo",
     eq,
@@ -10423,7 +10009,6 @@ impl ::core::convert::From<PyListRegisteredModelsResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyModelVersionInfo(pub super::models::v1::ModelVersionInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyModelVersionInfo {
     /// Name of the parent registered model, relative to its schema.
@@ -10554,7 +10139,6 @@ impl ::core::convert::From<PyModelVersionInfo> for super::models::v1::ModelVersi
 
 /// A registered model: a securable in the three-level namespace (catalog.schema.model) that
 /// holds model versions.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "RegisteredModelInfo",
     eq,
@@ -10565,7 +10149,6 @@ impl ::core::convert::From<PyModelVersionInfo> for super::models::v1::ModelVersi
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyRegisteredModelInfo(pub super::models::v1::RegisteredModelInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyRegisteredModelInfo {
     /// Name of the registered model, relative to its schema.
@@ -10674,7 +10257,6 @@ impl ::core::convert::From<PyRegisteredModelInfo> for super::models::v1::Registe
 }
 
 /// A change to the privileges of one principal.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "PermissionsChange",
     eq,
@@ -10685,7 +10267,6 @@ impl ::core::convert::From<PyRegisteredModelInfo> for super::models::v1::Registe
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyPermissionsChange(pub super::permissions::v1::PermissionsChange);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyPermissionsChange {
     #[new]
@@ -10749,7 +10330,6 @@ impl ::core::convert::From<PyPermissionsChange> for super::permissions::v1::Perm
 }
 
 /// The privileges on a securable, per principal.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "PermissionsList",
     eq,
@@ -10760,7 +10340,6 @@ impl ::core::convert::From<PyPermissionsChange> for super::permissions::v1::Perm
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyPermissionsList(pub super::permissions::v1::PermissionsList);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyPermissionsList {
     /// The privileges of each principal.
@@ -10792,7 +10371,6 @@ impl ::core::convert::From<PyPermissionsList> for super::permissions::v1::Permis
 }
 
 /// The privileges of one principal on a securable.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "PrivilegeAssignment",
     eq,
@@ -10803,7 +10381,6 @@ impl ::core::convert::From<PyPermissionsList> for super::permissions::v1::Permis
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyPrivilegeAssignment(pub super::permissions::v1::PrivilegeAssignment);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyPrivilegeAssignment {
     /// The principal: the email address of a user.
@@ -10839,7 +10416,6 @@ impl ::core::convert::From<PyPrivilegeAssignment> for super::permissions::v1::Pr
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListRecipientsResponse",
     eq,
@@ -10850,7 +10426,6 @@ impl ::core::convert::From<PyPrivilegeAssignment> for super::permissions::v1::Pr
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListRecipientsResponse(pub super::recipients::v1::ListRecipientsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListRecipientsResponse {
     /// The recipients.
@@ -10896,7 +10471,6 @@ impl ::core::convert::From<PyListRecipientsResponse>
 
 /// A Delta Sharing recipient: an organization or user outside Unity Catalog that reads shares with
 /// a bearer token. The server keeps a hash of the token only.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "RecipientInfo",
     eq,
@@ -10907,7 +10481,6 @@ impl ::core::convert::From<PyListRecipientsResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyRecipientInfo(pub super::recipients::v1::RecipientInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyRecipientInfo {
     /// Name of the recipient.
@@ -11007,7 +10580,6 @@ impl ::core::convert::From<PyRecipientInfo> for super::recipients::v1::Recipient
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListSchemasResponse",
     eq,
@@ -11018,7 +10590,6 @@ impl ::core::convert::From<PyRecipientInfo> for super::recipients::v1::Recipient
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListSchemasResponse(pub super::schemas::v1::ListSchemasResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListSchemasResponse {
     /// The schemas.
@@ -11060,7 +10631,6 @@ impl ::core::convert::From<PyListSchemasResponse> for super::schemas::v1::ListSc
 
 /// A schema: the second layer of the three-level namespace. It holds tables, volumes, functions
 /// and models.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SchemaInfo",
     eq,
@@ -11071,7 +10641,6 @@ impl ::core::convert::From<PyListSchemasResponse> for super::schemas::v1::ListSc
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySchemaInfo(pub super::schemas::v1::SchemaInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySchemaInfo {
     /// Name of the schema, relative to the parent catalog.
@@ -11190,7 +10759,6 @@ impl ::core::convert::From<PySchemaInfo> for super::schemas::v1::SchemaInfo {
 }
 
 /// A page of SCIM groups.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListScimGroupsResponse",
     eq,
@@ -11201,7 +10769,6 @@ impl ::core::convert::From<PySchemaInfo> for super::schemas::v1::SchemaInfo {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListScimGroupsResponse(pub super::scim::v1::ListScimGroupsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListScimGroupsResponse {
     /// SCIM schema URIs of the response: `urn:ietf:params:scim:api:messages:2.0:ListResponse`.
@@ -11266,7 +10833,6 @@ impl ::core::convert::From<PyListScimGroupsResponse> for super::scim::v1::ListSc
 }
 
 /// The SCIM resource types of the server, User and Group, as a SCIM list (RFC 7644, section 4).
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListScimResourceTypesResponse",
     eq,
@@ -11277,7 +10843,6 @@ impl ::core::convert::From<PyListScimGroupsResponse> for super::scim::v1::ListSc
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListScimResourceTypesResponse(pub super::scim::v1::ListScimResourceTypesResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListScimResourceTypesResponse {
     /// SCIM schema URIs of the response: `urn:ietf:params:scim:api:messages:2.0:ListResponse`.
@@ -11346,7 +10911,6 @@ impl ::core::convert::From<PyListScimResourceTypesResponse>
 }
 
 /// The SCIM schemas of the server, User and Group, as a SCIM list (RFC 7644, section 4).
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListScimSchemasResponse",
     eq,
@@ -11357,7 +10921,6 @@ impl ::core::convert::From<PyListScimResourceTypesResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListScimSchemasResponse(pub super::scim::v1::ListScimSchemasResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListScimSchemasResponse {
     /// SCIM schema URIs of the response: `urn:ietf:params:scim:api:messages:2.0:ListResponse`.
@@ -11422,7 +10985,6 @@ impl ::core::convert::From<PyListScimSchemasResponse> for super::scim::v1::ListS
 }
 
 /// A page of SCIM users.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListScimUsersResponse",
     eq,
@@ -11433,7 +10995,6 @@ impl ::core::convert::From<PyListScimSchemasResponse> for super::scim::v1::ListS
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListScimUsersResponse(pub super::scim::v1::ListScimUsersResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListScimUsersResponse {
     /// SCIM schema URIs of the response: `urn:ietf:params:scim:api:messages:2.0:ListResponse`.
@@ -11505,7 +11066,6 @@ impl ::core::convert::From<PyListScimUsersResponse> for super::scim::v1::ListSci
 }
 
 /// A way to authenticate to the SCIM endpoints.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimAuthenticationScheme",
     eq,
@@ -11516,12 +11076,11 @@ impl ::core::convert::From<PyListScimUsersResponse> for super::scim::v1::ListSci
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimAuthenticationScheme(pub super::scim::v1::ScimAuthenticationScheme);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimAuthenticationScheme {
     /// Kind of the scheme: `oauthbearertoken`.
     #[getter]
-    fn get_type(&self) -> ::std::string::String {
+    fn r#type(&self) -> ::std::string::String {
         self.0.r#type.clone()
     }
 
@@ -11573,7 +11132,6 @@ impl ::core::convert::From<PyScimAuthenticationScheme>
 }
 
 /// How the server supports SCIM bulk requests.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimBulkConfig",
     eq,
@@ -11584,7 +11142,6 @@ impl ::core::convert::From<PyScimAuthenticationScheme>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimBulkConfig(pub super::scim::v1::ScimBulkConfig);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimBulkConfig {
     /// Whether bulk requests are supported.
@@ -11630,7 +11187,6 @@ impl ::core::convert::From<PyScimBulkConfig> for super::scim::v1::ScimBulkConfig
 }
 
 /// One operation of a SCIM bulk request (RFC 7644, section 3.7).
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimBulkOp",
     eq,
@@ -11641,7 +11197,6 @@ impl ::core::convert::From<PyScimBulkConfig> for super::scim::v1::ScimBulkConfig
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimBulkOp(pub super::scim::v1::ScimBulkOp);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimBulkOp {
     #[new]
@@ -11692,21 +11247,15 @@ impl PyScimBulkOp {
 
     /// The body of the operation: a `ScimUser` or `ScimGroup` for `POST`, a `ScimPatchOp` (without
     /// `id`) for `PATCH`.
-    #[gen_stub(
-        override_return_type(
-            type_repr = "typing.Optional[dict[str, typing.Any]]",
-            imports = ("typing")
-        )
-    )]
     #[getter]
     fn data(
         &self,
         py: ::pyo3::Python<'_>,
-    ) -> ::pyo3::PyResult<::core::option::Option<::pyo3::Py<::pyo3::PyAny>>> {
+    ) -> ::pyo3::PyResult<::core::option::Option<PyJson<JsonDict<JsonAny>>>> {
         self.0
             .data
             .as_option()
-            .map(|value| json_struct_to_py(py, value))
+            .map(|value| json_struct_to_py(py, value).map(PyJson::new))
             .transpose()
     }
 
@@ -11736,7 +11285,6 @@ impl ::core::convert::From<PyScimBulkOp> for super::scim::v1::ScimBulkOp {
 }
 
 /// The result of one operation of a SCIM bulk request.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimBulkOpResult",
     eq,
@@ -11747,7 +11295,6 @@ impl ::core::convert::From<PyScimBulkOp> for super::scim::v1::ScimBulkOp {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimBulkOpResult(pub super::scim::v1::ScimBulkOpResult);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimBulkOpResult {
     /// The HTTP method of the operation.
@@ -11775,21 +11322,15 @@ impl PyScimBulkOpResult {
     }
 
     /// The answer of the operation: the user or group, or an error with `status` and `detail`.
-    #[gen_stub(
-        override_return_type(
-            type_repr = "typing.Optional[dict[str, typing.Any]]",
-            imports = ("typing")
-        )
-    )]
     #[getter]
     fn response(
         &self,
         py: ::pyo3::Python<'_>,
-    ) -> ::pyo3::PyResult<::core::option::Option<::pyo3::Py<::pyo3::PyAny>>> {
+    ) -> ::pyo3::PyResult<::core::option::Option<PyJson<JsonDict<JsonAny>>>> {
         self.0
             .response
             .as_option()
-            .map(|value| json_struct_to_py(py, value))
+            .map(|value| json_struct_to_py(py, value).map(PyJson::new))
             .transpose()
     }
 
@@ -11820,7 +11361,6 @@ impl ::core::convert::From<PyScimBulkOpResult> for super::scim::v1::ScimBulkOpRe
 }
 
 /// The answer to a SCIM bulk request: one result per operation that ran, in order.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimBulkResponse",
     eq,
@@ -11831,7 +11371,6 @@ impl ::core::convert::From<PyScimBulkOpResult> for super::scim::v1::ScimBulkOpRe
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimBulkResponse(pub super::scim::v1::ScimBulkResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimBulkResponse {
     /// SCIM schema URIs of the response: `urn:ietf:params:scim:api:messages:2.0:BulkResponse`.
@@ -11869,7 +11408,6 @@ impl ::core::convert::From<PyScimBulkResponse> for super::scim::v1::ScimBulkResp
 }
 
 /// An email address of a user.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimEmail",
     eq,
@@ -11880,7 +11418,6 @@ impl ::core::convert::From<PyScimBulkResponse> for super::scim::v1::ScimBulkResp
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimEmail(pub super::scim::v1::ScimEmail);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimEmail {
     #[new]
@@ -11944,7 +11481,6 @@ impl ::core::convert::From<PyScimEmail> for super::scim::v1::ScimEmail {
 }
 
 /// How the server supports SCIM filters.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimFilterConfig",
     eq,
@@ -11955,7 +11491,6 @@ impl ::core::convert::From<PyScimEmail> for super::scim::v1::ScimEmail {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimFilterConfig(pub super::scim::v1::ScimFilterConfig);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimFilterConfig {
     /// Whether filters are supported.
@@ -11991,7 +11526,6 @@ impl ::core::convert::From<PyScimFilterConfig> for super::scim::v1::ScimFilterCo
 }
 
 /// A SCIM 2.0 group of users.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimGroup",
     eq,
@@ -12002,7 +11536,6 @@ impl ::core::convert::From<PyScimFilterConfig> for super::scim::v1::ScimFilterCo
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimGroup(pub super::scim::v1::ScimGroup);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimGroup {
     /// SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:Group`. Requests
@@ -12061,7 +11594,6 @@ impl ::core::convert::From<PyScimGroup> for super::scim::v1::ScimGroup {
 }
 
 /// A member of a SCIM group.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimGroupMember",
     eq,
@@ -12072,7 +11604,6 @@ impl ::core::convert::From<PyScimGroup> for super::scim::v1::ScimGroup {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimGroupMember(pub super::scim::v1::ScimGroupMember);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimGroupMember {
     #[new]
@@ -12136,7 +11667,6 @@ impl ::core::convert::From<PyScimGroupMember> for super::scim::v1::ScimGroupMemb
 }
 
 /// The SCIM `meta` of a resource: its type and when it was created and last changed.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimMeta",
     eq,
@@ -12147,7 +11677,6 @@ impl ::core::convert::From<PyScimGroupMember> for super::scim::v1::ScimGroupMemb
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimMeta(pub super::scim::v1::ScimMeta);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimMeta {
     #[new]
@@ -12236,7 +11765,6 @@ impl ::core::convert::From<PyScimMeta> for super::scim::v1::ScimMeta {
 }
 
 /// One operation of a SCIM PATCH request (RFC 7644, section 3.5.2).
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimPatchOperation",
     eq,
@@ -12247,7 +11775,6 @@ impl ::core::convert::From<PyScimMeta> for super::scim::v1::ScimMeta {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimPatchOperation(pub super::scim::v1::ScimPatchOperation);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimPatchOperation {
     #[new]
@@ -12288,17 +11815,15 @@ impl PyScimPatchOperation {
 
     /// The new value. Any JSON: a boolean or string for `active`, a string for `displayName`, an
     /// array of members for `members`, an object of attributes for a `replace` without `path`.
-    #[gen_stub(override_return_type(type_repr = "typing.Any", imports = ("typing")))]
     #[getter]
-    fn value(
-        &self,
-        py: ::pyo3::Python<'_>,
-    ) -> ::pyo3::PyResult<::core::option::Option<::pyo3::Py<::pyo3::PyAny>>> {
-        self.0
+    fn value(&self, py: ::pyo3::Python<'_>) -> ::pyo3::PyResult<PyJson<JsonAny>> {
+        let value = self
+            .0
             .value
             .as_option()
             .map(|value| json_value_to_py(py, value))
-            .transpose()
+            .transpose()?;
+        ::core::result::Result::Ok(PyJson::new(value.unwrap_or_else(|| py.None())))
     }
 
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
@@ -12322,7 +11847,6 @@ impl ::core::convert::From<PyScimPatchOperation> for super::scim::v1::ScimPatchO
 }
 
 /// A picture of a user.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimPhoto",
     eq,
@@ -12333,7 +11857,6 @@ impl ::core::convert::From<PyScimPatchOperation> for super::scim::v1::ScimPatchO
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimPhoto(pub super::scim::v1::ScimPhoto);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimPhoto {
     #[new]
@@ -12383,7 +11906,6 @@ impl ::core::convert::From<PyScimPhoto> for super::scim::v1::ScimPhoto {
 }
 
 /// A SCIM resource type (RFC 7643, section 6).
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimResourceType",
     eq,
@@ -12394,7 +11916,6 @@ impl ::core::convert::From<PyScimPhoto> for super::scim::v1::ScimPhoto {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimResourceType(pub super::scim::v1::ScimResourceType);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimResourceType {
     /// SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:ResourceType`.
@@ -12468,7 +11989,6 @@ impl ::core::convert::From<PyScimResourceType> for super::scim::v1::ScimResource
 }
 
 /// A SCIM role of a user.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimRole",
     eq,
@@ -12479,7 +11999,6 @@ impl ::core::convert::From<PyScimResourceType> for super::scim::v1::ScimResource
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimRole(pub super::scim::v1::ScimRole);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimRole {
     #[new]
@@ -12516,7 +12035,6 @@ impl ::core::convert::From<PyScimRole> for super::scim::v1::ScimRole {
 }
 
 /// A SCIM schema (RFC 7643, section 7).
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimSchema",
     eq,
@@ -12527,7 +12045,6 @@ impl ::core::convert::From<PyScimRole> for super::scim::v1::ScimRole {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimSchema(pub super::scim::v1::ScimSchema);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimSchema {
     /// SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:Schema`.
@@ -12599,7 +12116,6 @@ impl ::core::convert::From<PyScimSchema> for super::scim::v1::ScimSchema {
 }
 
 /// An attribute of a SCIM schema (RFC 7643, section 7).
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimSchemaAttribute",
     eq,
@@ -12610,7 +12126,6 @@ impl ::core::convert::From<PyScimSchema> for super::scim::v1::ScimSchema {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimSchemaAttribute(pub super::scim::v1::ScimSchemaAttribute);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimSchemaAttribute {
     /// Name of the attribute, such as `userName`.
@@ -12621,7 +12136,7 @@ impl PyScimSchemaAttribute {
 
     /// Data type of the attribute: `string`, `boolean` or `complex`.
     #[getter]
-    fn get_type(&self) -> ::std::string::String {
+    fn r#type(&self) -> ::std::string::String {
         self.0.r#type.clone()
     }
 
@@ -12682,7 +12197,6 @@ impl ::core::convert::From<PyScimSchemaAttribute> for super::scim::v1::ScimSchem
 }
 
 /// The SCIM features that the server supports (RFC 7643, section 5).
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimServiceProviderConfig",
     eq,
@@ -12693,7 +12207,6 @@ impl ::core::convert::From<PyScimSchemaAttribute> for super::scim::v1::ScimSchem
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimServiceProviderConfig(pub super::scim::v1::ScimServiceProviderConfig);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimServiceProviderConfig {
     /// SCIM schema URIs of the resource:
@@ -12807,7 +12320,6 @@ impl ::core::convert::From<PyScimServiceProviderConfig>
 }
 
 /// Whether the server supports a SCIM feature.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimSupported",
     eq,
@@ -12818,7 +12330,6 @@ impl ::core::convert::From<PyScimServiceProviderConfig>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimSupported(pub super::scim::v1::ScimSupported);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimSupported {
     /// Whether the feature is supported.
@@ -12845,7 +12356,6 @@ impl ::core::convert::From<PyScimSupported> for super::scim::v1::ScimSupported {
 }
 
 /// A SCIM 2.0 user. The email of the user is its user name and its one primary email.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ScimUser",
     eq,
@@ -12856,7 +12366,6 @@ impl ::core::convert::From<PyScimSupported> for super::scim::v1::ScimSupported {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyScimUser(pub super::scim::v1::ScimUser);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyScimUser {
     /// SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:User`.
@@ -12964,7 +12473,6 @@ impl ::core::convert::From<PyScimUser> for super::scim::v1::ScimUser {
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SearchObjectsResponse",
     eq,
@@ -12975,7 +12483,6 @@ impl ::core::convert::From<PyScimUser> for super::scim::v1::ScimUser {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySearchObjectsResponse(pub super::search::v1::SearchObjectsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySearchObjectsResponse {
     /// The results: first the names equal to the query, then the names that start with it, the
@@ -13019,7 +12526,6 @@ impl ::core::convert::From<PySearchObjectsResponse> for super::search::v1::Searc
 
 /// A catalog, schema, table, volume, function or registered model whose name or comment holds the
 /// words of a search.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SearchResult",
     eq,
@@ -13030,7 +12536,6 @@ impl ::core::convert::From<PySearchObjectsResponse> for super::search::v1::Searc
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySearchResult(pub super::search::v1::SearchResult);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySearchResult {
     /// Type of the object: `catalog`, `schema`, `table`, `volume`, `function` or `registered_model`.
@@ -13124,7 +12629,6 @@ impl ::core::convert::From<PySearchResult> for super::search::v1::SearchResult {
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListSharesResponse",
     eq,
@@ -13135,7 +12639,6 @@ impl ::core::convert::From<PySearchResult> for super::search::v1::SearchResult {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListSharesResponse(pub super::shares::v1::ListSharesResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListSharesResponse {
     /// The shares.
@@ -13176,7 +12679,6 @@ impl ::core::convert::From<PyListSharesResponse> for super::shares::v1::ListShar
 }
 
 /// A share: a named set of tables that Delta Sharing recipients can read.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ShareInfo",
     eq,
@@ -13187,7 +12689,6 @@ impl ::core::convert::From<PyListSharesResponse> for super::shares::v1::ListShar
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyShareInfo(pub super::shares::v1::ShareInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyShareInfo {
     /// Name of the share.
@@ -13280,7 +12781,6 @@ impl ::core::convert::From<PyShareInfo> for super::shares::v1::ShareInfo {
 }
 
 /// A table of a share: a Unity Catalog table and the name under which the recipients see it.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SharedDataObject",
     eq,
@@ -13291,7 +12791,6 @@ impl ::core::convert::From<PyShareInfo> for super::shares::v1::ShareInfo {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySharedDataObject(pub super::shares::v1::SharedDataObject);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySharedDataObject {
     #[new]
@@ -13363,7 +12862,6 @@ impl ::core::convert::From<PySharedDataObject> for super::shares::v1::SharedData
 
 /// A Delta Sharing profile file (`profile.json`): what a Delta Sharing client needs to connect to
 /// the server as a recipient.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "RecipientProfile",
     eq,
@@ -13374,7 +12872,6 @@ impl ::core::convert::From<PySharedDataObject> for super::shares::v1::SharedData
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyRecipientProfile(pub super::sharing::v1::RecipientProfile);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyRecipientProfile {
     /// Version of the profile file format. Always 1.
@@ -13429,7 +12926,6 @@ impl ::core::convert::From<PyRecipientProfile> for super::sharing::v1::Recipient
 }
 
 /// The format of the data files of a table.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SharingFormat",
     eq,
@@ -13440,7 +12936,6 @@ impl ::core::convert::From<PyRecipientProfile> for super::sharing::v1::Recipient
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySharingFormat(pub super::sharing::v1::SharingFormat);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySharingFormat {
     /// Name of the file format. Always `parquet`.
@@ -13467,7 +12962,6 @@ impl ::core::convert::From<PySharingFormat> for super::sharing::v1::SharingForma
 }
 
 /// The version of a table. The response has no body.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SharingGetTableVersionResponse",
     eq,
@@ -13478,7 +12972,6 @@ impl ::core::convert::From<PySharingFormat> for super::sharing::v1::SharingForma
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySharingGetTableVersionResponse(pub super::sharing::v1::SharingGetTableVersionResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySharingGetTableVersionResponse {
     /// Version of the table, from the `Delta-Table-Version` header. Always 0: the server does not
@@ -13509,7 +13002,6 @@ impl ::core::convert::From<PySharingGetTableVersionResponse>
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SharingListSchemasResponse",
     eq,
@@ -13520,7 +13012,6 @@ impl ::core::convert::From<PySharingGetTableVersionResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySharingListSchemasResponse(pub super::sharing::v1::SharingListSchemasResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySharingListSchemasResponse {
     /// The schemas, sorted by name.
@@ -13565,7 +13056,6 @@ impl ::core::convert::From<PySharingListSchemasResponse>
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SharingListSharesResponse",
     eq,
@@ -13576,7 +13066,6 @@ impl ::core::convert::From<PySharingListSchemasResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySharingListSharesResponse(pub super::sharing::v1::SharingListSharesResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySharingListSharesResponse {
     /// The shares.
@@ -13620,7 +13109,6 @@ impl ::core::convert::From<PySharingListSharesResponse>
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SharingListTablesResponse",
     eq,
@@ -13631,7 +13119,6 @@ impl ::core::convert::From<PySharingListSharesResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySharingListTablesResponse(pub super::sharing::v1::SharingListTablesResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySharingListTablesResponse {
     /// The tables.
@@ -13676,7 +13163,6 @@ impl ::core::convert::From<PySharingListTablesResponse>
 }
 
 /// The metadata of a table.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SharingMetadata",
     eq,
@@ -13687,7 +13173,6 @@ impl ::core::convert::From<PySharingListTablesResponse>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySharingMetadata(pub super::sharing::v1::SharingMetadata);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySharingMetadata {
     /// Unique identifier of the table. Empty when the table has none.
@@ -13761,7 +13246,6 @@ impl ::core::convert::From<PySharingMetadata> for super::sharing::v1::SharingMet
 }
 
 /// The protocol of a table: the minimum version of the Delta Sharing reader that can read it.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SharingProtocol",
     eq,
@@ -13772,7 +13256,6 @@ impl ::core::convert::From<PySharingMetadata> for super::sharing::v1::SharingMet
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySharingProtocol(pub super::sharing::v1::SharingProtocol);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySharingProtocol {
     /// Minimum reader version. Always 1.
@@ -13799,7 +13282,6 @@ impl ::core::convert::From<PySharingProtocol> for super::sharing::v1::SharingPro
 }
 
 /// A schema of a share: the `shared_as_schema` of one or more of its tables.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SharingSchema",
     eq,
@@ -13810,7 +13292,6 @@ impl ::core::convert::From<PySharingProtocol> for super::sharing::v1::SharingPro
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySharingSchema(pub super::sharing::v1::SharingSchema);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySharingSchema {
     /// Name of the schema.
@@ -13843,7 +13324,6 @@ impl ::core::convert::From<PySharingSchema> for super::sharing::v1::SharingSchem
 }
 
 /// A share that the recipient can read.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SharingShare",
     eq,
@@ -13854,7 +13334,6 @@ impl ::core::convert::From<PySharingSchema> for super::sharing::v1::SharingSchem
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySharingShare(pub super::sharing::v1::SharingShare);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySharingShare {
     /// Name of the share.
@@ -13887,7 +13366,6 @@ impl ::core::convert::From<PySharingShare> for super::sharing::v1::SharingShare 
 }
 
 /// A table of a share, by the name under which the recipient sees it.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SharingTable",
     eq,
@@ -13898,7 +13376,6 @@ impl ::core::convert::From<PySharingShare> for super::sharing::v1::SharingShare 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySharingTable(pub super::sharing::v1::SharingTable);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySharingTable {
     /// Name of the table.
@@ -13952,7 +13429,6 @@ impl ::core::convert::From<PySharingTable> for super::sharing::v1::SharingTable 
 
 /// One line of the NDJSON answer of `SharingGetTableMetadata` and `SharingQueryTable`: an object
 /// with one key. The first line holds `protocol`, the second `metaData`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "SharingTableLine",
     eq,
@@ -13963,7 +13439,6 @@ impl ::core::convert::From<PySharingTable> for super::sharing::v1::SharingTable 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PySharingTableLine(pub super::sharing::v1::SharingTableLine);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PySharingTableLine {
     /// The protocol of the table.
@@ -14004,7 +13479,6 @@ impl ::core::convert::From<PySharingTableLine> for super::sharing::v1::SharingTa
 }
 
 /// A column of a table.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ColumnInfo",
     eq,
@@ -14015,7 +13489,6 @@ impl ::core::convert::From<PySharingTableLine> for super::sharing::v1::SharingTa
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyColumnInfo(pub super::tables::v1::ColumnInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyColumnInfo {
     #[new]
@@ -14204,7 +13677,6 @@ impl ::core::convert::From<PyColumnInfo> for super::tables::v1::ColumnInfo {
 }
 
 /// A dependency of a view or function. Exactly one of the fields is set.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "Dependency",
     eq,
@@ -14215,7 +13687,6 @@ impl ::core::convert::From<PyColumnInfo> for super::tables::v1::ColumnInfo {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDependency(pub super::tables::v1::Dependency);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDependency {
     #[new]
@@ -14278,7 +13749,6 @@ impl ::core::convert::From<PyDependency> for super::tables::v1::Dependency {
 }
 
 /// The dependencies of a view or function.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "DependencyList",
     eq,
@@ -14289,7 +13759,6 @@ impl ::core::convert::From<PyDependency> for super::tables::v1::Dependency {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyDependencyList(pub super::tables::v1::DependencyList);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyDependencyList {
     #[new]
@@ -14331,7 +13800,6 @@ impl ::core::convert::From<PyDependencyList> for super::tables::v1::DependencyLi
 }
 
 /// A function that a view or function depends on.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "FunctionDependency",
     eq,
@@ -14342,7 +13810,6 @@ impl ::core::convert::From<PyDependencyList> for super::tables::v1::DependencyLi
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyFunctionDependency(pub super::tables::v1::FunctionDependency);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyFunctionDependency {
     #[new]
@@ -14380,7 +13847,6 @@ impl ::core::convert::From<PyFunctionDependency> for super::tables::v1::Function
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListTablesResponse",
     eq,
@@ -14391,7 +13857,6 @@ impl ::core::convert::From<PyFunctionDependency> for super::tables::v1::Function
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListTablesResponse(pub super::tables::v1::ListTablesResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListTablesResponse {
     /// The tables.
@@ -14433,7 +13898,6 @@ impl ::core::convert::From<PyListTablesResponse> for super::tables::v1::ListTabl
 
 /// A staging table: a table id and managed storage location reserved for a MANAGED table that a
 /// client is about to create.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "StagingTableInfo",
     eq,
@@ -14444,7 +13908,6 @@ impl ::core::convert::From<PyListTablesResponse> for super::tables::v1::ListTabl
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyStagingTableInfo(pub super::tables::v1::StagingTableInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyStagingTableInfo {
     /// Name of the table, relative to the parent schema.
@@ -14505,7 +13968,6 @@ impl ::core::convert::From<PyStagingTableInfo> for super::tables::v1::StagingTab
 }
 
 /// A table that a view or function depends on.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "TableDependency",
     eq,
@@ -14516,7 +13978,6 @@ impl ::core::convert::From<PyStagingTableInfo> for super::tables::v1::StagingTab
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyTableDependency(pub super::tables::v1::TableDependency);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyTableDependency {
     #[new]
@@ -14554,7 +14015,6 @@ impl ::core::convert::From<PyTableDependency> for super::tables::v1::TableDepend
 }
 
 /// A table: data in the third layer of the three-level namespace, below a schema.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "TableInfo",
     eq,
@@ -14565,7 +14025,6 @@ impl ::core::convert::From<PyTableDependency> for super::tables::v1::TableDepend
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyTableInfo(pub super::tables::v1::TableInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyTableInfo {
     /// Name of the table, relative to the parent schema.
@@ -14731,7 +14190,6 @@ impl ::core::convert::From<PyTableInfo> for super::tables::v1::TableInfo {
 }
 
 /// A new comment for a column of a table.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "UpdateColumn",
     eq,
@@ -14742,7 +14200,6 @@ impl ::core::convert::From<PyTableInfo> for super::tables::v1::TableInfo {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyUpdateColumn(pub super::tables::v1::UpdateColumn);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyUpdateColumn {
     #[new]
@@ -14789,7 +14246,6 @@ impl ::core::convert::From<PyUpdateColumn> for super::tables::v1::UpdateColumn {
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListPatsResponse",
     eq,
@@ -14800,7 +14256,6 @@ impl ::core::convert::From<PyUpdateColumn> for super::tables::v1::UpdateColumn {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListPatsResponse(pub super::tokens::v1::ListPatsResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListPatsResponse {
     /// The tokens.
@@ -14837,7 +14292,6 @@ impl ::core::convert::From<PyListPatsResponse> for super::tokens::v1::ListPatsRe
 
 /// A personal access token of a user. The server keeps a hash of the token only: the token itself
 /// is in the response of `CreateToken` and nowhere else.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "PatInfo",
     eq,
@@ -14848,7 +14302,6 @@ impl ::core::convert::From<PyListPatsResponse> for super::tokens::v1::ListPatsRe
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyPatInfo(pub super::tokens::v1::PatInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyPatInfo {
     /// Unique identifier of the token.
@@ -14922,7 +14375,6 @@ impl ::core::convert::From<PyPatInfo> for super::tokens::v1::PatInfo {
     }
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "ListVolumesResponseContent",
     eq,
@@ -14933,7 +14385,6 @@ impl ::core::convert::From<PyPatInfo> for super::tokens::v1::PatInfo {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyListVolumesResponseContent(pub super::volumes::v1::ListVolumesResponseContent);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyListVolumesResponseContent {
     /// The volumes.
@@ -14978,7 +14429,6 @@ impl ::core::convert::From<PyListVolumesResponseContent>
 }
 
 /// A volume: files in the third layer of the three-level namespace, below a schema.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[::pyo3::pyclass(
     name = "VolumeInfo",
     eq,
@@ -14989,7 +14439,6 @@ impl ::core::convert::From<PyListVolumesResponseContent>
 #[derive(Clone, Debug, PartialEq)]
 pub struct PyVolumeInfo(pub super::volumes::v1::VolumeInfo);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[::pyo3::pymethods]
 impl PyVolumeInfo {
     /// Name of the parent catalog.
@@ -15108,8 +14557,7 @@ impl ::core::convert::From<PyVolumeInfo> for super::volumes::v1::VolumeInfo {
     }
 }
 
-/// `Name(field=value, …)` with the `repr` of each attribute in `fields`, without the
-/// ones that are `None`. A field marked `true` (`debug_redact` in the proto) shows `'***'`.
+/// `Name(field=value, …)` without the `None` fields; a redacted field shows `'***'`.
 fn __python_repr(
     obj: &::pyo3::Bound<'_, ::pyo3::PyAny>,
     fields: &[(&str, bool)],
@@ -15132,6 +14580,56 @@ fn __python_repr(
         obj.get_type().name()?,
         shown.join(", ")
     ))
+}
+
+/// The type hint of a JSON getter.
+pub trait JsonTypeHint {
+    /// The hint.
+    const HINT: ::pyo3::inspect::PyStaticExpr;
+}
+
+/// `typing.Any`.
+pub struct JsonAny;
+impl JsonTypeHint for JsonAny {
+    const HINT: ::pyo3::inspect::PyStaticExpr = ::pyo3::type_hint_identifier!("typing", "Any");
+}
+
+/// `dict[str, V]`.
+pub struct JsonDict<V>(::core::marker::PhantomData<V>);
+impl<V: JsonTypeHint> JsonTypeHint for JsonDict<V> {
+    const HINT: ::pyo3::inspect::PyStaticExpr = ::pyo3::type_hint_subscript!(
+        ::pyo3::type_hint_identifier!("builtins", "dict"),
+        ::pyo3::type_hint_identifier!("builtins", "str"),
+        V::HINT
+    );
+}
+
+/// `list[V]`.
+pub struct JsonList<V>(::core::marker::PhantomData<V>);
+impl<V: JsonTypeHint> JsonTypeHint for JsonList<V> {
+    const HINT: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_subscript!(::pyo3::type_hint_identifier!("builtins", "list"), V::HINT);
+}
+
+/// The Python object of a JSON getter, typed `H` in the stubs.
+pub struct PyJson<H>(::pyo3::Py<::pyo3::PyAny>, ::core::marker::PhantomData<H>);
+impl<H> PyJson<H> {
+    fn new(object: ::pyo3::Py<::pyo3::PyAny>) -> Self {
+        Self(object, ::core::marker::PhantomData)
+    }
+}
+
+impl<'py, H: JsonTypeHint> ::pyo3::IntoPyObject<'py> for PyJson<H> {
+    type Target = ::pyo3::PyAny;
+    type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
+    type Error = ::core::convert::Infallible;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr = H::HINT;
+    fn into_pyobject(
+        self,
+        py: ::pyo3::Python<'py>,
+    ) -> ::core::result::Result<Self::Output, Self::Error> {
+        ::core::result::Result::Ok(self.0.into_bound(py))
+    }
 }
 
 /// A JSON value as a Python object: `None`, `bool`, `int` for a whole number, `float`,

@@ -8,13 +8,11 @@ use uc_client::models::recipients::v1::*;
 use uc_client::models::*;
 
 /// The requests on one `RecipientInfo`.
-#[::pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(name = "RecipientClient", module = "unitycatalog._core.recipients")]
 pub struct PyRecipientClient {
     pub(crate) client: RecipientClient,
 }
 
-#[::pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyRecipientClient {
     /// Get a recipient. The response does not hold the bearer token.

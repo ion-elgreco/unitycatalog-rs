@@ -435,7 +435,11 @@ pub struct ScimPhoto {
     /// URL of the picture. Empty when the user has no picture.
     ///
     /// Field 1: `value`
-    #[serde(rename = "value", with = "::buffa::json_helpers::proto_string")]
+    #[serde(
+        rename = "value",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
     pub value: ::buffa::alloc::string::String,
     /// Kind of the picture, such as `photo`. The server does not keep it.
     ///
@@ -622,7 +626,11 @@ pub struct ScimEmail {
     /// The email address.
     ///
     /// Field 1: `value`
-    #[serde(rename = "value", with = "::buffa::json_helpers::proto_string")]
+    #[serde(
+        rename = "value",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
     pub value: ::buffa::alloc::string::String,
     /// Whether this is the primary email address of the user.
     ///
@@ -2272,7 +2280,11 @@ pub struct ScimGroupMember {
     /// The `id` of the user.
     ///
     /// Field 1: `value`
-    #[serde(rename = "value", with = "::buffa::json_helpers::proto_string")]
+    #[serde(
+        rename = "value",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
     pub value: ::buffa::alloc::string::String,
     /// A display string, which clients set to the name of the user.
     ///
@@ -2503,6 +2515,7 @@ pub struct ScimGroup {
     /// Field 1: `schemas`
     #[serde(
         rename = "schemas",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub schemas: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
@@ -2521,7 +2534,8 @@ pub struct ScimGroup {
     #[serde(
         rename = "displayName",
         alias = "display_name",
-        with = "::buffa::json_helpers::proto_string"
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub display_name: ::buffa::alloc::string::String,
     /// Members of the group.
@@ -3546,7 +3560,11 @@ pub struct ScimPatchOperation {
     /// The operation: `add`, `remove` or `replace`, in any case.
     ///
     /// Field 1: `op`
-    #[serde(rename = "op", with = "::buffa::json_helpers::proto_string")]
+    #[serde(
+        rename = "op",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
     pub op: ::buffa::alloc::string::String,
     /// SCIM attribute path, such as `active`, `displayName`, `members` or
     /// `members[value eq "<id>"]`. Absent for a `replace` whose `value` holds the attributes.
@@ -3795,6 +3813,7 @@ pub struct ScimPatchOp {
     #[serde(
         rename = "Operations",
         alias = "operations",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub operations: ::buffa::alloc::vec::Vec<ScimPatchOperation>,
@@ -3986,13 +4005,21 @@ pub struct ScimBulkOp {
     /// The HTTP method of the operation: `POST`, `PATCH` or `DELETE`.
     ///
     /// Field 1: `method`
-    #[serde(rename = "method", with = "::buffa::json_helpers::proto_string")]
+    #[serde(
+        rename = "method",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
     pub method: ::buffa::alloc::string::String,
     /// The resource of the operation: `/Users` or `/Groups` for `POST`, `/Users/<id>` or
     /// `/Groups/<id>` for `PATCH` and `DELETE`.
     ///
     /// Field 2: `path`
-    #[serde(rename = "path", with = "::buffa::json_helpers::proto_string")]
+    #[serde(
+        rename = "path",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
     pub path: ::buffa::alloc::string::String,
     /// Identifier of the operation, which the result repeats.
     ///
