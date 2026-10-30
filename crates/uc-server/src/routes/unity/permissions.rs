@@ -35,7 +35,7 @@ pub async fn get_permissions(
     Path((securable_type, full_name)): Path<(SecurableType, String)>,
     Query(filter): Query<PrincipalFilter>,
 ) -> ApiResult<Json<PermissionsList>> {
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let mut only = filter.principal;
     if access.enabled() {
         let lineage = authz::lineage(&state, securable_type, &full_name).await?;
@@ -76,7 +76,7 @@ pub async fn update_permissions(
 ) -> ApiResult<Json<PermissionsList>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         securable_type,
         &full_name,
         |a, l| rules::update_permissions(a, securable_type, l),

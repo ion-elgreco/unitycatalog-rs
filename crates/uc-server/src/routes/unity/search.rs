@@ -54,7 +54,7 @@ pub async fn search_objects(
             .filter(|n| *n >= 0)
             .ok_or_else(|| Error::invalid_argument(format!("Invalid page token: {token}")))?,
     };
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let mut results = Vec::new();
     // The offset of the next result in the index's order, if any.
     let mut next = Some(start);

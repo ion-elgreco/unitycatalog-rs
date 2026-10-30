@@ -50,7 +50,8 @@ app.kubernetes.io/component: server
 
 {{/*
 The server's uc.toml: server.config.toml, then the users of auth.users,
-which the server makes at each start when they are missing.
+which the server makes at each start when they are missing, then the
+identity providers of auth.issuers.
 */}}
 {{- define "unitycatalog.server.ucToml" -}}
 {{ .Values.server.config.toml }}
@@ -66,6 +67,31 @@ external_id = {{ . | toJson }}
 {{- end }}
 {{- with $user.privileges }}
 privileges = {{ . | toJson }}
+{{- end }}
+{{- end }}
+{{- range $index, $issuer := .Values.auth.issuers }}
+
+[[auth.issuers]]
+name = {{ required (printf "auth.issuers[%d].name is required" $index) $issuer.name | toJson }}
+issuer = {{ required (printf "auth.issuers[%d].issuer is required" $index) $issuer.issuer | toJson }}
+audiences = {{ required (printf "auth.issuers[%d].audiences is required" $index) $issuer.audiences | toJson }}
+{{- if $issuer.direct }}
+direct = true
+{{- end }}
+{{- with $issuer.principalClaims }}
+principal_claims = {{ . | toJson }}
+{{- end }}
+{{- with $issuer.clientClaims }}
+client_claims = {{ . | toJson }}
+{{- end }}
+{{- with $issuer.groupsClaim }}
+groups_claim = {{ . | toJson }}
+{{- end }}
+{{- if $issuer.createUsers }}
+create_users = true
+{{- end }}
+{{- with $issuer.displayName }}
+display_name = {{ . | toJson }}
 {{- end }}
 {{- end }}
 {{- end }}

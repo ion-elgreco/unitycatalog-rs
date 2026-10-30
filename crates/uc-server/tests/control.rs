@@ -5,123 +5,46 @@
 
 mod common;
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use axum::{
-    Json, Router,
+    Router,
     body::Body,
     http::{Method, Request, StatusCode, header},
-    routing::get,
 };
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use jsonwebtoken::{EncodingKey, Header};
-use rsa::{RsaPrivateKey, pkcs1::EncodeRsaPrivateKey, traits::PublicKeyParts};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use uc_metastore::{DynMetastore, MetastoreConfig, SqlMetastore};
 use uc_server::{AppState, authn::idp::AuthSettings, build_app};
 
-use common::{BASE, assert_error, json_body, security};
+use common::{BASE, assert_error, idp::Idp, json_body, security};
 
 const TOKENS: &str = "/api/1.0/unity-control/auth/tokens";
 const LOGOUT: &str = "/api/1.0/unity-control/auth/logout";
 const ID_TOKEN: &str = "urn:ietf:params:oauth:token-type:id_token";
 const ACCESS_TOKEN: &str = "urn:ietf:params:oauth:token-type:access_token";
 
-/// An identity provider: an RSA, a P-256 and a P-521 signing key behind
-/// OIDC discovery.
-struct Idp {
-    issuer: String,
-    rsa: EncodingKey,
-    p256: EncodingKey,
-    p521: p521::ecdsa::SigningKey,
-}
-
-impl Idp {
-    async fn start() -> Self {
-        let rsa = RsaPrivateKey::new(&mut rand::rngs::OsRng, 2048).unwrap();
-        let p256 = p256::ecdsa::SigningKey::random(&mut rand::rngs::OsRng);
-        let p521 = p521::ecdsa::SigningKey::random(&mut rand::rngs::OsRng);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let issuer = format!("http://{}", listener.local_addr().unwrap());
-        let b64 = |bytes: &[u8]| URL_SAFE_NO_PAD.encode(bytes);
-        let p256_point = p256.verifying_key().to_encoded_point(false);
-        let p521_point = p521::ecdsa::VerifyingKey::from(&p521).to_encoded_point(false);
-        let jwks = json!({ "keys": [
-            { "kty": "RSA", "kid": "rsa", "use": "sig", "alg": "RS256",
-              "n": b64(&rsa.n().to_bytes_be()), "e": b64(&rsa.e().to_bytes_be()) },
-            { "kty": "EC", "kid": "p256", "use": "sig", "crv": "P-256",
-              "x": b64(p256_point.x().unwrap()), "y": b64(p256_point.y().unwrap()) },
-            { "kty": "EC", "kid": "p521", "use": "sig", "crv": "P-521",
-              "x": b64(p521_point.x().unwrap()), "y": b64(p521_point.y().unwrap()) },
-        ] });
-        let config = json!({ "issuer": issuer, "jwks_uri": format!("{issuer}/jwks") });
-        let app = Router::new()
-            .route(
-                "/.well-known/openid-configuration",
-                get(move || async move { Json(config) }),
-            )
-            .route("/jwks", get(move || async move { Json(jwks) }));
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let p256_der = p256::pkcs8::EncodePrivateKey::to_pkcs8_der(&p256).unwrap();
-        Self {
-            issuer,
-            rsa: EncodingKey::from_rsa_der(rsa.to_pkcs1_der().unwrap().as_bytes()),
-            p256: EncodingKey::from_ec_der(p256_der.as_bytes()),
-            p521,
-        }
-    }
-
-    fn claims(&self, extra: Value) -> Value {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let mut claims = json!({ "iss": self.issuer, "aud": "uc", "iat": now, "exp": now + 600 });
-        claims
-            .as_object_mut()
-            .unwrap()
-            .extend(extra.as_object().unwrap().clone());
-        claims
-    }
-
-    /// An RS256 token with these claims (over the defaults).
-    fn token(&self, extra: Value) -> String {
-        let mut header = Header::new(jsonwebtoken::Algorithm::RS256);
-        header.kid = Some("rsa".into());
-        jsonwebtoken::encode(&header, &self.claims(extra), &self.rsa).unwrap()
-    }
-
-    fn es256(&self, extra: Value) -> String {
-        let mut header = Header::new(jsonwebtoken::Algorithm::ES256);
-        header.kid = Some("p256".into());
-        jsonwebtoken::encode(&header, &self.claims(extra), &self.p256).unwrap()
-    }
-
-    fn es512(&self, extra: Value) -> String {
-        use p521::ecdsa::{Signature, signature::Signer};
-        let header = b64_json(&json!({ "alg": "ES512", "typ": "JWT", "kid": "p521" }));
-        let message = format!("{header}.{}", b64_json(&self.claims(extra)));
-        let signature: Signature = self.p521.sign(message.as_bytes());
-        format!("{message}.{}", URL_SAFE_NO_PAD.encode(signature.to_bytes()))
-    }
-}
-
-fn b64_json(value: &Value) -> String {
-    URL_SAFE_NO_PAD.encode(value.to_string())
-}
-
-/// An app with authorization on that accepts `idp`'s tokens for audience
-/// `uc`, and its metastore.
-async fn app(idp: &Idp, issuers: &str, audiences: &str) -> (Router, DynMetastore) {
+/// An app with authorization on that takes `idp`'s tokens at the exchange,
+/// as the `[[auth.issuers]]` block `idp` with the issuer pattern `issuer`
+/// (`$IDP` is the provider; `""` is no block at all) and the audience
+/// `audience`; and its metastore.
+async fn app(idp: &Idp, issuer: &str, audience: &str) -> (Router, DynMetastore) {
     let metastore = SqlMetastore::connect(MetastoreConfig::for_tests())
         .await
         .unwrap();
     let dyn_metastore: DynMetastore = metastore.clone();
+    let issuers = match issuer {
+        "" => Vec::new(),
+        pattern => vec![uc_common::settings::Issuer {
+            name: "idp".into(),
+            issuer: pattern.replace("$IDP", &idp.issuer),
+            audiences: vec![audience.to_string()],
+            ..Default::default()
+        }],
+    };
     let settings = AuthSettings::new(&uc_common::settings::Auth {
-        allowed_issuers: vec![issuers.replace("$IDP", &idp.issuer)],
-        audiences: vec![audiences.to_string()],
+        issuers,
         access_token_timeout: Duration::from_secs(3600),
         cookie_timeout: Duration::from_secs(600),
         ..Default::default()
@@ -420,7 +343,7 @@ async fn token_exchange_requests_are_checked() {
         StatusCode::OK
     );
 
-    // Settings: no issuers, no audiences, any audience.
+    // Settings: no issuers; a wildcard issuer with any audience.
     let (no_issuers, _) = self::app(&idp, "", "uc").await;
     let err = assert_error(
         exchange(&no_issuers, &good, ID_TOKEN).await,
@@ -430,18 +353,7 @@ async fn token_exchange_requests_are_checked() {
     .await;
     assert_eq!(
         err["message"],
-        "No allowed issuers configured. Set auth.allowed_issuers (UC_AUTH_ALLOWED_ISSUERS)"
-    );
-    let (no_audiences, _) = self::app(&idp, "$IDP", "").await;
-    let err = assert_error(
-        exchange(&no_audiences, &good, ID_TOKEN).await,
-        bad,
-        "INVALID_ARGUMENT",
-    )
-    .await;
-    assert_eq!(
-        err["message"],
-        "No audiences configured. Set auth.audiences (UC_AUTH_AUDIENCES)"
+        "No issuers configured. Add the identity provider as [[auth.issuers]] in uc.toml"
     );
     let (any_audience, metastore) = self::app(&idp, "http://127.0.0.1:*", "*").await;
     user(&metastore, "alice@example.com", None, true).await;
@@ -691,15 +603,18 @@ async fn sign_in_is_required_when_authorization_is_on() {
     )
     .await;
     assert_eq!(err["message"], "Invalid access token.");
-    // Identity-provider tokens must be exchanged first.
-    let raw = idp.token(json!({ "email": "alice@example.com" }));
-    let err = assert_error(
-        api_get(&app, "/catalogs", &bearer(&raw)).await,
-        StatusCode::FORBIDDEN,
-        "PERMISSION_DENIED",
-    )
-    .await;
-    assert_eq!(err["message"], "Invalid access token.");
+    // The tokens of an issuer without `direct = true` must be exchanged
+    // first; so must those of an unknown issuer.
+    for iss in [idp.issuer.clone(), "https://other.example.com".to_string()] {
+        let raw = idp.token(json!({ "iss": iss, "email": "alice@example.com" }));
+        let err = assert_error(
+            api_get(&app, "/catalogs", &bearer(&raw)).await,
+            StatusCode::UNAUTHORIZED,
+            "UNAUTHENTICATED",
+        )
+        .await;
+        assert_eq!(err["message"], "Invalid access token.");
+    }
     // Only active users.
     for (email, status) in [
         ("alice@example.com", StatusCode::OK),

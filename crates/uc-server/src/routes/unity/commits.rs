@@ -39,7 +39,7 @@ pub async fn commit(
     Json(req): Json<DeltaCommit>,
 ) -> ApiResult<EmptyObject> {
     if let Some(table_id) = req.table_id.as_deref() {
-        authz::check_table_id(&state, &principal.username, table_id, rules::update_table).await?;
+        authz::check_table_id(&state, &principal, table_id, rules::update_table).await?;
     }
     state.check_delta_api_only(
         "POST /delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table} with action add-commit",
@@ -106,7 +106,7 @@ pub async fn get_commits(
     Json(req): Json<DeltaGetCommits>,
 ) -> ApiResult<Json<DeltaGetCommitsResponse>> {
     if let Some(table_id) = req.table_id.as_deref() {
-        authz::check_table_id(&state, &principal.username, table_id, rules::get_commits).await?;
+        authz::check_table_id(&state, &principal, table_id, rules::get_commits).await?;
     }
     state.check_delta_api_only(
         "GET /delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table} (commits[])",

@@ -85,8 +85,12 @@ key_file = "/etc/uc/secrets-key.pem"  # the key of the secrets of credentials
 
 [auth]
 enabled = true
-allowed_issuers = ["https://accounts.google.com"]
 signing_key_file = "/etc/uc/signing-key.pem"  # the key of its tokens; default a new one in memory
+
+[[auth.issuers]]                   # an identity provider whose tokens the server takes
+name = "google"
+issuer = "https://accounts.google.com"
+audiences = ["<client id>"]
 
 [identity.aws]                     # the server's AWS identity; default the environment's
 region = "us-east-1"

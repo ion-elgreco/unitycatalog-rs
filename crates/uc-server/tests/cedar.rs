@@ -72,7 +72,7 @@ async fn cedar_engine_permits_only_granted_actions(
 
     let engine = CedarEngine::new(metastore.clone()).unwrap();
     let (catalog, metastore_node) = main_chain(&metastore).await;
-    let grants = engine.grants("alice").await.unwrap();
+    let grants = engine.grants("alice", &[]).await.unwrap();
     assert!(
         grants.holds(&[&catalog, &metastore_node], Privilege::UseCatalog),
         "alice has USE CATALOG"
@@ -83,7 +83,7 @@ async fn cedar_engine_permits_only_granted_actions(
     );
     assert!(
         !engine
-            .grants("bob")
+            .grants("bob", &[])
             .await
             .unwrap()
             .holds(&[&catalog, &metastore_node], Privilege::UseCatalog)
@@ -140,7 +140,7 @@ async fn cedar_engine_loads_extra_policy_files(
     let (catalog, metastore_node) = main_chain(&metastore).await;
     assert!(
         engine
-            .grants("alice")
+            .grants("alice", &[])
             .await
             .unwrap()
             .holds(&[&catalog, &metastore_node], Privilege::Modify)
@@ -148,7 +148,7 @@ async fn cedar_engine_loads_extra_policy_files(
     // Bob does not.
     assert!(
         !engine
-            .grants("bob")
+            .grants("bob", &[])
             .await
             .unwrap()
             .holds(&[&catalog, &metastore_node], Privilege::Modify)
@@ -158,7 +158,7 @@ async fn cedar_engine_loads_extra_policy_files(
     owned.add_policies(r#"permit (principal, action == Action::"MODIFY", resource) when { resource has owner && resource.owner == "alice" };"#).unwrap();
     assert!(
         owned
-            .grants("bob")
+            .grants("bob", &[])
             .await
             .unwrap()
             .holds(&[&catalog, &metastore_node], Privilege::Modify)

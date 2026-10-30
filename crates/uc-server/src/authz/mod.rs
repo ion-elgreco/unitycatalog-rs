@@ -38,7 +38,9 @@ pub trait Grants: Send + Sync {
 /// Where grants come from.
 #[async_trait]
 pub trait PolicyEngine: Send + Sync + 'static {
-    async fn grants(&self, principal: &str) -> Result<Box<dyn Grants>>;
+    /// The grants of `principal` and of its groups: those of the server,
+    /// and `groups`, the names its token carries.
+    async fn grants(&self, principal: &str, groups: &[String]) -> Result<Box<dyn Grants>>;
 }
 
 /// Every privilege is held: authorization off.
@@ -76,8 +78,12 @@ impl Grants for TableGrants {
 
 #[async_trait]
 impl PolicyEngine for PermissionEnforcer {
-    async fn grants(&self, principal: &str) -> Result<Box<dyn Grants>> {
-        let grants = self.metastore.permissions().grants_of(principal).await?;
+    async fn grants(&self, principal: &str, groups: &[String]) -> Result<Box<dyn Grants>> {
+        let grants = self
+            .metastore
+            .permissions()
+            .grants_of(principal, groups)
+            .await?;
         Ok(Box::new(TableGrants(
             grants
                 .into_iter()
@@ -111,11 +117,14 @@ pub struct Access {
 }
 
 impl Access {
-    pub async fn load(state: &AppState, principal: &str) -> Result<Self> {
+    /// The authorization of `principal`: its grants, and those of its
+    /// groups, the server's and its token's.
+    pub async fn load(state: &AppState, principal: &Principal) -> Result<Self> {
+        let name = principal.username.as_str();
         if !state.authorization_enabled {
             return Ok(Self {
                 enabled: false,
-                principal: principal.to_string(),
+                principal: name.to_string(),
                 admin: true,
                 metastore: Node {
                     kind: SecurableType::Metastore,
@@ -129,12 +138,12 @@ impl Access {
         let (metastore_id, owner, grants) = tokio::try_join!(
             permissions.metastore_id(),
             permissions.metastore_owner(),
-            state.policy.grants(principal),
+            state.policy.grants(name, &principal.groups),
         )?;
         Ok(Self {
             enabled: true,
-            principal: principal.to_string(),
-            admin: is_metastore_admin(state, principal, owner.as_deref()),
+            principal: name.to_string(),
+            admin: is_metastore_admin(state, name, owner.as_deref()),
             metastore: Node {
                 kind: SecurableType::Metastore,
                 id: metastore_id,
@@ -246,7 +255,7 @@ pub async fn lineage(state: &AppState, kind: SecurableType, name: &str) -> Resul
 /// checking. Nothing is looked up with authorization off.
 pub async fn check<F>(
     state: &AppState,
-    principal: &str,
+    principal: &Principal,
     kind: SecurableType,
     name: &str,
     rule: F,
@@ -270,7 +279,7 @@ where
 /// owner the rule also gets. Nothing is looked up with authorization off.
 pub async fn check_create(
     state: &AppState,
-    principal: &str,
+    principal: &Principal,
     schema: &str,
     external: Option<Option<&str>>,
     rule: fn(&Access, &Lineage, Option<&PathOwner>) -> bool,
@@ -305,7 +314,7 @@ pub fn uncovered(url: &str) -> Error {
 /// `table_id` (a UUID; upstream refuses others before checking).
 pub async fn check_table_id<F>(
     state: &AppState,
-    principal: &str,
+    principal: &Principal,
     table_id: &str,
     rule: F,
 ) -> Result<()>

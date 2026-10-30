@@ -276,18 +276,30 @@ impl PermissionOps for SqlMetastore {
         })
     }
 
-    async fn grants_of(&self, principal: &str) -> Result<HashMap<String, Vec<Privilege>>> {
-        let rows: Vec<PermissionRow> = select(
-            self.db.as_ref(),
-            &PERMISSION,
-            "WHERE principal = $1 OR principal IN (\
-                SELECT g.display_name FROM scim_group g \
-                JOIN scim_group_member m ON m.group_id = g.id_string \
-                JOIN scim_user u ON u.id_string = m.user_id \
-                WHERE u.user_name = $1)",
-            &[principal.into()],
-        )
-        .await?;
+    async fn grants_of(
+        &self,
+        principal: &str,
+        groups: &[String],
+    ) -> Result<HashMap<String, Vec<Privilege>>> {
+        let mut filter = "WHERE principal = $1 OR principal IN (\
+            SELECT g.display_name FROM scim_group g \
+            JOIN scim_group_member m ON m.group_id = g.id_string \
+            JOIN scim_user u ON u.id_string = m.user_id \
+            WHERE u.user_name = $1)"
+            .to_string();
+        let mut params: Vec<Value> = vec![principal.into()];
+        // The groups of the token, only those that exist here: a grant to
+        // a user could otherwise be reached by a token that names the
+        // user's email as a group.
+        if !groups.is_empty() {
+            filter.push_str(&format!(
+                " OR principal IN (SELECT display_name FROM scim_group WHERE display_name IN ({}))",
+                placeholders(2, groups.len())
+            ));
+            params.extend(groups.iter().map(Into::into));
+        }
+        let rows: Vec<PermissionRow> =
+            select(self.db.as_ref(), &PERMISSION, &filter, &params).await?;
         let mut grants: HashMap<String, Vec<Privilege>> = HashMap::new();
         for row in rows {
             grants

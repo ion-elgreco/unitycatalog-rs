@@ -15,14 +15,13 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use uc_common::{Error, Result};
 
 use crate::{
-    authn::idp::{self, ACCESS_TOKEN, resolve_principal},
+    authn::idp::{self, ACCESS_TOKEN, TokenKind},
     authn::middleware::{UC_TOKEN_COOKIE, cookie, token_cookie},
     http::error::ApiResult,
     http::extract::Query,
@@ -129,29 +128,35 @@ pub async fn grant_token(
 
     // The issuer is checked before anything is fetched from it.
     let settings = &state.auth;
-    if settings.allowed_issuers.is_empty() {
+    if settings.issuers.is_empty() {
         return Err(Error::invalid_argument(
-            "No allowed issuers configured. Set auth.allowed_issuers (UC_AUTH_ALLOWED_ISSUERS)",
+            "No issuers configured. Add the identity provider as [[auth.issuers]] in uc.toml",
         )
         .into());
     }
-    let issuer = decoded
-        .claims
-        .get("iss")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-    if !settings.allowed_issuers.is_allowed(&issuer) {
-        tracing::warn!(%issuer, "token rejected: issuer not allowed");
+    let iss = idp::claim(&decoded.claims, "iss").unwrap_or_default();
+    let Some(issuer) = settings.issuer(iss) else {
+        tracing::warn!(issuer = %iss, "token rejected: issuer not allowed");
         return Err(Error::unauthenticated("Invalid issuer").into());
-    }
+    };
     settings
         .providers
-        .verify(&subject_token, &decoded, &issuer)
+        .verify(&subject_token, &decoded, iss)
         .await?;
-    check_audience(settings, &decoded.claims)?;
+    if !issuer.audience_allowed(&decoded.claims) {
+        tracing::warn!(
+            issuer = %issuer.name,
+            audience = ?idp::audiences(&decoded.claims),
+            "token rejected: audience not allowed"
+        );
+        return Err(Error::unauthenticated("Invalid audience").into());
+    }
 
-    let principal = resolve_principal(&state, &subject_token_type, &decoded.claims).await?;
+    let kind = match subject_token_type == ACCESS_TOKEN {
+        true => TokenKind::AccessToken,
+        false => TokenKind::IdToken,
+    };
+    let principal = idp::resolve(&state, issuer, &decoded.claims, kind).await?;
     let security = state
         .security
         .as_ref()
@@ -174,27 +179,6 @@ pub async fn grant_token(
         response.headers_mut().insert(header::SET_COOKIE, cookie);
     }
     Ok(response)
-}
-
-/// Upstream `validateAudience`: `auth.audiences` must be set; `*` alone
-/// disables the check; otherwise one `aud` must match.
-fn check_audience(settings: &idp::AuthSettings, claims: &Map<String, Value>) -> Result<()> {
-    if settings.audiences.is_empty() {
-        return Err(Error::invalid_argument(
-            "No audiences configured. Set auth.audiences (UC_AUTH_AUDIENCES)",
-        ));
-    }
-    if settings.audiences.len() == 1 && settings.audiences[0] == "*" {
-        return Ok(());
-    }
-    if settings
-        .audience_allowlist
-        .is_any_allowed(&idp::audiences(claims))
-    {
-        return Ok(());
-    }
-    tracing::warn!(audience = ?idp::audiences(claims), "token rejected: audience not allowed");
-    Err(Error::unauthenticated("Invalid audience"))
 }
 
 #[utoipa::path(

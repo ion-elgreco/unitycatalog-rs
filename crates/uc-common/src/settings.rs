@@ -188,13 +188,9 @@ pub struct Auth {
     /// The users that the server makes at each start when they are missing
     /// (`[[auth.users]]`, only in `uc.toml`).
     pub users: Vec<AuthUser>,
-    /// The issuers of identity tokens that the server exchanges (exact, or
-    /// `*` for one DNS label).
-    #[serde(deserialize_with = "list")]
-    pub allowed_issuers: Vec<String>,
-    /// The audiences that those tokens must have; `*` alone for any.
-    #[serde(deserialize_with = "list")]
-    pub audiences: Vec<String>,
+    /// The identity providers whose tokens the server takes
+    /// (`[[auth.issuers]]`, only in `uc.toml`).
+    pub issuers: Vec<Issuer>,
     /// The life of the server's access tokens (default `24h`).
     #[serde(deserialize_with = "duration")]
     pub access_token_timeout: Duration,
@@ -244,8 +240,7 @@ impl Default for Auth {
             enabled: false,
             signing_key_file: None,
             users: Vec::new(),
-            allowed_issuers: Vec::new(),
-            audiences: Vec::new(),
+            issuers: Vec::new(),
             access_token_timeout: Duration::from_secs(24 * 3600),
             cookie_timeout: Duration::from_secs(5 * 24 * 3600),
             admin_principals: Vec::new(),
@@ -282,6 +277,44 @@ pub struct AuthUser {
     /// Privileges on the metastore, such as `CREATE CATALOG`.
     #[serde(default)]
     pub privileges: Vec<String>,
+}
+
+/// `[[auth.issuers]]`: an identity provider whose tokens the server takes,
+/// at the token exchange and, with `direct`, on every request.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Issuer {
+    /// A short name: the prefix of the principals it names without an
+    /// email, such as `entra:<oid>`.
+    pub name: String,
+    /// The `iss` claim of its tokens; `*` stands for one DNS label.
+    pub issuer: String,
+    /// The `aud` that its tokens must carry; `*` alone for any.
+    pub audiences: Vec<String>,
+    /// Take its tokens on every request, not only at the exchange (default
+    /// false).
+    #[serde(default, deserialize_with = "scalar")]
+    pub direct: bool,
+    /// The claims that name the caller; the first present wins. An email
+    /// names the user with that email; any other value names the user
+    /// `<name>:<value>` (default `["email", "sub"]`).
+    #[serde(default)]
+    pub principal_claims: Vec<String>,
+    /// The claims with a machine's client id, matched to a user's
+    /// `externalId` (default `["azp", "client_id"]`).
+    #[serde(default)]
+    pub client_claims: Vec<String>,
+    /// A claim whose values are names of groups the caller is in.
+    #[serde(default)]
+    pub groups_claim: Option<String>,
+    /// Make the user at its first request when it is missing (default
+    /// false).
+    #[serde(default, deserialize_with = "scalar")]
+    pub create_users: bool,
+    /// The display name of a made user, with claims in braces, such as
+    /// `{app_displayname}` (default: the principal).
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 /// `[storage]`: managed storage and its cleanup.
@@ -714,7 +747,7 @@ mod tests {
 
         [auth]
         enabled = true
-        allowed_issuers = ["https://a.example", "https://b.example"]
+        admin_principals = ["https://a.example", "https://b.example"]
         cookie_timeout = "1d"
         mode = "oidc"
 
@@ -813,11 +846,67 @@ mod tests {
     fn lists_come_from_arrays_or_commas() {
         let settings = load(FILE, &[]).unwrap();
         assert_eq!(
-            settings.auth.allowed_issuers,
+            settings.auth.admin_principals,
             ["https://a.example", "https://b.example"]
         );
-        let settings = load(FILE, &[("UC_AUTH_ALLOWED_ISSUERS", " x, y ,")]).unwrap();
-        assert_eq!(settings.auth.allowed_issuers, ["x", "y"]);
+        let settings = load(FILE, &[("UC_AUTH_ADMIN_PRINCIPALS", " x, y ,")]).unwrap();
+        assert_eq!(settings.auth.admin_principals, ["x", "y"]);
+    }
+
+    #[test]
+    fn issuers_come_from_the_file() {
+        let settings = Settings::from_toml(
+            r#"
+            [[auth.issuers]]
+            name = "entra"
+            issuer = "https://login.microsoftonline.com/t/v2.0"
+            audiences = ["api://uc"]
+            direct = true
+            principal_claims = ["preferred_username", "oid"]
+            client_claims = ["azp", "appid"]
+            groups_claim = "roles"
+            create_users = true
+            display_name = "{app_displayname}"
+
+            [[auth.issuers]]
+            name = "ferriskey"
+            issuer = "http://localhost:8090/realms/unitycatalog"
+            audiences = ["unitycatalog"]
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            settings.auth.issuers,
+            [
+                Issuer {
+                    name: "entra".into(),
+                    issuer: "https://login.microsoftonline.com/t/v2.0".into(),
+                    audiences: vec!["api://uc".into()],
+                    direct: true,
+                    principal_claims: vec!["preferred_username".into(), "oid".into()],
+                    client_claims: vec!["azp".into(), "appid".into()],
+                    groups_claim: Some("roles".into()),
+                    create_users: true,
+                    display_name: Some("{app_displayname}".into()),
+                },
+                Issuer {
+                    name: "ferriskey".into(),
+                    issuer: "http://localhost:8090/realms/unitycatalog".into(),
+                    audiences: vec!["unitycatalog".into()],
+                    ..Default::default()
+                },
+            ]
+        );
+        let error = Settings::from_toml("[[auth.issuers]]\nname = \"x\"").unwrap_err();
+        assert!(error.contains("missing field `issuer`"), "{error}");
+        let error = Settings::from_toml(
+            "[[auth.issuers]]\nname = \"x\"\nissuer = \"https://x\"\naudiences = [\"x\"]\nblock = true",
+        )
+        .unwrap_err();
+        assert!(
+            error.starts_with("auth.issuers.0.block: unknown field: found `block`"),
+            "{error}"
+        );
     }
 
     #[test]

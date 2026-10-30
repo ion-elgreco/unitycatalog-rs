@@ -147,6 +147,8 @@ pub fn build_app(state: AppState) -> Router {
         // the layers: a router merged after them would get a fallback
         // without them.
         .merge(crate::authn::sign_in::router())
+        // What the server takes as a bearer token (`crate::authn::resource`).
+        .merge(crate::authn::resource::router())
         // Inside auth, so that the audit layer sees the resolved
         // `Principal` and records the status of the final response.
         .layer(middleware::from_fn_with_state(state.clone(), audit_layer))

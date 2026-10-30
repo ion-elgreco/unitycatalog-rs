@@ -38,13 +38,12 @@ tests:
         notContains:
           path: spec.template.spec.containers[0].env
           content:
-            name: UC_AUTH_ALLOWED_ISSUERS
+            name: UC_AUTH_COOKIE_TIMEOUT
           any: true
 
   - it: sets the authorization, storage and credential settings as variables
     set:
       auth.enabled: true
-      auth.audiences: uc
       storage.tableStorageRoot: s3://bucket/tables
       storage.modelStorageRoot: s3://bucket/models
       storage.identity.aws:
@@ -69,12 +68,6 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].env
           content: {name: UC_AUTH_ACCESS_TOKEN_TIMEOUT, value: 24h}
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: {name: UC_AUTH_ALLOWED_ISSUERS, value: https://accounts.google.com}
-      - contains:
-          path: spec.template.spec.containers[0].env
-          content: {name: UC_AUTH_AUDIENCES, value: uc}
       - contains:
           path: spec.template.spec.containers[0].env
           content: {name: UC_STORAGE_TABLES_ROOT, value: s3://bucket/tables}
@@ -156,6 +149,54 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: auth.users[0].email is required
+
+  - it: writes the identity providers of auth.issuers into uc.toml
+    set:
+      auth.issuers:
+        - name: entra
+          issuer: https://login.microsoftonline.com/t/v2.0
+          audiences: ["api://uc"]
+          direct: true
+          principalClaims: [preferred_username, oid]
+          clientClaims: [azp, appid]
+          groupsClaim: roles
+          createUsers: true
+          displayName: "{app_displayname}"
+        - name: google
+          issuer: https://accounts.google.com
+          audiences: [uc]
+    template: templates/server/configmap.yaml
+    asserts:
+      - equal:
+          path: data["uc.toml"]
+          value: |
+
+
+            [[auth.issuers]]
+            name = "entra"
+            issuer = "https://login.microsoftonline.com/t/v2.0"
+            audiences = ["api://uc"]
+            direct = true
+            principal_claims = ["preferred_username","oid"]
+            client_claims = ["azp","appid"]
+            groups_claim = "roles"
+            create_users = true
+            display_name = "{app_displayname}"
+
+            [[auth.issuers]]
+            name = "google"
+            issuer = "https://accounts.google.com"
+            audiences = ["uc"]
+
+  - it: needs the name, issuer and audiences of each identity provider
+    set:
+      auth.issuers:
+        - name: entra
+          issuer: https://login.microsoftonline.com/t/v2.0
+    template: templates/server/configmap.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: auth.issuers[0].audiences is required
 
   - it: rolls the pods when uc.toml changes, users included
     template: templates/server/deployment.yaml

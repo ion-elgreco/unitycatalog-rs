@@ -232,7 +232,7 @@ pub async fn config(
     })?;
     // The prefix only leads anywhere if the catalog exists.
     let lineage = authz::lineage(&state, SecurableType::Catalog, &catalog).await?;
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     access.check(rules::get_catalog(&access, &lineage))?;
     let mut endpoints: Vec<String> = READ_ENDPOINTS.iter().map(|e| e.to_string()).collect();
     if state.iceberg_writes_enabled {
@@ -259,7 +259,7 @@ async fn check_schema(
         &schema_full_name(catalog, namespace),
     )
     .await?;
-    let access = Access::load(state, &principal.username).await?;
+    let access = Access::load(state, principal).await?;
     Ok(access.check(rule(&access, &lineage))?)
 }
 
@@ -382,7 +382,7 @@ pub async fn list_namespaces(
     })
     .await?;
     // Each namespace the caller may read (upstream `GET_SCHEMA` filter).
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let catalog_lineage = match access.enabled() {
         true => authz::lineage(&state, SecurableType::Catalog, &catalog).await?,
         false => Default::default(),
@@ -418,7 +418,7 @@ pub async fn create_namespace(
     IcebergJson(req): IcebergJson<IcebergCreateNamespaceRequest>,
 ) -> IcebergResult<Json<IcebergNamespaceResponse>> {
     let lineage = authz::lineage(&state, SecurableType::Catalog, &catalog).await?;
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     access.check(rules::create_schema(&access, &lineage))?;
     check_writes_enabled(&state)?;
     let namespace = req

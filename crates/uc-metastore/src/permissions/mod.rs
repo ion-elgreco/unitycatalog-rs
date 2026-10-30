@@ -67,9 +67,15 @@ pub trait PermissionOps: Send + Sync {
     /// id `table_id` and its parents; `TABLE_NOT_FOUND` otherwise.
     async fn table_lineage(&self, table_id: &str) -> Result<Lineage>;
 
-    /// Every grant of `principal` and of the groups that it is in, by
-    /// resource id.
-    async fn grants_of(&self, principal: &str) -> Result<HashMap<String, Vec<Privilege>>>;
+    /// Every grant of `principal`, of the groups that it is in, and of
+    /// `groups` (the names its token carries) that are groups of the
+    /// server, by resource id. A name of `groups` that no group has counts
+    /// for nothing.
+    async fn grants_of(
+        &self,
+        principal: &str,
+        groups: &[String],
+    ) -> Result<HashMap<String, Vec<Privilege>>>;
 
     /// Remove every grant of `principal` (upstream
     /// `clearAuthorizationsForPrincipal`).

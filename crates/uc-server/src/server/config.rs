@@ -231,10 +231,14 @@ mod tests {
 
             [auth]
             enabled = true
-            allowed_issuers = ["https://idp", "https://other"]
-            audiences = "uc"
             access_token_timeout = "1h"
             cookie_timeout = "1d"
+
+            [[auth.issuers]]
+            name = "idp"
+            issuer = "https://idp"
+            audiences = ["uc"]
+            direct = true
 
             [tables]
             managed = false
@@ -250,8 +254,17 @@ mod tests {
         assert_eq!(cfg.obs_port, Some(8081));
         assert_eq!(cfg.database, uc_metastore::DatabaseConfig::Memory);
         assert!(cfg.auth.enabled);
-        assert_eq!(cfg.auth.allowed_issuers, ["https://idp", "https://other"]);
-        assert_eq!(cfg.auth.audiences, ["uc"]);
+        let issuers = &cfg.auth_settings().issuers;
+        assert_eq!(issuers.len(), 1);
+        assert_eq!(
+            (
+                issuers[0].name.as_str(),
+                issuers[0].issuer.as_str(),
+                issuers[0].direct
+            ),
+            ("idp", "https://idp", true)
+        );
+        assert_eq!(issuers[0].audiences, ["uc"]);
         assert_eq!(cfg.auth.access_token_timeout, Duration::from_secs(3600));
         assert_eq!(cfg.auth.cookie_timeout, Duration::from_secs(86400));
         assert!(!cfg.tables.managed_tables_enabled);

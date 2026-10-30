@@ -67,33 +67,104 @@ uc user create --name Bob --email bob@example.com
 ## Users and groups
 
 Users are SCIM users: `uc user`, the Python client, or `/api/1.0/unity-control/scim2/Users`. A
-user's email is their name in grants and owners. To delete a user, the server disables the user
-and removes their grants.
+user's email is their name in grants and owners; a user without an email, such as an
+application that an identity provider names ([Who a token names](#who-a-token-names)), has its
+`userName` there. To delete a user, the server disables the user and removes their grants.
 
 Groups (`uc group`) are SCIM groups. A privilege granted to a group counts for each of its
 members: the group's name is its name in grants, and cannot be the email of a user.
 
 ## Tokens
 
-The server accepts only its own tokens. A client gets one in one of these ways:
+A request signs in with one of these tokens:
 
-- **Token exchange.** The client exchanges a token of your identity provider for a token of the
-  server, as `uc auth login` does. Name the providers and audiences that the server accepts:
+- **A token of your identity provider.** Name the provider as an `[[auth.issuers]]` block
+  ([Identity providers](#identity-providers)). With `direct = true`, the server takes its tokens
+  on every request: a service principal, a managed identity, a service account or a CI job sends
+  the token that its environment gives it, and engines such as pyiceberg sign in with their own
+  `entra` or `google` auth.
 
     ```toml
-    [auth]
-    allowed_issuers = ["https://accounts.google.com"]
-    audiences = ["<client id>"]
+    [[auth.issuers]]
+    name = "entra"
+    issuer = "https://login.microsoftonline.com/<tenant>/v2.0"
+    audiences = ["api://uc"]
+    direct = true
+    principal_claims = ["preferred_username", "oid"]
+    client_claims = ["azp", "appid"]
+    groups_claim = "roles"
+    create_users = true
+    display_name = "{app_displayname}"
     ```
 
-    The token's `email` claim, else its `sub`, names the user. The token of a machine client
-    names the user whose `external_id` is the client's id.
+- **Token exchange.** The client exchanges a token of the provider for a token of the server, as
+  `uc auth login` does. Every `[[auth.issuers]]` block allows this; without `direct = true`, a
+  block allows only this.
 
 - **Personal access tokens.** A signed-in user makes them for scripts: `uc token create --name ci`.
   They do not expire, unless `--expires_at` says when.
 
 - **OAuth client credentials.** A client gives a personal access token as its client secret, with
   the token's id as the client id, to `/api/2.1/unity-catalog/oauth/token`.
+
+## Identity providers
+
+Each `[[auth.issuers]]` block is one provider. `GET /.well-known/oauth-protected-resource` lists
+the blocks (RFC 9728), so a client can ask the provider for a token with the right audience.
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `name` | A short name: the prefix of the principals that it names without an email. | required |
+| `issuer` | The `iss` claim of its tokens; `*` stands for one DNS label. | required |
+| `audiences` | The `aud` that its tokens must carry; `["*"]` for any. | required |
+| `direct` | Take its tokens on every request, not only at the exchange. | `false` |
+| `principal_claims` | The claims that name the caller; the first present wins. | `["email", "sub"]` |
+| `client_claims` | The claims with a machine's client id, matched to a user's `externalId`. | `["azp", "client_id"]` |
+| `groups_claim` | A claim whose values are names of groups the caller is in. | none |
+| `create_users` | Make the user at its first request when it is missing. | `false` |
+| `display_name` | The display name of a made user, with claims in braces. | the principal |
+
+### Who a token names
+
+1. The first of `principal_claims` that the token has. A value with `@` is an email and names
+   the user with that email, unless the provider says `email_verified = false`. Any other value
+   names the user `<name>:<value>`, such as `entra:7f3e…`.
+2. Nobody found, and the token is an application's own (an access token with `idtyp = app`, or
+   without an email-like claim): the first of `client_claims` whose value is a user's
+   `externalId`. This is how a user made ahead of time, with `uc user create --external_id` or
+   `[[auth.users]]`, is the service principal. A person's token from `az` or `gcloud` carries
+   that tool's client id, so a person is never matched by it.
+3. Nobody found: with `create_users`, the server makes the user, named as in step 1, with the
+   client id of an application as `externalId` and `display_name` filled from the token. Else
+   the request is refused with "User not allowed".
+
+A user that is disabled names nobody, and the server's own `admin` can never be assumed. The web
+UI's sign-in (`oidc_issuer`) names its users the same way, with the block of that issuer when
+there is one, so a first sign-in makes the user when the block has `create_users`.
+
+Grants, owners, `admin_principals` and Cedar's `User::"…"` take the principal: the email, or
+`<name>:<value>`.
+
+### Groups
+
+With `groups_claim`, the names in that claim are groups of the caller for the request, next to
+the groups the caller is a member of in the server. A name counts when a group of that name
+exists in the server: make the group once, grant to it, and every identity whose token names it
+is covered. Entra's `groups` claim holds object ids; its app roles (`roles`), assigned to Entra
+groups, arrive as names.
+
+### Providers
+
+| Provider | Block | Notes |
+| --- | --- | --- |
+| Microsoft Entra | `issuer = "https://login.microsoftonline.com/<tenant>/v2.0"`, `audiences = ["api://<app id uri>"]` or the API app's client id, `principal_claims = ["preferred_username", "oid"]`, `client_claims = ["azp", "appid"]`, `groups_claim = "roles"` | Set `accessTokenAcceptedVersion` to 2 on the API app, or add a block for `https://sts.windows.net/<tenant>/` with `principal_claims = ["upn", "oid"]` and `client_claims = ["appid"]`. Add the `idtyp` optional claim so applications are told from people. A client asks for the scope `api://<app id uri>/.default`. |
+| Google | `issuer = "https://accounts.google.com"`, `audiences = ["<your audience>"]`, `principal_claims = ["email", "sub"]` | Google's access tokens are opaque: clients send an ID token with your audience. |
+| Any OpenID Connect provider | `issuer`, `audiences = ["<client id>"]` | FerrisKey, Keycloak, Okta, GitHub Actions, GitLab CI, a Kubernetes cluster's issuer. The provider must publish `<issuer>/.well-known/openid-configuration` and its keys. |
+
+The server checks a token's signature with the provider's keys, which it fetches once an hour,
+its issuer, audience and times, with 60 seconds of clock skew. A token that a `direct` issuer's
+block accepts is kept until it expires, at most five minutes, so a busy client costs one check
+per token, not per request; a user disabled in the server keeps working that long.
 
 ## Sign in to the web UI
 

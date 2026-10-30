@@ -139,7 +139,7 @@ pub async fn get_config(
     })?;
     let protocol_version = negotiate(params.protocol_versions.as_deref())?;
     let lineage = authz::lineage(&state, SecurableType::Catalog, &catalog).await?;
-    let access = authz::Access::load(&state, &principal.username).await?;
+    let access = authz::Access::load(&state, &principal).await?;
     access.check(authz::rules::get_catalog(&access, &lineage))?;
     Ok(Json(DeltaCatalogConfig {
         endpoints: ENDPOINTS
@@ -184,7 +184,7 @@ pub async fn load_table(
     let full_name = three_part_full_name(&catalog, &schema, &table);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::get_table,
@@ -216,7 +216,7 @@ pub async fn update_table(
     let full_name = three_part_full_name(&catalog, &schema, &table);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::update_table,
@@ -247,7 +247,7 @@ pub async fn table_exists(
     let full_name = three_part_full_name(&catalog, &schema, &table);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::get_table,
@@ -272,7 +272,7 @@ pub async fn delete_table(
     let full_name = three_part_full_name(&catalog, &schema, &table);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::own_child,
@@ -303,7 +303,7 @@ pub async fn rename_table(
     let full_name = three_part_full_name(&catalog, &schema, &table);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::rename_table,
@@ -338,7 +338,7 @@ pub async fn report_metrics(
     let full_name = three_part_full_name(&catalog, &schema, &table);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::update_table,
@@ -420,7 +420,7 @@ pub async fn create_staging_table(
     let parent = uc_common::schema_full_name(&catalog, &schema);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Schema,
         &parent,
         rules::create_staging_table,
@@ -494,7 +494,7 @@ pub async fn create_table(
     };
     authz::check_create(
         &state,
-        &principal.username,
+        &principal,
         &uc_common::schema_full_name(&catalog, &schema),
         external,
         rules::create_table,
@@ -536,7 +536,7 @@ pub async fn table_credentials(
     let full_name = three_part_full_name(&catalog, &schema, &table);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         |a, l| rules::vend_table(a, l, write),
@@ -561,7 +561,7 @@ pub async fn staging_table_credentials(
     Path(table_id): Path<String>,
 ) -> ApiResult<Json<DeltaCredentialsResponse>> {
     // Upstream: the staging table's OWNER, its creator.
-    authz::check_table_id(&state, &principal.username, &table_id, |a, l| {
+    authz::check_table_id(&state, &principal, &table_id, |a, l| {
         a.owner(l, authz::Level::Object)
     })
     .await?;

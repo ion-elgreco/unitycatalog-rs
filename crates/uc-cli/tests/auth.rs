@@ -146,8 +146,12 @@ async fn server(idp: &Idp) -> String {
         .unwrap();
     let security = Arc::new(SecurityContext::generate().unwrap());
     let settings = AuthSettings::new(&uc_common::settings::Auth {
-        allowed_issuers: vec![idp.issuer.clone()],
-        audiences: vec!["uc".into()],
+        issuers: vec![uc_common::settings::Issuer {
+            name: "idp".into(),
+            issuer: idp.issuer.clone(),
+            audiences: vec!["uc".into()],
+            ..Default::default()
+        }],
         access_token_timeout: Duration::from_secs(3600),
         cookie_timeout: Duration::from_secs(600),
         ..Default::default()
