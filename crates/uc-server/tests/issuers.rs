@@ -44,6 +44,7 @@ fn entra(idp: &Idp) -> Issuer {
         groups_claim: Some("roles".into()),
         create_users: true,
         display_name: Some("{app_displayname}".into()),
+        ..Default::default()
     }
 }
 
@@ -602,8 +603,9 @@ async fn the_server_tells_what_it_takes() {
     assert_eq!(
         body["issuers"],
         json!([
-            { "name": "entra", "issuer": idp.issuer, "audiences": ["api://uc"], "direct": true },
-            { "name": "ferriskey", "issuer": "https://*.example.com",
+            { "name": "entra", "kind": "oidc", "issuer": idp.issuer, "audiences": ["api://uc"],
+              "direct": true },
+            { "name": "ferriskey", "kind": "oidc", "issuer": "https://*.example.com",
               "audiences": ["unitycatalog"], "direct": false },
         ])
     );

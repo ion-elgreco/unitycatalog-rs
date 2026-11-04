@@ -7,6 +7,7 @@ token calls `detect` itself, so a program names a source only to choose one.
 
 from unitycatalog._core import TokenSource
 from unitycatalog._core.identity import (
+    aws,
     azure,
     client_credentials,
     detect,
@@ -17,6 +18,7 @@ from unitycatalog._core.identity import (
 
 __all__ = [
     "TokenSource",
+    "aws",
     "azure",
     "client_credentials",
     "detect",

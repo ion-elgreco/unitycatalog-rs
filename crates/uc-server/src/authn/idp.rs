@@ -106,13 +106,20 @@ fn matches(parts: &[String], value: &str) -> bool {
         .any(|(i, c)| matches(rest, &after[i + c.len_utf8()..]))
 }
 
+/// The STS endpoints that a block of `kind = "aws"` sends signed requests
+/// to, unless it names its own: the global one and the regional ones.
+pub const AWS_STS_ENDPOINTS: [&str; 2] =
+    ["https://sts.amazonaws.com", "https://sts.*.amazonaws.com"];
+
 /// An `[[auth.issuers]]` block: a provider, the audience of its tokens,
 /// and how its tokens name the caller.
 #[derive(Debug, Clone)]
 pub struct IssuerSettings {
     /// The prefix of the principals it names without an email.
     pub name: String,
-    /// The `iss` pattern, as written.
+    /// What its tokens are.
+    pub kind: settings::IssuerKind,
+    /// The `iss` pattern, as written; for AWS, the STS endpoint.
     pub issuer: String,
     issuers: Allowlist,
     /// The audiences, trimmed; `*` alone for any.
@@ -130,6 +137,8 @@ pub struct IssuerSettings {
     pub create_users: bool,
     /// The display name of a made user, with claims in braces.
     pub display_name: Option<String>,
+    /// For AWS: the accounts whose identities it takes.
+    pub accounts: Vec<String>,
 }
 
 impl IssuerSettings {
@@ -146,22 +155,41 @@ impl IssuerSettings {
                 false => claims,
             }
         };
-        let audiences: Vec<String> = issuer
-            .audiences
-            .iter()
-            .map(|a| a.trim())
-            .filter(|a| !a.is_empty())
-            .map(str::to_string)
-            .collect();
+        let trimmed = |values: &[String]| -> Vec<String> {
+            values
+                .iter()
+                .map(|a| a.trim())
+                .filter(|a| !a.is_empty())
+                .map(str::to_string)
+                .collect()
+        };
+        let audiences = trimmed(&issuer.audiences);
+        let aws = issuer.kind == settings::IssuerKind::Aws;
+        let pattern = issuer.issuer.trim().trim_end_matches('/');
+        let (shown, issuers) = match (aws, pattern.is_empty()) {
+            (true, true) => (
+                AWS_STS_ENDPOINTS[0].to_string(),
+                Allowlist::new(&AWS_STS_ENDPOINTS),
+            ),
+            _ => (pattern.to_string(), Allowlist::new(&[pattern])),
+        };
+        // An AWS identity is named by its ARN: the role of an assumed role.
+        let (principal_claims, client_claims): (&[&str], &[&str]) = match aws {
+            true => (&["arn"], &["arn"]),
+            false => (&["email", "sub"], &["azp", "client_id"]),
+        };
         Self {
             name: issuer.name.trim().to_string(),
-            issuer: issuer.issuer.trim().to_string(),
-            issuers: Allowlist::new(&[issuer.issuer.as_str()]),
+            kind: issuer.kind,
+            issuer: shown,
+            issuers,
             audience_allowlist: Allowlist::new(&audiences),
             audiences,
-            direct: issuer.direct,
-            principal_claims: names(&issuer.principal_claims, &["email", "sub"]),
-            client_claims: names(&issuer.client_claims, &["azp", "client_id"]),
+            // AWS identities are taken on every request; there is no
+            // exchange for them.
+            direct: issuer.direct || aws,
+            principal_claims: names(&issuer.principal_claims, principal_claims),
+            client_claims: names(&issuer.client_claims, client_claims),
             groups_claim: issuer
                 .groups_claim
                 .as_deref()
@@ -170,7 +198,24 @@ impl IssuerSettings {
                 .map(str::to_string),
             create_users: issuer.create_users,
             display_name: issuer.display_name.clone().filter(|d| !d.trim().is_empty()),
+            accounts: trimmed(&issuer.accounts),
         }
+    }
+
+    /// Whether this is a block of `kind = "aws"`.
+    pub fn is_aws(&self) -> bool {
+        self.kind == settings::IssuerKind::Aws
+    }
+
+    /// For AWS: whether signed requests may go to `origin`
+    /// (`https://sts.eu-west-1.amazonaws.com`).
+    pub fn sts_endpoint_allowed(&self, origin: &str) -> bool {
+        self.is_aws() && self.issuers.is_allowed(origin)
+    }
+
+    /// For AWS: whether `server_id` is one of its audiences.
+    pub fn server_id_allowed(&self, server_id: &str) -> bool {
+        self.audiences.iter().any(|a| a == server_id)
     }
 
     /// The block of the web UI's provider when no `[[auth.issuers]]` names
@@ -185,9 +230,10 @@ impl IssuerSettings {
         })
     }
 
-    /// Whether `iss` is this block's issuer.
+    /// Whether `iss` is this block's issuer: never for AWS, whose tokens
+    /// are not JWTs.
     pub fn matches(&self, iss: &str) -> bool {
-        self.issuers.is_allowed(iss)
+        !self.is_aws() && self.issuers.is_allowed(iss)
     }
 
     fn any_audience(&self) -> bool {
@@ -220,6 +266,9 @@ impl IssuerSettings {
         if !names.insert(self.name.clone()) {
             return Err(invalid("name", &self.name, "Another entry has it too."));
         }
+        if self.is_aws() {
+            return self.validate_aws(index);
+        }
         if self.issuer.is_empty() {
             return Err(invalid("issuer", "", "Expected the iss of its tokens."));
         }
@@ -250,6 +299,45 @@ impl IssuerSettings {
                 "audiences",
                 &self.audiences.join(", "),
                 "'*' cannot be combined with other values; use it alone to accept every audience.",
+            ));
+        }
+        Ok(())
+    }
+
+    /// The checks of a block of `kind = "aws"`.
+    fn validate_aws(&self, index: usize) -> std::result::Result<(), String> {
+        let invalid = |key: &str, value: &str, reason: &str| {
+            format!("Invalid value for auth.issuers[{index}].{key}: '{value}'. {reason}")
+        };
+        if self.audiences.is_empty() || self.audiences.iter().any(|a| a.contains('*')) {
+            return Err(invalid(
+                "audiences",
+                &self.audiences.join(", "),
+                "Expected the server id that the signed requests carry, such as the server's \
+                 URL; no '*', or a request signed for another server would pass.",
+            ));
+        }
+        if self.accounts.is_empty() {
+            return Err(invalid(
+                "accounts",
+                "",
+                "Expected the AWS accounts whose identities it takes.",
+            ));
+        }
+        if let Some(account) =
+            (self.accounts.iter()).find(|a| a.len() != 12 || !a.chars().all(|c| c.is_ascii_digit()))
+        {
+            return Err(invalid(
+                "accounts",
+                account,
+                "Expected a 12-digit AWS account id.",
+            ));
+        }
+        if self.groups_claim.is_some() {
+            return Err(invalid(
+                "groups_claim",
+                self.groups_claim.as_deref().unwrap_or_default(),
+                "AWS identities carry no groups.",
             ));
         }
         Ok(())
@@ -307,6 +395,26 @@ impl AuthSettings {
         self.issuers.iter().find(|issuer| issuer.matches(iss))
     }
 
+    /// The caller that `token` named when it was taken, while it is kept.
+    pub(crate) async fn accepted(&self, token: &str) -> Option<Accepted> {
+        let cached = self.accepted.get(&token_key(token)).await?;
+        (Instant::now() < cached.expires).then(|| (*cached.accepted).clone())
+    }
+
+    /// Keep the caller that `token` names for `left`, at most
+    /// [`ACCEPTED_TTL`].
+    pub(crate) async fn keep(&self, token: &str, accepted: &Accepted, left: Duration) {
+        let left = left.min(ACCEPTED_TTL);
+        if left.is_zero() {
+            return;
+        }
+        let cached = Cached {
+            accepted: Arc::new(accepted.clone()),
+            expires: Instant::now() + left,
+        };
+        self.accepted.insert(token_key(token), cached).await;
+    }
+
     /// Upstream `validateAuthAllowlistConfiguration`, for each block.
     pub fn validate(&self) -> std::result::Result<(), String> {
         let mut names = HashSet::new();
@@ -330,6 +438,11 @@ impl AuthSettings {
             .as_ref()
             .is_none_or(crate::authn::sign_in::SignIn::secure_cookies)
     }
+}
+
+/// The key of a token in the cache: its hash, so the cache holds no token.
+fn token_key(token: &str) -> [u8; 32] {
+    Sha256::digest(token.as_bytes()).into()
 }
 
 fn accepted_cache(ttl: Duration) -> Cache<[u8; 32], Cached> {
@@ -422,6 +535,11 @@ const KEYS_TTL: Duration = Duration::from_secs(60 * 60);
 const MIN_REFRESH: Duration = Duration::from_secs(60);
 
 impl IdentityProviders {
+    /// The HTTP client of the server's calls to providers.
+    pub(crate) fn http(&self) -> &reqwest::Client {
+        &self.http
+    }
+
     /// Upstream `verifierForIssuerAndKey` and `verify`: check the token's
     /// signature with the issuer's key, and its issuer and times.
     pub async fn verify(&self, token: &str, decoded: &DecodedToken, issuer: &str) -> Result<()> {
@@ -882,12 +1000,8 @@ pub(crate) async fn accept(
     decoded: &DecodedToken,
 ) -> Result<Accepted> {
     let invalid = || Error::new(ErrorCode::Unauthenticated, "Invalid access token.");
-    let key: [u8; 32] = Sha256::digest(token.as_bytes()).into();
-    let cache = &state.auth.accepted;
-    if let Some(cached) = cache.get(&key).await
-        && Instant::now() < cached.expires
-    {
-        return Ok((*cached.accepted).clone());
+    if let Some(accepted) = state.auth.accepted(token).await {
+        return Ok(accepted);
     }
     let claims = &decoded.claims;
     let iss = claim(claims, "iss").unwrap_or_default();
@@ -903,16 +1017,8 @@ pub(crate) async fn accept(
         );
         return Err(invalid());
     }
-    let principal = resolve(state, issuer, claims, TokenKind::AccessToken)
-        .await
-        .map_err(|e| match e.code() {
-            ErrorCode::InvalidArgument => {
-                Error::new(ErrorCode::PermissionDenied, e.message().to_string())
-            }
-            _ => e,
-        })?;
     let accepted = Accepted {
-        principal,
+        principal: name_caller(state, issuer, claims).await?,
         groups: groups(claims, issuer),
     };
     let now = now_epoch_millis() / 1000;
@@ -920,20 +1026,26 @@ pub(crate) async fn accept(
         .get("exp")
         .and_then(Value::as_i64)
         .map(|exp| Duration::from_secs((exp - now).max(0) as u64))
-        .unwrap_or(ACCEPTED_TTL)
-        .min(ACCEPTED_TTL);
-    if !left.is_zero() {
-        cache
-            .insert(
-                key,
-                Cached {
-                    accepted: Arc::new(accepted.clone()),
-                    expires: Instant::now() + left,
-                },
-            )
-            .await;
-    }
+        .unwrap_or(ACCEPTED_TTL);
+    state.auth.keep(token, &accepted, left).await;
     Ok(accepted)
+}
+
+/// The active user that a request's token names ([`resolve`]): "User not
+/// allowed" is 403 on a request, as the caller did sign in.
+pub(crate) async fn name_caller(
+    state: &AppState,
+    issuer: &IssuerSettings,
+    claims: &Map<String, Value>,
+) -> Result<String> {
+    resolve(state, issuer, claims, TokenKind::AccessToken)
+        .await
+        .map_err(|e| match e.code() {
+            ErrorCode::InvalidArgument => {
+                Error::new(ErrorCode::PermissionDenied, e.message().to_string())
+            }
+            _ => e,
+        })
 }
 
 #[cfg(test)]

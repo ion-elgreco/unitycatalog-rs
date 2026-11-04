@@ -73,7 +73,15 @@ privileges = {{ . | toJson }}
 
 [[auth.issuers]]
 name = {{ required (printf "auth.issuers[%d].name is required" $index) $issuer.name | toJson }}
+{{- if eq ($issuer.kind | default "oidc") "aws" }}
+kind = "aws"
+{{- with $issuer.issuer }}
+issuer = {{ . | toJson }}
+{{- end }}
+accounts = {{ required (printf "auth.issuers[%d].accounts is required" $index) $issuer.accounts | toJson }}
+{{- else }}
 issuer = {{ required (printf "auth.issuers[%d].issuer is required" $index) $issuer.issuer | toJson }}
+{{- end }}
 audiences = {{ required (printf "auth.issuers[%d].audiences is required" $index) $issuer.audiences | toJson }}
 {{- if $issuer.direct }}
 direct = true

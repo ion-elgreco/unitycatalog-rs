@@ -4,8 +4,9 @@
 //! `UC_TOKEN` cookie. Tokens are UC access tokens (RS512 JWTs this server
 //! signed, see [`crate::authn::security`]), the tokens of the identity
 //! providers of `[[auth.issuers]]` with `direct = true`
-//! ([`crate::authn::idp::accept`]), personal access tokens, or Delta
-//! Sharing recipient tokens on the sharing endpoints.
+//! ([`crate::authn::idp::accept`]), the signed requests of AWS identities
+//! ([`crate::authn::aws`]), personal access tokens, or Delta Sharing
+//! recipient tokens on the sharing endpoints.
 //!
 //! With authorization on, every request to the API and the control plane
 //! must be signed in, except those that sign in (token exchange, client
@@ -33,7 +34,7 @@ use uc_common::{API_BASE, CONTROL_BASE, Error, ErrorCode, FILES_BASE, Result};
 
 use crate::{
     authn::{
-        idp,
+        aws, idp,
         principal::Principal,
         security::{ADMIN, INTERNAL_ISSUER},
     },
@@ -166,6 +167,12 @@ async fn authenticate(
             ))),
             _ => Err(invalid()),
         };
+    }
+    // A signed request of an AWS identity (`authn::aws`): `accept` named an
+    // active user already.
+    if token.starts_with(aws::PREFIX) {
+        let accepted = aws::accept(state, token).await?;
+        return Ok(Principal::authenticated(accepted.principal));
     }
     let principal = if looks_like_jwt(token) {
         let decoded = idp::decode(token).map_err(|_| invalid())?;

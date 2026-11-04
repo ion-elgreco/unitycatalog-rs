@@ -1,6 +1,7 @@
 //! Sign-in with the identity of the environment (`uc_client::identity`):
-//! an OAuth client with the client-credentials grant, the tokens of
-//! `UC_TOKEN` and `UC_TOKEN_FILE`, and what the server says it takes.
+//! an OAuth client with the client-credentials grant, an AWS identity's
+//! signed requests, the tokens of `UC_TOKEN` and `UC_TOKEN_FILE`, and what
+//! the server says it takes.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -14,7 +15,9 @@ use uc_server::authn::idp::AuthSettings;
 use uc_server::authn::security::{ADMIN, initialize_admin};
 use uc_server::{AppState, build_app};
 
-use crate::common::{IDP_CLIENT, IDP_SECRET, Idp, metastore, security, serve, token};
+use crate::common::{
+    IDP_CLIENT, IDP_SECRET, Idp, STS_KEYS, Sts, metastore, security, serve, token,
+};
 
 /// A server with authorization on that takes `idp`'s tokens for the
 /// audience `uc` on every request and makes the users they name; its root
@@ -101,6 +104,7 @@ async fn the_environment_signs_in_at_what_the_server_takes() {
             issuer: idp.issuer.clone(),
             audiences: vec!["uc".into()],
             direct: true,
+            kind: "oidc".into(),
         }]
     );
     assert_eq!(resource.authorization_servers, [idp.issuer.as_str()]);
@@ -153,4 +157,83 @@ async fn the_environment_signs_in_at_what_the_server_takes() {
         .list_catalogs()
         .await
         .unwrap();
+}
+
+/// The server id of the AWS tests' server.
+const SERVER_ID: &str = "https://uc.example.com";
+
+/// A server that takes the AWS identities of the account of [`Sts`],
+/// signed for [`SERVER_ID`], and makes the users they name; its root URL.
+async fn server_with_aws(sts: &Sts) -> Url {
+    let metastore = metastore().await;
+    initialize_admin(&metastore).await.unwrap();
+    let settings = AuthSettings::new(&uc_common::settings::Auth {
+        issuers: vec![uc_common::settings::Issuer {
+            name: "aws".into(),
+            kind: uc_common::settings::IssuerKind::Aws,
+            issuer: sts.endpoint.clone(),
+            audiences: vec![SERVER_ID.into()],
+            accounts: vec!["123456789012".into()],
+            create_users: true,
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let state = AppState::new(metastore)
+        .with_authz(true)
+        .with_security(security())
+        .with_auth_settings(settings);
+    serve(build_app(state)).await
+}
+
+#[tokio::test]
+async fn an_aws_role_signs_in_with_a_signed_request() {
+    let sts = Sts::start().await;
+    let url = server_with_aws(&sts).await;
+    let (key_id, secret, _) = STS_KEYS[0];
+    let keys = env(&[
+        ("AWS_ACCESS_KEY_ID", key_id),
+        ("AWS_SECRET_ACCESS_KEY", secret),
+        ("AWS_SESSION_TOKEN", "session"),
+    ]);
+
+    // The environment's keys at the server's AWS block: its STS endpoint and
+    // server id come from the server. STS takes the signature of the request
+    // that the server forwards.
+    let source = identity::detect_in(&keys, &url, false, false)
+        .await
+        .unwrap()
+        .unwrap();
+    Client::new_with_token_source(url.clone(), source)
+        .list_catalogs()
+        .await
+        .unwrap();
+    assert!(
+        user_names(&url)
+            .await
+            .contains(&"aws:arn:aws:iam::123456789012:role/etl".to_string())
+    );
+
+    // A wrong secret: STS refuses the signature, and so does the server.
+    let wrong = env(&[
+        ("AWS_ACCESS_KEY_ID", key_id),
+        ("AWS_SECRET_ACCESS_KEY", "nope"),
+    ]);
+    let source = identity::aws_in(&wrong, SERVER_ID, Some(&sts.endpoint)).unwrap();
+    let error = Client::new_with_token_source(url.clone(), source)
+        .list_catalogs()
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("Invalid access token"),
+        "{error}"
+    );
+    // Signed for another server: refused before STS is asked.
+    let source = identity::aws_in(&keys, "https://other.example.com", Some(&sts.endpoint)).unwrap();
+    assert!(
+        Client::new_with_token_source(url, source)
+            .list_catalogs()
+            .await
+            .is_err()
+    );
 }

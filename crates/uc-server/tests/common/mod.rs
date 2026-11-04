@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 pub mod idp;
+pub mod sts;
 
 use axum::{
     Router,

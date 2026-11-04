@@ -44,7 +44,7 @@ uc token create --name laptop
 ```
 
 Without a token or a sign-in, `uc` signs in with the identity of the environment, as the
-[Python client](python.md#connect) does: an Azure or Google identity, an OAuth client in
+[Python client](python.md#connect) does: an Azure, Google or AWS identity, an OAuth client in
 `UC_OAUTH_*`, or a token in `UC_TOKEN`, at an identity provider that the server takes. A service
 principal, a pod or a CI job thus needs no `uc auth login`. `uc auth login --access_token`
 exchanges a provider's access token instead of an identity token, such as the one
