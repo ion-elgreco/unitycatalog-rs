@@ -116,8 +116,10 @@ the blocks (RFC 9728), so a client can ask the provider for a token with the rig
 | Key | Meaning | Default |
 | --- | --- | --- |
 | `name` | A short name: the prefix of the principals that it names without an email. | required |
-| `issuer` | The `iss` claim of its tokens; `*` stands for one DNS label. | required |
-| `audiences` | The `aud` that its tokens must carry; `["*"]` for any. | required |
+| `kind` | `oidc` for an OpenID Connect provider, `aws` for AWS identities ([AWS](#aws)). | `oidc` |
+| `issuer` | The `iss` claim of its tokens; `*` stands for one DNS label. For `aws`, the STS endpoint. | required; for `aws`, AWS's endpoints |
+| `audiences` | The `aud` that its tokens must carry; `["*"]` for any. For `aws`, the server id. | required |
+| `accounts` | For `aws`: the AWS accounts whose identities it takes. | required for `aws` |
 | `direct` | Take its tokens on every request, not only at the exchange. | `false` |
 | `principal_claims` | The claims that name the caller; the first present wins. | `["email", "sub"]` |
 | `client_claims` | The claims with a machine's client id, matched to a user's `externalId`. | `["azp", "client_id"]` |
@@ -161,11 +163,42 @@ groups, arrive as names.
 | Microsoft Entra | `issuer = "https://login.microsoftonline.com/<tenant>/v2.0"`, `audiences = ["api://<app id uri>"]` or the API app's client id, `principal_claims = ["preferred_username", "oid"]`, `client_claims = ["azp", "appid"]`, `groups_claim = "roles"` | Set `accessTokenAcceptedVersion` to 2 on the API app, or add a block for `https://sts.windows.net/<tenant>/` with `principal_claims = ["upn", "oid"]` and `client_claims = ["appid"]`. Add the `idtyp` optional claim so applications are told from people. A client asks for the scope `api://<app id uri>/.default`. |
 | Google | `issuer = "https://accounts.google.com"`, `audiences = ["<your audience>"]`, `principal_claims = ["email", "sub"]` | Google's access tokens are opaque: clients send an ID token with your audience. |
 | Any OpenID Connect provider | `issuer`, `audiences = ["<client id>"]` | FerrisKey, Keycloak, Okta, GitHub Actions, GitLab CI, a Kubernetes cluster's issuer. The provider must publish `<issuer>/.well-known/openid-configuration` and its keys. |
+| AWS | `kind = "aws"`, `audiences = ["<server id>"]`, `accounts = ["<account id>"]` | See [AWS](#aws). |
 
 The server checks a token's signature with the provider's keys, which it fetches once an hour,
 its issuer, audience and times, with 60 seconds of clock skew. A token that a `direct` issuer's
 block accepts is kept until it expires, at most five minutes, so a busy client costs one check
 per token, not per request; a user disabled in the server keeps working that long.
+
+### AWS
+
+An AWS identity cannot make a token that the server can check. Its client signs a
+`sts:GetCallerIdentity` request instead and sends it as the bearer token. The server sends that
+request to STS, which checks the signature and answers with the caller's ARN. The credentials
+never leave the client. Vault and the EKS authenticator sign in this way.
+
+```toml
+[[auth.issuers]]
+name = "aws"
+kind = "aws"
+audiences = ["https://uc.example.com"]
+accounts = ["123456789012"]
+create_users = true
+```
+
+- **The server id** is the block's audience. The client signs it into the request, so a request
+  signed for another server is refused here. Use the server's URL, or any fixed name.
+- **The endpoint** is AWS's global or regional STS endpoint, unless `issuer` names another one,
+  such as a VPC endpoint. The server sends signed requests to no other host.
+- **The caller** is named by its ARN: `aws:arn:aws:iam::<account>:role/<name>` for an assumed
+  role, so every session of a role is one user. A role's path is not part of it. An IAM user is
+  `aws:arn:aws:iam::<account>:user/<name>`.
+- **A user made ahead of time** is the role when its `externalId` is the role's ARN.
+- **Accounts.** STS answers for any account, so only identities of `accounts` are taken.
+
+A signed request is valid for 15 minutes. The server keeps the caller it names for five, as it
+does for tokens. AWS identities are taken on every request; there is no token exchange for them,
+and they carry no groups.
 
 ## Sign in to the web UI
 

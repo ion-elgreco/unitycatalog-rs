@@ -168,6 +168,11 @@ tests:
         - name: google
           issuer: https://accounts.google.com
           audiences: [uc]
+        - name: aws
+          kind: aws
+          audiences: ["https://uc.example.com"]
+          accounts: ["123456789012"]
+          createUsers: true
     template: templates/server/configmap.yaml
     asserts:
       - equal:
@@ -193,6 +198,13 @@ tests:
             issuer = "https://accounts.google.com"
             audiences = ["uc"]
 
+            [[auth.issuers]]
+            name = "aws"
+            kind = "aws"
+            accounts = ["123456789012"]
+            audiences = ["https://uc.example.com"]
+            create_users = true
+
   - it: needs the name, issuer and audiences of each identity provider
     set:
       auth.issuers:
@@ -202,6 +214,17 @@ tests:
     asserts:
       - failedTemplate:
           errorMessage: auth.issuers[0].audiences is required
+
+  - it: needs the accounts of an AWS identity provider, not its issuer
+    set:
+      auth.issuers:
+        - name: aws
+          kind: aws
+          audiences: ["https://uc.example.com"]
+    template: templates/server/deployment.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: auth.issuers[0].accounts is required
 
   - it: rolls the pods when uc.toml changes, users included
     template: templates/server/deployment.yaml

@@ -2,11 +2,11 @@
 //!
 //! The server takes the tokens of the identity providers of its `[[auth.issuers]]`, and says
 //! which at `/.well-known/oauth-protected-resource` ([`metadata`]). A client that runs as an
-//! Azure service principal or managed identity, a Google service account, or an OAuth client
-//! of any provider finds its identity here, on olai-http's bearer providers, which keep and
-//! refresh their tokens. [`detect`] picks a source from the environment and the server's
-//! issuers; [`azure`], [`google`], [`client_credentials`], [`token_file`] and [`token_env`]
-//! make one of a kind. Each is a [`TokenSource`] for
+//! Azure service principal or managed identity, a Google service account, an AWS role, or an
+//! OAuth client of any provider finds its identity here, on olai-http's credential providers,
+//! which keep and refresh their credentials. [`detect`] picks a source from the environment
+//! and the server's issuers; [`azure`], [`google`], [`aws`], [`client_credentials`],
+//! [`token_file`] and [`token_env`] make one of a kind. Each is a [`TokenSource`] for
 //! [`Client::new_with_token_source`](crate::Client::new_with_token_source).
 
 use std::collections::HashMap;
@@ -128,6 +128,275 @@ fn google_in(env: &Env, audience: &str, gcloud: bool) -> Result<Arc<dyn TokenSou
     Ok(source(auth.gcp_id_token(audience, endpoint)?))
 }
 
+/// The start of an AWS bearer value, which the server reads as a signed request.
+const AWS_PREFIX: &str = "uc-aws-v1.";
+/// The signed header with the server id: the audience of the server's AWS issuer block.
+const AWS_SERVER_ID_HEADER: &str = "x-uc-server-id";
+/// The body of the signed request.
+const GET_CALLER_IDENTITY: &str = "Action=GetCallerIdentity&Version=2011-06-15";
+/// The global STS endpoint, which signs in `us-east-1`; the server's default.
+const AWS_GLOBAL_STS: &str = "https://sts.amazonaws.com";
+/// How long a signed request is reused. STS takes one for 15 minutes; the server keeps the
+/// caller it names for 5.
+const AWS_REUSE: Duration = Duration::from_secs(5 * 60);
+
+/// An AWS identity of the environment, for the server whose AWS issuer block has the audience
+/// `server_id`. AWS gives no token that the server can check, so each token is a signed
+/// `sts:GetCallerIdentity` request, which the server sends to STS: the identity's credentials
+/// never leave the client. The credentials are those of olai-http: `AWS_ACCESS_KEY_ID` and
+/// `AWS_SECRET_ACCESS_KEY` (with `AWS_SESSION_TOKEN`), a web identity (`AWS_ROLE_ARN` and
+/// `AWS_WEB_IDENTITY_TOKEN_FILE`, as on EKS), the container endpoint (ECS, EKS Pod Identity),
+/// else the instance role of the machine. The request goes to the STS endpoint of
+/// `AWS_REGION` (or `AWS_DEFAULT_REGION`), else the global one.
+pub fn aws(server_id: &str) -> Result<Arc<dyn TokenSource>> {
+    aws_in(&environment(), server_id, None)
+}
+
+/// [`aws`] with the variables `env`, and the STS endpoint `endpoint` instead of AWS's: one that
+/// the server's AWS issuer block names, such as a VPC endpoint. A web identity and the
+/// container endpoint are read from the process's variables, as olai-http does.
+pub fn aws_in(env: &Env, server_id: &str, endpoint: Option<&str>) -> Result<Arc<dyn TokenSource>> {
+    let region = set(env, "AWS_REGION")
+        .or_else(|| set(env, "AWS_DEFAULT_REGION"))
+        .map(str::to_string);
+    let endpoint = match (endpoint, &region) {
+        (Some(endpoint), _) => endpoint.to_string(),
+        (None, Some(region)) => format!("https://sts.{region}.amazonaws.com"),
+        (None, None) => AWS_GLOBAL_STS.to_string(),
+    };
+    let mut builder = olai_http::aws::AmazonBuilder::new();
+    for (name, value) in env.iter().filter(|(name, _)| name.starts_with("AWS_")) {
+        if let Ok(key) = name.to_ascii_lowercase().parse() {
+            builder = builder.with_config(key, value);
+        }
+    }
+    let credentials = builder.build(None)?.credentials;
+    Ok(Arc::new(AwsSource {
+        credentials,
+        url: Url::parse(&endpoint)?.join("/")?,
+        region: region.unwrap_or_else(|| "us-east-1".into()),
+        server_id: server_id.to_string(),
+        kept: Mutex::new(None),
+    }))
+}
+
+/// The tokens of an AWS identity: signed `GetCallerIdentity` requests, each reused for
+/// [`AWS_REUSE`].
+struct AwsSource {
+    credentials: olai_http::aws::AwsCredentialProvider,
+    url: Url,
+    region: String,
+    server_id: String,
+    kept: Mutex<Option<(String, Instant)>>,
+}
+
+impl fmt::Debug for AwsSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AwsSource")
+            .field("url", &self.url.as_str())
+            .field("region", &self.region)
+            .field("server_id", &self.server_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl AwsSource {
+    /// A new signed request, as a bearer value.
+    async fn sign(&self) -> Result<String> {
+        use base64::Engine;
+        let credential = self.credentials.get_credential().await?;
+        let mut headers = std::collections::BTreeMap::from([
+            (
+                "content-type".to_string(),
+                "application/x-www-form-urlencoded; charset=utf-8".to_string(),
+            ),
+            (AWS_SERVER_ID_HEADER.to_string(), self.server_id.clone()),
+        ]);
+        sigv4::sign(
+            &sigv4::Signing {
+                key_id: &credential.key_id,
+                secret_key: &credential.secret_key,
+                session_token: credential.token.as_deref(),
+                region: &self.region,
+                service: "sts",
+                date: chrono::Utc::now(),
+            },
+            "POST",
+            &self.url,
+            &mut headers,
+            GET_CALLER_IDENTITY.as_bytes(),
+        );
+        // The server's HTTP client sends the host of the URL itself.
+        headers.remove("host");
+        let signed = serde_json::json!({
+            "method": "POST",
+            "url": self.url.as_str(),
+            "headers": headers,
+            "body": GET_CALLER_IDENTITY,
+        });
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signed.to_string());
+        Ok(format!("{AWS_PREFIX}{encoded}"))
+    }
+}
+
+/// AWS Signature Version 4, of a request with its body in hand. olai-http signs this way too,
+/// but keeps its signer to itself.
+mod sigv4 {
+    use std::collections::BTreeMap;
+
+    use chrono::{DateTime, Utc};
+    use hmac::{Hmac, Mac};
+    use sha2::{Digest, Sha256};
+    use url::Url;
+
+    /// Who signs, where, and when.
+    pub struct Signing<'a> {
+        pub key_id: &'a str,
+        pub secret_key: &'a str,
+        pub session_token: Option<&'a str>,
+        pub region: &'a str,
+        pub service: &'a str,
+        pub date: DateTime<Utc>,
+    }
+
+    fn hmac(key: &[u8], data: &[u8]) -> Vec<u8> {
+        let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC takes any key");
+        mac.update(data);
+        mac.finalize().into_bytes().to_vec()
+    }
+
+    /// URI encoding: the unreserved characters stay, `/` too when `slash`.
+    fn encode(text: &str, slash: bool) -> String {
+        let mut out = String::with_capacity(text.len());
+        for byte in text.bytes() {
+            match byte {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    out.push(byte as char)
+                }
+                b'/' if slash => out.push('/'),
+                _ => out.push_str(&format!("%{byte:02X}")),
+            }
+        }
+        out
+    }
+
+    /// Sign the request: add `host`, `x-amz-date`, `x-amz-security-token` with a session
+    /// token, and `authorization` to `headers`, whose names are lowercase. Every header in
+    /// `headers` is signed.
+    pub fn sign(
+        signing: &Signing<'_>,
+        method: &str,
+        url: &Url,
+        headers: &mut BTreeMap<String, String>,
+        body: &[u8],
+    ) {
+        let host = match url.port() {
+            Some(port) => format!("{}:{port}", url.host_str().unwrap_or_default()),
+            None => url.host_str().unwrap_or_default().to_string(),
+        };
+        let amz_date = signing.date.format("%Y%m%dT%H%M%SZ").to_string();
+        headers.insert("host".into(), host);
+        headers.insert("x-amz-date".into(), amz_date.clone());
+        if let Some(token) = signing.session_token {
+            headers.insert("x-amz-security-token".into(), token.into());
+        }
+        let mut query: Vec<(String, String)> = url
+            .query_pairs()
+            .map(|(key, value)| (encode(&key, false), encode(&value, false)))
+            .collect();
+        query.sort();
+        let query = (query.iter())
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect::<Vec<_>>()
+            .join("&");
+        let canonical_headers: String = (headers.iter())
+            .map(|(name, value)| format!("{name}:{}\n", value.trim()))
+            .collect();
+        let signed_headers = headers.keys().cloned().collect::<Vec<_>>().join(";");
+        let canonical_request = format!(
+            "{method}\n{}\n{query}\n{canonical_headers}\n{signed_headers}\n{}",
+            encode(url.path(), true),
+            hex::encode(Sha256::digest(body)),
+        );
+        let day = signing.date.format("%Y%m%d").to_string();
+        let scope = format!("{day}/{}/{}/aws4_request", signing.region, signing.service);
+        let string_to_sign = format!(
+            "AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{}",
+            hex::encode(Sha256::digest(canonical_request.as_bytes()))
+        );
+        let key = [signing.region, signing.service, "aws4_request"]
+            .iter()
+            .fold(
+                hmac(
+                    format!("AWS4{}", signing.secret_key).as_bytes(),
+                    day.as_bytes(),
+                ),
+                |key, part| hmac(&key, part.as_bytes()),
+            );
+        let signature = hex::encode(hmac(&key, string_to_sign.as_bytes()));
+        headers.insert(
+            "authorization".into(),
+            format!(
+                "AWS4-HMAC-SHA256 Credential={}/{scope}, SignedHeaders={signed_headers}, \
+                 Signature={signature}",
+                signing.key_id
+            ),
+        );
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use chrono::TimeZone;
+
+        /// The example of AWS's documentation of Signature Version 4: IAM's `ListUsers`.
+        #[test]
+        fn the_example_of_aws() {
+            let mut headers = BTreeMap::from([(
+                "content-type".to_string(),
+                "application/x-www-form-urlencoded; charset=utf-8".to_string(),
+            )]);
+            let url = Url::parse("https://iam.amazonaws.com/?Action=ListUsers&Version=2010-05-08")
+                .unwrap();
+            let signing = Signing {
+                key_id: "AKIDEXAMPLE",
+                secret_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+                session_token: None,
+                region: "us-east-1",
+                service: "iam",
+                date: Utc.with_ymd_and_hms(2015, 8, 30, 12, 36, 0).unwrap(),
+            };
+            sign(&signing, "GET", &url, &mut headers, b"");
+            assert_eq!(
+                headers["authorization"],
+                "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/iam/aws4_request, \
+                 SignedHeaders=content-type;host;x-amz-date, \
+                 Signature=5d672d79c15b13162d9279b0855cfba6789a8edb4c82c400e06b5924a6f2b5d7"
+            );
+            assert_eq!(headers["host"], "iam.amazonaws.com");
+            assert_eq!(headers["x-amz-date"], "20150830T123600Z");
+        }
+    }
+}
+
+impl TokenSource for AwsSource {
+    fn token(&self) -> TokenFuture<'_> {
+        Box::pin(async move {
+            if let Ok(kept) = self.kept.lock()
+                && let Some((token, until)) = kept.as_ref()
+                && Instant::now() < *until
+            {
+                return Ok(token.clone());
+            }
+            let token = self.sign().await?;
+            if let Ok(mut kept) = self.kept.lock() {
+                *kept = Some((token.clone(), Instant::now() + AWS_REUSE));
+            }
+            Ok(token)
+        })
+    }
+}
+
 /// An OAuth client of any provider, with the client-credentials grant at `token_url`:
 /// FerrisKey, Keycloak, Okta, Entra with its own scope, and the like.
 pub fn client_credentials(
@@ -182,7 +451,10 @@ pub struct ProtectedResource {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct Issuer {
     pub name: String,
-    /// The `iss` of its tokens; `*` stands for one DNS label.
+    /// `oidc`, or `aws` for AWS identities; empty from a server that does not say.
+    #[serde(default)]
+    pub kind: String,
+    /// The `iss` of its tokens; `*` stands for one DNS label. For AWS, the STS endpoint.
     pub issuer: String,
     /// The `aud` its tokens must carry; `*` alone for any.
     #[serde(default)]
@@ -201,8 +473,11 @@ impl Issuer {
             .find(|audience| *audience != "*")
     }
 
-    /// The provider, by its issuer.
+    /// The provider, by its kind and its issuer.
     fn kind(&self) -> Kind {
+        if self.kind == "aws" {
+            return Kind::Aws;
+        }
         let host = Url::parse(&self.issuer)
             .ok()
             .and_then(|url| url.host_str().map(str::to_string))
@@ -226,6 +501,7 @@ impl Issuer {
 enum Kind {
     Entra,
     Google,
+    Aws,
     Other,
 }
 
@@ -249,7 +525,8 @@ pub async fn metadata(server: &Url) -> Result<Option<ProtectedResource>> {
 ///    it can sign in to: an Azure identity at an Entra issuer ([`azure`], when the Azure
 ///    variables are set, `az` is on the path, or a managed identity is announced), a Google
 ///    identity at Google ([`google`], when `GOOGLE_APPLICATION_CREDENTIALS` is set, `gcloud` is
-///    on the path, or the machine is Google's).
+///    on the path, or the machine is Google's), an AWS identity at an AWS block ([`aws`], when
+///    the AWS variables of keys, a web identity, a container or a region are set).
 ///
 /// Without any of these, `None`, and the server is not asked anything. A server that does not
 /// answer, or has no metadata, gives `None` too: the call that follows says what is wrong.
@@ -301,6 +578,11 @@ enum Choice {
     Google {
         audience: String,
     },
+    Aws {
+        server_id: String,
+        /// The block's STS endpoint, when it is not AWS's.
+        endpoint: Option<String>,
+    },
 }
 
 /// Whether the environment has anything to sign in with.
@@ -310,6 +592,22 @@ fn hints(env: &Env, az: bool, gcloud: bool) -> bool {
         || oauth_hints(env)
         || azure_hints(env, az)
         || google_hints(env, gcloud)
+        || aws_hints(env)
+}
+
+/// The variables of an AWS identity. On EC2 the instance role announces nothing: the region
+/// is the hint there.
+fn aws_hints(env: &Env) -> bool {
+    [
+        "AWS_ACCESS_KEY_ID",
+        "AWS_WEB_IDENTITY_TOKEN_FILE",
+        "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+        "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+        "AWS_REGION",
+        "AWS_DEFAULT_REGION",
+    ]
+    .iter()
+    .any(|var| set(env, var).is_some())
 }
 
 fn oauth_hints(env: &Env) -> bool {
@@ -385,6 +683,15 @@ fn choose(env: &Env, issuers: &[Issuer], az: bool, gcloud: bool) -> Option<Choic
                     audience: audience.to_string(),
                 });
             }
+            Kind::Aws if aws_hints(env) => {
+                let endpoint = issuer.issuer.trim_end_matches('/');
+                let own =
+                    !endpoint.is_empty() && endpoint != AWS_GLOBAL_STS && !endpoint.contains('*');
+                return Some(Choice::Aws {
+                    server_id: audience.to_string(),
+                    endpoint: own.then(|| endpoint.to_string()),
+                });
+            }
             _ => {}
         }
     }
@@ -410,6 +717,10 @@ fn build(choice: Choice, env: &Env, az: bool, gcloud: bool) -> Result<Arc<dyn To
         )?,
         Choice::Azure { scope } => azure_in(env, &scope, az)?,
         Choice::Google { audience } => google_in(env, &audience, gcloud)?,
+        Choice::Aws {
+            server_id,
+            endpoint,
+        } => aws_in(env, &server_id, endpoint.as_deref())?,
     })
 }
 
@@ -543,6 +854,7 @@ mod tests {
             issuer: issuer.into(),
             audiences: vec![audience.into()],
             direct,
+            ..Default::default()
         }
     }
 
@@ -655,6 +967,41 @@ mod tests {
             ..entra
         };
         assert_eq!(choose(&service_principal, &[any], false, false), None);
+
+        // An AWS identity at an AWS block: AWS's endpoint, or the block's own.
+        let aws = Issuer {
+            kind: "aws".into(),
+            ..issuer(
+                "aws",
+                "https://sts.amazonaws.com",
+                "https://uc.example.com",
+                true,
+            )
+        };
+        let keys = env(&[
+            ("AWS_ACCESS_KEY_ID", "AKIA"),
+            ("AWS_SECRET_ACCESS_KEY", "s"),
+        ]);
+        assert!(hints(&keys, false, false));
+        assert_eq!(
+            choose(&keys, &[google.clone(), aws.clone()], false, false),
+            Some(Choice::Aws {
+                server_id: "https://uc.example.com".into(),
+                endpoint: None,
+            })
+        );
+        let vpc = Issuer {
+            issuer: "https://vpce-1.sts.eu-west-1.vpce.amazonaws.com/".into(),
+            ..aws.clone()
+        };
+        assert_eq!(
+            choose(&env(&[("AWS_REGION", "eu-west-1")]), &[vpc], false, false),
+            Some(Choice::Aws {
+                server_id: "https://uc.example.com".into(),
+                endpoint: Some("https://vpce-1.sts.eu-west-1.vpce.amazonaws.com".into()),
+            })
+        );
+        assert_eq!(choose(&service_principal, &[aws], false, false), None);
     }
 
     #[test]

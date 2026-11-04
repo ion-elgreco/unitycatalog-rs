@@ -16,7 +16,7 @@ use crate::codegen::error::PyUnityCatalogError;
 #[pymodule]
 pub mod identity {
     #[pymodule_export]
-    use super::{azure, client_credentials, detect, google, token_env, token_file};
+    use super::{aws, azure, client_credentials, detect, google, token_env, token_file};
 }
 
 fn error(e: TokenError) -> PyErr {
@@ -46,6 +46,17 @@ fn azure(scope: &str) -> PyResult<RustTokenSource> {
 #[pyfunction]
 fn google(audience: &str) -> PyResult<RustTokenSource> {
     source(sources::google(audience))
+}
+
+/// An AWS identity of the environment, for the server whose AWS issuer block has the audience
+/// `server_id`, such as `https://uc.example.com`. Each token is a signed `GetCallerIdentity`
+/// request, which the server sends to STS: the credentials stay here. They are the access keys
+/// of `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (with `AWS_SESSION_TOKEN`), a web identity
+/// (`AWS_ROLE_ARN`, `AWS_WEB_IDENTITY_TOKEN_FILE`), the container's credentials, else the
+/// instance role of the machine.
+#[pyfunction]
+fn aws(server_id: &str) -> PyResult<RustTokenSource> {
+    source(sources::aws(server_id))
 }
 
 /// An OAuth client of any provider, with the client-credentials grant at `token_url`.
@@ -85,8 +96,8 @@ fn token_env(var: &str) -> RustTokenSource {
 }
 
 /// The token source of the environment for the server at `base_url`, if it has one: `UC_TOKEN`
-/// or `UC_TOKEN_FILE`, an OAuth client in `UC_OAUTH_*`, else an Azure or Google identity at one
-/// of the server's issuers. `Client(base_url)` without a token does this itself.
+/// or `UC_TOKEN_FILE`, an OAuth client in `UC_OAUTH_*`, else an Azure, Google or AWS identity at
+/// one of the server's issuers. `Client(base_url)` without a token does this itself.
 #[pyfunction]
 fn detect(py: Python<'_>, base_url: &str) -> PyResult<Option<RustTokenSource>> {
     let url: url::Url = base_url

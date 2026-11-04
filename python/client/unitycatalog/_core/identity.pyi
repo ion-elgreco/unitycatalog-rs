@@ -4,7 +4,25 @@ The token sources of cloud identities, for `Client(url, token_provider=...)`.
 
 from . import TokenSource
 
-__all__ = ["azure", "client_credentials", "detect", "google", "token_env", "token_file"]
+__all__ = [
+    "aws",
+    "azure",
+    "client_credentials",
+    "detect",
+    "google",
+    "token_env",
+    "token_file",
+]
+
+def aws(server_id: str) -> TokenSource:
+    """
+    An AWS identity of the environment, for the server whose AWS issuer block has the audience
+    `server_id`, such as `https://uc.example.com`. Each token is a signed `GetCallerIdentity`
+    request, which the server sends to STS: the credentials stay here. They are the access keys
+    of `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (with `AWS_SESSION_TOKEN`), a web identity
+    (`AWS_ROLE_ARN`, `AWS_WEB_IDENTITY_TOKEN_FILE`), the container's credentials, else the
+    instance role of the machine.
+    """
 
 def azure(scope: str) -> TokenSource:
     """
@@ -29,8 +47,8 @@ def client_credentials(
 def detect(base_url: str) -> TokenSource | None:
     """
     The token source of the environment for the server at `base_url`, if it has one: `UC_TOKEN`
-    or `UC_TOKEN_FILE`, an OAuth client in `UC_OAUTH_*`, else an Azure or Google identity at one
-    of the server's issuers. `Client(base_url)` without a token does this itself.
+    or `UC_TOKEN_FILE`, an OAuth client in `UC_OAUTH_*`, else an Azure, Google or AWS identity at
+    one of the server's issuers. `Client(base_url)` without a token does this itself.
     """
 
 def google(audience: str) -> TokenSource:

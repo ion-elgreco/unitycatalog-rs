@@ -11,9 +11,17 @@ authors.workspace = true
 # The PyO3 classes of the models, for the Python client (`python/client`), which also signs
 # in with the identity of the environment.
 python = ["dep:pyo3", "identity"]
-# `identity`: the token sources of cloud identities (Azure, Google, any OAuth client), on
-# olai-http's bearer providers.
-identity = ["dep:olai-http", "dep:tokio", "dep:base64"]
+# `identity`: the token sources of cloud identities (Azure, Google, AWS, any OAuth client), on
+# olai-http's credential providers.
+identity = [
+    "dep:olai-http",
+    "dep:tokio",
+    "dep:base64",
+    "dep:chrono",
+    "dep:hmac",
+    "dep:sha2",
+    "dep:hex",
+]
 
 [dependencies]
 uc-common.workspace = true
@@ -30,6 +38,11 @@ olai-http = { workspace = true, optional = true }
 # `gcloud auth print-identity-token`, and the `exp` of the token it prints.
 tokio = { workspace = true, features = ["process"], optional = true }
 base64 = { version = "0.22", optional = true }
+# The SigV4 signature of an AWS identity's signed request.
+chrono = { workspace = true, optional = true }
+hmac = { version = "0.12", optional = true }
+sha2 = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
 
 [dev-dependencies]
 uc-server = { path = "../uc-server" }
@@ -39,3 +52,7 @@ tokio.workspace = true
 tempfile = "3"
 # The ID tokens of the identity provider of the token exchange tests.
 jsonwebtoken.workspace = true
+# The SigV4 check of the fake STS of the AWS tests.
+sha2.workspace = true
+hmac = "0.12"
+hex.workspace = true

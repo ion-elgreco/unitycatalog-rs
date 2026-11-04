@@ -287,10 +287,20 @@ pub struct Issuer {
     /// A short name: the prefix of the principals it names without an
     /// email, such as `entra:<oid>`.
     pub name: String,
-    /// The `iss` claim of its tokens; `*` stands for one DNS label.
+    /// What the provider's tokens are (default `oidc`).
+    #[serde(default)]
+    pub kind: IssuerKind,
+    /// The `iss` claim of its tokens; `*` stands for one DNS label. For
+    /// `kind = "aws"`, the STS endpoint that the signed requests go to
+    /// (default the global and regional endpoints of AWS).
+    #[serde(default)]
     pub issuer: String,
-    /// The `aud` that its tokens must carry; `*` alone for any.
+    /// The `aud` that its tokens must carry; `*` alone for any. For
+    /// `kind = "aws"`, the server id that the signed requests must carry.
     pub audiences: Vec<String>,
+    /// For `kind = "aws"`: the AWS accounts whose identities it takes.
+    #[serde(default)]
+    pub accounts: Vec<String>,
     /// Take its tokens on every request, not only at the exchange (default
     /// false).
     #[serde(default, deserialize_with = "scalar")]
@@ -315,6 +325,19 @@ pub struct Issuer {
     /// `{app_displayname}` (default: the principal).
     #[serde(default)]
     pub display_name: Option<String>,
+}
+
+/// The kind of an `[[auth.issuers]]` block.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IssuerKind {
+    /// An OpenID Connect provider: JWTs, checked with the keys it
+    /// publishes.
+    #[default]
+    Oidc,
+    /// AWS: a signed `sts:GetCallerIdentity` request, which the server
+    /// sends to STS. Its tokens are taken on every request.
+    Aws,
 }
 
 /// `[storage]`: managed storage and its cleanup.
@@ -888,6 +911,7 @@ mod tests {
                     groups_claim: Some("roles".into()),
                     create_users: true,
                     display_name: Some("{app_displayname}".into()),
+                    ..Default::default()
                 },
                 Issuer {
                     name: "ferriskey".into(),
@@ -898,7 +922,21 @@ mod tests {
             ]
         );
         let error = Settings::from_toml("[[auth.issuers]]\nname = \"x\"").unwrap_err();
-        assert!(error.contains("missing field `issuer`"), "{error}");
+        assert!(error.contains("missing field `audiences`"), "{error}");
+        let aws = Settings::from_toml(
+            "[[auth.issuers]]\nname = \"aws\"\nkind = \"aws\"\naudiences = [\"uc\"]\naccounts = [\"123456789012\"]",
+        )
+        .unwrap();
+        assert_eq!(
+            aws.auth.issuers,
+            [Issuer {
+                name: "aws".into(),
+                kind: IssuerKind::Aws,
+                audiences: vec!["uc".into()],
+                accounts: vec!["123456789012".into()],
+                ..Default::default()
+            }]
+        );
         let error = Settings::from_toml(
             "[[auth.issuers]]\nname = \"x\"\nissuer = \"https://x\"\naudiences = [\"x\"]\nblock = true",
         )

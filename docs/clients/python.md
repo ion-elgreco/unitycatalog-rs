@@ -36,11 +36,18 @@ ways:
     | Google service account | `GOOGLE_APPLICATION_CREDENTIALS` |
     | Google Cloud CLI | `gcloud` on the path, signed in |
     | Google machine or pod | `GCE_METADATA_HOST` or `K_SERVICE` |
+    | AWS access keys | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, with `AWS_SESSION_TOKEN` for temporary ones |
+    | AWS web identity (EKS) | `AWS_ROLE_ARN`, `AWS_WEB_IDENTITY_TOKEN_FILE` |
+    | AWS container (ECS, EKS Pod Identity) | `AWS_CONTAINER_CREDENTIALS_FULL_URI` or `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` |
+    | AWS instance role (EC2) | `AWS_REGION` or `AWS_DEFAULT_REGION` |
     | Any OAuth client | `UC_OAUTH_TOKEN_URL`, `UC_OAUTH_CLIENT_ID`, `UC_OAUTH_CLIENT_SECRET`, with `UC_OAUTH_SCOPE` and `UC_OAUTH_AUDIENCE` when the provider needs them |
     | A token | `UC_TOKEN`, or a file with one in `UC_TOKEN_FILE` |
 
     The Azure and Google identities ask for a token for the audience of the server's issuer, so
-    the server must list the provider with `direct = true`.
+    the server must list the provider with `direct = true`. An AWS identity signs a request for
+    STS with the server id of the server's AWS block ([AWS](../server/auth.md#aws)). The AWS
+    CLI's profiles are not read: `aws configure export-credentials --format env` puts a profile's
+    keys in the environment.
 
 - **A token source.** `token_provider=` names one: one of `unitycatalog.identity`, with the scope
   or audience of the server's issuer, or a callable that returns the token, or a pair of the
@@ -53,6 +60,7 @@ ways:
 
     Client(url, token_provider=identity.azure("api://uc/.default"))
     Client(url, token_provider=identity.google("uc"))
+    Client(url, token_provider=identity.aws("https://uc.example.com"))
     Client(url, token_provider=identity.client_credentials(token_url, client_id, client_secret))
     Client(url, token_provider=lambda: (fetch_token(), time.time() + 3600))
     ```

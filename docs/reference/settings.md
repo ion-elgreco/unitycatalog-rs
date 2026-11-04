@@ -141,8 +141,10 @@ display_name = "{app_displayname}"
 | Key | Default | Description |
 | --- | --- | --- |
 | `name` | required | A short name of lowercase letters, digits, `-` and `_`: the prefix of the principals it names without an email, such as `entra:<oid>`. |
-| `issuer` | required | The `iss` claim of its tokens: exact, or with `*` for one DNS label. |
-| `audiences` | required | The `aud` that its tokens must carry; `["*"]` accepts every audience. |
+| `kind` | `oidc` | `oidc` for an OpenID Connect provider; `aws` for AWS identities, whose signed `GetCallerIdentity` requests the server sends to STS. |
+| `issuer` | required | The `iss` claim of its tokens: exact, or with `*` for one DNS label. For `aws`, the STS endpoint, by default AWS's global and regional ones. |
+| `audiences` | required | The `aud` that its tokens must carry; `["*"]` accepts every audience. For `aws`, the server id that the signed requests carry; no `*`. |
+| `accounts` | required for `aws` | The 12-digit AWS accounts whose identities it takes. |
 | `direct` | `false` | Take its tokens on every request, not only at the token exchange. |
 | `principal_claims` | `["email", "sub"]` | The claims that name the caller; the first present wins. An email names the user with that email; any other value names the user `<name>:<value>`. |
 | `client_claims` | `["azp", "client_id"]` | The claims with a machine's client id, matched to a user's `externalId`. |

@@ -582,8 +582,12 @@ def test_token_sources(server, monkeypatch: pytest.MonkeyPatch) -> None:
         Client(server.address, token_provider=lambda: 7).list_tokens()
     with pytest.raises(ValueError, match="both"):
         Client(server.address, token="t", token_provider=provider)
+    # An AWS identity: a source made in Rust, which signs requests for STS.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+    assert isinstance(identity.aws("https://uc.example.com"), identity.TokenSource)
     # Nothing in the environment: no identity to detect.
-    for var in ("UC_TOKEN", "UC_TOKEN_FILE", "UC_OAUTH_TOKEN_URL"):
+    for var in ("UC_TOKEN", "UC_TOKEN_FILE", "UC_OAUTH_TOKEN_URL", "AWS_ACCESS_KEY_ID"):
         monkeypatch.delenv(var, raising=False)
     assert identity.detect(f"http://127.0.0.1:{_closed_port()}/") is None
 

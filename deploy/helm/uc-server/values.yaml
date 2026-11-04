@@ -85,6 +85,11 @@ auth:
   # - name: google
   #   issuer: https://accounts.google.com
   #   audiences: [<client id>]
+  # - name: aws
+  #   kind: aws
+  #   audiences: ["https://uc.example.com"]
+  #   accounts: ["123456789012"]
+  #   createUsers: true
   issuers: []
   # -- Sign-in to the web UI: the server signs users in with an OpenID
   # Connect provider (`UC_AUTH_MODE=oidc`); a user signs in when `users` (or

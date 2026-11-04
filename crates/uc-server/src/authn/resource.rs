@@ -5,9 +5,10 @@
 //! The standard members: `resource`, the server's `auth.public_url`;
 //! `authorization_servers`, the exact issuers of `[[auth.issuers]]` with
 //! `direct = true`; and `bearer_methods_supported`. `issuers` adds, for
-//! every block, its `name`, `issuer` pattern, `audiences` and whether it is
-//! `direct`: a client picks the block of its provider and asks the provider
-//! for a token with that audience. The endpoint needs no sign-in and says
+//! every block, its `name`, `kind` (`oidc` or `aws`), `issuer` pattern,
+//! `audiences` and whether it is `direct`: a client picks the block of its
+//! provider and asks the provider for a token with that audience; an AWS
+//! client signs a request for STS with that server id. The endpoint needs no sign-in and says
 //! nothing secret: the same facts are in each token the server takes.
 
 use axum::{Json, Router, extract::State, http::header, response::IntoResponse, routing::get};
@@ -25,6 +26,7 @@ async fn metadata(State(state): State<AppState>) -> impl IntoResponse {
         .map(|issuer| {
             json!({
                 "name": issuer.name,
+                "kind": if issuer.is_aws() { "aws" } else { "oidc" },
                 "issuer": issuer.issuer,
                 "audiences": issuer.audiences,
                 "direct": issuer.direct,
@@ -34,7 +36,7 @@ async fn metadata(State(state): State<AppState>) -> impl IntoResponse {
     let authorization_servers: Vec<&str> = auth
         .issuers
         .iter()
-        .filter(|issuer| issuer.direct && !issuer.issuer.contains('*'))
+        .filter(|issuer| issuer.direct && !issuer.is_aws() && !issuer.issuer.contains('*'))
         .map(|issuer| issuer.issuer.as_str())
         .collect();
     let mut body = json!({
