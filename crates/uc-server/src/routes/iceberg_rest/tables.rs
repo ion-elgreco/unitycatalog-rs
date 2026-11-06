@@ -99,11 +99,13 @@ async fn load_privileges(
     let access = authz::Access::load(state, principal).await?;
     let lineage = authz::lineage(state, SecurableType::Table, full_name).await?;
     let can_write = access.owner(&lineage, authz::Level::Object)
-        || access.all(
-            &lineage,
-            authz::Level::Object,
-            &[Privilege::Select, Privilege::Modify],
-        );
+        || access
+            .all(
+                &lineage,
+                authz::Level::Object,
+                &[Privilege::Select, Privilege::Modify],
+            )
+            .await;
     Ok(match can_write {
         true => VendOp::ReadWrite,
         false => VendOp::Read,

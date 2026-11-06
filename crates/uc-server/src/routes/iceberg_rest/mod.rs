@@ -233,7 +233,7 @@ pub async fn config(
     // The prefix only leads anywhere if the catalog exists.
     let lineage = authz::lineage(&state, SecurableType::Catalog, &catalog).await?;
     let access = Access::load(&state, &principal).await?;
-    access.check(rules::get_catalog(&access, &lineage))?;
+    access.check(rules::get_catalog(&access, &lineage).await)?;
     let mut endpoints: Vec<String> = READ_ENDPOINTS.iter().map(|e| e.to_string()).collect();
     if state.iceberg_writes_enabled {
         endpoints.extend(WRITE_ENDPOINTS.iter().map(|e| e.to_string()));
@@ -251,7 +251,7 @@ async fn check_schema(
     principal: &Principal,
     catalog: &str,
     namespace: &str,
-    rule: fn(&Access, &authz::Lineage) -> bool,
+    rule: impl AsyncFnOnce(&Access, &authz::Lineage) -> bool,
 ) -> IcebergResult<()> {
     let lineage = authz::lineage(
         state,
@@ -260,7 +260,7 @@ async fn check_schema(
     )
     .await?;
     let access = Access::load(state, principal).await?;
-    Ok(access.check(rule(&access, &lineage))?)
+    Ok(access.check(rule(&access, &lineage).await)?)
 }
 
 /// Upstream `checkIcebergTableEnabled`: namespace and table writes can be
@@ -387,9 +387,15 @@ pub async fn list_namespaces(
         true => authz::lineage(&state, SecurableType::Catalog, &catalog).await?,
         false => Default::default(),
     };
+    let mut kept = Vec::with_capacity(schemas.len());
+    for schema in schemas {
+        if rules::get_schema(&access, &schema_lineage(&catalog_lineage, &schema)).await {
+            kept.push(schema);
+        }
+    }
+    let schemas = kept;
     let namespaces = schemas
         .into_iter()
-        .filter(|s| rules::get_schema(&access, &schema_lineage(&catalog_lineage, s)))
         .filter_map(|s| s.name)
         .map(|name| vec![name])
         .collect();
@@ -419,7 +425,7 @@ pub async fn create_namespace(
 ) -> IcebergResult<Json<IcebergNamespaceResponse>> {
     let lineage = authz::lineage(&state, SecurableType::Catalog, &catalog).await?;
     let access = Access::load(&state, &principal).await?;
-    access.check(rules::create_schema(&access, &lineage))?;
+    access.check(rules::create_schema(&access, &lineage).await)?;
     check_writes_enabled(&state)?;
     let namespace = req
         .namespace

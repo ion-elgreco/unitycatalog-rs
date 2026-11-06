@@ -43,7 +43,7 @@ pub async fn create_external_location(
     if access.enabled() {
         let credential =
             authz::lineage(&state, SecurableType::Credential, &req.credential_name).await?;
-        access.check(rules::create_external_location(&access, &credential))?;
+        access.check(rules::create_external_location(&access, &credential).await)?;
     }
     Ok(Json(
         state
@@ -70,10 +70,13 @@ pub async fn list_external_locations(
 ) -> ApiResult<Json<ListExternalLocationsResponse>> {
     let (external_locations, next) = state.metastore.external_locations().list(&page).await?;
     let access = Access::load(&state, &principal).await?;
-    let external_locations = external_locations
-        .into_iter()
-        .filter(|el| rules::get_external_location(&access, &lineage_of(el)))
-        .collect();
+    let mut kept = Vec::with_capacity(external_locations.len());
+    for location in external_locations {
+        if rules::get_external_location(&access, &lineage_of(&location)).await {
+            kept.push(location);
+        }
+    }
+    let external_locations = kept;
     Ok(Json(ListExternalLocationsResponse {
         external_locations,
         next_page_token: next.map(PageToken::new),
@@ -96,7 +99,7 @@ pub async fn get_external_location(
 ) -> ApiResult<Json<ExternalLocationInfo>> {
     let info = state.metastore.external_locations().get(&name).await?;
     let access = Access::load(&state, &principal).await?;
-    access.check(rules::get_external_location(&access, &lineage_of(&info)))?;
+    access.check(rules::get_external_location(&access, &lineage_of(&info)).await)?;
     Ok(Json(info))
 }
 
@@ -125,11 +128,9 @@ pub async fn update_external_location(
             }
             None => None,
         };
-        access.check(rules::update_external_location(
-            &access,
-            &location,
-            credential.as_ref(),
-        ))?;
+        access.check(
+            rules::update_external_location(&access, &location, credential.as_ref()).await,
+        )?;
     }
     Ok(Json(
         state

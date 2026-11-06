@@ -3,6 +3,7 @@
 
 use axum::{extract::FromRequestParts, http::request::Parts};
 
+use uc_auth::authz::AuthContext;
 use uc_common::Error;
 
 #[derive(Debug, Clone)]
@@ -14,6 +15,9 @@ pub struct Principal {
     /// issuer). They count when a group of that name exists in the server;
     /// the memberships of the server's own groups are read with the grants.
     pub groups: Vec<String>,
+    /// The context of the request for the authorizer: how the caller
+    /// signed in, its address, the time.
+    pub context: AuthContext,
 }
 
 impl Principal {
@@ -22,6 +26,7 @@ impl Principal {
             username: "anonymous".to_string(),
             authenticated: false,
             groups: Vec::new(),
+            context: AuthContext::default(),
         }
     }
 
@@ -30,7 +35,14 @@ impl Principal {
             username: username.into(),
             authenticated: true,
             groups: Vec::new(),
+            context: AuthContext::default(),
         }
+    }
+
+    /// With the context of the request.
+    pub fn with_context(mut self, context: AuthContext) -> Self {
+        self.context = context;
+        self
     }
 
     /// With the groups of the caller's token.
