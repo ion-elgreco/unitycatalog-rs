@@ -117,8 +117,8 @@ the blocks (RFC 9728), so a client can ask the provider for a token with the rig
 | --- | --- | --- |
 | `name` | A short name: the prefix of the principals that it names without an email. | required |
 | `kind` | `oidc` for an OpenID Connect provider, `aws` for AWS identities ([AWS](#aws)). | `oidc` |
-| `issuer` | The `iss` claim of its tokens; `*` stands for one DNS label. For `aws`, the STS endpoint. | required; for `aws`, AWS's endpoints |
-| `audiences` | The `aud` that its tokens must carry; `["*"]` for any. For `aws`, the server id. | required |
+| `issuer` | The `iss` claim of its tokens, as they write it, with a trailing `/` if they have one; `*` stands for one DNS label. For `aws`, the STS endpoint. | required; for `aws`, AWS's endpoints |
+| `audiences` | The `aud` that its tokens must carry; `["*"]` for any, without `direct`. For `aws`, the server id. | required |
 | `accounts` | For `aws`: the AWS accounts whose identities it takes. | required for `aws` |
 | `direct` | Take its tokens on every request, not only at the exchange. | `false` |
 | `principal_claims` | The claims that name the caller; the first present wins. | `["email", "sub"]` |
@@ -126,6 +126,10 @@ the blocks (RFC 9728), so a client can ask the provider for a token with the rig
 | `groups_claim` | A claim whose values are names of groups the caller is in. | none |
 | `create_users` | Make the user at its first request when it is missing. | `false` |
 | `display_name` | The display name of a made user, with claims in braces. | the principal |
+
+Several blocks can have the same issuer with other audiences: a token is the first block's that
+has its issuer and takes its audience. For `aws`, a signed request is the first block's that takes
+its endpoint, server id and account.
 
 ### Who a token names
 
@@ -151,8 +155,10 @@ Grants, owners, `admin_principals` and Cedar's `User::"…"` take the principal:
 ### Groups
 
 With `groups_claim`, the names in that claim are groups of the caller for the request, next to
-the groups the caller is a member of in the server. A name counts when a group of that name
-exists in the server: make the group once, grant to it, and every identity whose token names it
+the groups the caller is a member of in the server. Each name is the group `<name>:<value>`,
+such as `entra:Writers` for the role `Writers` of the block `entra`, so a provider names its own
+groups only. A name counts when the group exists in the server: make the group once
+(`uc group create --name entra:Writers`), grant to it, and every identity whose token names it
 is covered. Entra's `groups` claim holds object ids; its app roles (`roles`), assigned to Entra
 groups, arrive as names.
 
@@ -165,8 +171,9 @@ groups, arrive as names.
 | Any OpenID Connect provider | `issuer`, `audiences = ["<client id>"]` | FerrisKey, Keycloak, Okta, GitHub Actions, GitLab CI, a Kubernetes cluster's issuer. The provider must publish `<issuer>/.well-known/openid-configuration` and its keys. |
 | AWS | `kind = "aws"`, `audiences = ["<server id>"]`, `accounts = ["<account id>"]` | See [AWS](#aws). |
 
-The server checks a token's signature with the provider's keys, which it fetches once an hour,
-its issuer, audience and times, with 60 seconds of clock skew. A token that a `direct` issuer's
+The server checks a token's signature with the provider's keys, which it fetches once an hour
+and keeps while the provider does not answer, its issuer, audience and times, with 60 seconds of
+clock skew. It asks a provider at most once a minute. A token that a `direct` issuer's
 block accepts is kept until it expires, at most five minutes, so a busy client costs one check
 per token, not per request; a user disabled in the server keeps working that long.
 
@@ -388,7 +395,7 @@ The resource types, and where their ids are:
   | --- | --- | --- |
   | `context.auth_method` | `String` | `jwt` (a provider's token), `aws-sigv4`, `trusted-headers` (an auth proxy), `server-token`, or `personal-access-token` |
   | `context.provider` | `String` | The `name` of the `[[auth.issuers]]` block, `forward` behind an auth proxy, `internal` for the server's tokens |
-  | `context.groups` | `Set<String>` | The groups that the caller's token names (`groups_claim`) |
+  | `context.groups` | `Set<String>` | The groups that the caller's token names (`groups_claim`), as `<name>:<value>` |
   | `context.source_ip` | `ipaddr` | The address of the connection, when known |
   | `context.request_time` | `datetime` | When the request came |
 
@@ -399,6 +406,8 @@ The resource types, and where their ids are:
   forbid (principal, action == Action::"MODIFY", resource)
   unless { context has source_ip && context.source_ip.isInRange(ip("10.0.0.0/8")) };
   ```
+- **Errors deny.** A policy that fails to evaluate, such as one that reads `resource.owner` of a
+  resource without an owner, denies the request. Test optional attributes with `has` first.
 - **Owners and admins:** Cedar decides only whether a user holds a privilege. The checks for an
   owner or an admin do not ask Cedar, so a `forbid` does not stop them.
 - An id stays the same when the securable is renamed. A securable that is dropped and made again

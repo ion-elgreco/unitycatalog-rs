@@ -142,13 +142,13 @@ display_name = "{app_displayname}"
 | --- | --- | --- |
 | `name` | required | A short name of lowercase letters, digits, `-` and `_`: the prefix of the principals it names without an email, such as `entra:<oid>`. |
 | `kind` | `oidc` | `oidc` for an OpenID Connect provider; `aws` for AWS identities, whose signed `GetCallerIdentity` requests the server sends to STS. |
-| `issuer` | required | The `iss` claim of its tokens: exact, or with `*` for one DNS label. For `aws`, the STS endpoint, by default AWS's global and regional ones. |
-| `audiences` | required | The `aud` that its tokens must carry; `["*"]` accepts every audience. For `aws`, the server id that the signed requests carry; no `*`. |
+| `issuer` | required | The `iss` claim of its tokens, as they write it, with a trailing `/` if they have one; `*` stands for one DNS label. For `aws`, the STS endpoint, by default AWS's global and regional ones. |
+| `audiences` | required | The `aud` that its tokens must carry; `["*"]` accepts every audience, without `direct`. For `aws`, the server id that the signed requests carry; no `*`. |
 | `accounts` | required for `aws` | The 12-digit AWS accounts whose identities it takes. |
 | `direct` | `false` | Take its tokens on every request, not only at the token exchange. |
 | `principal_claims` | `["email", "sub"]` | The claims that name the caller; the first present wins. An email names the user with that email; any other value names the user `<name>:<value>`. |
 | `client_claims` | `["azp", "client_id"]` | The claims with a machine's client id, matched to a user's `externalId`. |
-| `groups_claim` | none | A claim whose values are names of groups the caller is in; a name counts when the server has a group of that name. |
+| `groups_claim` | none | A claim whose values are names of groups the caller is in; a value counts when the server has the group `<name>:<value>`, such as `entra:Writers`. |
 | `create_users` | `false` | Make the user at its first request when it is missing. |
 | `display_name` | the principal | The display name of a made user, with claims in braces. |
 

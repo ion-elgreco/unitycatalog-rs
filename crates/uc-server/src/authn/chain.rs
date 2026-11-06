@@ -81,7 +81,7 @@ pub fn authenticator(
     }
     let direct = (issuers.iter())
         .filter(|i| i.direct && !i.is_aws())
-        .map(IssuerSettings::jwt_provider)
+        .map(|i| i.jwt_provider().clone())
         .collect();
     builder
         .resolver(JwtResolver::new(direct, keys.clone()))
@@ -118,7 +118,8 @@ impl Resolver<AppState> for SharingRecipients {
 
 /// The server's own tokens (RS512 JWTs of the `internal` issuer, see
 /// `crate::authn::security`). Any other JWT, which no `direct` block took,
-/// is refused.
+/// is refused with upstream's 403: a token of another issuer must be
+/// exchanged first.
 pub struct ServerTokens;
 
 #[async_trait]
@@ -154,7 +155,7 @@ impl Resolver<AppState> for ServerTokens {
                         tracing::debug!(%iss, "token refused: no auth.issuers block has the issuer")
                     }
                 }
-                Resolution::Refused(AuthError::invalid("issuer not taken on requests"))
+                Resolution::Refused(AuthError::Forbidden("Invalid access token.".into()))
             }
             None => Resolution::Refused(AuthError::invalid("no iss")),
         }

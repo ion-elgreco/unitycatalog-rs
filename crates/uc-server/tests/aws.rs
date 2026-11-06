@@ -165,6 +165,31 @@ async fn requests_that_do_not_check_out_are_refused() {
 }
 
 #[tokio::test]
+async fn blocks_of_one_server_id_differ_by_account() {
+    let sts = sts().await;
+    let other = Issuer {
+        name: "aws-other".into(),
+        accounts: vec!["999999999999".into()],
+        ..aws(&sts)
+    };
+    let (app, metastore) = app(vec![aws(&sts), other]).await;
+    for key in ["ASIAETL1", "ASIAOTHER"] {
+        assert_eq!(
+            get(&app, &sts.token(key, SERVER_ID)).await.status(),
+            StatusCode::OK,
+            "{key}"
+        );
+    }
+    let scim = metastore.scim();
+    for name in [ETL, "aws-other:arn:aws:iam::999999999999:role/etl"] {
+        assert!(
+            scim.get_user_by_name(name).await.unwrap().is_some(),
+            "{name}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn a_missing_user_is_refused_unless_made_or_known() {
     let sts = sts().await;
     let (app, metastore) = app(vec![Issuer {
@@ -224,7 +249,7 @@ async fn the_server_tells_its_server_id() {
     assert_eq!(body["authorization_servers"], json!([]));
     assert_eq!(
         body["issuers"],
-        json!([{ "name": "aws", "kind": "aws", "issuer": "https://sts.amazonaws.com",
+        json!([{ "name": "aws", "kind": "aws", "issuer": "",
                  "audiences": [SERVER_ID], "direct": true }])
     );
 }

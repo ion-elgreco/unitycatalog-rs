@@ -3,10 +3,12 @@
 //! A token's `iss` must match a [`JwtProvider`] before anything is fetched.
 //! Its key comes from the issuer's discovery document and JWK set
 //! ([`JwtKeys`]), which are cached per issuer and refetched when a key id is
-//! unknown, at most once a minute. RS256/384/512 and ES256/384/512 are
-//! accepted, with [`DEFAULT_LEEWAY`] of clock skew.
+//! unknown. An issuer is asked at most once a minute, also after a fetch
+//! that failed, and its keys are kept while it cannot be reached.
+//! RS256/384/512 and ES256/384/512 are accepted, with [`DEFAULT_LEEWAY`] of
+//! clock skew.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -16,6 +18,7 @@ use jsonwebtoken::{
     Algorithm, DecodingKey, Validation,
     jwk::{AlgorithmParameters, EllipticCurve, Jwk},
 };
+use moka::future::Cache;
 use serde_json::{Map, Value};
 use tokio::sync::{Mutex, RwLock};
 
@@ -25,10 +28,16 @@ use crate::{
 
 /// The clock skew that the time claims of a provider's tokens may have.
 pub const DEFAULT_LEEWAY: Duration = Duration::from_secs(60);
-/// Keys are reused this long, and refetched for an unknown key id at most
-/// [`MIN_REFRESH`] often.
+/// Keys are reused this long, and refetched for an unknown key id. An
+/// issuer is asked at most [`MIN_REFRESH`] often.
 const KEYS_TTL: Duration = Duration::from_secs(60 * 60);
 const MIN_REFRESH: Duration = Duration::from_secs(60);
+/// The most issuers whose keys are kept. A pattern with `*` matches many.
+const MAX_ISSUERS: u64 = 1_000;
+/// The most issuers without keys that are asked per [`MIN_REFRESH`], so
+/// tokens that name made-up issuers of a pattern with `*` do not make a
+/// call each.
+const MAX_NEW_ISSUERS: u32 = 20;
 /// How long the identity of a token without `exp` may be kept: as long as
 /// the [`Authenticator`](crate::Authenticator) keeps any.
 const NO_EXPIRY: Duration = Duration::from_secs(24 * 60 * 60);
@@ -129,12 +138,72 @@ pub struct JwtKeys {
     http: reqwest::Client,
     transport: Box<dyn Transport>,
     leeway: Duration,
-    issuers: Mutex<HashMap<String, Arc<IssuerKeys>>>,
+    issuers: Cache<String, Arc<IssuerKeys>>,
+    /// The start of the current [`MIN_REFRESH`], and how many issuers
+    /// without keys were asked since.
+    new_issuers: std::sync::Mutex<(Instant, u32)>,
 }
 
+#[derive(Default)]
 struct IssuerKeys {
-    keys: RwLock<Option<(Vec<Jwk>, Instant)>>,
+    fetched: RwLock<Fetched>,
     refresh: Mutex<()>,
+}
+
+/// What an issuer last answered.
+#[derive(Default)]
+struct Fetched {
+    /// Its keys, and when they were fetched.
+    keys: Option<(Vec<Jwk>, Instant)>,
+    /// When it was last asked.
+    tried: Option<Instant>,
+    /// Why the last fetch failed, if it did.
+    failure: Option<VerifyError>,
+}
+
+impl Fetched {
+    /// The key `key_id` among keys younger than [`KEYS_TTL`].
+    fn fresh(&self, key_id: Option<&str>) -> Option<Jwk> {
+        let (set, at) = self.keys.as_ref()?;
+        (at.elapsed() < KEYS_TTL)
+            .then(|| find(set, key_id))
+            .flatten()
+    }
+
+    /// The key `key_id` after a fetch: from the keys just fetched, or from
+    /// older ones when the fetch failed.
+    fn answer(&self, key_id: Option<&str>, issuer: &str) -> Result<Jwk, VerifyError> {
+        if let Some(key) = (self.keys.as_ref()).and_then(|(set, _)| find(set, key_id)) {
+            return Ok(key);
+        }
+        if let Some(failure) = &self.failure {
+            return Err(failure.clone());
+        }
+        // A key the issuer does not publish, or no longer does: the token
+        // is refused, as a tampered one is.
+        Err(VerifyError::Invalid(match key_id {
+            Some(key_id) => {
+                format!("Token verification failed: no signing key '{key_id}' at issuer {issuer}")
+            }
+            None => format!(
+                "Token verification failed: the token names no key, and issuer {issuer} has \
+                 several"
+            ),
+        }))
+    }
+}
+
+/// The key `key_id` of `set`. A token without a key id takes the only key,
+/// else the one without a key id.
+fn find(set: &[Jwk], key_id: Option<&str>) -> Option<Jwk> {
+    match key_id {
+        Some(key_id) => set
+            .iter()
+            .find(|k| k.common.key_id.as_deref() == Some(key_id)),
+        None if set.len() == 1 => set.first(),
+        None => set.iter().find(|k| k.common.key_id.is_none()),
+    }
+    .cloned()
 }
 
 impl Default for JwtKeys {
@@ -154,7 +223,8 @@ impl JwtKeys {
             http,
             transport: Box::new(transport),
             leeway: DEFAULT_LEEWAY,
-            issuers: Mutex::new(HashMap::new()),
+            issuers: Cache::builder().max_capacity(MAX_ISSUERS).build(),
+            new_issuers: std::sync::Mutex::new((Instant::now(), 0)),
         }
     }
 
@@ -190,8 +260,7 @@ impl JwtKeys {
         decoded: &UnverifiedJwt,
         issuer: &str,
     ) -> Result<(), VerifyError> {
-        let key_id = decoded.key_id.clone().unwrap_or_default();
-        let jwk = self.key(issuer, &key_id).await?;
+        let jwk = self.key(issuer, decoded.key_id.as_deref()).await?;
         let failed = |e: String| VerifyError::Invalid(format!("Token verification failed: {e}"));
         let unsupported =
             |kind: &str, alg: &str| VerifyError::Unsupported(format!("Unsupported {kind}: {alg}"));
@@ -234,51 +303,59 @@ impl JwtKeys {
     }
 
     /// The issuer's key `key_id`, fetched when unknown.
-    async fn key(&self, issuer: &str, key_id: &str) -> Result<Jwk, VerifyError> {
-        let keys = self
-            .issuers
-            .lock()
-            .await
-            .entry(issuer.to_string())
-            .or_insert_with(|| {
-                Arc::new(IssuerKeys {
-                    keys: RwLock::new(None),
-                    refresh: Mutex::new(()),
-                })
-            })
-            .clone();
-        let find = |keys: &Option<(Vec<Jwk>, Instant)>| {
-            keys.as_ref()
-                .filter(|(_, at)| at.elapsed() < KEYS_TTL)
-                .and_then(|(set, _)| {
-                    set.iter()
-                        .find(|k| k.common.key_id.as_deref() == Some(key_id))
-                        .cloned()
-                })
-        };
-        if let Some(key) = find(&*keys.keys.read().await) {
+    async fn key(&self, issuer: &str, key_id: Option<&str>) -> Result<Jwk, VerifyError> {
+        let keys = (self.issuers)
+            .get_with(issuer.to_string(), async { Arc::default() })
+            .await;
+        if let Some(key) = keys.fetched.read().await.fresh(key_id) {
             return Ok(key);
         }
-        // One fetch at a time per issuer; recent fetches are reused.
+        // One fetch at a time per issuer; what a recent one found, or why
+        // it failed, is reused.
         let _guard = keys.refresh.lock().await;
-        let recent = keys
-            .keys
-            .read()
-            .await
-            .as_ref()
-            .is_some_and(|(_, at)| at.elapsed() < MIN_REFRESH);
-        if !recent {
-            let set = self.fetch_keys(issuer).await?;
-            *keys.keys.write().await = Some((set, Instant::now()));
+        let first = {
+            let fetched = keys.fetched.read().await;
+            if let Some(key) = fetched.fresh(key_id) {
+                return Ok(key);
+            }
+            if fetched.tried.is_some_and(|at| at.elapsed() < MIN_REFRESH) {
+                return fetched.answer(key_id, issuer);
+            }
+            fetched.keys.is_none()
+        };
+        if first && !self.may_ask_new_issuer() {
+            tracing::warn!(%issuer, "too many new issuers; the token is refused for now");
+            return Err(VerifyError::Unavailable(format!(
+                "Too many new issuers, try again later: {issuer}"
+            )));
         }
-        let found = find(&*keys.keys.read().await);
-        // A key the issuer does not publish, or no longer does: the token
-        // is refused, as a tampered one is.
-        found.ok_or_else(|| {
-            VerifyError::Invalid(format!(
-                "Token verification failed: no signing key '{key_id}' at issuer {issuer}"
-            ))
-        })
+        let result = self.fetch_keys(issuer).await;
+        let mut fetched = keys.fetched.write().await;
+        fetched.tried = Some(Instant::now());
+        match result {
+            Ok(set) => {
+                fetched.keys = Some((set, Instant::now()));
+                fetched.failure = None;
+            }
+            Err(e) => {
+                if fetched.keys.is_some() {
+                    tracing::warn!(%issuer, error = %e, "keeping the issuer's keys");
+                }
+                fetched.failure = Some(e);
+            }
+        }
+        fetched.answer(key_id, issuer)
+    }
+
+    /// Whether an issuer without keys may be asked now: at most
+    /// [`MAX_NEW_ISSUERS`] per [`MIN_REFRESH`].
+    fn may_ask_new_issuer(&self) -> bool {
+        let mut window = self.new_issuers.lock().unwrap_or_else(|e| e.into_inner());
+        if window.0.elapsed() >= MIN_REFRESH {
+            *window = (Instant::now(), 0);
+        }
+        window.1 += 1;
+        window.1 <= MAX_NEW_ISSUERS
     }
 
     /// The JWK set that the issuer's OIDC discovery document names.
@@ -439,7 +516,7 @@ impl JwtProvider {
     }
 
     /// The claim with the names of the caller's groups: an array of strings
-    /// or one string.
+    /// or one string. See [`groups`](Self::groups).
     pub fn with_groups_claim(mut self, claim: Option<impl Into<String>>) -> Self {
         self.groups_claim = claim
             .map(Into::into)
@@ -459,7 +536,8 @@ impl JwtProvider {
         any || self.audience_allowlist.is_any_allowed(&audiences(claims))
     }
 
-    /// The names of the caller's groups, each once.
+    /// The caller's groups, each once, as `<provider>:<group>`: a provider
+    /// can name its own groups only, not those of another provider.
     pub fn groups(&self, claims: &Map<String, Value>) -> Vec<String> {
         let Some(name) = &self.groups_claim else {
             return Vec::new();
@@ -474,7 +552,7 @@ impl JwtProvider {
             .into_iter()
             .map(str::trim)
             .filter(|g| !g.is_empty() && seen.insert(*g))
-            .map(str::to_string)
+            .map(|g| format!("{}:{g}", self.name))
             .collect()
     }
 }
@@ -482,9 +560,9 @@ impl JwtProvider {
 /// Takes the JWTs of its providers, checked with [`JwtKeys`].
 ///
 /// A token that is not a JWT, or whose `iss` is no provider's, passes. A
-/// token of a provider that does not check out is refused. The caller is
-/// the token's `sub`, with its claims; the identity is kept until the
-/// token's `exp`.
+/// token is the first provider's that has its `iss` and takes its `aud`;
+/// one that does not check out is refused. The caller is the token's `sub`,
+/// with its claims; the identity is kept until the token's `exp`.
 pub struct JwtResolver {
     providers: Vec<JwtProvider>,
     keys: Arc<JwtKeys>,
@@ -505,23 +583,32 @@ impl<S: Send + Sync> Resolver<S> for JwtResolver {
         let Ok(decoded) = decode(token) else {
             return Resolution::Pass;
         };
-        let iss = claim(&decoded.claims, "iss").unwrap_or_default();
-        let Some(provider) = self.providers.iter().find(|p| p.matches(iss)) else {
+        let iss = claim(&decoded.claims, "iss")
+            .unwrap_or_default()
+            .to_string();
+        let iss = iss.as_str();
+        let providers: Vec<&JwtProvider> =
+            self.providers.iter().filter(|p| p.matches(iss)).collect();
+        if providers.is_empty() {
             return Resolution::Pass;
-        };
+        }
         if let Err(e) = self.keys.verify(token, &decoded, iss).await {
-            tracing::warn!(provider = %provider.name, reason = %e, "token refused");
-            return Resolution::Refused(AuthError::invalid(e.to_string()));
+            tracing::warn!(%iss, reason = %e, "token refused");
+            return Resolution::Refused(match e {
+                // The caller may well be signed in.
+                VerifyError::Unavailable(reason) => AuthError::Unavailable(reason),
+                other => AuthError::invalid(other.to_string()),
+            });
         }
         let claims = decoded.claims;
-        if !provider.audience_allowed(&claims) {
+        let Some(provider) = (providers.into_iter()).find(|p| p.audience_allowed(&claims)) else {
             tracing::warn!(
-                provider = %provider.name,
+                %iss,
                 audience = ?audiences(&claims),
                 "token refused: audience not allowed"
             );
             return Resolution::Refused(AuthError::invalid("audience not allowed"));
-        }
+        };
         let left = match claims.get("exp").and_then(Value::as_i64) {
             Some(exp) => Duration::from_secs((exp - now_secs()).max(0) as u64),
             None => NO_EXPIRY,
@@ -558,7 +645,7 @@ mod tests {
         }))
         .unwrap();
         assert!(provider.audience_allowed(&claims));
-        assert_eq!(provider.groups(&claims), ["Writers", "Readers"]);
+        assert_eq!(provider.groups(&claims), ["entra:Writers", "entra:Readers"]);
         claims.insert("aud".into(), Value::from("x"));
         assert!(!provider.audience_allowed(&claims));
         let any = JwtProvider::new("any", &["https://x"]).with_audiences(&["*"]);
@@ -586,6 +673,76 @@ mod tests {
         assert_eq!(audiences(&decoded.claims), ["a"]);
         assert!(decode("a.b").is_err());
         assert!(!looks_like_jwt("dapi123"));
+    }
+
+    fn jwk(key_id: Option<&str>) -> Jwk {
+        let mut value = serde_json::json!({ "kty": "RSA", "n": "AQAB", "e": "AQAB" });
+        if let Some(key_id) = key_id {
+            value["kid"] = key_id.into();
+        }
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn keys_are_found_by_their_id() {
+        let one = [jwk(Some("k1"))];
+        assert!(find(&one, Some("k1")).is_some());
+        assert!(find(&one, Some("k2")).is_none());
+        // A token without a key id takes the only key, else the one
+        // without a key id.
+        assert!(find(&one, None).is_some());
+        let two = [jwk(Some("k1")), jwk(None)];
+        assert_eq!(find(&two, None).unwrap().common.key_id, None);
+        assert!(find(&[jwk(Some("k1")), jwk(Some("k2"))], None).is_none());
+    }
+
+    #[test]
+    fn keys_are_kept_while_the_issuer_cannot_be_reached() {
+        let fetched = Fetched {
+            keys: Some((vec![jwk(Some("k1"))], Instant::now())),
+            tried: Some(Instant::now()),
+            failure: Some(VerifyError::Unavailable("down".into())),
+        };
+        assert!(fetched.answer(Some("k1"), "https://x").is_ok());
+        assert!(matches!(
+            fetched.answer(Some("k2"), "https://x"),
+            Err(VerifyError::Unavailable(_))
+        ));
+        assert!(matches!(
+            Fetched::default().answer(Some("k1"), "https://x"),
+            Err(VerifyError::Invalid(_))
+        ));
+    }
+
+    /// Answers every request with HTTP 500, and counts them.
+    #[derive(Clone, Default)]
+    struct Down(Arc<std::sync::atomic::AtomicUsize>);
+
+    #[async_trait]
+    impl Transport for Down {
+        async fn send(&self, _: reqwest::RequestBuilder) -> reqwest::Result<reqwest::Response> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let response = axum::http::Response::builder().status(500).body("");
+            Ok(response.unwrap().into())
+        }
+    }
+
+    #[tokio::test]
+    async fn issuers_are_asked_at_most_once_a_minute() {
+        let down = Down::default();
+        let calls = || down.0.load(std::sync::atomic::Ordering::SeqCst);
+        let keys = JwtKeys::new(down.clone());
+        for _ in 0..3 {
+            let key = keys.key("https://a", Some("k1")).await;
+            assert!(matches!(key, Err(VerifyError::Unavailable(_))));
+        }
+        assert_eq!(calls(), 1);
+        // Made-up issuers of a pattern with `*`.
+        for n in 0..2 * MAX_NEW_ISSUERS {
+            let key = keys.key(&format!("https://t{n}.a"), Some("k1")).await;
+            assert!(matches!(key, Err(VerifyError::Unavailable(_))));
+        }
+        assert_eq!(calls(), MAX_NEW_ISSUERS as usize);
     }
 
     #[test]

@@ -135,23 +135,23 @@ pub async fn grant_token(
         .into());
     }
     let iss = idp::claim(&decoded.claims, "iss").unwrap_or_default();
-    let Some(issuer) = settings.issuer(iss) else {
+    if settings.issuer(iss).is_none() {
         tracing::warn!(issuer = %iss, "token rejected: issuer not allowed");
         return Err(Error::unauthenticated("Invalid issuer").into());
-    };
+    }
     settings
         .keys
         .verify(&subject_token, &decoded, iss)
         .await
         .map_err(idp::verify_error)?;
-    if !issuer.audience_allowed(&decoded.claims) {
+    let Some(issuer) = settings.issuer_taking(iss, &decoded.claims) else {
         tracing::warn!(
-            issuer = %issuer.name,
+            issuer = %iss,
             audience = ?uc_auth::jwt::audiences(&decoded.claims),
             "token rejected: audience not allowed"
         );
         return Err(Error::unauthenticated("Invalid audience").into());
-    }
+    };
 
     let kind = match subject_token_type == ACCESS_TOKEN {
         true => TokenKind::AccessToken,

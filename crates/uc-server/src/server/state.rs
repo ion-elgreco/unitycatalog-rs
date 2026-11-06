@@ -8,7 +8,6 @@ use uc_metastore::DynMetastore;
 use crate::{
     authn::idp::AuthSettings,
     authn::security::SecurityContext,
-    authz::GrantsAuthorizer,
     observability::audit::sink::{self as audit_sink, AuditHandle},
     storage::StoreCache,
     storage::s3_region::S3Regions,
@@ -41,10 +40,11 @@ pub struct AppStateInner {
     /// `auth.enabled`: privileges are checked and every
     /// API request must be signed in.
     pub authorization_enabled: bool,
-    /// What decides each privilege when authorization is on: the grants of
-    /// the `permission` table ([`GrantsAuthorizer`]), Cedar policies
-    /// ([`Self::with_cedar`]), or any other ([`Self::with_authorizer`]).
-    pub authorizer: Arc<dyn uc_auth::authz::Authorizer>,
+    /// What decides each privilege when authorization is on: Cedar policies
+    /// ([`Self::with_cedar`]) or any other authorizer
+    /// ([`Self::with_authorizer`]); with none, the grants of the
+    /// `permission` table.
+    pub authorizer: Option<Arc<dyn uc_auth::authz::Authorizer>>,
     /// Mints temporary cloud credentials for the `/temporary-*-credentials`
     /// endpoints: [`PlaceholderVendor`] by default, `CloudVendor` (AWS STS,
     /// Azure SAS, GCP OAuth) in the server.
@@ -87,7 +87,7 @@ impl AppState {
             security: None,
             auth: Arc::new(AuthSettings::default()),
             authorization_enabled: false,
-            authorizer: Arc::new(GrantsAuthorizer),
+            authorizer: None,
             vendor: Arc::new(PlaceholderVendor),
             admin_principals: Arc::new(HashSet::new()),
             aws_identity_arn: None,
@@ -201,9 +201,11 @@ impl AppState {
     }
 
     /// `authorizer` decides each privilege, such as a remote policy
-    /// decision point ([`uc_auth::authz::HttpAuthorizer`]).
+    /// decision point ([`uc_auth::authz::HttpAuthorizer`]). Its answers are
+    /// kept for the rest of a request; wrap a remote one in
+    /// [`uc_auth::authz::CachedAuthorizer`] to keep them across requests.
     pub fn with_authorizer(mut self, authorizer: impl uc_auth::authz::Authorizer) -> Self {
-        self.inner().authorizer = Arc::new(authorizer);
+        self.inner().authorizer = Some(Arc::new(authorizer));
         self
     }
 

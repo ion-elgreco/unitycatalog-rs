@@ -5,8 +5,9 @@
 //! The standard members: `resource`, the server's `auth.public_url`;
 //! `authorization_servers`, the exact issuers of `[[auth.issuers]]` with
 //! `direct = true`; and `bearer_methods_supported`. `issuers` adds, for
-//! every block, its `name`, `kind` (`oidc` or `aws`), `issuer` pattern,
-//! `audiences` and whether it is `direct`: a client picks the block of its
+//! every block, its `name`, `kind` (`oidc` or `aws`), `issuer` pattern (for
+//! AWS, the STS endpoint, empty for AWS's own), `audiences` and whether it
+//! is `direct`: a client picks the block of its
 //! provider and asks the provider for a token with that audience; an AWS
 //! client signs a request for STS with that server id. The endpoint needs no sign-in and says
 //! nothing secret: the same facts are in each token the server takes.

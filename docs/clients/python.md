@@ -31,8 +31,8 @@ ways:
     | --- | --- |
     | Azure service principal | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` |
     | Azure workload identity | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_FEDERATED_TOKEN_FILE` |
-    | Azure CLI | `az` on the path, signed in |
     | Azure managed identity | `AZURE_CLIENT_ID` for a user-assigned one, else `IDENTITY_ENDPOINT` or `MSI_ENDPOINT` |
+    | Azure CLI | `az` on the path, signed in, without the variables of a managed identity |
     | Google service account | `GOOGLE_APPLICATION_CREDENTIALS` |
     | Google Cloud CLI | `gcloud` on the path, signed in |
     | Google machine or pod | `GCE_METADATA_HOST` or `K_SERVICE` |

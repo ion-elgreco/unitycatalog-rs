@@ -68,9 +68,9 @@ pub enum CedarConfigError {
 /// `policyN`, so [`policies`](AuthorizeResponse::policies) names the
 /// determining policies stably.
 ///
-/// It fails closed: if the entities can't be loaded, or the request, context
-/// or entities are not valid, the answer is a deny with the reason in
-/// [`errors`](AuthorizeResponse::errors).
+/// It fails closed: if the entities can't be loaded, the request, context
+/// or entities are not valid, or a policy fails to evaluate, the answer is
+/// a deny with the reason in [`errors`](AuthorizeResponse::errors).
 pub struct CedarAuthorizer {
     policies: PolicySet,
     schema: Option<Schema>,
@@ -161,6 +161,20 @@ impl CedarAuthorizer {
         let response = self
             .engine
             .is_authorized(&cedar_request, &self.policies, &entities);
+        let errors: Vec<String> = response
+            .diagnostics()
+            .errors()
+            .map(ToString::to_string)
+            .collect();
+        // Cedar skips a policy that fails to evaluate, so a `forbid` that
+        // errors would not stop an allow.
+        if !errors.is_empty() {
+            return Ok(AuthorizeResponse {
+                decision: Decision::Deny,
+                policies: Vec::new(),
+                errors,
+            });
+        }
         let mut policies: Vec<String> = response
             .diagnostics()
             .reason()
@@ -173,11 +187,7 @@ impl CedarAuthorizer {
                 cedar_policy::Decision::Deny => Decision::Deny,
             },
             policies,
-            errors: response
-                .diagnostics()
-                .errors()
-                .map(ToString::to_string)
-                .collect(),
+            errors,
         })
     }
 }
@@ -287,6 +297,27 @@ mod tests {
         let other = request("read", AuthContext::new())
             .with_resource_entity(json!({ "uid": { "type": "Doc", "id": "d2" } }));
         assert!(!authorizer.authorize(&other).await.is_allowed());
+    }
+
+    #[tokio::test]
+    async fn a_policy_that_fails_to_evaluate_denies() {
+        let authorizer = CedarAuthorizer::new(
+            r#"
+            permit (principal, action, resource);
+            forbid (principal, action, resource) unless { resource.owner == "alice" };
+            "#,
+            NoEntities,
+        )
+        .unwrap();
+        // The resource has no `owner`, so the `forbid` errors.
+        let answer = authorizer
+            .authorize(&request("read", AuthContext::new()))
+            .await;
+        assert!(
+            !answer.is_allowed() && !answer.errors.is_empty(),
+            "{answer:?}"
+        );
+        assert!(answer.policies.is_empty());
     }
 
     #[test]
