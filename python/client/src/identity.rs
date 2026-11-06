@@ -33,8 +33,9 @@ fn source(
 
 /// An Azure identity of the environment, for the scope `scope`, such as `api://uc/.default`: a
 /// service principal (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`), a workload
-/// identity (`AZURE_FEDERATED_TOKEN_FILE`), the sign-in of the Azure CLI when `az` is on the
-/// path, else the managed identity of the machine or pod.
+/// identity (`AZURE_FEDERATED_TOKEN_FILE`), a managed identity that the environment names
+/// (`AZURE_CLIENT_ID`, `IDENTITY_ENDPOINT` or `MSI_ENDPOINT`), the sign-in of the Azure CLI when
+/// `az` is on the path, else the managed identity of the machine or pod.
 #[pyfunction]
 fn azure(scope: &str) -> PyResult<RustTokenSource> {
     source(sources::azure(scope))
@@ -103,8 +104,6 @@ fn detect(py: Python<'_>, base_url: &str) -> PyResult<Option<RustTokenSource>> {
     let url: url::Url = base_url
         .parse()
         .map_err(|e: url::ParseError| PyValueError::new_err(e.to_string()))?;
-    let source = py
-        .detach(|| crate::codegen::runtime::rt().block_on(sources::detect(&url)))
-        .map_err(error)?;
+    let source = crate::codegen::runtime::block_on(py, sources::detect(&url))?.map_err(error)?;
     Ok(source.map(|source| RustTokenSource { source }))
 }

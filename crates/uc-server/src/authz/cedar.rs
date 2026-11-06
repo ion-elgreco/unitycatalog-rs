@@ -1,14 +1,14 @@
 //! Cedar policies as the [`Authorizer`](uc_auth::authz::Authorizer).
 //!
-//! Plugs in instead of [`crate::authz::GrantsAuthorizer`] with `auth.cedar`
-//! ([`AppState::with_cedar`]): Cedar policies then decide what a caller may
-//! do on a resource ([`uc_auth::authz::CedarAuthorizer`]).
+//! Plugs in with `auth.cedar` ([`AppState::with_cedar`]): Cedar policies
+//! then decide what a caller may do on a resource, instead of the grants
+//! alone ([`uc_auth::authz::CedarAuthorizer`]).
 //!
 //! ## Default policy
 //!
-//! [`DEFAULT_POLICY`] permits what the `permission` table grants, as
-//! `GrantsAuthorizer` does. Operators add their own `.cedar` files with
-//! `auth.cedar_policies`.
+//! [`DEFAULT_POLICY`] permits what the `permission` table grants, as the
+//! grants alone do. Operators add their own `.cedar` files with
+//! `auth.cedar_policies`. A policy that fails to evaluate denies.
 //!
 //! [`AppState::with_cedar`]: crate::server::state::AppState::with_cedar
 //!

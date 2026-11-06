@@ -12,8 +12,9 @@ pub struct Principal {
     /// `false` for the anonymous fallback (no or unrecognised token).
     pub authenticated: bool,
     /// The groups that the caller's token names (`groups_claim` of its
-    /// issuer). They count when a group of that name exists in the server;
-    /// the memberships of the server's own groups are read with the grants.
+    /// issuer), as `<issuer name>:<group>`. They count when a group of that
+    /// name exists in the server; the memberships of the server's own
+    /// groups are read with the grants.
     pub groups: Vec<String>,
     /// The context of the request for the authorizer: how the caller
     /// signed in, its address, the time.

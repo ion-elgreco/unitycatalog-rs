@@ -65,9 +65,10 @@ fn azure_resource(scope: &str) -> String {
 
 /// An Azure identity of the environment, for the scope `scope`: a service principal
 /// (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`), a workload identity
-/// (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_FEDERATED_TOKEN_FILE`), the sign-in of the
-/// Azure CLI when `az` is on the path, else the managed identity of the machine or pod
-/// (`AZURE_CLIENT_ID` for a user-assigned one). `AZURE_AUTHORITY_HOST` names another cloud.
+/// (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_FEDERATED_TOKEN_FILE`), a managed identity
+/// that the environment names (`AZURE_CLIENT_ID` for a user-assigned one, `IDENTITY_ENDPOINT`
+/// or `MSI_ENDPOINT`), the sign-in of the Azure CLI when `az` is on the path, else the managed
+/// identity of the machine or pod. `AZURE_AUTHORITY_HOST` names another cloud.
 pub fn azure(scope: &str) -> Result<Arc<dyn TokenSource>> {
     azure_in(&environment(), scope, on_path("az"))
 }
@@ -75,29 +76,78 @@ pub fn azure(scope: &str) -> Result<Arc<dyn TokenSource>> {
 fn azure_in(env: &Env, scope: &str, az: bool) -> Result<Arc<dyn TokenSource>> {
     let auth = BearerAuth::new();
     let authority = set(env, "AZURE_AUTHORITY_HOST").map(str::to_string);
-    let tenant = set(env, "AZURE_TENANT_ID");
-    let client = set(env, "AZURE_CLIENT_ID");
-    let provider = if let (Some(tenant), Some(client), Some(secret)) =
-        (tenant, client, set(env, "AZURE_CLIENT_SECRET"))
-    {
-        auth.azure_client_secret(tenant, client, secret, scope, authority)?
-    } else if let (Some(tenant), Some(client), Some(file)) =
-        (tenant, client, set(env, "AZURE_FEDERATED_TOKEN_FILE"))
-    {
-        auth.azure_workload_identity(tenant, client, file, scope, authority)?
-    } else if az {
-        auth.azure_cli(scope)
-    } else {
-        auth.azure_managed_identity(AzureManagedIdentity {
-            resource: azure_resource(scope),
-            client_id: client.map(str::to_string),
-            endpoint: set(env, "IDENTITY_ENDPOINT")
-                .or_else(|| set(env, "MSI_ENDPOINT"))
-                .map(str::to_string),
-            ..Default::default()
-        })?
+    let provider = match azure_identity(env, az) {
+        AzureIdentity::ClientSecret {
+            tenant,
+            client,
+            secret,
+        } => auth.azure_client_secret(tenant, client, secret, scope, authority)?,
+        AzureIdentity::Workload {
+            tenant,
+            client,
+            file,
+        } => auth.azure_workload_identity(tenant, client, file, scope, authority)?,
+        AzureIdentity::Cli => auth.azure_cli(scope),
+        AzureIdentity::Managed { client, endpoint } => {
+            auth.azure_managed_identity(AzureManagedIdentity {
+                resource: azure_resource(scope),
+                client_id: client.map(str::to_string),
+                endpoint: endpoint.map(str::to_string),
+                ..Default::default()
+            })?
+        }
     };
     Ok(source(provider))
+}
+
+/// The Azure identity of the environment that [`azure`] takes.
+#[derive(Debug, PartialEq, Eq)]
+enum AzureIdentity<'a> {
+    ClientSecret {
+        tenant: &'a str,
+        client: &'a str,
+        secret: &'a str,
+    },
+    Workload {
+        tenant: &'a str,
+        client: &'a str,
+        file: &'a str,
+    },
+    Cli,
+    Managed {
+        client: Option<&'a str>,
+        endpoint: Option<&'a str>,
+    },
+}
+
+fn azure_identity(env: &Env, az: bool) -> AzureIdentity<'_> {
+    let tenant = set(env, "AZURE_TENANT_ID");
+    let client = set(env, "AZURE_CLIENT_ID");
+    let endpoint = set(env, "IDENTITY_ENDPOINT").or_else(|| set(env, "MSI_ENDPOINT"));
+    if let (Some(tenant), Some(client), Some(secret)) =
+        (tenant, client, set(env, "AZURE_CLIENT_SECRET"))
+    {
+        return AzureIdentity::ClientSecret {
+            tenant,
+            client,
+            secret,
+        };
+    }
+    if let (Some(tenant), Some(client), Some(file)) =
+        (tenant, client, set(env, "AZURE_FEDERATED_TOKEN_FILE"))
+    {
+        return AzureIdentity::Workload {
+            tenant,
+            client,
+            file,
+        };
+    }
+    // A managed identity that the environment names comes before the CLI, which may be
+    // installed but not signed in.
+    match az && client.is_none() && endpoint.is_none() {
+        true => AzureIdentity::Cli,
+        false => AzureIdentity::Managed { client, endpoint },
+    }
 }
 
 /// A Google identity of the environment, as an ID token for `audience`: the service-account
@@ -134,8 +184,9 @@ const AWS_PREFIX: &str = "uc-aws-v1.";
 const AWS_SERVER_ID_HEADER: &str = "x-uc-server-id";
 /// The body of the signed request.
 const GET_CALLER_IDENTITY: &str = "Action=GetCallerIdentity&Version=2011-06-15";
-/// The global STS endpoint, which signs in `us-east-1`; the server's default.
+/// The global STS endpoint, which signs in [`AWS_GLOBAL_REGION`].
 const AWS_GLOBAL_STS: &str = "https://sts.amazonaws.com";
+const AWS_GLOBAL_REGION: &str = "us-east-1";
 /// How long a signed request is reused. STS takes one for 15 minutes; the server keeps the
 /// caller it names for 5.
 const AWS_REUSE: Duration = Duration::from_secs(5 * 60);
@@ -153,17 +204,11 @@ pub fn aws(server_id: &str) -> Result<Arc<dyn TokenSource>> {
 }
 
 /// [`aws`] with the variables `env`, and the STS endpoint `endpoint` instead of AWS's: one that
-/// the server's AWS issuer block names, such as a VPC endpoint. A web identity and the
-/// container endpoint are read from the process's variables, as olai-http does.
+/// the server's AWS issuer block names, such as a regional or VPC endpoint, whose region signs
+/// the request. A web identity and the container endpoint are read from the process's
+/// variables, as olai-http does.
 pub fn aws_in(env: &Env, server_id: &str, endpoint: Option<&str>) -> Result<Arc<dyn TokenSource>> {
-    let region = set(env, "AWS_REGION")
-        .or_else(|| set(env, "AWS_DEFAULT_REGION"))
-        .map(str::to_string);
-    let endpoint = match (endpoint, &region) {
-        (Some(endpoint), _) => endpoint.to_string(),
-        (None, Some(region)) => format!("https://sts.{region}.amazonaws.com"),
-        (None, None) => AWS_GLOBAL_STS.to_string(),
-    };
+    let (url, region) = aws_endpoint(env, endpoint)?;
     let mut builder = olai_http::aws::AmazonBuilder::new();
     for (name, value) in env.iter().filter(|(name, _)| name.starts_with("AWS_")) {
         if let Ok(key) = name.to_ascii_lowercase().parse() {
@@ -173,11 +218,51 @@ pub fn aws_in(env: &Env, server_id: &str, endpoint: Option<&str>) -> Result<Arc<
     let credentials = builder.build(None)?.credentials;
     Ok(Arc::new(AwsSource {
         credentials,
-        url: Url::parse(&endpoint)?.join("/")?,
-        region: region.unwrap_or_else(|| "us-east-1".into()),
+        url,
+        region,
         server_id: server_id.to_string(),
         kept: Mutex::new(None),
     }))
+}
+
+/// Where the signed request goes, and the region that signs it: the region of `endpoint`, an
+/// AWS STS endpoint, else of the environment; without `endpoint`, the regional endpoint of the
+/// environment's region, else the global one.
+fn aws_endpoint(env: &Env, endpoint: Option<&str>) -> Result<(Url, String)> {
+    let region = set(env, "AWS_REGION")
+        .or_else(|| set(env, "AWS_DEFAULT_REGION"))
+        .map(str::to_string);
+    let (endpoint, region) = match (endpoint, region) {
+        (Some(endpoint), region) => {
+            let url = Url::parse(endpoint)?;
+            let region = (sts_region(&url).or(region)).unwrap_or_else(|| AWS_GLOBAL_REGION.into());
+            (url, region)
+        }
+        (None, Some(region)) => (
+            Url::parse(&format!("https://sts.{region}.amazonaws.com"))?,
+            region,
+        ),
+        (None, None) => (Url::parse(AWS_GLOBAL_STS)?, AWS_GLOBAL_REGION.into()),
+    };
+    Ok((endpoint.join("/")?, region))
+}
+
+/// The region of an AWS STS endpoint: `sts.<region>.amazonaws.com`, a VPC endpoint
+/// `vpce-….sts.<region>.vpce.amazonaws.com`, or the global `sts.amazonaws.com`, which signs in
+/// [`AWS_GLOBAL_REGION`]. `None` for any other host.
+fn sts_region(url: &Url) -> Option<String> {
+    let host = url.host_str()?;
+    if !host.ends_with(".amazonaws.com") && !host.ends_with(".amazonaws.com.cn") {
+        return None;
+    }
+    let labels: Vec<&str> = host.split('.').collect();
+    let sts = labels
+        .iter()
+        .position(|l| *l == "sts" || *l == "sts-fips")?;
+    match *labels.get(sts + 1)? {
+        "amazonaws" => Some(AWS_GLOBAL_REGION.into()),
+        region => Some(region.to_string()),
+    }
 }
 
 /// The tokens of an AWS identity: signed `GetCallerIdentity` requests, each reused for
@@ -454,7 +539,8 @@ pub struct Issuer {
     /// `oidc`, or `aws` for AWS identities; empty from a server that does not say.
     #[serde(default)]
     pub kind: String,
-    /// The `iss` of its tokens; `*` stands for one DNS label. For AWS, the STS endpoint.
+    /// The `iss` of its tokens; `*` stands for one DNS label. For AWS, the STS endpoint, empty
+    /// for AWS's own.
     pub issuer: String,
     /// The `aud` its tokens must carry; `*` alone for any.
     #[serde(default)]
@@ -505,10 +591,16 @@ enum Kind {
     Other,
 }
 
+/// How long the server may take to give its metadata.
+const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// The server's metadata; `None` when the server has no such endpoint.
 pub async fn metadata(server: &Url) -> Result<Option<ProtectedResource>> {
     let url = server.join(".well-known/oauth-protected-resource")?;
-    let response = reqwest::Client::new().get(url).send().await?;
+    let client = reqwest::Client::builder()
+        .timeout(METADATA_TIMEOUT)
+        .build()?;
+    let response = client.get(url).send().await?;
     if response.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
     }
@@ -580,7 +672,7 @@ enum Choice {
     },
     Aws {
         server_id: String,
-        /// The block's STS endpoint, when it is not AWS's.
+        /// The STS endpoint that the block names, if it names one.
         endpoint: Option<String>,
     },
 }
@@ -684,9 +776,9 @@ fn choose(env: &Env, issuers: &[Issuer], az: bool, gcloud: bool) -> Option<Choic
                 });
             }
             Kind::Aws if aws_hints(env) => {
+                // The server names no endpoint for AWS's own.
                 let endpoint = issuer.issuer.trim_end_matches('/');
-                let own =
-                    !endpoint.is_empty() && endpoint != AWS_GLOBAL_STS && !endpoint.contains('*');
+                let own = !endpoint.is_empty() && !endpoint.contains('*');
                 return Some(Choice::Aws {
                     server_id: audience.to_string(),
                     endpoint: own.then(|| endpoint.to_string()),
@@ -968,15 +1060,10 @@ mod tests {
         };
         assert_eq!(choose(&service_principal, &[any], false, false), None);
 
-        // An AWS identity at an AWS block: AWS's endpoint, or the block's own.
+        // An AWS identity at an AWS block: AWS's endpoints, or the block's own.
         let aws = Issuer {
             kind: "aws".into(),
-            ..issuer(
-                "aws",
-                "https://sts.amazonaws.com",
-                "https://uc.example.com",
-                true,
-            )
+            ..issuer("aws", "", "https://uc.example.com", true)
         };
         let keys = env(&[
             ("AWS_ACCESS_KEY_ID", "AKIA"),
@@ -1001,7 +1088,108 @@ mod tests {
                 endpoint: Some("https://vpce-1.sts.eu-west-1.vpce.amazonaws.com".into()),
             })
         );
+        let global = Issuer {
+            issuer: "https://sts.amazonaws.com".into(),
+            ..aws.clone()
+        };
+        assert_eq!(
+            choose(
+                &env(&[("AWS_REGION", "eu-west-1")]),
+                &[global],
+                false,
+                false
+            ),
+            Some(Choice::Aws {
+                server_id: "https://uc.example.com".into(),
+                endpoint: Some("https://sts.amazonaws.com".into()),
+            })
+        );
         assert_eq!(choose(&service_principal, &[aws], false, false), None);
+    }
+
+    #[test]
+    fn aws_requests_are_signed_for_their_endpoint() {
+        let endpoint = |vars: &[(&str, &str)], endpoint: Option<&str>| {
+            let (url, region) = aws_endpoint(&env(vars), endpoint).unwrap();
+            (url.to_string(), region)
+        };
+        let pair = |url: &str, region: &str| (url.to_string(), region.to_string());
+        // AWS's own endpoints: the environment's region, else the global one.
+        assert_eq!(
+            endpoint(&[], None),
+            pair("https://sts.amazonaws.com/", "us-east-1")
+        );
+        assert_eq!(
+            endpoint(&[("AWS_DEFAULT_REGION", "eu-west-1")], None),
+            pair("https://sts.eu-west-1.amazonaws.com/", "eu-west-1")
+        );
+        // The block's endpoint, in its own region.
+        let eu = [("AWS_REGION", "eu-west-1")];
+        assert_eq!(
+            endpoint(&eu, Some("https://sts.amazonaws.com")),
+            pair("https://sts.amazonaws.com/", "us-east-1")
+        );
+        assert_eq!(
+            endpoint(&[], Some("https://sts.ap-south-1.amazonaws.com")),
+            pair("https://sts.ap-south-1.amazonaws.com/", "ap-south-1")
+        );
+        assert_eq!(
+            endpoint(
+                &eu,
+                Some("https://vpce-1-ab.sts.us-west-2.vpce.amazonaws.com")
+            ),
+            pair(
+                "https://vpce-1-ab.sts.us-west-2.vpce.amazonaws.com/",
+                "us-west-2"
+            )
+        );
+        assert_eq!(
+            endpoint(&[], Some("https://sts.cn-north-1.amazonaws.com.cn")).1,
+            "cn-north-1"
+        );
+        // Another host, such as a fake STS: the environment's region.
+        assert_eq!(
+            endpoint(&eu, Some("http://127.0.0.1:9000")),
+            pair("http://127.0.0.1:9000/", "eu-west-1")
+        );
+        assert_eq!(endpoint(&[], Some("http://127.0.0.1:9000")).1, "us-east-1");
+    }
+
+    #[test]
+    fn a_named_managed_identity_comes_before_the_azure_cli() {
+        assert_eq!(azure_identity(&env(&[]), true), AzureIdentity::Cli);
+        let user_assigned = env(&[("AZURE_CLIENT_ID", "c")]);
+        assert_eq!(
+            azure_identity(&user_assigned, true),
+            AzureIdentity::Managed {
+                client: Some("c"),
+                endpoint: None
+            }
+        );
+        let app_service = env(&[("IDENTITY_ENDPOINT", "http://localhost:42356/msi/token")]);
+        assert_eq!(
+            azure_identity(&app_service, true),
+            AzureIdentity::Managed {
+                client: None,
+                endpoint: Some("http://localhost:42356/msi/token")
+            }
+        );
+        assert_eq!(
+            azure_identity(&env(&[]), false),
+            AzureIdentity::Managed {
+                client: None,
+                endpoint: None
+            }
+        );
+        let service_principal = env(&[
+            ("AZURE_TENANT_ID", "t"),
+            ("AZURE_CLIENT_ID", "c"),
+            ("AZURE_CLIENT_SECRET", "s"),
+        ]);
+        assert!(matches!(
+            azure_identity(&service_principal, true),
+            AzureIdentity::ClientSecret { .. }
+        ));
     }
 
     #[test]

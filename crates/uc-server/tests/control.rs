@@ -604,13 +604,13 @@ async fn sign_in_is_required_when_authorization_is_on() {
     .await;
     assert_eq!(err["message"], "Invalid access token.");
     // The tokens of an issuer without `direct = true` must be exchanged
-    // first; so must those of an unknown issuer.
+    // first; so must those of an unknown issuer. Upstream says 403.
     for iss in [idp.issuer.clone(), "https://other.example.com".to_string()] {
         let raw = idp.token(json!({ "iss": iss, "email": "alice@example.com" }));
         let err = assert_error(
             api_get(&app, "/catalogs", &bearer(&raw)).await,
-            StatusCode::UNAUTHORIZED,
-            "UNAUTHENTICATED",
+            StatusCode::FORBIDDEN,
+            "PERMISSION_DENIED",
         )
         .await;
         assert_eq!(err["message"], "Invalid access token.");

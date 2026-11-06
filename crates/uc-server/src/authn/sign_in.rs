@@ -644,11 +644,11 @@ pub async fn callback(
     }
 
     // The user that the token exchange would sign in, named as the
-    // provider's `[[auth.issuers]]` block says; without one, by `email`,
+    // provider's `[[auth.issuers]]` block says: the one that takes the
+    // client id, else the first of the issuer. Without one, by `email`,
     // else `sub`, and never made here.
-    let block = state
-        .auth
-        .issuer(&oidc.issuer)
+    let block = (state.auth.issuer_taking(&oidc.issuer, claims))
+        .or_else(|| state.auth.issuer(&oidc.issuer))
         .cloned()
         .unwrap_or_else(|| idp::IssuerSettings::implicit(&oidc.issuer));
     let principal = match idp::resolve(&state, &block, claims, idp::TokenKind::IdToken).await {

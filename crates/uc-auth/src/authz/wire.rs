@@ -92,16 +92,16 @@ pub struct AuthorizeResponse {
     /// The ids of the policies that determined the decision.
     #[serde(default)]
     pub policies: Vec<String>,
-    /// Errors met while deciding. With any error that kept the request from being
-    /// evaluated, the decision is [`Decision::Deny`].
+    /// Errors met while deciding. With any error, the request is denied.
     #[serde(default)]
     pub errors: Vec<String>,
 }
 
 impl AuthorizeResponse {
-    /// Whether the decision is [`Decision::Allow`].
+    /// Whether the decision is [`Decision::Allow`] without errors: an allow
+    /// that met errors, such as a policy that failed to evaluate, is a deny.
     pub fn is_allowed(&self) -> bool {
-        self.decision == Decision::Allow
+        self.decision == Decision::Allow && self.errors.is_empty()
     }
 
     /// A [`Decision::Deny`] because the request could not be decided.
@@ -188,6 +188,9 @@ mod tests {
             serde_json::from_value(json!({ "decision": "deny" })).unwrap();
         assert_eq!(parsed.decision, Decision::Deny);
         assert!(parsed.policies.is_empty() && parsed.errors.is_empty());
+        let with_errors: AuthorizeResponse =
+            serde_json::from_value(json!({ "decision": "allow", "errors": ["boom"] })).unwrap();
+        assert!(!with_errors.is_allowed());
         assert!(
             serde_json::from_value::<AuthorizeResponse>(json!({ "decision": "maybe" })).is_err()
         );

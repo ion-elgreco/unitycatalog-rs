@@ -10,18 +10,19 @@
 //!   external locations have no parents.
 //! - Each endpoint combines these as upstream's expression does, see
 //!   [`rules`]. A denial is 403 "Access denied.".
+//! - An [`Authorizer`], such as Cedar's ([`cedar`]), can decide the
+//!   privileges instead of the grants alone.
 //!
 //! With authorization off every check passes, as upstream's
 //! `AllowingAuthorizer`.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
 use serde_json::{Map, Value, json};
 
 use uc_api::Privilege;
-use uc_auth::authz::{AuthorizeRequest, AuthorizeResponse, Authorizer, Decision, EntityRef};
+use uc_auth::authz::{AuthorizeRequest, Authorizer, EntityRef};
 use uc_common::{Error, ErrorCode, Result, SecurableType};
 
 pub use uc_metastore::{Lineage, Node, PathOwner};
@@ -64,31 +65,6 @@ fn entity(node: &Node) -> EntityRef {
     EntityRef::new(entity_type(node.kind), node.id.clone())
 }
 
-/// The default [`Authorizer`]: a privilege is held when it is granted on the
-/// resource or on one of its parents, as the resource entity's
-/// `granted_privileges` says. The same as the default Cedar policy
-/// ([`cedar`]), without Cedar.
-pub struct GrantsAuthorizer;
-
-#[async_trait]
-impl Authorizer for GrantsAuthorizer {
-    async fn authorize(&self, request: &AuthorizeRequest) -> AuthorizeResponse {
-        let action = json!({ "__entity": request.action });
-        let held = (request.resource_entity.as_ref())
-            .and_then(|entity| entity["attrs"]["granted_privileges"].as_array())
-            .is_some_and(|granted| granted.contains(&action));
-        AuthorizeResponse {
-            decision: if held {
-                Decision::Allow
-            } else {
-                Decision::Deny
-            },
-            policies: if held { vec!["granted".into()] } else { vec![] },
-            errors: vec![],
-        }
-    }
-}
-
 /// Upstream's denial.
 pub fn denied() -> Error {
     Error::new(ErrorCode::PermissionDenied, "Access denied.")
@@ -112,7 +88,12 @@ pub struct Access {
     metastore: Node,
     /// What is granted to the caller and its groups, by securable id.
     grants: HashMap<String, HashSet<Privilege>>,
-    authorizer: Arc<dyn Authorizer>,
+    /// The authorizer; with none, the grants decide.
+    authorizer: Option<Arc<dyn Authorizer>>,
+    /// The authorizer's answers for this request, by the ids of the
+    /// securable and its parents, and the privilege: the checks of a list
+    /// ask for the same parents each time.
+    decided: Mutex<HashMap<(Vec<String>, Privilege), bool>>,
     /// The context of the request ([`Principal::context`]).
     context: Map<String, Value>,
 }
@@ -133,7 +114,8 @@ impl Access {
                     owner: None,
                 },
                 grants: HashMap::new(),
-                authorizer: state.authorizer.clone(),
+                authorizer: None,
+                decided: Mutex::default(),
                 context: Map::new(),
             });
         }
@@ -156,6 +138,7 @@ impl Access {
                 .map(|(id, privileges)| (id, privileges.into_iter().collect()))
                 .collect(),
             authorizer: state.authorizer.clone(),
+            decided: Mutex::default(),
             context: principal.context.as_map().clone(),
         })
     }
@@ -203,7 +186,8 @@ impl Access {
     }
 
     /// `#authorize(#principal, #<level>, privilege)`: what the authorizer
-    /// says, by default whether it is granted there or on a parent.
+    /// says, else whether it is granted there or on a parent. An answer
+    /// with errors is a denial.
     pub async fn has(&self, lineage: &Lineage, level: Level, privilege: Privilege) -> bool {
         if !self.enabled {
             return true;
@@ -231,12 +215,25 @@ impl Access {
                 }
             }
         }
-        let request = self.request(&chain, privilege);
-        let answer = self.authorizer.authorize(&request).await;
+        let Some(authorizer) = &self.authorizer else {
+            return (chain.iter())
+                .any(|n| (self.grants.get(&n.id)).is_some_and(|held| held.contains(&privilege)));
+        };
+        let key = (chain.iter().map(|n| n.id.clone()).collect(), privilege);
+        if let Some(allowed) = self.decided().get(&key) {
+            return *allowed;
+        }
+        let answer = authorizer.authorize(&self.request(&chain, privilege)).await;
         if !answer.errors.is_empty() {
             tracing::warn!(errors = ?answer.errors, "authorization errors; denying");
         }
-        answer.is_allowed()
+        let allowed = answer.is_allowed();
+        self.decided().insert(key, allowed);
+        allowed
+    }
+
+    fn decided(&self) -> std::sync::MutexGuard<'_, HashMap<(Vec<String>, Privilege), bool>> {
+        self.decided.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// The request for `privilege` on `chain[0]`, whose parents are the rest
@@ -612,23 +609,23 @@ pub mod rules {
     /// `OWNER`) on the child (`GET_TABLE` and the volume, function and model
     /// read rules).
     pub async fn read_child(a: &Access, l: &Lineage, read: &[uc_api::Privilege]) -> bool {
-        a.admin()
-            || a.owner(l, Catalog)
-            || (a.has(l, Catalog, UseCatalog).await && a.owner(l, Schema))
-            || (a.has(l, Catalog, UseCatalog).await
-                && a.has(l, Schema, UseSchema).await
-                && a.owner_or_any(l, Object, read).await)
+        if a.admin() || a.owner(l, Catalog) {
+            return true;
+        }
+        a.has(l, Catalog, UseCatalog).await
+            && (a.owner(l, Schema)
+                || (a.has(l, Schema, UseSchema).await && a.owner_or_any(l, Object, read).await))
     }
 
     /// Changes and deletes of a schema child (`DELETE_TABLE` and the volume,
     /// function and model rules): catalog owner, schema owner with
     /// `USE_CATALOG`, or `USE_CATALOG` + `USE_SCHEMA` + child owner.
     pub async fn own_child(a: &Access, l: &Lineage) -> bool {
-        a.owner(l, Catalog)
-            || (a.has(l, Catalog, UseCatalog).await && a.owner(l, Schema))
-            || (a.has(l, Catalog, UseCatalog).await
-                && a.has(l, Schema, UseSchema).await
-                && a.owner(l, Object))
+        if a.owner(l, Catalog) {
+            return true;
+        }
+        a.has(l, Catalog, UseCatalog).await
+            && (a.owner(l, Schema) || (a.owner(l, Object) && a.has(l, Schema, UseSchema).await))
     }
 
     /// The catalog and schema tiers of using a child: `OWNER` or `USE_*` on

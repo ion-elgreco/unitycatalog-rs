@@ -290,13 +290,15 @@ pub struct Issuer {
     /// What the provider's tokens are (default `oidc`).
     #[serde(default)]
     pub kind: IssuerKind,
-    /// The `iss` claim of its tokens; `*` stands for one DNS label. For
-    /// `kind = "aws"`, the STS endpoint that the signed requests go to
-    /// (default the global and regional endpoints of AWS).
+    /// The `iss` claim of its tokens, as they write it, with a trailing `/`
+    /// if they have one; `*` stands for one DNS label. For `kind = "aws"`,
+    /// the STS endpoint that the signed requests go to (default the global
+    /// and regional endpoints of AWS).
     #[serde(default)]
     pub issuer: String,
-    /// The `aud` that its tokens must carry; `*` alone for any. For
-    /// `kind = "aws"`, the server id that the signed requests must carry.
+    /// The `aud` that its tokens must carry; `*` alone for any, without
+    /// `direct`. For `kind = "aws"`, the server id that the signed requests
+    /// must carry.
     pub audiences: Vec<String>,
     /// For `kind = "aws"`: the AWS accounts whose identities it takes.
     #[serde(default)]
@@ -314,7 +316,8 @@ pub struct Issuer {
     /// `externalId` (default `["azp", "client_id"]`).
     #[serde(default)]
     pub client_claims: Vec<String>,
-    /// A claim whose values are names of groups the caller is in.
+    /// A claim whose values are names of groups the caller is in: the
+    /// group `<name>:<value>` of the server.
     #[serde(default)]
     pub groups_claim: Option<String>,
     /// Make the user at its first request when it is missing (default

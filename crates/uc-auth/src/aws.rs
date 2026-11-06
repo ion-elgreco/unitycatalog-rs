@@ -17,6 +17,8 @@
 //! - it was signed less than [`SIGNED_REQUEST_TTL`] ago, as STS also checks;
 //! - STS answers with the ARN of one of the provider's `accounts`.
 //!
+//! The first provider that takes it all decides.
+//!
 //! The caller is named by the ARN, an assumed role by its role
 //! (`arn:aws:iam::<account>:role/<name>`, without the role's path), so each
 //! session is not a caller of its own. The identity is kept until the
@@ -151,9 +153,14 @@ impl AwsResolver {
         if !signed_headers(authorization).any(|h| h == header) {
             return Err(format!("{header} is not signed"));
         }
-        let provider = (self.providers.iter())
-            .find(|p| p.takes(&origin, server_id))
-            .ok_or_else(|| format!("no AWS provider takes {origin} and server id {server_id}"))?;
+        let providers: Vec<&AwsProvider> = (self.providers.iter())
+            .filter(|p| p.takes(&origin, server_id))
+            .collect();
+        if providers.is_empty() {
+            return Err(format!(
+                "no AWS provider takes {origin} and server id {server_id}"
+            ));
+        }
         let signed = headers.get("x-amz-date").ok_or("no x-amz-date header")?;
         let signed = NaiveDateTime::parse_from_str(signed, "%Y%m%dT%H%M%SZ")
             .map_err(|e| format!("x-amz-date: {e}"))?
@@ -176,7 +183,7 @@ impl AwsResolver {
             })
             .collect();
         Ok(Checked {
-            provider,
+            providers,
             url,
             headers,
             left,
@@ -237,13 +244,19 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
             Ok(identity) => identity,
             Err(e) => return Resolution::Refused(e),
         };
-        let provider = checked.provider;
-        if !provider.accounts.contains(&identity.account) {
+        // Of the providers of the endpoint and server id, the first that
+        // takes the account.
+        let Some(provider) = (checked.providers.iter())
+            .find(|p| p.accounts.contains(&identity.account))
+            .copied()
+        else {
+            let names: Vec<&str> = checked.providers.iter().map(|p| p.name.as_str()).collect();
             return refused(format!(
                 "account {} not allowed by {}",
-                identity.account, provider.name
+                identity.account,
+                names.join(", ")
             ));
-        }
+        };
         let Some(arn) = principal_arn(&identity.arn) else {
             return refused(format!("not an ARN: {}", identity.arn));
         };
@@ -278,7 +291,8 @@ struct SignedRequest {
 
 /// What a bearer value carries, checked before STS is asked.
 struct Checked<'a> {
-    provider: &'a AwsProvider,
+    /// The providers of its endpoint and server id, one or more.
+    providers: Vec<&'a AwsProvider>,
     url: reqwest::Url,
     /// The headers sent to STS, lowercase.
     headers: BTreeMap<String, String>,

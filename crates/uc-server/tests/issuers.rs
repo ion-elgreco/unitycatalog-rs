@@ -392,13 +392,8 @@ async fn tokens_that_do_not_check_out_are_refused() {
             .await;
         }
     };
-    // Another audience, an unknown issuer, expired, not yet valid, tampered.
+    // Another audience, expired, not yet valid, tampered.
     invalid(app_token(&idp, json!({ "aud": "uc" }))).await;
-    invalid(app_token(
-        &idp,
-        json!({ "iss": "https://evil.example.com" }),
-    ))
-    .await;
     invalid(app_token(&idp, json!({ "exp": now - 120 }))).await;
     invalid(app_token(&idp, json!({ "nbf": now + 120 }))).await;
     let mut tampered = app_token(&idp, json!({}));
@@ -425,6 +420,47 @@ async fn tokens_that_do_not_check_out_are_refused() {
     invalid(idp.token_with_kid("gone", app_claims(json!({})))).await;
     invalid(idp.token_with_kid("gone-too", app_claims(json!({})))).await;
     assert_eq!(idp.fetches(), fetches);
+    // The token of an unknown issuer must be exchanged first, as upstream
+    // says.
+    refused(
+        &app,
+        &app_token(&idp, json!({ "iss": "https://evil.example.com" })),
+        StatusCode::FORBIDDEN,
+        "PERMISSION_DENIED",
+        "Invalid access token.",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn a_provider_that_does_not_answer_is_no_invalid_token() {
+    let idp = Idp::start().await;
+    // An address where nothing listens.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let down = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    let (app, _) = app(
+        vec![Issuer {
+            issuer: down.clone(),
+            ..entra(&idp)
+        }],
+        None,
+    )
+    .await;
+    let token = app_token(&idp, json!({ "iss": down }));
+    let err = assert_error(
+        get(&app, "/catalogs", &token).await,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "INTERNAL",
+    )
+    .await;
+    assert!(
+        err["message"]
+            .as_str()
+            .unwrap()
+            .contains("Could not get issuer configuration"),
+        "{err}"
+    );
 }
 
 #[tokio::test]
@@ -443,8 +479,8 @@ async fn exchange_only_issuers_are_refused_on_the_api() {
     refused(
         &app,
         &token,
-        StatusCode::UNAUTHORIZED,
-        "UNAUTHENTICATED",
+        StatusCode::FORBIDDEN,
+        "PERMISSION_DENIED",
         "Invalid access token.",
     )
     .await;
@@ -470,18 +506,25 @@ async fn each_issuer_has_its_own_audience() {
         create_users: true,
         ..Default::default()
     };
-    let (app, metastore) = app(vec![block("a", &a), block("b", &b)], None).await;
+    // A second block of `a`'s issuer, for another audience.
+    let a2 = Issuer {
+        audiences: vec!["uc-a2".into()],
+        ..block("a2", &a)
+    };
+    let (app, metastore) = app(vec![block("a", &a), block("b", &b), a2], None).await;
     // Each provider's token, for its own audience; `sub` names the user
-    // with the provider's name.
-    for (idp, aud) in [(&a, "uc-a"), (&b, "uc-b")] {
+    // with the name of the block that takes the audience.
+    for (idp, aud) in [(&a, "uc-a"), (&b, "uc-b"), (&a, "uc-a2")] {
         let token = idp.token(json!({ "aud": aud, "sub": "x" }));
         assert_eq!(
             get(&app, "/catalogs", &token).await.status(),
             StatusCode::OK
         );
+        let resp = exchange(&app, &token).await;
+        assert_eq!(resp.status(), StatusCode::OK, "{aud}");
     }
     let scim = metastore.scim();
-    for name in ["a:x", "b:x"] {
+    for name in ["a:x", "b:x", "a2:x"] {
         assert!(
             scim.get_user_by_name(name).await.unwrap().is_some(),
             "{name}"
@@ -511,35 +554,47 @@ async fn each_issuer_has_its_own_audience() {
 
 #[tokio::test]
 async fn the_groups_of_a_token_count_when_the_group_exists() {
-    let idp = Idp::start().await;
-    let (app, metastore) = app(vec![entra(&idp)], None).await;
-    metastore
-        .scim()
-        .create_group(ScimGroup {
-            display_name: "writers".into(),
-            ..Default::default()
-        })
-        .await
-        .unwrap();
+    let (idp, other) = (Idp::start().await, Idp::start().await);
+    // A second provider that names groups too.
+    let gitlab = Issuer {
+        name: "gitlab".into(),
+        issuer: other.issuer.clone(),
+        groups_claim: Some("roles".into()),
+        ..entra(&other)
+    };
+    let (app, metastore) = app(vec![entra(&idp), gitlab], None).await;
+    for group in ["entra:writers", "writers"] {
+        metastore
+            .scim()
+            .create_group(ScimGroup {
+                display_name: group.into(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        may_create_catalogs(&metastore, group).await;
+    }
     user(&metastore, "alice@example.com", None).await;
-    may_create_catalogs(&metastore, "writers").await;
     may_create_catalogs(&metastore, "alice@example.com").await;
 
-    // A role that is a group of the server gives its grants.
+    // A role is the group `<block>:<role>` of the server, with its grants.
     let writer = app_token(&idp, json!({ "roles": ["writers"] }));
     assert_eq!(
         owner_of_a_new_catalog(&app, &writer, "written").await,
         "entra:7f3e"
     );
-    // A role that no group has counts for nothing; nor does a user's name.
-    for (oid, roles) in [
-        ("r1", json!(["readers"])),
-        ("i1", json!(["alice@example.com"])),
+    // A role that no group has counts for nothing; nor does a user's name,
+    // a group of another block, or a group without a block.
+    for (provider, oid, roles) in [
+        (&idp, "r1", json!(["readers"])),
+        (&idp, "i1", json!(["alice@example.com"])),
+        (&other, "g1", json!(["writers"])),
+        (&other, "g2", json!(["entra:writers"])),
     ] {
-        let token = app_token(&idp, json!({ "oid": oid, "roles": roles }));
+        let token = app_token(provider, json!({ "oid": oid, "roles": roles }));
         let resp = post(&app, "/catalogs", &token, json!({ "name": oid })).await;
         let err = assert_error(resp, StatusCode::FORBIDDEN, "PERMISSION_DENIED").await;
-        assert_eq!(err["message"], "Access denied.");
+        assert_eq!(err["message"], "Access denied.", "{oid}");
     }
 }
 

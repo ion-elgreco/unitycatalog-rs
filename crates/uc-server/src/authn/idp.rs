@@ -14,8 +14,8 @@ use std::time::Duration;
 
 use serde_json::{Map, Value};
 use uc_auth::aws::STS_ENDPOINTS;
-use uc_auth::jwt::{VerifyError, audiences};
-use uc_auth::{Allowlist, Authenticator, AwsProvider, JwtKeys, JwtProvider};
+use uc_auth::jwt::VerifyError;
+use uc_auth::{Authenticator, AwsProvider, JwtKeys, JwtProvider};
 
 use uc_api::{ScimUser, scim::ScimEmail, scim::schema_uri};
 use uc_common::{Error, ErrorCode, Result, settings};
@@ -40,14 +40,15 @@ pub struct IssuerSettings {
     pub name: String,
     /// What its tokens are.
     pub kind: settings::IssuerKind,
-    /// The `iss` pattern, as written; for AWS, the STS endpoint.
+    /// The `iss` pattern, as written; for AWS, the STS endpoint, empty for
+    /// AWS's own.
     pub issuer: String,
-    /// The `iss` patterns; for AWS, the STS endpoints.
-    patterns: Vec<String>,
-    issuers: Allowlist,
+    /// For AWS: the STS endpoints.
+    endpoints: Vec<String>,
+    /// The checks of its tokens, on requests and at the exchange.
+    jwt: JwtProvider,
     /// The audiences, trimmed; `*` alone for any.
     pub audiences: Vec<String>,
-    audience_allowlist: Allowlist,
     /// Its tokens are taken on every request, not only at the exchange.
     pub direct: bool,
     /// The claims that name the caller, the first present winning.
@@ -86,12 +87,27 @@ impl IssuerSettings {
                 .map(str::to_string)
                 .collect()
         };
+        let name = issuer.name.trim().to_string();
         let audiences = trimmed(&issuer.audiences);
+        let groups_claim = (issuer.groups_claim.as_deref())
+            .map(str::trim)
+            .filter(|g| !g.is_empty())
+            .map(str::to_string);
         let aws = issuer.kind == settings::IssuerKind::Aws;
-        let pattern = issuer.issuer.trim().trim_end_matches('/');
-        let patterns: Vec<String> = match (aws, pattern.is_empty()) {
+        // An `iss` is matched exactly, with its trailing `/` if it has one;
+        // an STS endpoint is an origin.
+        let pattern = match aws {
+            true => issuer.issuer.trim().trim_end_matches('/'),
+            false => issuer.issuer.trim(),
+        };
+        let endpoints: Vec<String> = match (aws, pattern.is_empty()) {
             (true, true) => STS_ENDPOINTS.iter().map(|e| e.to_string()).collect(),
-            _ => vec![pattern.to_string()],
+            (true, false) => vec![pattern.to_string()],
+            (false, _) => Vec::new(),
+        };
+        let jwt_issuers: &[&str] = match aws {
+            true => &[],
+            false => &[pattern],
         };
         // An AWS identity is named by its ARN: the role of an assumed role.
         let (principal_claims, client_claims): (&[&str], &[&str]) = match aws {
@@ -99,24 +115,20 @@ impl IssuerSettings {
             false => (&["email", "sub"], &["azp", "client_id"]),
         };
         Self {
-            name: issuer.name.trim().to_string(),
+            jwt: JwtProvider::new(&name, jwt_issuers)
+                .with_audiences(&audiences)
+                .with_groups_claim(groups_claim.as_deref()),
+            name,
             kind: issuer.kind,
-            issuer: patterns[0].clone(),
-            issuers: Allowlist::new(&patterns),
-            patterns,
-            audience_allowlist: Allowlist::new(&audiences),
+            issuer: pattern.to_string(),
+            endpoints,
             audiences,
             // AWS identities are taken on every request; there is no
             // exchange for them.
             direct: issuer.direct || aws,
             principal_claims: names(&issuer.principal_claims, principal_claims),
             client_claims: names(&issuer.client_claims, client_claims),
-            groups_claim: issuer
-                .groups_claim
-                .as_deref()
-                .map(str::trim)
-                .filter(|g| !g.is_empty())
-                .map(str::to_string),
+            groups_claim,
             create_users: issuer.create_users,
             display_name: issuer.display_name.clone().filter(|d| !d.trim().is_empty()),
             accounts: trimmed(&issuer.accounts),
@@ -129,17 +141,15 @@ impl IssuerSettings {
     }
 
     /// The provider of `uc_auth`'s JWT checks.
-    pub fn jwt_provider(&self) -> JwtProvider {
-        JwtProvider::new(&self.name, &self.patterns)
-            .with_audiences(&self.audiences)
-            .with_groups_claim(self.groups_claim.as_deref())
+    pub fn jwt_provider(&self) -> &JwtProvider {
+        &self.jwt
     }
 
     /// For AWS: the provider of `uc_auth`'s checks of signed requests, whose
     /// server ids are the block's `audiences`.
     pub fn aws_provider(&self) -> AwsProvider {
         AwsProvider::new(&self.name, self.audiences.iter(), self.accounts.iter())
-            .with_endpoints(&self.patterns)
+            .with_endpoints(&self.endpoints)
     }
 
     /// The block of the web UI's provider when no `[[auth.issuers]]` names
@@ -157,17 +167,13 @@ impl IssuerSettings {
     /// Whether `iss` is this block's issuer: never for AWS, whose tokens
     /// are not JWTs.
     pub fn matches(&self, iss: &str) -> bool {
-        !self.is_aws() && self.issuers.is_allowed(iss)
-    }
-
-    fn any_audience(&self) -> bool {
-        self.audiences.len() == 1 && self.audiences[0] == "*"
+        self.jwt.matches(iss)
     }
 
     /// Upstream `validateAudience`: one of the token's `aud` is allowed;
     /// `*` alone allows any.
     pub fn audience_allowed(&self, claims: &Map<String, Value>) -> bool {
-        self.any_audience() || self.audience_allowlist.is_any_allowed(&audiences(claims))
+        self.jwt.audience_allowed(claims)
     }
 
     fn validate(
@@ -223,6 +229,14 @@ impl IssuerSettings {
                 "audiences",
                 &self.audiences.join(", "),
                 "'*' cannot be combined with other values; use it alone to accept every audience.",
+            ));
+        }
+        if self.direct && self.audiences.iter().any(|a| a == "*") {
+            return Err(invalid(
+                "audiences",
+                "*",
+                "With direct = true, expected the aud of tokens for this server: with '*', a \
+                 token that the provider made for any other application would sign in here.",
             ));
         }
         Ok(())
@@ -327,9 +341,15 @@ impl AuthSettings {
         self
     }
 
-    /// The block that `iss` matches, if any.
+    /// The first block that `iss` matches, if any.
     pub fn issuer(&self, iss: &str) -> Option<&IssuerSettings> {
         self.issuers.iter().find(|issuer| issuer.matches(iss))
+    }
+
+    /// The first block that `iss` matches and that takes the audience of
+    /// `claims`, if any: blocks of one issuer can differ by audience.
+    pub fn issuer_taking(&self, iss: &str, claims: &Map<String, Value>) -> Option<&IssuerSettings> {
+        (self.issuers.iter()).find(|issuer| issuer.matches(iss) && issuer.audience_allowed(claims))
     }
 
     /// Upstream `validateAuthAllowlistConfiguration`, for each block.
@@ -640,6 +660,10 @@ mod tests {
             error(&["name = \"a\"\nissuer = \"https://a\"\naudiences = [\"*\", \"a\"]"])
                 .contains("cannot be combined")
         );
+        assert!(
+            error(&["name = \"a\"\nissuer = \"https://a\"\naudiences = [\"*\"]\ndirect = true"])
+                .contains("[0].audiences: '*'. With direct = true")
+        );
     }
 
     #[test]
@@ -648,6 +672,10 @@ mod tests {
             issuers: vec![
                 issuer("name = \"a\"\nissuer = \"https://a\"\naudiences = [\"a\"]"),
                 issuer("name = \"b\"\nissuer = \"https://*.b\"\naudiences = [\"b\"]"),
+                issuer("name = \"a2\"\nissuer = \"https://a\"\naudiences = [\"a2\"]"),
+                issuer(
+                    "name = \"v1\"\nissuer = \"https://sts.windows.net/t/\"\naudiences = [\"a\"]",
+                ),
             ],
             ..Default::default()
         });
@@ -655,6 +683,20 @@ mod tests {
         assert_eq!(settings.issuer("https://x.b").unwrap().name, "b");
         assert!(settings.issuer("https://b").is_none());
         assert!(settings.issuer("").is_none());
+        // An issuer with a trailing `/` is matched as it is.
+        assert_eq!(
+            settings.issuer("https://sts.windows.net/t/").unwrap().name,
+            "v1"
+        );
+        assert!(settings.issuer("https://sts.windows.net/t").is_none());
+        // Blocks of one issuer differ by audience.
+        let aud = |aud: &str| -> Map<String, Value> {
+            serde_json::from_value(serde_json::json!({ "aud": aud })).unwrap()
+        };
+        let taking = |aud_: &str| settings.issuer_taking("https://a", &aud(aud_));
+        assert_eq!(taking("a").unwrap().name, "a");
+        assert_eq!(taking("a2").unwrap().name, "a2");
+        assert!(taking("x").is_none());
     }
 
     #[test]
@@ -674,9 +716,9 @@ mod tests {
         };
         assert_eq!(
             with("roles").jwt_provider().groups(&claims),
-            ["Writers", "Readers"]
+            ["a:Writers", "a:Readers"]
         );
-        assert_eq!(with("one").jwt_provider().groups(&claims), ["Admins"]);
+        assert_eq!(with("one").jwt_provider().groups(&claims), ["a:Admins"]);
         assert!(with("none").jwt_provider().groups(&claims).is_empty());
         assert!(with(" ").jwt_provider().groups(&claims).is_empty());
     }
