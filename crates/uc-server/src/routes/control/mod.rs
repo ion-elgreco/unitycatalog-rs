@@ -123,7 +123,7 @@ pub async fn grant_token(
         return Err(Error::invalid_argument("Authorization is disabled").into());
     }
     let subject_token = form.subject_token.clone().unwrap_or_default();
-    let decoded = idp::decode(&subject_token)
+    let decoded = uc_auth::jwt::decode(&subject_token)
         .map_err(|e| Error::unauthenticated(format!("Invalid token: {e}")))?;
 
     // The issuer is checked before anything is fetched from it.
@@ -140,13 +140,14 @@ pub async fn grant_token(
         return Err(Error::unauthenticated("Invalid issuer").into());
     };
     settings
-        .providers
+        .keys
         .verify(&subject_token, &decoded, iss)
-        .await?;
+        .await
+        .map_err(idp::verify_error)?;
     if !issuer.audience_allowed(&decoded.claims) {
         tracing::warn!(
             issuer = %issuer.name,
-            audience = ?idp::audiences(&decoded.claims),
+            audience = ?uc_auth::jwt::audiences(&decoded.claims),
             "token rejected: audience not allowed"
         );
         return Err(Error::unauthenticated("Invalid audience").into());

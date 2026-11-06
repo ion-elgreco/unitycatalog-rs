@@ -23,6 +23,7 @@ uc-common = { workspace = true, features = ["ui"] }
 uc-api.workspace = true
 uc-delta.workspace = true
 uc-metastore.workspace = true
+uc-auth.workspace = true
 uc-storage.workspace = true
 
 # Credential vending: the AWS STS request, and Azure SAS signing.
@@ -50,10 +51,9 @@ utoipa-axum.workspace = true
 utoipa-swagger-ui.workspace = true
 
 jsonwebtoken.workspace = true
-# The server's token signing keys, and ES512 identity-provider tokens.
+# The server's token signing keys.
 rsa = "0.9"
 rand = "0.8"
-p521 = { version = "0.13", features = ["ecdsa"] }
 reqwest.workspace = true
 percent-encoding.workspace = true
 sha2.workspace = true
@@ -85,6 +85,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+# The fake identity provider's ES512 tokens.
+p521 = { version = "0.13", features = ["ecdsa"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 http-body-util = "0.1"
 serde_json = { workspace = true }

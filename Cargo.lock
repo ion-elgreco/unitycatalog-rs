@@ -8351,6 +8351,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "uc-auth"
+version = "0.0.0-dev"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "ipnet",
+ "jsonwebtoken",
+ "moka",
+ "p521 0.13.3",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "uc-cli"
 version = "0.0.0-dev"
 dependencies = [
@@ -8549,6 +8571,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "uc-api",
+ "uc-auth",
  "uc-common",
  "uc-delta",
  "uc-metastore",

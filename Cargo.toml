@@ -6,6 +6,7 @@ members = [
     "crates/uc-storage",
     "crates/uc-delta",
     "crates/uc-metastore",
+    "crates/uc-auth",
     "crates/uc-server",
     "crates/uc-client",
     "crates/uc-cli",
@@ -24,6 +25,7 @@ default-members = [
     "crates/uc-storage",
     "crates/uc-delta",
     "crates/uc-metastore",
+    "crates/uc-auth",
     "crates/uc-server",
     "crates/uc-client",
     "crates/uc-cli",
@@ -44,6 +46,7 @@ uc-api    = { path = "crates/uc-api" }
 uc-storage = { path = "crates/uc-storage" }
 uc-delta  = { path = "crates/uc-delta" }
 uc-metastore = { path = "crates/uc-metastore" }
+uc-auth = { path = "crates/uc-auth" }
 uc-client = { path = "crates/uc-client" }
 
 # Async runtime

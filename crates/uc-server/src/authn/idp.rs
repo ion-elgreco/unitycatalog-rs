@@ -1,115 +1,36 @@
 //! Identity providers whose tokens the server takes, after upstream
 //! `JwksOperations` and `WildcardAllowlist`.
 //!
-//! Each provider is an `[[auth.issuers]]` block ([`IssuerSettings`]). A
-//! token's `iss` must match a block before anything is fetched. Its key
-//! comes from the issuer's OIDC discovery document and JWK set, which are
-//! cached per issuer and refetched when a key id is unknown (at most once a
-//! minute). RS256/384/512 and ES256/384/512 are accepted, with
-//! [`LEEWAY`] of clock skew.
-//!
-//! Every block's tokens are taken at the token exchange
-//! (`crate::routes::control`). A block with `direct = true` has them taken
-//! on every request too ([`accept`]): the token is checked, the caller
-//! named ([`resolve`]) and its groups read, and the result is kept until
-//! the token expires, at most [`ACCEPTED_TTL`].
+//! Each provider is an `[[auth.issuers]]` block ([`IssuerSettings`]). The
+//! checks of their tokens are `uc_auth`'s: [`uc_auth::JwtResolver`] and
+//! [`uc_auth::AwsResolver`] on requests (blocks with `direct = true`, and
+//! AWS), [`uc_auth::JwtKeys`] at the token exchange
+//! (`crate::routes::control`) and the web sign-in. This module names the
+//! caller that a checked token stands for ([`resolve`]).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use jsonwebtoken::{
-    Algorithm, DecodingKey, Validation,
-    jwk::{AlgorithmParameters, EllipticCurve, Jwk},
-};
-use moka::future::Cache;
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
-use tokio::sync::{Mutex, RwLock};
+use uc_auth::aws::STS_ENDPOINTS;
+use uc_auth::jwt::{VerifyError, audiences};
+use uc_auth::{Allowlist, Authenticator, AwsProvider, JwtKeys, JwtProvider};
 
 use uc_api::{ScimUser, scim::ScimEmail, scim::schema_uri};
-use uc_common::{Error, ErrorCode, Result, now_epoch_millis, settings};
+use uc_common::{Error, ErrorCode, Result, settings};
+
+pub(crate) use uc_auth::jwt::claim;
 
 use crate::{
     authn::security::{ADMIN, INTERNAL_ISSUER},
-    http::outbound::SendOnIo,
     server::state::AppState,
 };
 
-/// The clock skew that the time claims of a provider's tokens may have.
-pub const LEEWAY: Duration = Duration::from_secs(60);
-/// How long an accepted token of a `direct` issuer is kept, at most: a
-/// user disabled in the server keeps working this long with a token that
-/// was already accepted.
-pub const ACCEPTED_TTL: Duration = Duration::from_secs(5 * 60);
-
-/// Upstream `WildcardAllowlist`: exact entries, and entries whose `*`
-/// matches one DNS label (`https://*.dev.example.com`).
-#[derive(Debug, Clone, Default)]
-pub struct Allowlist {
-    exact: HashSet<String>,
-    wildcards: Vec<Vec<String>>,
-}
-
-impl Allowlist {
-    pub fn new(entries: &[impl AsRef<str>]) -> Self {
-        let mut list = Self::default();
-        for entry in entries
-            .iter()
-            .map(|e| e.as_ref().trim())
-            .filter(|e| !e.is_empty())
-        {
-            match entry.contains('*') {
-                true => list
-                    .wildcards
-                    .push(entry.split('*').map(str::to_string).collect()),
-                false => {
-                    list.exact.insert(entry.to_string());
-                }
-            }
-        }
-        list
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.exact.is_empty() && self.wildcards.is_empty()
-    }
-
-    pub fn is_allowed(&self, value: &str) -> bool {
-        !value.trim().is_empty()
-            && (self.exact.contains(value)
-                || self.wildcards.iter().any(|parts| matches(parts, value)))
-    }
-
-    pub fn is_any_allowed(&self, values: &[String]) -> bool {
-        values.iter().any(|v| self.is_allowed(v))
-    }
-}
-
-/// Whether `value` is `parts` joined by runs of characters other than `.`
-/// and `/` (the `[^./]+` upstream puts for each `*`).
-fn matches(parts: &[String], value: &str) -> bool {
-    let Some((first, rest)) = parts.split_first() else {
-        return value.is_empty();
-    };
-    let Some(after) = value.strip_prefix(first.as_str()) else {
-        return false;
-    };
-    if rest.is_empty() {
-        return after.is_empty();
-    }
-    // One or more label characters, then the remaining parts.
-    after
-        .char_indices()
-        .take_while(|(_, c)| *c != '.' && *c != '/')
-        .any(|(i, c)| matches(rest, &after[i + c.len_utf8()..]))
-}
-
-/// The STS endpoints that a block of `kind = "aws"` sends signed requests
-/// to, unless it names its own: the global one and the regional ones.
-pub const AWS_STS_ENDPOINTS: [&str; 2] =
-    ["https://sts.amazonaws.com", "https://sts.*.amazonaws.com"];
+/// How long the caller of a token of a `direct` issuer or an AWS identity
+/// is kept, at most: a user disabled in the server keeps working this long
+/// with a token that was already accepted.
+pub const ACCEPTED_TTL: Duration = uc_auth::DEFAULT_KEEP;
 
 /// An `[[auth.issuers]]` block: a provider, the audience of its tokens,
 /// and how its tokens name the caller.
@@ -121,6 +42,8 @@ pub struct IssuerSettings {
     pub kind: settings::IssuerKind,
     /// The `iss` pattern, as written; for AWS, the STS endpoint.
     pub issuer: String,
+    /// The `iss` patterns; for AWS, the STS endpoints.
+    patterns: Vec<String>,
     issuers: Allowlist,
     /// The audiences, trimmed; `*` alone for any.
     pub audiences: Vec<String>,
@@ -166,12 +89,9 @@ impl IssuerSettings {
         let audiences = trimmed(&issuer.audiences);
         let aws = issuer.kind == settings::IssuerKind::Aws;
         let pattern = issuer.issuer.trim().trim_end_matches('/');
-        let (shown, issuers) = match (aws, pattern.is_empty()) {
-            (true, true) => (
-                AWS_STS_ENDPOINTS[0].to_string(),
-                Allowlist::new(&AWS_STS_ENDPOINTS),
-            ),
-            _ => (pattern.to_string(), Allowlist::new(&[pattern])),
+        let patterns: Vec<String> = match (aws, pattern.is_empty()) {
+            (true, true) => STS_ENDPOINTS.iter().map(|e| e.to_string()).collect(),
+            _ => vec![pattern.to_string()],
         };
         // An AWS identity is named by its ARN: the role of an assumed role.
         let (principal_claims, client_claims): (&[&str], &[&str]) = match aws {
@@ -181,8 +101,9 @@ impl IssuerSettings {
         Self {
             name: issuer.name.trim().to_string(),
             kind: issuer.kind,
-            issuer: shown,
-            issuers,
+            issuer: patterns[0].clone(),
+            issuers: Allowlist::new(&patterns),
+            patterns,
             audience_allowlist: Allowlist::new(&audiences),
             audiences,
             // AWS identities are taken on every request; there is no
@@ -207,15 +128,18 @@ impl IssuerSettings {
         self.kind == settings::IssuerKind::Aws
     }
 
-    /// For AWS: whether signed requests may go to `origin`
-    /// (`https://sts.eu-west-1.amazonaws.com`).
-    pub fn sts_endpoint_allowed(&self, origin: &str) -> bool {
-        self.is_aws() && self.issuers.is_allowed(origin)
+    /// The provider of `uc_auth`'s JWT checks.
+    pub fn jwt_provider(&self) -> JwtProvider {
+        JwtProvider::new(&self.name, &self.patterns)
+            .with_audiences(&self.audiences)
+            .with_groups_claim(self.groups_claim.as_deref())
     }
 
-    /// For AWS: whether `server_id` is one of its audiences.
-    pub fn server_id_allowed(&self, server_id: &str) -> bool {
-        self.audiences.iter().any(|a| a == server_id)
+    /// For AWS: the provider of `uc_auth`'s checks of signed requests, whose
+    /// server ids are the block's `audiences`.
+    pub fn aws_provider(&self) -> AwsProvider {
+        AwsProvider::new(&self.name, self.audiences.iter(), self.accounts.iter())
+            .with_endpoints(&self.patterns)
     }
 
     /// The block of the web UI's provider when no `[[auth.issuers]]` names
@@ -350,12 +274,15 @@ pub struct AuthSettings {
     pub issuers: Vec<IssuerSettings>,
     pub access_token_timeout: Duration,
     pub cookie_timeout: Duration,
-    pub providers: IdentityProviders,
+    /// The signing keys of the issuers, shared by the requests, the token
+    /// exchange and the web sign-in.
+    pub keys: Arc<JwtKeys>,
     /// The web UI's sign-in (`UC_AUTH_MODE`); none without it.
     pub sign_in: Option<crate::authn::sign_in::SignIn>,
-    /// The tokens of `direct` issuers that [`accept`] took, by the hash of
-    /// the token.
-    accepted: Cache<[u8; 32], Cached>,
+    /// Who sent a request (`crate::authn::chain`).
+    pub authenticator: Authenticator<AppState>,
+    /// How long the authenticator keeps a caller by its token.
+    keep: Duration,
 }
 
 impl Default for AuthSettings {
@@ -367,52 +294,42 @@ impl Default for AuthSettings {
 impl AuthSettings {
     /// The settings of `[auth]`, without the web UI's sign-in.
     pub fn new(auth: &settings::Auth) -> Self {
+        let issuers: Vec<IssuerSettings> = auth.issuers.iter().map(IssuerSettings::new).collect();
+        let keys = Arc::new(JwtKeys::new(crate::authn::chain::IoTransport));
         Self {
-            issuers: auth.issuers.iter().map(IssuerSettings::new).collect(),
+            authenticator: crate::authn::chain::authenticator(&issuers, &keys, None, ACCEPTED_TTL),
+            issuers,
             access_token_timeout: auth.access_token_timeout,
             cookie_timeout: auth.cookie_timeout,
-            providers: IdentityProviders::default(),
+            keys,
             sign_in: None,
-            accepted: accepted_cache(ACCEPTED_TTL),
+            keep: ACCEPTED_TTL,
         }
     }
 
     /// With the web UI's sign-in.
     pub fn with_sign_in(mut self, sign_in: Option<crate::authn::sign_in::SignIn>) -> Self {
         self.sign_in = sign_in;
-        self
+        self.rebuild()
     }
 
     /// Keep accepted tokens at most `ttl` instead of [`ACCEPTED_TTL`]: for
     /// tests.
     pub fn with_accepted_ttl(mut self, ttl: Duration) -> Self {
-        self.accepted = accepted_cache(ttl);
+        self.keep = ttl;
+        self.rebuild()
+    }
+
+    fn rebuild(mut self) -> Self {
+        let forward = self.sign_in.as_ref().and_then(|s| s.forward());
+        self.authenticator =
+            crate::authn::chain::authenticator(&self.issuers, &self.keys, forward, self.keep);
         self
     }
 
     /// The block that `iss` matches, if any.
     pub fn issuer(&self, iss: &str) -> Option<&IssuerSettings> {
         self.issuers.iter().find(|issuer| issuer.matches(iss))
-    }
-
-    /// The caller that `token` named when it was taken, while it is kept.
-    pub(crate) async fn accepted(&self, token: &str) -> Option<Accepted> {
-        let cached = self.accepted.get(&token_key(token)).await?;
-        (Instant::now() < cached.expires).then(|| (*cached.accepted).clone())
-    }
-
-    /// Keep the caller that `token` names for `left`, at most
-    /// [`ACCEPTED_TTL`].
-    pub(crate) async fn keep(&self, token: &str, accepted: &Accepted, left: Duration) {
-        let left = left.min(ACCEPTED_TTL);
-        if left.is_zero() {
-            return;
-        }
-        let cached = Cached {
-            accepted: Arc::new(accepted.clone()),
-            expires: Instant::now() + left,
-        };
-        self.accepted.insert(token_key(token), cached).await;
     }
 
     /// Upstream `validateAuthAllowlistConfiguration`, for each block.
@@ -440,341 +357,19 @@ impl AuthSettings {
     }
 }
 
-/// The key of a token in the cache: its hash, so the cache holds no token.
-fn token_key(token: &str) -> [u8; 32] {
-    Sha256::digest(token.as_bytes()).into()
-}
-
-fn accepted_cache(ttl: Duration) -> Cache<[u8; 32], Cached> {
-    Cache::builder()
-        .max_capacity(10_000)
-        .time_to_live(ttl.max(Duration::from_millis(1)))
-        .build()
-}
-
-/// The header and claims of a token, unverified.
-pub struct DecodedToken {
-    pub algorithm: String,
-    pub key_id: Option<String>,
-    pub claims: Map<String, Value>,
-}
-
-/// Upstream `JWT.decode`: split and decode a token without verifying it.
-pub fn decode(token: &str) -> std::result::Result<DecodedToken, String> {
-    let mut segments = token.split('.');
-    let (Some(header), Some(payload), Some(_), None) = (
-        segments.next(),
-        segments.next(),
-        segments.next(),
-        segments.next(),
-    ) else {
-        return Err("The token was expected to have 3 parts".into());
-    };
-    let json = |segment: &str| -> std::result::Result<Map<String, Value>, String> {
-        let bytes = URL_SAFE_NO_PAD
-            .decode(segment.trim_end_matches('='))
-            .map_err(|e| e.to_string())?;
-        serde_json::from_slice(&bytes).map_err(|e| e.to_string())
-    };
-    let header = json(header)?;
-    let claims = json(payload)?;
-    Ok(DecodedToken {
-        algorithm: header
-            .get("alg")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        key_id: header
-            .get("kid")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        claims,
-    })
-}
-
-/// A JWT `aud`, which is a string or an array of strings.
-pub fn audiences(claims: &Map<String, Value>) -> Vec<String> {
-    match claims.get("aud") {
-        Some(Value::String(aud)) => vec![aud.clone()],
-        Some(Value::Array(auds)) => auds
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_string)
-            .collect(),
-        _ => vec![],
+/// The error of a provider's token that [`JwtKeys::verify`] refused, as
+/// upstream answers it.
+pub(crate) fn verify_error(e: VerifyError) -> Error {
+    match e {
+        VerifyError::Invalid(message) => Error::new(ErrorCode::Unauthenticated, message),
+        VerifyError::Unavailable(message) => Error::internal(message),
+        other => Error::new(ErrorCode::Aborted, other.to_string()),
     }
-}
-
-/// The signing keys of each issuer.
-pub struct IdentityProviders {
-    http: reqwest::Client,
-    issuers: Mutex<HashMap<String, Arc<IssuerKeys>>>,
-}
-
-impl Default for IdentityProviders {
-    fn default() -> Self {
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()
-            .unwrap_or_default();
-        Self {
-            http,
-            issuers: Mutex::new(HashMap::new()),
-        }
-    }
-}
-
-struct IssuerKeys {
-    keys: RwLock<Option<(Vec<Jwk>, Instant)>>,
-    refresh: Mutex<()>,
-}
-
-/// Keys are reused this long, and refetched for an unknown key id at most
-/// this often.
-const KEYS_TTL: Duration = Duration::from_secs(60 * 60);
-const MIN_REFRESH: Duration = Duration::from_secs(60);
-
-impl IdentityProviders {
-    /// The HTTP client of the server's calls to providers.
-    pub(crate) fn http(&self) -> &reqwest::Client {
-        &self.http
-    }
-
-    /// Upstream `verifierForIssuerAndKey` and `verify`: check the token's
-    /// signature with the issuer's key, and its issuer and times.
-    pub async fn verify(&self, token: &str, decoded: &DecodedToken, issuer: &str) -> Result<()> {
-        let key_id = decoded.key_id.clone().unwrap_or_default();
-        let jwk = self.key(issuer, &key_id).await?;
-        let failed = |e: String| {
-            Error::new(
-                ErrorCode::Unauthenticated,
-                format!("Token verification failed: {e}"),
-            )
-        };
-        let unsupported = |kind: &str, alg: &str| {
-            Error::new(ErrorCode::Aborted, format!("Unsupported {kind}: {alg}"))
-        };
-        let algorithm = decoded.algorithm.as_str();
-        let checked = match (&jwk.algorithm, algorithm) {
-            (AlgorithmParameters::RSA(_), "RS256" | "RS384" | "RS512")
-            | (AlgorithmParameters::EllipticCurve(_), "ES256" | "ES384") => {
-                let algorithm: Algorithm = algorithm
-                    .parse()
-                    .map_err(|_| unsupported("algorithm", algorithm))?;
-                let key = DecodingKey::from_jwk(&jwk).map_err(|e| failed(e.to_string()))?;
-                let mut validation = Validation::new(algorithm);
-                validation.set_issuer(&[issuer]);
-                validation.validate_aud = false;
-                validation.validate_nbf = true;
-                validation.leeway = LEEWAY.as_secs();
-                validation.required_spec_claims.clear();
-                jsonwebtoken::decode::<Value>(token, &key, &validation)
-                    .map(|_| ())
-                    .map_err(|e| e.to_string())
-            }
-            (AlgorithmParameters::EllipticCurve(params), "ES512")
-                if params.curve == EllipticCurve::P521 =>
-            {
-                verify_es512(token, &params.x, &params.y)
-                    .and_then(|()| check_times(&decoded.claims, issuer))
-            }
-            (AlgorithmParameters::RSA(_), other) => {
-                return Err(unsupported("RSA algorithm", other));
-            }
-            (AlgorithmParameters::EllipticCurve(_), other) => {
-                return Err(unsupported("ECDSA algorithm", other));
-            }
-            (AlgorithmParameters::OctetKey(_), _) => return Err(unsupported("key type", "oct")),
-            (AlgorithmParameters::OctetKeyPair(_), _) => {
-                return Err(unsupported("key type", "OKP"));
-            }
-        };
-        checked.map_err(failed)
-    }
-
-    /// The issuer's key `key_id`, fetched when unknown.
-    async fn key(&self, issuer: &str, key_id: &str) -> Result<Jwk> {
-        let keys = self
-            .issuers
-            .lock()
-            .await
-            .entry(issuer.to_string())
-            .or_insert_with(|| {
-                Arc::new(IssuerKeys {
-                    keys: RwLock::new(None),
-                    refresh: Mutex::new(()),
-                })
-            })
-            .clone();
-        let find = |keys: &Option<(Vec<Jwk>, Instant)>| {
-            keys.as_ref()
-                .filter(|(_, at)| at.elapsed() < KEYS_TTL)
-                .and_then(|(set, _)| {
-                    set.iter()
-                        .find(|k| k.common.key_id.as_deref() == Some(key_id))
-                        .cloned()
-                })
-        };
-        if let Some(key) = find(&*keys.keys.read().await) {
-            return Ok(key);
-        }
-        // One fetch at a time per issuer; recent fetches are reused.
-        let _guard = keys.refresh.lock().await;
-        let recent = keys
-            .keys
-            .read()
-            .await
-            .as_ref()
-            .is_some_and(|(_, at)| at.elapsed() < MIN_REFRESH);
-        if !recent {
-            let set = self.fetch_keys(issuer).await?;
-            *keys.keys.write().await = Some((set, Instant::now()));
-        }
-        let found = find(&*keys.keys.read().await);
-        // A key the issuer does not publish, or no longer does: the token
-        // is refused, as a tampered one is.
-        found.ok_or_else(|| {
-            Error::new(
-                ErrorCode::Unauthenticated,
-                format!("Token verification failed: no signing key '{key_id}' at issuer {issuer}"),
-            )
-        })
-    }
-
-    /// Upstream `loadJwkProvider`: the JWK set the issuer's OIDC discovery
-    /// document names.
-    async fn fetch_keys(&self, issuer: &str) -> Result<Vec<Jwk>> {
-        let issuer = match issuer.starts_with("https://") || issuer.starts_with("http://") {
-            true => issuer.to_string(),
-            false => format!("https://{issuer}"),
-        };
-        let path = format!(
-            "{}/.well-known/openid-configuration",
-            issuer.trim_end_matches('/')
-        );
-        let unreachable = |e: &dyn std::fmt::Display| {
-            tracing::warn!(%path, error = %e, "cannot fetch the issuer configuration");
-            Error::internal(format!("Could not get issuer configuration from {path}"))
-        };
-        let response = self
-            .http
-            .get(&path)
-            .send_on_io()
-            .await
-            .map_err(|e| unreachable(&e))?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(Error::internal(format!(
-                "Could not get issuer configuration from {path}: HTTP {}",
-                status.as_u16()
-            )));
-        }
-        let config: Map<String, Value> = response.json().await.map_err(|_| {
-            Error::internal(format!(
-                "Issuer configuration from {path} is not valid JSON"
-            ))
-        })?;
-        if config.is_empty() {
-            return Err(Error::new(
-                ErrorCode::Aborted,
-                format!("Could not get issuer configuration from {path}"),
-            ));
-        }
-        let config_issuer = config
-            .get("issuer")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        if config_issuer != issuer {
-            return Err(Error::new(
-                ErrorCode::Aborted,
-                format!(
-                    "Issuer '{issuer}' doesn't match configuration issuer '{config_issuer}' from {path}"
-                ),
-            ));
-        }
-        let jwks_uri = config
-            .get("jwks_uri")
-            .and_then(Value::as_str)
-            .ok_or_else(|| Error::new(ErrorCode::Aborted, "JWKS configuration missing"))?;
-        let set: Value = self
-            .http
-            .get(jwks_uri)
-            .send_on_io()
-            .await
-            .and_then(|r| r.error_for_status())
-            .map_err(|e| unreachable(&e))?
-            .json()
-            .await
-            .map_err(|e| unreachable(&e))?;
-        // Keys of kinds that do not parse are skipped, not fatal.
-        Ok(set["keys"]
-            .as_array()
-            .map(|keys| {
-                keys.iter()
-                    .filter_map(|k| serde_json::from_value(k.clone()).ok())
-                    .collect()
-            })
-            .unwrap_or_default())
-    }
-}
-
-/// An ES512 (P-521) signature, which `jsonwebtoken` does not verify.
-fn verify_es512(token: &str, x: &str, y: &str) -> std::result::Result<(), String> {
-    use p521::ecdsa::{Signature, VerifyingKey, signature::Verifier};
-    let (message, signature) = token.rsplit_once('.').ok_or("malformed token")?;
-    let coordinate = |c: &str| -> std::result::Result<p521::FieldBytes, String> {
-        let bytes = URL_SAFE_NO_PAD.decode(c).map_err(|e| e.to_string())?;
-        (bytes.len() == 66)
-            .then(|| p521::FieldBytes::clone_from_slice(&bytes))
-            .ok_or("bad P-521 coordinate".into())
-    };
-    let point =
-        p521::EncodedPoint::from_affine_coordinates(&coordinate(x)?, &coordinate(y)?, false);
-    let key = VerifyingKey::from_encoded_point(&point).map_err(|e| e.to_string())?;
-    let signature = URL_SAFE_NO_PAD
-        .decode(signature)
-        .map_err(|e| e.to_string())?;
-    let signature = Signature::from_slice(&signature).map_err(|e| e.to_string())?;
-    key.verify(message.as_bytes(), &signature)
-        .map_err(|_| "InvalidSignature".to_string())
-}
-
-/// The issuer and time checks for tokens verified outside `jsonwebtoken`,
-/// with [`LEEWAY`].
-fn check_times(claims: &Map<String, Value>, issuer: &str) -> std::result::Result<(), String> {
-    if claims.get("iss").and_then(Value::as_str) != Some(issuer) {
-        return Err("InvalidIssuer".into());
-    }
-    let now = now_epoch_millis() / 1000;
-    let leeway = LEEWAY.as_secs() as i64;
-    if claims
-        .get("exp")
-        .and_then(Value::as_i64)
-        .is_some_and(|exp| exp + leeway < now)
-    {
-        return Err("ExpiredSignature".into());
-    }
-    if claims
-        .get("nbf")
-        .and_then(Value::as_i64)
-        .is_some_and(|nbf| nbf - leeway > now)
-    {
-        return Err("ImmatureSignature".into());
-    }
-    Ok(())
 }
 
 /// The token type of the server's access tokens, and of OAuth access
 /// tokens as subject tokens; any other subject token type is an ID token.
 pub(crate) const ACCESS_TOKEN: &str = "urn:ietf:params:oauth:token-type:access_token";
-
-/// A non-blank string claim.
-pub(crate) fn claim<'a>(claims: &'a Map<String, Value>, name: &str) -> Option<&'a str> {
-    claims
-        .get(name)
-        .and_then(Value::as_str)
-        .filter(|v| !v.trim().is_empty())
-}
 
 /// Whether the provider marks the token's email as not verified
 /// (`email_verified: false`). A provider that lets its users type any
@@ -953,84 +548,6 @@ fn assumable(user: ScimUser) -> Option<String> {
         .map(|u| u.principal().to_string())
 }
 
-/// The names of the caller's groups: the issuer's `groups_claim`, an
-/// array of strings or one string.
-pub(crate) fn groups(claims: &Map<String, Value>, issuer: &IssuerSettings) -> Vec<String> {
-    let Some(name) = &issuer.groups_claim else {
-        return Vec::new();
-    };
-    let names: Vec<&str> = match claims.get(name) {
-        Some(Value::Array(items)) => items.iter().filter_map(Value::as_str).collect(),
-        Some(Value::String(one)) => vec![one.as_str()],
-        _ => Vec::new(),
-    };
-    let mut seen = HashSet::new();
-    names
-        .into_iter()
-        .map(str::trim)
-        .filter(|g| !g.is_empty() && seen.insert(*g))
-        .map(str::to_string)
-        .collect()
-}
-
-/// The caller that a token of a `direct` issuer names, and its groups.
-#[derive(Debug, Clone)]
-pub struct Accepted {
-    pub principal: String,
-    pub groups: Vec<String>,
-}
-
-#[derive(Clone)]
-struct Cached {
-    accepted: Arc<Accepted>,
-    expires: Instant,
-}
-
-/// Take `token` of the `direct` issuer `issuer` on a request: check it with
-/// the issuer's keys and audience, name the caller ([`resolve`]) and read
-/// its groups. The result is kept until the token expires, at most
-/// [`ACCEPTED_TTL`], so a busy client costs one check and two lookups per
-/// token, not per request. A token that does not check out is "Invalid
-/// access token." (401), with the reason in the log; a caller that names
-/// no active user is "User not allowed" (403).
-pub(crate) async fn accept(
-    state: &AppState,
-    issuer: &IssuerSettings,
-    token: &str,
-    decoded: &DecodedToken,
-) -> Result<Accepted> {
-    let invalid = || Error::new(ErrorCode::Unauthenticated, "Invalid access token.");
-    if let Some(accepted) = state.auth.accepted(token).await {
-        return Ok(accepted);
-    }
-    let claims = &decoded.claims;
-    let iss = claim(claims, "iss").unwrap_or_default();
-    if let Err(e) = state.auth.providers.verify(token, decoded, iss).await {
-        tracing::warn!(issuer = %issuer.name, reason = %e.message(), "token refused");
-        return Err(invalid());
-    }
-    if !issuer.audience_allowed(claims) {
-        tracing::warn!(
-            issuer = %issuer.name,
-            audience = ?audiences(claims),
-            "token refused: audience not allowed"
-        );
-        return Err(invalid());
-    }
-    let accepted = Accepted {
-        principal: name_caller(state, issuer, claims).await?,
-        groups: groups(claims, issuer),
-    };
-    let now = now_epoch_millis() / 1000;
-    let left = claims
-        .get("exp")
-        .and_then(Value::as_i64)
-        .map(|exp| Duration::from_secs((exp - now).max(0) as u64))
-        .unwrap_or(ACCEPTED_TTL);
-    state.auth.keep(token, &accepted, left).await;
-    Ok(accepted)
-}
-
 /// The active user that a request's token names ([`resolve`]): "User not
 /// allowed" is 403 on a request, as the caller did sign in.
 pub(crate) async fn name_caller(
@@ -1051,19 +568,6 @@ pub(crate) async fn name_caller(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn allowlists() {
-        let list = Allowlist::new(&["https://accounts.example.com", " https://*.dev.example.com"]);
-        assert!(list.is_allowed("https://accounts.example.com"));
-        assert!(list.is_allowed("https://acme.dev.example.com"));
-        assert!(!list.is_allowed("https://a.b.dev.example.com"));
-        assert!(!list.is_allowed("https://.dev.example.com"));
-        assert!(!list.is_allowed("https://evil.com/x.dev.example.com"));
-        assert!(!list.is_allowed(""));
-        assert!(Allowlist::new(&[" ", ""]).is_empty());
-        assert!(Allowlist::new(&["api://*"]).is_allowed("api://uc"));
-    }
 
     fn issuer(text: &str) -> settings::Issuer {
         settings::Settings::from_toml(&format!("[[auth.issuers]]\n{text}"))
@@ -1168,10 +672,13 @@ mod tests {
                 "name = \"a\"\nissuer = \"https://a\"\naudiences = [\"a\"]\ngroups_claim = \"{groups_claim}\""
             )))
         };
-        assert_eq!(groups(&claims, &with("roles")), ["Writers", "Readers"]);
-        assert_eq!(groups(&claims, &with("one")), ["Admins"]);
-        assert!(groups(&claims, &with("none")).is_empty());
-        assert!(groups(&claims, &with(" ")).is_empty());
+        assert_eq!(
+            with("roles").jwt_provider().groups(&claims),
+            ["Writers", "Readers"]
+        );
+        assert_eq!(with("one").jwt_provider().groups(&claims), ["Admins"]);
+        assert!(with("none").jwt_provider().groups(&claims).is_empty());
+        assert!(with(" ").jwt_provider().groups(&claims).is_empty());
     }
 
     #[test]
