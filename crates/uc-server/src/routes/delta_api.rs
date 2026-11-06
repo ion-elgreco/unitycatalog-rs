@@ -140,7 +140,7 @@ pub async fn get_config(
     let protocol_version = negotiate(params.protocol_versions.as_deref())?;
     let lineage = authz::lineage(&state, SecurableType::Catalog, &catalog).await?;
     let access = authz::Access::load(&state, &principal).await?;
-    access.check(authz::rules::get_catalog(&access, &lineage))?;
+    access.check(authz::rules::get_catalog(&access, &lineage).await)?;
     Ok(Json(DeltaCatalogConfig {
         endpoints: ENDPOINTS
             .iter()
@@ -539,7 +539,7 @@ pub async fn table_credentials(
         &principal,
         SecurableType::Table,
         &full_name,
-        |a, l| rules::vend_table(a, l, write),
+        async |a, l| rules::vend_table(a, l, write).await,
     )
     .await?;
     let info = state.metastore.tables().get(&full_name).await?;
@@ -561,7 +561,7 @@ pub async fn staging_table_credentials(
     Path(table_id): Path<String>,
 ) -> ApiResult<Json<DeltaCredentialsResponse>> {
     // Upstream: the staging table's OWNER, its creator.
-    authz::check_table_id(&state, &principal, &table_id, |a, l| {
+    authz::check_table_id(&state, &principal, &table_id, async |a, l| {
         a.owner(l, authz::Level::Object)
     })
     .await?;

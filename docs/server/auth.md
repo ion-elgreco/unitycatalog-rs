@@ -382,6 +382,23 @@ The resource types, and where their ids are:
   of the user.
 - **Groups** are no Cedar entities: a policy cannot say `principal in Group::"…"`. Their grants are
   in `granted_privileges`.
+- **Context:** how and from where the request came.
+
+  | Attribute | Type | Value |
+  | --- | --- | --- |
+  | `context.auth_method` | `String` | `jwt` (a provider's token), `aws-sigv4`, `trusted-headers` (an auth proxy), `server-token`, or `personal-access-token` |
+  | `context.provider` | `String` | The `name` of the `[[auth.issuers]]` block, `forward` behind an auth proxy, `internal` for the server's tokens |
+  | `context.groups` | `Set<String>` | The groups that the caller's token names (`groups_claim`) |
+  | `context.source_ip` | `ipaddr` | The address of the connection, when known |
+  | `context.request_time` | `datetime` | When the request came |
+
+  Test for `source_ip` with `has`, as some requests have no address:
+
+  ```cedar
+  // Writes only from the office network.
+  forbid (principal, action == Action::"MODIFY", resource)
+  unless { context has source_ip && context.source_ip.isInRange(ip("10.0.0.0/8")) };
+  ```
 - **Owners and admins:** Cedar decides only whether a user holds a privilege. The checks for an
   owner or an admin do not ask Cedar, so a `forbid` does not stop them.
 - An id stays the same when the securable is renamed. A securable that is dropped and made again

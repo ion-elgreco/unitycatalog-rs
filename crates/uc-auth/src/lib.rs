@@ -1,7 +1,9 @@
-//! Who sent a request: a chain of resolvers behind an axum layer.
+//! Who sent a request, and what it may do.
 //!
-//! The crate turns a request into an [`Identity`] and does nothing else.
-//! Minting tokens, sign-in pages and the users of the host are not here.
+//! The crate turns a request into an [`Identity`], and asks an
+//! [`authz::Authorizer`] whether that identity may perform an action on a
+//! resource. Minting tokens, sign-in pages and the users of the host are
+//! not here.
 //!
 //! - A [`Resolver`] looks at the whole request ([`RequestContext`]): its
 //!   headers, the bearer token, the address of the connection. It says
@@ -26,6 +28,12 @@
 //! A host adds its own, such as for its own tokens or API keys. Each
 //! resolver gets the host's state `S`, as axum handlers do.
 //!
+//! Authorization is a separate port ([`authz`]): the host asks whether a
+//! principal may perform an action on a resource, with the context of the
+//! request (how the caller signed in, its address, the time). Cedar
+//! policies decide in-process ([`authz::CedarAuthorizer`]) or in a remote
+//! policy decision point ([`authz::HttpAuthorizer`]).
+//!
 //! # Example
 //!
 //! ```no_run
@@ -46,6 +54,7 @@
 
 mod allowlist;
 mod authenticator;
+pub mod authz;
 pub mod aws;
 mod context;
 mod error;

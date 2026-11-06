@@ -42,7 +42,7 @@ pub async fn create_schema(
     let access = Access::load(&state, &principal).await?;
     let storage_root =
         authz::storage_root_allowed(&state, &access, req.storage_root.as_deref()).await?;
-    access.check(rules::create_schema(&access, &catalog) && storage_root.unwrap_or(true))?;
+    access.check(rules::create_schema(&access, &catalog).await && storage_root.unwrap_or(true))?;
     Ok(Json(
         state
             .metastore
@@ -79,10 +79,13 @@ pub async fn list_schemas(
         true => {
             let catalog =
                 authz::lineage(&state, SecurableType::Catalog, &params.catalog_name).await?;
-            schemas
-                .into_iter()
-                .filter(|s| rules::get_schema(&access, &schema_lineage(&catalog, s)))
-                .collect()
+            let mut kept = Vec::with_capacity(schemas.len());
+            for schema in schemas {
+                if rules::get_schema(&access, &schema_lineage(&catalog, &schema)).await {
+                    kept.push(schema);
+                }
+            }
+            kept
         }
     };
     Ok(Json(ListSchemasResponse {

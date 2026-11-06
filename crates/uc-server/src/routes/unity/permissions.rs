@@ -40,7 +40,7 @@ pub async fn get_permissions(
     if access.enabled() {
         let lineage = authz::lineage(&state, securable_type, &full_name).await?;
         // Upstream `getAuthorization`: others see their own grants only.
-        if !rules::see_permissions(&access, &lineage) {
+        if !rules::see_permissions(&access, &lineage).await {
             if only.as_deref().is_some_and(|p| p != access.principal()) {
                 return Ok(Json(PermissionsList {
                     privilege_assignments: vec![],
@@ -74,9 +74,13 @@ pub async fn update_permissions(
     Path((securable_type, full_name)): Path<(SecurableType, String)>,
     Json(req): Json<UpdatePermissions>,
 ) -> ApiResult<Json<PermissionsList>> {
-    authz::check(&state, &principal, securable_type, &full_name, |a, l| {
-        rules::update_permissions(a, securable_type, l)
-    })
+    authz::check(
+        &state,
+        &principal,
+        securable_type,
+        &full_name,
+        async |a, l| rules::update_permissions(a, securable_type, l).await,
+    )
     .await?;
     Ok(Json(
         state

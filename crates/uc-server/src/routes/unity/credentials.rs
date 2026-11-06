@@ -56,7 +56,7 @@ pub async fn create_credential(
     Json(req): Json<CreateCredentialRequest>,
 ) -> ApiResult<Json<CredentialInfo>> {
     let access = Access::load(&state, &principal).await?;
-    access.check(rules::create_credential(&access))?;
+    access.check(rules::create_credential(&access).await)?;
     let info = state
         .metastore
         .credentials()
@@ -86,10 +86,16 @@ pub async fn list_credentials(
         .list(params.purpose, &params.page)
         .await?;
     let access = Access::load(&state, &principal).await?;
+    let mut kept = Vec::with_capacity(credentials.len());
+    for credential in credentials {
+        if rules::get_credential(&access, &lineage_of(&credential)).await {
+            kept.push(credential);
+        }
+    }
+    let credentials = kept;
     Ok(Json(ListCredentialsResponse {
         credentials: credentials
             .into_iter()
-            .filter(|c| rules::get_credential(&access, &lineage_of(c)))
             .map(|c| present(&state, c))
             .collect(),
         next_page_token: next.map(PageToken::new),
@@ -112,7 +118,7 @@ pub async fn get_credential(
 ) -> ApiResult<Json<CredentialInfo>> {
     let info = state.metastore.credentials().get(&name).await?;
     let access = Access::load(&state, &principal).await?;
-    access.check(rules::get_credential(&access, &lineage_of(&info)))?;
+    access.check(rules::get_credential(&access, &lineage_of(&info)).await)?;
     Ok(Json(present(&state, info)))
 }
 

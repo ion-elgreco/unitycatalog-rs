@@ -1,6 +1,6 @@
 [package]
 name = "uc-auth"
-description = "Who sent a request: a chain of resolvers (trusted headers, OIDC JWTs, AWS signed requests) behind an axum layer"
+description = "Who sent a request and what it may do: a chain of resolvers (trusted headers, OIDC JWTs, AWS signed requests) behind an axum layer, and an Authorizer port (Cedar, remote policy decision point)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,6 +13,9 @@ async-trait.workspace = true
 axum.workspace = true
 base64 = "0.22"
 chrono.workspace = true
+# `CedarAuthorizer`. The extensions policies use for the request context:
+# `ipaddr` (`source_ip`) and `datetime` (`request_time`).
+cedar-policy = { workspace = true, features = ["datetime", "ipaddr"] }
 ipnet = "2"
 jsonwebtoken.workspace = true
 moka = { version = "0.12", features = ["future"] }
@@ -27,5 +30,5 @@ tokio = { workspace = true, features = ["sync"] }
 tracing.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread"] }
 tower.workspace = true

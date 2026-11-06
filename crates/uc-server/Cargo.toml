@@ -66,8 +66,6 @@ metrics-exporter-prometheus.workspace = true
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 tower_governor.workspace = true
 
-cedar-policy.workspace = true
-
 tokio = { workspace = true, features = ["io-util"] }
 async-trait.workspace = true
 bytes.workspace = true

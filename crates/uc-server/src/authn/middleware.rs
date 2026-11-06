@@ -15,7 +15,7 @@
 //! that user, whatever token it carries; other requests sign in with their
 //! tokens. A failure of the chain is the error of [`chain::error`].
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use axum::{
     body::Body,
@@ -24,7 +24,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use uc_auth::AuthError;
+use uc_auth::{AuthError, RequestContext, authz::AuthContext};
 
 use uc_common::{API_BASE, CONTROL_BASE, Error, ErrorCode, FILES_BASE, Result};
 
@@ -43,7 +43,13 @@ pub async fn auth_layer(State(state): State<AppState>, req: Request<Body>, next:
     let caller = state.auth.authenticator.authenticate(&parts, &state).await;
     match (caller, required) {
         (Ok(identity), _) => {
-            let principal = Principal::authenticated(identity.subject).with_groups(identity.groups);
+            let mut context = AuthContext::for_identity(&identity).request_time(SystemTime::now());
+            if let Some(peer) = RequestContext::new(&parts, None).peer() {
+                context = context.source_ip(peer);
+            }
+            let principal = Principal::authenticated(identity.subject)
+                .with_groups(identity.groups)
+                .with_context(context);
             parts.extensions.insert(principal);
             next.run(Request::from_parts(parts, body)).await
         }
