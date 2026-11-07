@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import time
 
 import pytest
@@ -586,10 +587,21 @@ def test_token_sources(server, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
     assert isinstance(identity.aws("https://uc.example.com"), identity.TokenSource)
+    # An identity, and a server that does not answer: the client is made, and
+    # its calls go without a token until the server says what it takes.
+    gone = f"http://127.0.0.1:{_closed_port()}/"
+    with pytest.raises(UnityCatalogError, match="request failed"):
+        Client(gone).list_catalogs()
     # Nothing in the environment: no identity to detect.
-    for var in ("UC_TOKEN", "UC_TOKEN_FILE", "UC_OAUTH_TOKEN_URL", "AWS_ACCESS_KEY_ID"):
-        monkeypatch.delenv(var, raising=False)
-    assert identity.detect(f"http://127.0.0.1:{_closed_port()}/") is None
+    for var in list(os.environ):
+        if var.startswith(("UC_", "AWS_", "AZURE_", "GOOGLE_", "GCE_")) or var in (
+            "IDENTITY_ENDPOINT",
+            "MSI_ENDPOINT",
+            "K_SERVICE",
+        ):
+            monkeypatch.delenv(var)
+    monkeypatch.setenv("PATH", "")
+    assert identity.detect(gone) is None
 
 
 @pytest.mark.upstream

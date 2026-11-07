@@ -16,10 +16,21 @@ pub type TokenFuture<'a> =
 /// Where the bearer token of each request comes from. The source is asked at every
 /// request, so one that fetches tokens keeps them and refreshes them itself.
 pub trait TokenSource: ::std::fmt::Debug + Send + Sync {
-    /// The token to send now.
+    /// The token to send now. [`NoToken`] sends the request without one.
     fn token(&self) -> TokenFuture<'_>;
 }
 
+/// The error of a source that has no token for a request: the request goes without
+/// one.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoToken;
+impl ::std::fmt::Display for NoToken {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str("no token for the request")
+    }
+}
+
+impl ::std::error::Error for NoToken {}
 /// A token that does not change.
 pub struct StaticToken(pub String);
 impl ::std::fmt::Debug for StaticToken {
@@ -183,12 +194,15 @@ impl RequestBuilder {
     }
 
     /// Send the request. The bearer token comes from the token source first; a source
-    /// that fails fails the request before it is sent.
+    /// that fails fails the request before it is sent, unless it has [`NoToken`].
     pub async fn send(self) -> ::std::result::Result<reqwest::Response, SendError> {
         let mut builder = self.builder;
         if let Some(source) = &self.token {
-            let token = source.token().await.map_err(SendError::Token)?;
-            builder = builder.bearer_auth(token);
+            match source.token().await {
+                Ok(token) => builder = builder.bearer_auth(token),
+                Err(e) if e.is::<NoToken>() => {}
+                Err(e) => return Err(SendError::Token(e)),
+            }
         }
         builder.send().await.map_err(SendError::Http)
     }

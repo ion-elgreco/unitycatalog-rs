@@ -51,6 +51,9 @@ ways:
     service. The AWS CLI's profiles are not read: `aws configure export-credentials --format env`
     puts a profile's keys in the environment.
 
+    `Client(url)` asks the server which providers it takes. A server that cannot answer yet is
+    asked again at each call, and the calls go without a token until it answers.
+
 - **A token source.** `token_provider=` names one: one of `unitycatalog.identity`, with the scope
   or audience of the server's issuer, or a callable that returns the token, or a pair of the
   token and when it expires, in seconds since the epoch.

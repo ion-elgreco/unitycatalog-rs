@@ -22,7 +22,7 @@ use olai_http::bearer::{
 use serde::Deserialize;
 use url::Url;
 
-use crate::transport::{StaticToken, TokenError, TokenFuture, TokenSource};
+use crate::transport::{NoToken, StaticToken, TokenError, TokenFuture, TokenSource};
 
 /// The result of making a source.
 pub type Result<T> = std::result::Result<T, TokenError>;
@@ -659,8 +659,14 @@ pub async fn metadata(server: &Url) -> Result<Option<ProtectedResource>> {
 /// The audience of an issuer is the one that `UC_AUDIENCE` names, else the server's URL: a
 /// block without either is skipped.
 ///
-/// Without any of these, `None`, and the server is not asked anything. A server that does not
-/// answer, or has no metadata, gives `None` too: the call that follows says what is wrong.
+/// Without any of these, `None`, and the server is not asked anything. A server without the
+/// metadata endpoint gives `None` too. A server that cannot say now gives a source that asks it
+/// again at each request until it answers ([`Later`]), sending the requests without a token
+/// until then: a client made while the server is away signs in once it is back.
+///
+/// # Errors
+///
+/// When the source cannot be made.
 pub async fn detect(server: &Url) -> Result<Option<Arc<dyn TokenSource>>> {
     detect_in(&environment(), server, on_path("az"), on_path("gcloud")).await
 }
@@ -676,18 +682,79 @@ pub async fn detect_in(
         return Ok(None);
     }
     let issuers = match choose(env, server, &[], az, gcloud) {
-        // A token needs no issuer; an OAuth client takes the audience from one.
-        Some(Choice::Token(_) | Choice::TokenFile(_)) => Vec::new(),
-        _ => metadata(server)
-            .await
-            .ok()
-            .flatten()
-            .map(|resource| resource.issuers)
-            .unwrap_or_default(),
+        // A token needs no issuer, nor an OAuth client with its own audience.
+        Some(
+            Choice::Token(_)
+            | Choice::TokenFile(_)
+            | Choice::ClientCredentials {
+                audience: Some(_), ..
+            },
+        ) => Vec::new(),
+        _ => match metadata(server).await {
+            Ok(resource) => resource.map(|r| r.issuers).unwrap_or_default(),
+            Err(_) => return Ok(Some(Arc::new(Later::new(env, server, az, gcloud)))),
+        },
     };
     match choose(env, server, &issuers, az, gcloud) {
         Some(choice) => build(choice, env, az, gcloud).map(Some),
         None => Ok(None),
+    }
+}
+
+/// The source of [`detect`] for a server that could not say what it takes: it asks the server
+/// at each request until it answers, then keeps the source of the environment that fits. Until
+/// then, and when none fits, the requests go without a token ([`NoToken`]), so a request to a
+/// server that is away fails as it would without an identity.
+struct Later {
+    env: Env,
+    server: Url,
+    az: bool,
+    gcloud: bool,
+    chosen: tokio::sync::OnceCell<Option<Arc<dyn TokenSource>>>,
+}
+
+impl Later {
+    fn new(env: &Env, server: &Url, az: bool, gcloud: bool) -> Self {
+        Self {
+            env: env.clone(),
+            server: server.clone(),
+            az,
+            gcloud,
+            chosen: tokio::sync::OnceCell::new(),
+        }
+    }
+
+    /// The source that fits the server's issuers; `None` while the server cannot say.
+    async fn chosen(&self) -> Result<Option<&Option<Arc<dyn TokenSource>>>> {
+        if let Some(chosen) = self.chosen.get() {
+            return Ok(Some(chosen));
+        }
+        let Ok(resource) = metadata(&self.server).await else {
+            return Ok(None);
+        };
+        let issuers = resource.map(|r| r.issuers).unwrap_or_default();
+        let choice = choose(&self.env, &self.server, &issuers, self.az, self.gcloud);
+        let source = (choice.map(|c| build(c, &self.env, self.az, self.gcloud))).transpose()?;
+        Ok(Some(self.chosen.get_or_init(|| async { source }).await))
+    }
+}
+
+impl fmt::Debug for Later {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Later")
+            .field("server", &self.server.as_str())
+            .finish_non_exhaustive()
+    }
+}
+
+impl TokenSource for Later {
+    fn token(&self) -> TokenFuture<'_> {
+        Box::pin(async move {
+            match self.chosen().await? {
+                Some(Some(source)) => source.token().await,
+                _ => Err(Box::new(NoToken) as TokenError),
+            }
+        })
     }
 }
 
