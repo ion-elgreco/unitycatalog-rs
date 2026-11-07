@@ -150,7 +150,9 @@ impl AwsResolver {
         let authorization = headers
             .get("authorization")
             .ok_or("no authorization header")?;
-        if !signed_headers(authorization).any(|h| h == header) {
+        let signed_headers =
+            signed_headers(authorization).ok_or("not a Signature Version 4 authorization")?;
+        if !signed_headers.split(';').any(|h| h == header) {
             return Err(format!("{header} is not signed"));
         }
         let providers: Vec<&AwsProvider> = (self.providers.iter())
@@ -300,12 +302,29 @@ struct Checked<'a> {
     left: Duration,
 }
 
-/// The names in `SignedHeaders=` of a SigV4 `Authorization` header.
-fn signed_headers(authorization: &str) -> impl Iterator<Item = &str> {
-    authorization
-        .split(',')
-        .filter_map(|part| part.trim().strip_prefix("SignedHeaders="))
-        .flat_map(|names| names.split(';'))
+/// The `SignedHeaders=` of a SigV4 `Authorization` header: `None` unless
+/// the header is `AWS4-HMAC-SHA256` and one `Credential`, `SignedHeaders`
+/// and `Signature`, each once, as STS reads it.
+fn signed_headers(authorization: &str) -> Option<&str> {
+    let parts = authorization.strip_prefix("AWS4-HMAC-SHA256 ")?;
+    let mut credential = None;
+    let mut signed = None;
+    let mut signature = None;
+    for part in parts.split(',') {
+        let (name, value) = part.trim().split_once('=')?;
+        let slot = match name {
+            "Credential" => &mut credential,
+            "SignedHeaders" => &mut signed,
+            "Signature" => &mut signature,
+            _ => return None,
+        };
+        if slot.replace(value).is_some() || value.is_empty() {
+            return None;
+        }
+    }
+    credential?;
+    signature?;
+    signed
 }
 
 /// What STS says of the caller.
@@ -408,9 +427,23 @@ mod tests {
         let authorization = "AWS4-HMAC-SHA256 Credential=AKID/20261104/us-east-1/sts/aws4_request, \
                              SignedHeaders=content-type;host;x-amz-date;x-server-id, Signature=ab";
         assert_eq!(
-            signed_headers(authorization).collect::<Vec<_>>(),
-            ["content-type", "host", "x-amz-date", "x-server-id"]
+            signed_headers(authorization),
+            Some("content-type;host;x-amz-date;x-server-id")
         );
+        // A second component, or one that STS does not read, is no
+        // signature.
+        for forged in [
+            "AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders=host, Signature=ab, \
+             SignedHeaders=x-server-id",
+            "AWS4-HMAC-SHA256 SignedHeaders=x-server-id, Credential=A/x, SignedHeaders=host, \
+             Signature=ab",
+            "AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders=host, Signature=ab, Extra=x-server-id",
+            "AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders=host",
+            "Bearer SignedHeaders=x-server-id",
+            "AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders=, Signature=ab",
+        ] {
+            assert_eq!(signed_headers(forged), None, "{forged}");
+        }
     }
 
     #[test]
