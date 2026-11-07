@@ -202,12 +202,16 @@ impl IssuerSettings {
         if self.issuer.is_empty() {
             return Err(invalid("issuer", "", "Expected the iss of its tokens."));
         }
-        if self.issuer == "*" {
+        if self.issuer.contains('*')
+            && let Some(reason) = uc_auth::url_pattern_error(&self.issuer)
+        {
             return Err(invalid(
                 "issuer",
-                "*",
-                "Expected an exact issuer, or `*` for one DNS label, such as \
-                 https://*.dev.example.com.",
+                &self.issuer,
+                &format!(
+                    "{reason} Expected an exact issuer, or `*` for one DNS label, such as \
+                     https://*.dev.example.com."
+                ),
             ));
         }
         if self.issuer == INTERNAL_ISSUER {
@@ -254,6 +258,20 @@ impl IssuerSettings {
                 "Expected the server id that the signed requests carry, such as the server's \
                  URL; no '*', or a request signed for another server would pass.",
             ));
+        }
+        if !self.issuer.is_empty() {
+            let path = (self.issuer.split_once("://")).is_some_and(|(_, rest)| rest.contains('/'));
+            if let Some(reason) = uc_auth::url_pattern_error(&self.issuer)
+                .or_else(|| path.then(|| "Expected no path.".to_string()))
+            {
+                return Err(invalid(
+                    "issuer",
+                    &self.issuer,
+                    &format!(
+                        "{reason} Expected the URL of an STS endpoint, such as a VPC endpoint."
+                    ),
+                ));
+            }
         }
         if self.accounts.is_empty() {
             return Err(invalid(
@@ -664,6 +682,23 @@ mod tests {
             error(&["name = \"a\"\nissuer = \"https://a\"\naudiences = [\"*\"]\ndirect = true"])
                 .contains("[0].audiences: '*'. With direct = true")
         );
+        // A `*` stays under one domain.
+        for pattern in ["https://*", "http://*", "https://*.com", "accounts.*.com"] {
+            let block = format!("name = \"a\"\nissuer = \"{pattern}\"\naudiences = [\"a\"]");
+            assert!(error(&[&block]).contains("[0].issuer"), "{pattern}");
+        }
+        // An STS endpoint is a URL without a path.
+        for endpoint in [
+            "sts.amazonaws.com",
+            "https://sts.amazonaws.com/x",
+            "https://*",
+        ] {
+            let block = format!(
+                "name = \"a\"\nkind = \"aws\"\nissuer = \"{endpoint}\"\naudiences = [\"https://uc\"]\n\
+                 accounts = [\"123456789012\"]"
+            );
+            assert!(error(&[&block]).contains("[0].issuer"), "{endpoint}");
+        }
     }
 
     #[test]

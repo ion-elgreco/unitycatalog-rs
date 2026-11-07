@@ -65,7 +65,7 @@ pub mod jwt;
 mod layer;
 mod resolver;
 
-pub use allowlist::Allowlist;
+pub use allowlist::{Allowlist, url_pattern_error};
 /// Re-exported for implementing [`Resolver`], [`Admission`] and [`Transport`].
 pub use async_trait::async_trait;
 pub use authenticator::{Authenticator, AuthenticatorBuilder, ConfigError, DEFAULT_KEEP};
