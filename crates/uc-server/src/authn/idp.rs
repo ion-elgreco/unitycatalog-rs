@@ -235,12 +235,13 @@ impl IssuerSettings {
                 "'*' cannot be combined with other values; use it alone to accept every audience.",
             ));
         }
-        if self.direct && self.audiences.iter().any(|a| a == "*") {
+        if self.direct && self.audiences.iter().any(|a| a.contains('*')) {
             return Err(invalid(
                 "audiences",
-                "*",
-                "With direct = true, expected the aud of tokens for this server: with '*', a \
-                 token that the provider made for any other application would sign in here.",
+                &self.audiences.join(", "),
+                "With direct = true, expected the aud of tokens for this server, without '*': \
+                 with it, a token that the provider made for another application would sign \
+                 in here.",
             ));
         }
         if self.issuer.contains('*')
@@ -701,6 +702,12 @@ mod tests {
         assert!(
             error(&["name = \"a\"\nissuer = \"https://a\"\naudiences = [\"*\"]\ndirect = true"])
                 .contains("[0].audiences: '*'. With direct = true")
+        );
+        assert!(
+            error(&[
+                "name = \"a\"\nissuer = \"https://a\"\naudiences = [\"api://*\"]\ndirect = true"
+            ])
+            .contains("[0].audiences: 'api://*'. With direct = true")
         );
         // A `*` stays under one domain.
         for pattern in ["https://*", "http://*", "https://*.com", "accounts.*.com"] {

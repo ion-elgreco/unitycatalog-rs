@@ -118,7 +118,7 @@ the blocks (RFC 9728), so a client can ask the provider for a token with the rig
 | `name` | A short name: the prefix of the principals that it names without an email. | required |
 | `kind` | `oidc` for an OpenID Connect provider, `aws` for AWS identities ([AWS](#aws)). | `oidc` |
 | `issuer` | The `iss` claim of its tokens, as they write it, with a trailing `/` if they have one; `*` stands for one DNS label of letters, digits and `-`, and in the host it needs two fixed labels after it, such as `https://*.dev.example.com`. For `aws`, the URL of the STS endpoint. | required; for `aws`, AWS's endpoints |
-| `audiences` | The `aud` that its tokens must carry; `["*"]` for any, without `direct`. For `aws`, the server id. | required |
+| `audiences` | The `aud` that its tokens must carry; `["*"]` for any, without `direct`. With `direct`, no `*`. For `aws`, the server id. | required |
 | `accounts` | For `aws`: the AWS accounts whose identities it takes. | required for `aws` |
 | `direct` | Take its tokens on every request, not only at the exchange. | `false` |
 | `principal_claims` | The claims that name the caller; the first present wins. | `["email", "sub"]` |
