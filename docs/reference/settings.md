@@ -148,7 +148,7 @@ display_name = "{app_displayname}"
 | `direct` | `false` | Take its tokens on every request, not only at the token exchange. |
 | `principal_claims` | `["email", "sub"]` | The claims that name the caller; the first present wins. An email names the user with that email; any other value names the user `<name>:<value>`. |
 | `client_claims` | `["azp", "client_id"]` | The claims with a machine's client id, matched to a user's `externalId`. |
-| `groups_claim` | none | A claim whose values are names of groups the caller is in; a value counts when the server has the group `<name>:<value>`, such as `entra:Writers`. |
+| `groups_claim` | none | A claim whose values are names of groups the caller is in; a value counts when the server has the group `<name>:<value>`, such as `entra:Writers`. Not with an `issuer` that has `*`. |
 | `create_users` | `false` | Make the user at its first request when it is missing. |
 | `display_name` | the principal | The display name of a made user, with claims in braces. |
 
