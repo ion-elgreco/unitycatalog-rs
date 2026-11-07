@@ -197,6 +197,28 @@ async fn a_policy_file_that_does_not_parse_is_named(#[future(awt)] metastore: Ar
     assert!(error.message().contains(&file.path().display().to_string()));
 }
 
+#[rstest]
+#[tokio::test]
+async fn a_policy_file_that_repeats_an_id_is_named(#[future(awt)] metastore: Arc<dyn Metastore>) {
+    let policy = "@id(\"office\")\nforbid (principal, action, resource);";
+    let (first, second) = (
+        tempfile::NamedTempFile::new().unwrap(),
+        tempfile::NamedTempFile::new().unwrap(),
+    );
+    std::fs::write(first.path(), policy).unwrap();
+    std::fs::write(second.path(), policy).unwrap();
+    let paths = [first.path().to_path_buf(), second.path().to_path_buf()];
+    let Err(error) = state(&metastore).with_cedar(&paths) else {
+        panic!("two policies with one id passed");
+    };
+    let message = error.message();
+    assert!(
+        message.contains(&second.path().display().to_string()),
+        "{message}"
+    );
+    assert!(message.contains("office"), "{message}");
+}
+
 /// Denies everything, and remembers the last request.
 #[derive(Clone, Default)]
 struct Nobody(Arc<std::sync::Mutex<Option<AuthorizeRequest>>>);

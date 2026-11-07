@@ -59,11 +59,15 @@ pub fn with_policy_files(paths: &[PathBuf]) -> Result<CedarAuthorizer> {
         let source = std::fs::read_to_string(path).map_err(|e| {
             Error::invalid_argument(format!("read Cedar policy file '{}': {e}", path.display()))
         })?;
-        // Each file on its own first, so an error names the file.
-        CedarAuthorizer::new(&source, NoEntities).map_err(|e| {
+        // Each file on its own, then with the ones before it, so an error
+        // names the file: an `@id` that the default policy or an earlier
+        // file has too names this one.
+        let in_file = |e: &dyn std::fmt::Display| {
             Error::invalid_argument(format!("policy file '{}': {e}", path.display()))
-        })?;
+        };
+        CedarAuthorizer::new(&source, NoEntities).map_err(|e| in_file(&e))?;
         sources.push(source);
+        authorizer(&sources).map_err(|e| in_file(&e.message()))?;
     }
     authorizer(&sources)
 }
