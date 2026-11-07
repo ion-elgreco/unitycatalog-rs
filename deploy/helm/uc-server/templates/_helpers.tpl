@@ -83,6 +83,11 @@ accounts = {{ required (printf "auth.issuers[%d].accounts is required" $index) $
 issuer = {{ required (printf "auth.issuers[%d].issuer is required" $index) $issuer.issuer | toJson }}
 {{- end }}
 audiences = {{ required (printf "auth.issuers[%d].audiences is required" $index) $issuer.audiences | toJson }}
+{{- range $key := list "direct" "createUsers" }}
+{{- if and (hasKey $issuer $key) (not (kindIs "bool" (get $issuer $key))) }}
+{{- fail (printf "auth.issuers[%d].%s must be true or false, not %q" $index $key (toString (get $issuer $key))) }}
+{{- end }}
+{{- end }}
 {{- if $issuer.direct }}
 direct = true
 {{- end }}
