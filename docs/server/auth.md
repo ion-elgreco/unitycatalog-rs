@@ -1,6 +1,6 @@
 # Sign-in and authorization
 
-By default, the server has no sign-in, and every client can do everything. Turn sign-in on:
+By default, the server has no sign-in, and every client can do everything. To turn sign-in on:
 
 ```toml
 [auth]
@@ -13,27 +13,40 @@ email = "alice@example.com"
 name = "Alice"
 ```
 
-Then each request to the APIs needs a token of an active user, in the header
-`Authorization: Bearer <token>` or in the `UC_TOKEN` cookie, and the server checks the user's
-privileges, as upstream's server does. The web UI, its sign-in, `/docs`, `/healthz` and
-`/version` need no token.
+Then each API request needs the token of an active user. The client sends it in the
+`Authorization: Bearer <token>` header or in the `UC_TOKEN` cookie. The server checks the user's
+privileges. The web UI, its sign-in, `/docs`, `/healthz` and `/version` need no token.
+
+To set up sign-in:
+
+1. Make a [signing key](#the-signing-key).
+2. Name the [first users](#the-first-users) and admins.
+3. Add your [identity providers](#identity-providers).
+4. Optional: set up [sign-in to the web UI](#sign-in-to-the-web-ui).
+5. Grant [privileges](#privileges).
+
+[Settings](../reference/settings.md#auth) lists every key of `[auth]` and `[[auth.issuers]]`.
 
 ## The signing key
 
-The server signs its tokens with an RSA key. `uc-server keygen` makes one:
+The server signs its own tokens with an RSA key. To make a key file:
 
 ```bash
 (umask 077 && uc-server keygen > signing-key.pem)
 ```
 
-Without `signing_key_file`, the server makes a new key in memory at each start: its tokens end
-when it stops, and replicas refuse each other's tokens. Keep the key secret.
+Set `signing_key_file` to this file, and keep the file secret.
+
+Without `signing_key_file`, the server uses a key that it makes in memory at each start. Use this
+only for a local development server or for tests in CI: all sign-ins end when the server stops,
+and replicas refuse each other's tokens.
 
 ### A new signing key
 
-The file can hold several keys, newest first: the first key signs, and each key checks the tokens
-that it signed. Personal access tokens do not use the key. To change the key and keep the
-sign-ins:
+The file can hold several keys, newest first. The first key signs new tokens. Each key still
+checks the tokens that it signed. Personal access tokens do not use the key.
+
+To change the key and keep the sign-ins:
 
 1. Put a new key first in the file, and restart the server:
 
@@ -41,23 +54,32 @@ sign-ins:
     (umask 077 && { uc-server keygen; cat signing-key.pem; } > new.pem) && mv new.pem signing-key.pem
     ```
 
-2. After `access_token_timeout` (default `24h`), the tokens of the old key have expired. Remove
-   the old key from the file, and restart the server again.
+2. Wait for `access_token_timeout` (default `24h`), until the old key's tokens have expired.
+   Remove the old key from the file, and restart the server again.
 
-A server refuses the tokens of a key that is not in its file. Thus, give servers that share
-sign-ins the new key in two steps: first put it last in the file and restart each server, then
-move it first and restart each server again. To end all sign-ins at once, replace the file with
-only a new key.
+A server refuses the tokens of a key that is not in its file. So with several servers that share
+sign-ins, do step 1 in two rounds: put the new key last in the file and restart each server, then
+move it first and restart each server again.
+
+To end all sign-ins at once, replace the file with a file that has only a new key.
 
 ## The first users
 
-At each start, the server makes the users of `[[auth.users]]` that are missing, with their
-`privileges` on the metastore. It never changes or deletes a user that exists. The users of
-`admin_principals` are admins: the server makes them too.
+At each start, the server makes the users of `[[auth.users]]` and `admin_principals` that are
+missing. It grants the missing `privileges` of `[[auth.users]]` on the metastore. It never changes
+or deletes a user that exists. The users of `admin_principals` are admins.
 
-With an identity provider, the first admin then signs in and adds other users. Before that, or
-without a provider, `uc-server token` prints a token of the server's own `admin` user, valid for
-one hour. Run it where the server runs, with its settings and its `signing_key_file`:
+```toml
+[[auth.users]]
+email = "bob@example.com"
+name = "Bob"
+privileges = ["CREATE CATALOG"]
+```
+
+With an identity provider, the first admin signs in and adds the other users. Before that, or
+without a provider, use `uc-server token`. It prints a token of the server's own `admin` user,
+valid for one hour. Run it where the server runs, with the server's settings and
+`signing_key_file`:
 
 ```bash
 export UC_CLI_TOKEN=$(uc-server token)
@@ -66,139 +88,183 @@ uc user create --name Bob --email bob@example.com
 
 ## Users and groups
 
-Users are SCIM users: `uc user`, the Python client, or `/api/1.0/unity-control/scim2/Users`. A
-user's email is their name in grants and owners; a user without an email, such as an
-application that an identity provider names ([Who a token names](#who-a-token-names)), has its
-`userName` there. To delete a user, the server disables the user and removes their grants.
+- A user's email is its name in grants and as an owner. A user without an email, such as an
+  application ([Who a token names](#who-a-token-names)), uses its `userName`.
+- A privilege granted to a group applies to each member. A group's name is its name in grants,
+  and it cannot be the email of a user.
+- When you delete a user, the server disables the user and removes its grants.
+- Only admins can add, change or delete users and groups.
 
-Groups (`uc group`) are SCIM groups. A privilege granted to a group counts for each of its
-members: the group's name is its name in grants, and cannot be the email of a user.
+### Manage users by hand
+
+Use `uc`, the Python client, or the "Users" and "Groups" pages of the web UI:
+
+```bash
+uc user create --name Bob --email bob@example.com
+uc group create --name analysts
+```
+
+Add members to a group on its page in the web UI. To let users in without adding them first, set
+`create_users = true` on the provider's block: the server then makes each user at their first
+sign-in.
+
+### Sync users from your identity provider (SCIM)
+
+SCIM is the standard API that identity providers use to copy their users and groups to other
+services. The server has the SCIM 2.0 API, so a provider such as Entra ID or Okta can make,
+change and disable its users and groups in the server. In the provider's provisioning settings,
+enter:
+
+- **URL:** `https://uc.example.com/api/1.0/unity-control/scim2`
+- **Token:** a personal access token of an admin.
 
 ## Tokens
 
-A request signs in with one of these tokens:
+A client signs in with one of these tokens:
 
-- **A token of your identity provider.** Name the provider as an `[[auth.issuers]]` block
-  ([Identity providers](#identity-providers)). With `direct = true`, the server takes its tokens
-  on every request: a service principal, a managed identity, a service account or a CI job sends
-  the token that its environment gives it, and engines such as pyiceberg sign in with their own
-  `entra` or `google` auth. The [Python client](../clients/python.md#connect) and
-  [`uc`](../clients/cli.md#sign-in) find that identity in the environment themselves.
-
-    ```toml
-    [[auth.issuers]]
-    name = "entra"
-    issuer = "https://login.microsoftonline.com/<tenant>/v2.0"
-    audiences = ["<the API app's client id>", "https://uc.example.com"]
-    direct = true
-    principal_claims = ["preferred_username", "oid"]
-    client_claims = ["azp", "appid"]
-    groups_claim = "roles"
-    create_users = true
-    display_name = "{app_displayname}"
-    ```
-
-- **Token exchange.** The client exchanges a token of the provider for a token of the server, as
-  `uc auth login` does. Every `[[auth.issuers]]` block allows this; without `direct = true`, a
-  block allows only this.
-
-- **Personal access tokens.** A signed-in user makes them for scripts: `uc token create --name ci`.
-  They do not expire, unless `--expires_at` says when.
-
-- **OAuth client credentials.** A client gives a personal access token as its client secret, with
-  the token's id as the client id, to `/api/2.1/unity-catalog/oauth/token`.
+- **A provider's token, on each request.** The client sends the token of your identity provider
+  with each request, and the server checks it each time. The provider's block needs
+  `direct = true`. Use this for service principals, managed identities, service accounts, CI jobs
+  and engines such as pyiceberg. The [Python client](../clients/python.md#connect) and
+  [`uc`](../clients/cli.md#sign-in) find this identity in the environment themselves.
+- **A server token, from the exchange.** The client sends a token of your identity provider to
+  `/api/1.0/unity-control/auth/tokens` and gets a token of the server back. Then it sends the
+  server's token with each request. `uc auth login` signs in this way. A block with
+  `direct = true` accepts its tokens both ways. A block without it accepts them only at the
+  exchange.
+- **A personal access token.** A signed-in user makes one for scripts:
+  `uc token create --name ci`. It does not expire, unless you set `--expires_at`.
+- **OAuth client credentials.** The client sends a personal access token as its client secret,
+  and the token's id as its client id, to `/api/2.1/unity-catalog/oauth/token`.
 
 ## Identity providers
 
-Each `[[auth.issuers]]` block is one provider. `GET /.well-known/oauth-protected-resource` lists
-the blocks (RFC 9728), so a client can ask the provider for a token with the right audience.
+An identity provider signs your users and applications in, such as Microsoft Entra, Google or
+Keycloak. Add one `[[auth.issuers]]` block for each provider:
 
-| Key | Meaning | Default |
-| --- | --- | --- |
-| `name` | A short name: the prefix of the principals that it names without an email. | required |
-| `kind` | `oidc` for an OpenID Connect provider, `aws` for AWS identities ([AWS](#aws)). | `oidc` |
-| `issuer` | The `iss` claim of its tokens, as they write it, with a trailing `/` if they have one; `*` stands for one DNS label of letters, digits and `-`, and in the host it needs two fixed labels after it, such as `https://*.dev.example.com`. For `aws`, the URL of the STS endpoint. | required; for `aws`, AWS's endpoints |
-| `audiences` | The `aud` that its tokens must carry; `["*"]` for any, without `direct`. With `direct`, no `*`. For `aws`, the server id. | required |
-| `accounts` | For `aws`: the AWS accounts whose identities it takes. | required for `aws` |
-| `direct` | Take its tokens on every request, not only at the exchange. | `false` |
-| `principal_claims` | The claims that name the caller; the first present wins. | `["email", "sub"]` |
-| `client_claims` | The claims with an application's client id: the user whose `externalId` is `<name>:<client id>` is the application. | `["azp", "client_id"]` |
-| `groups_claim` | A claim whose values are names of groups the caller is in. Not with an `issuer` that has `*`. | none |
-| `create_users` | Make the user at its first request when it is missing. | `false` |
-| `display_name` | The display name of a made user, with claims in braces. | the principal |
+```toml
+[[auth.issuers]]
+name = "entra"
+issuer = "https://login.microsoftonline.com/<tenant>/v2.0"
+audiences = ["<the API app's client id>", "https://uc.example.com"]
+direct = true
+principal_claims = ["preferred_username", "oid"]
+client_claims = ["azp", "appid"]
+groups_claim = "roles"
+create_users = true
+display_name = "{app_displayname}"
+```
 
-Several blocks can have the same issuer with other audiences: a token is the first block's that
-has its issuer and takes its audience. For `aws`, a signed request is the first block's that takes
-its endpoint, server id and account.
+A token is a set of signed fields, called claims. The block tells the server which tokens to
+accept, and how to read their claims:
 
-The [Python client](../clients/python.md#connect) and `uc` take the audience of a block from that
-list: the one that `UC_AUDIENCE` names, else the one that is the server's URL, as they call it.
-The list needs no sign-in, so a client takes no other audience: a server could name the audience
-of another service, and have the client's identity sign for it.
+| Key | What it does |
+| --- | --- |
+| `name` | A short name for the provider. It is the prefix of the users that it names without an email, such as `entra:7f3e…`. |
+| `kind` | `oidc` (default) for an OpenID Connect provider, or `aws` for [AWS](#aws). |
+| `issuer` | The provider's `iss` claim, exactly as its tokens write it. `*` matches one part of a host name, such as `https://*.dev.example.com`. |
+| `audiences` | The `aud` values to accept. Use the server's URL, and any other value that the provider puts in `aud`. `["*"]` accepts every value, but not with `direct`. |
+| `direct` | Accept the tokens on each request, not only at the exchange. |
+| `principal_claims` | The claims that name the user. The first claim that the token has wins. |
+| `client_claims` | The claims that hold an application's client id. |
+| `groups_claim` | The claim that lists the user's groups ([Groups](#groups)). |
+| `create_users` | Make a missing user at its first request. |
+| `display_name` | The display name of a new user, with claims in braces. |
+
+Clients read the blocks at `GET /.well-known/oauth-protected-resource` (RFC 9728), so they know
+which audience to ask the provider for. The Python client and `uc` use the audience that
+`UC_AUDIENCE` names, else the audience that is the server's URL as they call it. They use no other
+audience, so a server cannot make a client's identity sign for another service.
+
+Several blocks can have the same issuer with different audiences. A token goes to the first block
+that has its issuer and its audience.
 
 ### Who a token names
 
-1. The first of `principal_claims` that the token has. A value that is an email, such as
-   `alice@example.com`, names the user with that email, in any case, unless the provider says
-   `email_verified = false`. With an `issuer` with `*`, the provider must say
-   `email_verified = true`: anyone can make an issuer that `*` matches, such as a new Entra
-   tenant, and give its users any email. Entra does not send `email_verified`, so name its users
-   by a claim that is not an email, such as `oid`. Any other value names the user
-   `<name>:<value>`, such as `entra:7f3e…`. Name only claims that the provider sets, not the
-   user: a provider that lets its users choose their `preferred_username` lets them choose an
-   email.
-2. Nobody found, and the token is an application's own: an access token with `idtyp = app`
-   (Entra), or whose `sub` is its client id (RFC 9068), or an AWS identity. Then the user whose
-   `externalId` is `<name>:<client id>`, with the first of `client_claims` that the token has,
-   such as `entra:<client id>`. This is how a user made ahead of time, with
-   `uc user create --external_id` or `[[auth.users]]`, is the service principal. A person's
-   token carries the client id of the tool or the page they signed in with, such as `az`, which
-   many people share, so it never names such a user.
-3. Nobody found: with `create_users`, the server makes the user, named as in step 1, with
-   `<name>:<client id>` of an application as `externalId` and `display_name` filled from the
-   token. Else the request is refused with "User not allowed".
+A principal is the name of a user in grants, owners, `admin_principals` and Cedar's `User::"…"`:
+the user's email, or `<name>:<value>`. The server finds the user of a token in three steps:
 
-A user that is disabled names nobody, and the server's own `admin` can never be assumed. The web
-UI's sign-in (`oidc_issuer`) names its users the same way, with the block of that issuer when
-there is one, so a first sign-in makes the user when the block has `create_users`.
+1. **By a name claim.** The server reads the first claim of `principal_claims` that the token has.
+    - An email, such as `alice@example.com`, names the user with that email, in any case. It
+      names nobody when the token has `email_verified = false`.
+    - With an `issuer` with `*`, an email names a user only when the token has
+      `email_verified = true`. Anyone can make an issuer that `*` matches, such as a new Entra
+      tenant, and give its users any email. Entra does not send `email_verified`, so name its
+      users by a claim that is not an email, such as `oid`.
+    - Any other value names the user `<name>:<value>`, such as `entra:7f3e…`.
+    - Use only claims that the provider sets. Some providers let users set a claim, such as
+      `preferred_username`. Then a user can set it to the email of another user.
+2. **As an application.** When step 1 finds no user and the token is an application's own, the
+   server looks for the user whose `externalId` is `<name>:<client id>`, such as
+   `entra:<client id>`. The client id comes from `client_claims`. An application's own token is an
+   Entra access token with `idtyp = app`, a token whose `sub` is its client id (RFC 9068), or an
+   AWS identity. To set up a service principal ahead of time, make its user with
+   `uc user create --external_id` or `external_id` in `[[auth.users]]`. A person's token never
+   matches here: it holds the client id of a shared tool, such as `az`.
+3. **As a new user.** When no user is found and the block has `create_users = true`, the server
+   makes the user. It names the user as in step 1, sets `externalId` for an application, and
+   fills in `display_name`. Else the server refuses the request with "User not allowed".
 
-Grants, owners, `admin_principals` and Cedar's `User::"…"` take the principal: the email, or
-`<name>:<value>`.
+A disabled user names nobody. No token can name the server's own `admin` user.
+
+The web UI's sign-in (`oidc_issuer`) finds users in the same way, with the block of that issuer
+when there is one. So with `create_users`, the first sign-in makes the user.
 
 ### Groups
 
-With `groups_claim`, the names in that claim are groups of the caller for the request, next to
-the groups the caller is a member of in the server. Each name is the group `<name>:<value>`,
-such as `entra:Writers` for the role `Writers` of the block `entra`, so a provider names its own
-groups only. A name counts when the group exists in the server: make the group once
-(`uc group create --name entra:Writers`), grant to it, and every identity whose token names it
-is covered. Entra's `groups` claim holds object ids; its app roles (`roles`), assigned to Entra
-groups, arrive as names. A block whose `issuer` has `*` names no groups: each issuer that it
-matches, such as each tenant, would name the same groups.
+To take the user's groups from the provider's tokens:
+
+1. Set `groups_claim` to the claim that lists the groups.
+2. Make each group in the server, named `<name>:<value>`:
+   `uc group create --name entra:Writers`.
+3. Grant privileges to the group.
+
+A user whose token lists `Writers` then gets the privileges of `entra:Writers`, in addition to
+the user's groups in the server. Values without a group in the server do not count. The prefix
+keeps each provider to its own groups.
+
+- **Entra:** use `roles`. Entra's `groups` claim holds object ids, but app roles that you assign
+  to Entra groups arrive as names.
+- **An `issuer` with `*`:** `groups_claim` is not allowed, because each issuer that it matches,
+  such as each tenant, would name the same groups.
 
 ### Providers
 
-| Provider | Block | Notes |
-| --- | --- | --- |
-| Microsoft Entra | `issuer = "https://login.microsoftonline.com/<tenant>/v2.0"`, `audiences = ["<the API app's client id>", "https://uc.example.com"]`, `principal_claims = ["preferred_username", "oid"]`, `client_claims = ["azp", "appid"]`, `groups_claim = "roles"` | The `aud` of Entra's v2 access tokens is the API app's client id. Give the API app the server's URL as its Application ID URI (its domain must be verified), and clients ask for the scope `https://uc.example.com/.default`. Set `accessTokenAcceptedVersion` to 2 on the API app, or add a block for `https://sts.windows.net/<tenant>/` with `principal_claims = ["upn", "oid"]` and `client_claims = ["appid"]`. Add the `idtyp` optional claim so applications are told from people. |
-| Google | `issuer = "https://accounts.google.com"`, `audiences = ["https://uc.example.com"]`, `principal_claims = ["email", "sub"]` | Google's access tokens are opaque: clients send an ID token for the audience, the server's URL. |
-| Any OpenID Connect provider | `issuer`, `audiences = ["<client id>"]` | FerrisKey, Keycloak, Okta, GitHub Actions, GitLab CI, a Kubernetes cluster's issuer. The provider must publish `<issuer>/.well-known/openid-configuration` and its keys. |
-| AWS | `kind = "aws"`, `audiences = ["<server id>"]`, `accounts = ["<account id>"]` | See [AWS](#aws). |
+- **Microsoft Entra.** Use the block above. On the API app:
+    - Set `accessTokenAcceptedVersion` to 2. The `aud` of a v2 access token is the API app's
+      client id. For v1 tokens instead, add a block with
+      `issuer = "https://sts.windows.net/<tenant>/"`, `principal_claims = ["upn", "oid"]` and
+      `client_claims = ["appid"]`.
+    - Set the Application ID URI to the server's URL. Its domain must be verified. Clients then
+      ask for the scope `https://uc.example.com/.default`.
+    - Add the optional claim `idtyp`, so the server can tell applications from people.
+- **Google.** `issuer = "https://accounts.google.com"`, `audiences = ["https://uc.example.com"]`,
+  `principal_claims = ["email", "sub"]`. Google's access tokens have no claims that the server
+  can read. So clients send an ID token instead, with the server's URL as its audience.
+- **Any OpenID Connect provider**, such as FerrisKey, Keycloak, Okta, GitHub Actions, GitLab CI
+  or a Kubernetes cluster's issuer. Set `issuer` and `audiences = ["<client id>"]`. The provider
+  must publish `<issuer>/.well-known/openid-configuration` and its keys.
+- **AWS.** `kind = "aws"`, `audiences = ["<server id>"]`, `accounts = ["<account id>"]`. See
+  [AWS](#aws).
 
-The server checks a token's signature with the provider's keys, which it fetches once an hour
-and keeps while the provider does not answer, its issuer, audience and times, with 60 seconds of
-clock skew. It asks a provider at most once a minute. Of the issuers that an `issuer` with `*`
-matches, it asks at most 20 a minute that it has no keys of yet, so tokens of made-up issuers
-cannot make it call out for each. A token that a `direct` issuer's
-block accepts is kept until it expires, at most five minutes, so a busy client costs one check
-per token, not per request; a user disabled in the server keeps working that long.
+### How the server checks a token
+
+- It checks the signature with the provider's keys, and the issuer, audience and times, with
+  60 seconds of clock skew.
+- It fetches a provider's keys once an hour, and never more than once a minute. When the provider
+  does not answer, it keeps the keys it has.
+- For an `issuer` with `*`, it fetches keys for at most 20 new issuers a minute. So tokens with
+  made-up issuers cannot make it call out for each one.
+- It keeps a token from a `direct` block until the token expires, for at most five minutes. A busy
+  client then costs one check per token, not one per request. A user disabled in the server can
+  still make requests for that time.
 
 ### AWS
 
-An AWS identity cannot make a token that the server can check. Its client signs a
-`sts:GetCallerIdentity` request instead and sends it as the bearer token. The server sends that
-request to STS, which checks the signature and answers with the caller's ARN. The credentials
-never leave the client. Vault and the EKS authenticator sign in this way.
+AWS roles and IAM users have no token that the server can check. So the client signs an
+`sts:GetCallerIdentity` request and sends it as the bearer token. The server sends it on to AWS
+STS, which checks the signature and returns the caller's ARN. The credentials never leave the
+client. Vault and the EKS authenticator use the same method.
 
 ```toml
 [[auth.issuers]]
@@ -209,29 +275,29 @@ accounts = ["123456789012"]
 create_users = true
 ```
 
-- **The server id** is the block's audience: the server's URL, as clients call it, such as
-  `https://uc.example.com`. List each URL that clients use. The client signs it into the
-  request, so a request signed for another server is refused here. A client signs only the URL
-  it calls, else the server id that `UC_AUDIENCE` names, so another server cannot have it sign
-  for this one.
-- **The endpoint** is AWS's global or regional STS endpoint, unless `issuer` names another one,
-  such as a VPC endpoint. The server sends signed requests to no other host.
-- **The caller** is named by its ARN: `aws:arn:aws:iam::<account>:role/<name>` for an assumed
-  role, so every session of a role is one user. A role's path is not part of it. An IAM user is
+- **`audiences`** holds the server id: the server's URL as clients call it. List each URL that
+  clients use. The client signs the server id into the request, so the server refuses a request
+  that was signed for another server. A client signs only the URL that it calls, or the server id
+  that `UC_AUDIENCE` names, so another server cannot make it sign for this one.
+- **`accounts`** holds the AWS accounts to accept. It is required, because STS answers for every
+  account.
+- **`issuer`** is optional: an STS endpoint, such as a VPC endpoint. The default is AWS's global
+  and regional endpoints. The server sends signed requests to no other host.
+- **Users** are named by their ARN. An assumed role is `aws:arn:aws:iam::<account>:role/<name>`,
+  so all sessions of a role are one user. The role's path is not part of the name. An IAM user is
   `aws:arn:aws:iam::<account>:user/<name>`.
 - **A user made ahead of time** is the role when its `externalId` is `<name>:<the role's ARN>`,
   such as `aws:arn:aws:iam::123456789012:role/etl`.
-- **Accounts.** STS answers for any account, so only identities of `accounts` are taken.
 
-A signed request is valid for 15 minutes. The server keeps the caller it names for five, as it
-does for tokens. AWS identities are taken on every request; there is no token exchange for them,
-and they carry no groups. When STS throttles its requests, the server answers with an error of
-its own (HTTP 500), not "Invalid access token."
+A signed request is valid for 15 minutes. The server keeps the caller for five minutes, as it does
+for tokens. AWS identities are accepted on each request. They have no token exchange and no groups.
+When STS limits the server's requests, the server answers with HTTP 500, not "Invalid access
+token".
 
 ## Sign in to the web UI
 
-`auth.mode` selects how users sign in to the web UI: `none` (the default), `oidc` or `forward`.
-A user signs in when their email names an active user of the server.
+`auth.mode` sets how users sign in to the web UI: `none` (the default), `oidc` or `forward`. A user
+can sign in when their email names an active user of the server.
 
 ### OpenID Connect
 
@@ -244,14 +310,14 @@ oidc_client_id = "<client id>"
 oidc_client_secret = "<client secret>"   # none for a public client
 ```
 
-In the provider, allow the redirect URI `https://uc.example.com/auth/callback`. "Log out" ends
-the sign-in to the web UI only; with `oidc_end_session = true`, it also ends the provider's
-session.
+- In the provider, allow the redirect URI `https://uc.example.com/auth/callback`.
+- "Log out" ends only the sign-in to the web UI. With `oidc_end_session = true`, it also ends the
+  provider's session.
 
 ### An auth proxy
 
 An auth proxy, such as oauth2-proxy, Authelia or [Envoy Gateway](#envoy-gateway), signs users in
-and names the user in a header:
+and sends the user's name in a header:
 
 ```toml
 [auth]
@@ -260,14 +326,19 @@ forward_trusted_proxies = ["10.42.0.0/16"]
 forward_logout_url = "https://auth.example.com/logout"
 ```
 
-The server reads the email from `Remote-Email`, else the user from `Remote-User`, and only on
-connections from `forward_trusted_proxies`.
+The server reads the email from `Remote-Email`, else the user from `Remote-User`. It reads these
+headers only on connections from `forward_trusted_proxies`.
 
 #### Envoy Gateway
 
-[Envoy Gateway](https://gateway.envoyproxy.io) 1.2 or later can be the auth proxy. A
-SecurityPolicy signs users in with OpenID Connect. A JWT provider in the same policy reads the ID
-token from its cookie, and puts the token's `email` in `Remote-Email`:
+[Envoy Gateway](https://gateway.envoyproxy.io) 1.2 or later can be the auth proxy. It needs two
+policies:
+
+- **A SecurityPolicy** on the web UI's route signs users in with OpenID Connect. Its JWT provider
+  reads the ID token from its cookie, and puts the token's `email` in `Remote-Email`.
+- **A ClientTrafficPolicy** on the Gateway removes `Remote-Email` and `Remote-User` from each
+  client request. Envoy does not replace a header that the client sends, so without this policy a
+  client could name any user.
 
 ```yaml
 apiVersion: gateway.envoyproxy.io/v1alpha1
@@ -323,23 +394,22 @@ forward_trusted_proxies = ["10.42.0.0/16"]           # the addresses of the Envo
 forward_logout_url = "https://uc.example.com/logout"  # the policy's logoutPath
 ```
 
-- Envoy adds `Remote-Email`, and does not replace a header of that name that the client sends.
-  The ClientTrafficPolicy removes the client's `Remote-Email` and `Remote-User` on every route
-  of the Gateway first. Without it, a client could name any user.
-- Give the SecurityPolicy only the route of the web UI, for example on a host of its own. `uc`,
-  the Python client and other API clients send the server's tokens, and OpenID Connect would
-  send their requests to the provider's sign-in page.
+Give the SecurityPolicy only the web UI's route, for example on a host of its own. `uc`, the
+Python client and other API clients send the server's tokens. OpenID Connect would send their
+requests to the provider's sign-in page.
 
 ## Privileges
 
+A securable is an object that privileges apply to, such as a catalog, schema or table.
+
 - The user who makes a securable owns it, and can grant privileges on it.
-- A privilege on a catalog or schema counts for what it holds.
+- A privilege on a catalog or schema applies to everything in it.
 - To read a table, a user needs `USE CATALOG` on its catalog, `USE SCHEMA` on its schema, and
   `SELECT` on the table.
 - Admins read everything, make catalogs, credentials and external locations, manage users, and
   grant any privilege.
 - External tables and volumes, and the credentials of a path, need an external location that
-  covers the path, also for admins.
+  covers the path. This applies to admins too.
 
 | Privilege | Lets the user |
 | --- | --- |
@@ -362,9 +432,15 @@ uc permission get --securable_type table --name main.default.events
 
 ## Cedar policies
 
-With `auth.cedar = true`, the [Cedar](https://www.cedarpolicy.com) policy engine checks the
-granted privileges. Its default policy allows what the grants allow; `auth.cedar_policies` adds
-your own policy files:
+[Cedar](https://www.cedarpolicy.com) is a policy language. With `auth.cedar = true`, Cedar checks
+the privileges. Its default policy allows what the grants allow. To add your own rules, list your
+policy files in `auth.cedar_policies`:
+
+```toml
+[auth]
+cedar = true
+cedar_policies = ["/etc/uc/policies.cedar"]
+```
 
 ```cedar
 // Only owners and admins change the tables of this catalog.
@@ -375,23 +451,20 @@ forbid (
 );
 ```
 
-For each check, the server asks Cedar whether a principal may do an action on a resource. A
-policy's `@id("…")` names it among the policies that decided; each `@id` is used once in all the
-files, and `granted` is the default policy's. A file that repeats one stops the server at start,
-with the name of the file.
+Give each policy an `@id("…")` that no other policy in the files has. `granted` is the id of the
+default policy. When two policies have the same `@id`, the server does not start, and names the
+file.
+
+For each check, the server asks Cedar: can this principal do this action on this resource?
 
 | Part | Cedar | Example |
 | --- | --- | --- |
 | Principal | `User::"<email>"`: the signed-in user | `User::"alice@example.com"` |
-| Action | `Action::"<privilege>"`, as a grant writes it, with its spaces | `Action::"USE CATALOG"` |
-| Resource | `<type>::"<id>"`: the securable that the check is on, by its id: `USE CATALOG` on the catalog, `SELECT` on the table | `Catalog::"6f1e…"` |
+| Action | `Action::"<privilege>"`, with the spaces of the privilege | `Action::"USE CATALOG"` |
+| Resource | `<type>::"<id>"`: the securable of the check, by its id, such as the catalog for `USE CATALOG` and the table for `SELECT` | `Catalog::"6f1e…"` |
 
-The actions are the privileges: `CREATE CATALOG`, `USE CATALOG`, `CREATE SCHEMA`, `USE SCHEMA`,
-`CREATE TABLE`, `SELECT`, `MODIFY`, `CREATE FUNCTION`, `EXECUTE`, `CREATE VOLUME`, `READ VOLUME`,
-`CREATE MODEL`, `CREATE EXTERNAL LOCATION`, `READ FILES`, `WRITE FILES`, `CREATE EXTERNAL TABLE`,
-`CREATE EXTERNAL VOLUME`, `CREATE MANAGED STORAGE` and `CREATE STORAGE CREDENTIAL`.
-
-The resource types, and where their ids are:
+The actions are the privileges of the table in [Privileges](#privileges). The resources, and where
+to find their ids:
 
 | Resource | Id | Shown by |
 | --- | --- | --- |
@@ -405,34 +478,37 @@ The resource types, and where their ids are:
 | `ExternalLocation::"<id>"` | `id` | `uc external_location get` |
 | `Credential::"<id>"` | `id` | `uc credential get` |
 
-- **Parents:** a table, volume, function or model is `in` its schema, a schema `in` its catalog,
-  and a catalog `in` the metastore. So `resource in Catalog::"<id>"` matches all that the catalog
-  holds. External locations and credentials have no parent.
-- **Attributes of a resource:** `owner`, the owner's email, when it has one; and
-  `granted_privileges`, the set of actions granted on it or on a parent, to the user or to a group
-  of the user.
-- **Groups** are no Cedar entities: a policy cannot say `principal in Group::"…"`. Their grants are
-  in `granted_privileges`.
+An id stays the same when you rename the securable. A securable that you drop and make again gets
+a new id.
+
+- **Parents:** a table, volume, function or model is `in` its schema, a schema is `in` its
+  catalog, and a catalog is `in` the metastore. So `resource in Catalog::"<id>"` matches
+  everything in the catalog. External locations and credentials have no parent.
+- **Resource attributes:**
+    - `owner`: the owner's email, when the resource has an owner.
+    - `granted_privileges`: the actions granted on the resource or on a parent, to the user or to
+      a group of the user.
+- **Groups** are not Cedar entities, so a policy cannot say `principal in Group::"…"`. Their
+  grants are in `granted_privileges`.
 - **Context:** how and from where the request came.
 
-  | Attribute | Type | Value |
-  | --- | --- | --- |
-  | `context.auth_method` | `String` | `jwt` (a provider's token), `aws-sigv4`, `trusted-headers` (an auth proxy), `server-token`, or `personal-access-token` |
-  | `context.provider` | `String` | The `name` of the `[[auth.issuers]]` block, `forward` behind an auth proxy, `internal` for the server's tokens |
-  | `context.groups` | `Set<String>` | The groups that the caller's token names (`groups_claim`), as `<name>:<value>` |
-  | `context.source_ip` | `ipaddr` | The address of the connection, when known |
-  | `context.request_time` | `datetime` | When the request came |
+    | Attribute | Type | Value |
+    | --- | --- | --- |
+    | `context.auth_method` | `String` | `jwt` (a provider's token), `aws-sigv4`, `trusted-headers` (an auth proxy), `server-token`, or `personal-access-token` |
+    | `context.provider` | `String` | The `name` of the `[[auth.issuers]]` block, `forward` behind an auth proxy, or `internal` for the server's tokens |
+    | `context.groups` | `Set<String>` | The groups that the token names (`groups_claim`), as `<name>:<value>` |
+    | `context.source_ip` | `ipaddr` | The address of the connection, when known |
+    | `context.request_time` | `datetime` | When the request came |
 
-  Test for `source_ip` with `has`, as some requests have no address:
+    Some requests have no address, so test for `source_ip` with `has`:
 
-  ```cedar
-  // Writes only from the office network.
-  forbid (principal, action == Action::"MODIFY", resource)
-  unless { context has source_ip && context.source_ip.isInRange(ip("10.0.0.0/8")) };
-  ```
-- **Errors deny.** A policy that fails to evaluate, such as one that reads `resource.owner` of a
-  resource without an owner, denies the request. Test optional attributes with `has` first.
+    ```cedar
+    // Writes only from the office network.
+    forbid (principal, action == Action::"MODIFY", resource)
+    unless { context has source_ip && context.source_ip.isInRange(ip("10.0.0.0/8")) };
+    ```
+
+- **Errors deny.** A policy that fails, such as one that reads `resource.owner` of a resource
+  without an owner, denies the request. Test optional attributes with `has` first.
 - **Owners and admins:** Cedar decides only whether a user holds a privilege. The checks for an
   owner or an admin do not ask Cedar, so a `forbid` does not stop them.
-- An id stays the same when the securable is renamed. A securable that is dropped and made again
-  gets a new id.
