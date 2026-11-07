@@ -67,7 +67,7 @@ auth:
   #   name: Alice
   #   privileges: ["CREATE CATALOG"]
   # - email: etl@example.com
-  #   externalId: <the id of the ETL job's OAuth client>
+  #   externalId: entra:<the client id of the ETL job>
   users: []
   # -- The identity providers whose tokens the server takes
   # (`[[auth.issuers]]` in its uc.toml): at the token exchange of

@@ -384,12 +384,14 @@ async fn token_exchange_requests_are_checked() {
 async fn oauth_clients_resolve_by_external_id() {
     let idp = Idp::start().await;
     let (app, metastore) = app(&idp, "$IDP", "uc").await;
-    user(&metastore, "svc@example.com", Some("client-123"), true).await;
-    user(&metastore, "admin", Some("admin-client"), true).await;
-    // An access token without `email` names its client first.
+    // The external id is the block's name and the client id.
+    user(&metastore, "svc@example.com", Some("idp:client-123"), true).await;
+    user(&metastore, "admin", Some("idp:admin-client"), true).await;
+    // The access token of a client of its own, whose `sub` is its client id
+    // (RFC 9068), names its user.
     let resp = exchange(
         &app,
-        &idp.token(json!({ "sub": "x", "azp": "client-123" })),
+        &idp.token(json!({ "sub": "client-123", "azp": "client-123" })),
         ACCESS_TOKEN,
     )
     .await;
@@ -400,26 +402,27 @@ async fn oauth_clients_resolve_by_external_id() {
     assert_eq!(security().verify(&token).unwrap().sub, "svc@example.com");
     let resp = exchange(
         &app,
-        &idp.token(json!({ "sub": "x", "client_id": "client-123" })),
+        &idp.token(json!({ "sub": "client-123", "client_id": "client-123" })),
         ACCESS_TOKEN,
     )
     .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    // An id token never does, and the admin cannot be reached that way.
-    let resp = exchange(
-        &app,
-        &idp.token(json!({ "sub": "x", "azp": "client-123" })),
-        ID_TOKEN,
-    )
-    .await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    let resp = exchange(
-        &app,
-        &idp.token(json!({ "sub": "x", "azp": "admin-client" })),
-        ACCESS_TOKEN,
-    )
-    .await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    // A person who signed in with that client is not it, an id token never
+    // is, and the admin cannot be reached that way.
+    for (claims, kind) in [
+        (json!({ "sub": "x", "azp": "client-123" }), ACCESS_TOKEN),
+        (
+            json!({ "sub": "client-123", "azp": "client-123" }),
+            ID_TOKEN,
+        ),
+        (
+            json!({ "sub": "admin-client", "azp": "admin-client" }),
+            ACCESS_TOKEN,
+        ),
+    ] {
+        let resp = exchange(&app, &idp.token(claims.clone()), kind).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "{claims}");
+    }
 }
 
 #[tokio::test]

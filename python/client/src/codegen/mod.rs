@@ -3942,8 +3942,9 @@ impl PyClient {
     /// Create a user, named by its primary email. Only the metastore admin can.
     ///
     /// Args:
-    ///     external_id: The identity the user has at the client's identity provider. The token exchange
-    ///                  resolves an OAuth client (`azp`, `client_id`) to the user by it.
+    ///     external_id: The identity the user has at an identity provider. An application's own token names
+    ///                  the user whose external id is the name of the issuer block and the client id, such
+    ///                  as `entra:<client id>`.
     ///     display_name: Name of the user.
     ///     active: Whether the user can sign in. A new user is always enabled; absent in a replace request:
     ///             unchanged.
@@ -4081,8 +4082,9 @@ impl PyClient {
     /// the metastore admin can.
     ///
     /// Args:
-    ///     external_id: The identity the user has at the client's identity provider. The token exchange
-    ///                  resolves an OAuth client (`azp`, `client_id`) to the user by it.
+    ///     external_id: The identity the user has at an identity provider. An application's own token names
+    ///                  the user whose external id is the name of the issuer block and the client id, such
+    ///                  as `entra:<client id>`.
     ///     display_name: Name of the user.
     ///     active: Whether the user can sign in. A new user is always enabled; absent in a replace request:
     ///             unchanged.

@@ -217,8 +217,9 @@ async fn an_application_signs_in_with_its_own_token() {
     );
 
     // The user was made at the first request: named by the issuer and the
-    // application's object id, with its client id and display name. The
-    // store keeps the principal as the email too, as it does for `admin`.
+    // application's object id, with the issuer and its client id as its
+    // external id, and its display name. The store keeps the principal as
+    // the email too, as it does for `admin`.
     let scim = metastore.scim();
     let made = scim.get_user_by_name("entra:7f3e").await.unwrap().unwrap();
     assert_eq!(
@@ -228,7 +229,7 @@ async fn an_application_signs_in_with_its_own_token() {
             made.external_id.as_deref(),
             made.is_active()
         ),
-        ("entra:7f3e", Some("ETL"), Some("etl-app"), true)
+        ("entra:7f3e", Some("ETL"), Some("entra:etl-app"), true)
     );
     // `/scim2/Me` is that user.
     let request = Request::builder()
@@ -279,9 +280,9 @@ async fn a_missing_user_is_refused_unless_made_or_known_by_its_client_id() {
             .is_none()
     );
 
-    // A user whose `externalId` is the application's client id is the
-    // application.
-    user(&metastore, "svc@example.com", Some("etl-app")).await;
+    // A user whose `externalId` is the issuer and the application's client
+    // id is the application.
+    user(&metastore, "svc@example.com", Some("entra:etl-app")).await;
     assert_eq!(
         get(&app, "/catalogs", &token).await.status(),
         StatusCode::OK
@@ -292,7 +293,7 @@ async fn a_missing_user_is_refused_unless_made_or_known_by_its_client_id() {
         "svc@example.com"
     );
     // A disabled user is refused.
-    user(&metastore, "old@example.com", Some("old-app")).await;
+    user(&metastore, "old@example.com", Some("entra:old-app")).await;
     let scim = metastore.scim();
     let old = scim
         .get_user_by_name("old@example.com")
@@ -334,7 +335,7 @@ async fn a_person_is_named_by_email_and_never_by_the_tools_client_id() {
     )
     .await;
     user(&metastore, "alice@example.com", None).await;
-    user(&metastore, "cli@example.com", Some("azure-cli")).await;
+    user(&metastore, "cli@example.com", Some("entra:azure-cli")).await;
     may_create_catalogs(&metastore, "alice@example.com").await;
     may_create_catalogs(&metastore, "cli@example.com").await;
 
@@ -372,6 +373,44 @@ async fn a_person_is_named_by_email_and_never_by_the_tools_client_id() {
         "User not allowed",
     )
     .await;
+}
+
+#[tokio::test]
+async fn people_who_share_a_client_are_not_one_user() {
+    let idp = Idp::start().await;
+    let (app, metastore) = app(
+        vec![Issuer {
+            principal_claims: Vec::new(),
+            client_claims: Vec::new(),
+            ..entra(&idp)
+        }],
+        None,
+    )
+    .await;
+    // Entra's tokens of people carry no email by default: the default
+    // claims name them by `sub`. `azp` is the tool they signed in with.
+    let person =
+        |sub: &str| idp.token(json!({ "aud": "api://uc", "sub": sub, "azp": "azure-cli" }));
+    for sub in ["alice", "bob"] {
+        assert_eq!(
+            get(&app, "/catalogs", &person(sub)).await.status(),
+            StatusCode::OK
+        );
+    }
+    let scim = metastore.scim();
+    for sub in ["alice", "bob"] {
+        let made = (scim.get_user_by_name(&format!("entra:{sub}")).await)
+            .unwrap()
+            .unwrap();
+        assert_eq!(made.external_id, None, "{sub}");
+    }
+    let request = Request::builder()
+        .uri("/api/1.0/unity-control/scim2/Me")
+        .header(header::AUTHORIZATION, format!("Bearer {}", person("bob")))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(json_body(resp).await["userName"], "entra:bob");
 }
 
 #[tokio::test]
@@ -474,7 +513,7 @@ async fn exchange_only_issuers_are_refused_on_the_api() {
         None,
     )
     .await;
-    user(&metastore, "svc@example.com", Some("etl-app")).await;
+    user(&metastore, "svc@example.com", Some("entra:etl-app")).await;
     let token = app_token(&idp, json!({}));
     refused(
         &app,
@@ -596,6 +635,13 @@ async fn the_groups_of_a_token_count_when_the_group_exists() {
         let err = assert_error(resp, StatusCode::FORBIDDEN, "PERMISSION_DENIED").await;
         assert_eq!(err["message"], "Access denied.", "{oid}");
     }
+    // The application of the other block, with the same client id, is a
+    // user of its own, not `entra:7f3e`.
+    let made = metastore.scim().get_user_by_name("gitlab:g1").await;
+    assert_eq!(
+        made.unwrap().unwrap().external_id.as_deref(),
+        Some("gitlab:etl-app")
+    );
 }
 
 #[tokio::test]
@@ -672,8 +718,8 @@ async fn the_server_tells_what_it_takes() {
 async fn a_google_service_account_signs_in_with_an_id_token() {
     let idp = Idp::start().await;
     let (app, metastore) = app(vec![google(&idp)], None).await;
-    // Google names the account by its email; `azp` is the OAuth client,
-    // which the default block does not read.
+    // Google names the account by its email; its `azp`, the same as its
+    // `sub`, is its client id.
     let token = idp.token(json!({
         "aud": "uc", "sub": "104692", "email": "etl@project.iam.gserviceaccount.com",
         "email_verified": true, "azp": "104692",
@@ -690,7 +736,7 @@ async fn a_google_service_account_signs_in_with_an_id_token() {
         .unwrap();
     assert_eq!(
         (made.principal(), made.external_id.as_deref()),
-        ("etl@project.iam.gserviceaccount.com", None)
+        ("etl@project.iam.gserviceaccount.com", Some("google:104692"))
     );
     may_create_catalogs(&metastore, "etl@project.iam.gserviceaccount.com").await;
     assert_eq!(
