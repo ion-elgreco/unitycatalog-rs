@@ -1,6 +1,6 @@
-//! SCIM 2.0 users, as upstream `Scim2Utils.asUserResource` shows them: the
-//! user's email is `userName` and the one primary email, its name is
-//! `displayName`, plus `externalId`, `active`, `photos` and `meta`.
+//! SCIM 2.0 users and groups (RFC 7643). A user's principal, its name in
+//! grants and owners, is its primary email, else its first email, else its
+//! `userName`.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -36,6 +36,9 @@ pub struct ScimMeta {
         skip_serializing_if = "Option::is_none"
     )]
     pub last_modified: Option<String>,
+    /// The URL of the resource.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
 }
 
 /// A SCIM role (RFC 7643, section 4.1.2).
@@ -49,25 +52,64 @@ impl ScimRole {
     pub const ADMIN: &str = "admin";
 }
 
-/// A SCIM photo: upstream keeps one picture URL.
+/// A picture of a user.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ScimPhoto {
     pub value: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub r#type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ScimEmail {
     pub value: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub r#type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<String>,
 }
 
-/// A SCIM user. In requests every field may be absent; responses have
-/// `schemas`, `id`, `meta`, `userName`, `active`, `emails` and `photos`.
+/// The parts of a user's name (RFC 7643, section 4.1.1).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+pub struct ScimName {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formatted: Option<String>,
+    #[serde(
+        rename = "familyName",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub family_name: Option<String>,
+    #[serde(rename = "givenName", default, skip_serializing_if = "Option::is_none")]
+    pub given_name: Option<String>,
+    #[serde(
+        rename = "middleName",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub middle_name: Option<String>,
+    #[serde(
+        rename = "honorificPrefix",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub honorific_prefix: Option<String>,
+    #[serde(
+        rename = "honorificSuffix",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub honorific_suffix: Option<String>,
+}
+
+/// A SCIM user. In requests every field but `userName` may be absent;
+/// responses have `schemas`, `id`, `meta`, `userName` and `active`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct ScimUser {
     /// `["urn:ietf:params:scim:schemas:core:2.0:User"]`.
@@ -85,17 +127,19 @@ pub struct ScimUser {
     pub external_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<ScimMeta>,
-    /// The user's email. Ignored in requests: upstream takes the primary
-    /// email.
+    /// The user's unique name, as the client sent it. Empty in a create
+    /// request: the principal.
     #[serde(rename = "userName", default)]
     pub user_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<ScimName>,
     #[serde(
         rename = "displayName",
         default,
         skip_serializing_if = "Option::is_none"
     )]
     pub display_name: Option<String>,
-    /// Absent in a request: unchanged (enabled for a new user).
+    /// Absent: enabled. A new user without it gets `true`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -124,17 +168,8 @@ impl ScimUser {
         self.active != Some(false)
     }
 
-    /// The primary email of a request, upstream's identity of a new user.
-    pub fn primary_email(&self) -> Option<&str> {
-        self.emails
-            .as_deref()?
-            .iter()
-            .find(|e| e.primary == Some(true))
-            .map(|e| e.value.as_str())
-    }
-
-    /// The user's email as UC names principals: the primary email, else
-    /// the first, else the user name.
+    /// The user's name in grants and owners: the primary email, else the
+    /// first, else the user name.
     pub fn principal(&self) -> &str {
         let emails = self.emails.as_deref().unwrap_or_default();
         emails
@@ -146,7 +181,7 @@ impl ScimUser {
     }
 }
 
-/// Upstream's list: `totalResults` and `itemsPerPage` both count the page.
+/// A SCIM list: `totalResults` counts every match, `itemsPerPage` the page.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct ListScimUsersResponse {
     pub schemas: Vec<String>,
@@ -162,24 +197,33 @@ pub struct ListScimUsersResponse {
     pub meta: Option<ScimMeta>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ScimGroupMember {
     /// `id` of the User entity.
     pub value: String,
     /// A display string, which clients set to the user's name.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<String>,
     /// The SCIM resource type: `"User"`.
-    #[serde(skip_serializing_if = "Option::is_none", rename = "type")]
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "type")]
     pub r#type: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct ScimGroup {
+    #[serde(default)]
     pub schemas: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    #[serde(rename = "displayName")]
+    #[serde(
+        rename = "externalId",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub external_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<ScimMeta>,
+    #[serde(rename = "displayName", default)]
     pub display_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub members: Option<Vec<ScimGroupMember>>,
@@ -231,6 +275,7 @@ mod tests {
             value: value.into(),
             primary,
             r#type: None,
+            display: None,
         }
     }
 
@@ -259,20 +304,16 @@ mod tests {
             email("a@example.com", None),
             email("b@example.com", Some(true)),
         ]));
-        assert_eq!(u.primary_email(), Some("b@example.com"));
         assert_eq!(u.principal(), "b@example.com");
 
         let u = user(Some(vec![
             email("a@example.com", Some(false)),
             email("b@example.com", None),
         ]));
-        assert_eq!(u.primary_email(), None);
         assert_eq!(u.principal(), "a@example.com");
 
         for emails in [None, Some(vec![])] {
-            let u = user(emails);
-            assert_eq!(u.primary_email(), None);
-            assert_eq!(u.principal(), "name@example.com");
+            assert_eq!(user(emails).principal(), "name@example.com");
         }
     }
 
@@ -291,6 +332,7 @@ mod tests {
                     "lastModified": "2026-10-14T09:00:00Z",
                 },
                 "userName": "a@example.com",
+                "name": { "givenName": "A", "familyName": "B" },
                 "displayName": "A",
                 "active": true,
                 "emails": [{ "value": "a@example.com", "primary": true, "type": "work" }],
@@ -310,6 +352,7 @@ mod tests {
             "Resources": [{
                 "schemas": [schema_uri::GROUP],
                 "id": "g1",
+                "externalId": "e1",
                 "displayName": "admins",
                 "members": [{ "value": "1", "display": "A", "type": "User" }],
             }],

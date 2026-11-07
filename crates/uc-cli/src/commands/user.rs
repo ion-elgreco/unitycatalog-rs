@@ -1,7 +1,6 @@
 //! `uc user`: create, list, get, update and delete users with the control
 //! API's SCIM endpoints.
 
-use anyhow::bail;
 use clap::Subcommand;
 use serde_json::{Value, json};
 use uc_client::models::scim::v1::{ScimEmail, ScimUser};
@@ -32,7 +31,8 @@ pub enum UserOp {
         #[arg(long, help = help::USER_ID)]
         id: String,
     },
-    /// Update a user
+    /// Update a user. A new email moves the user's grants and owned
+    /// objects to it.
     Update {
         #[arg(long, help = help::USER_ID)]
         id: String,
@@ -40,9 +40,7 @@ pub enum UserOp {
         name: Option<String>,
         #[arg(long, help = help::EXTERNAL_ID)]
         external_id: Option<String>,
-        /// Refused: a user's email cannot change. Upstream takes it, and its
-        /// server keeps the email.
-        #[arg(long, hide = true)]
+        #[arg(long, help = help::EMAIL)]
         email: Option<String>,
     },
     /// Delete a user
@@ -63,7 +61,12 @@ fn user_from_scim(user: &ScimUser) -> Value {
     let user = json!({
         "id": (!user.id.is_empty()).then_some(&user.id),
         "name": user.display_name,
-        "email": user.emails.first().map(|e| &e.value),
+        "email": user
+            .emails
+            .iter()
+            .find(|e| e.primary == Some(true))
+            .or(user.emails.first())
+            .map(|e| &e.value),
         "external_id": user.external_id,
         "state": if user.active != Some(false) { "ENABLED" } else { "DISABLED" },
         "created_at": millis(meta.and_then(|m| m.created.as_ref())),
@@ -90,7 +93,7 @@ pub async fn run(c: &Context<'_>, op: UserOp) -> Result<String> {
         } => {
             let user = c
                 .client
-                .create_user()
+                .create_user(&email)
                 .with_display_name(name)
                 .with_emails([primary_email(email)])
                 .with_external_id(external_id)
@@ -104,16 +107,18 @@ pub async fn run(c: &Context<'_>, op: UserOp) -> Result<String> {
             external_id,
             email,
         } => {
-            if email.is_some() {
-                bail!("A user's email cannot change: it is the user's name in grants and owners");
-            }
-            let user = c
+            // A replace keeps what it does not name, and needs the user
+            // name.
+            let current = c.client.get_user(&id).await.map_err(upstream("getUser"))?;
+            let mut replace = c
                 .client
-                .replace_user(id)
+                .replace_user(id, current.user_name)
                 .with_display_name(name)
-                .with_external_id(external_id)
-                .await
-                .map_err(upstream("updateUser"))?;
+                .with_external_id(external_id);
+            if let Some(email) = email {
+                replace = replace.with_emails([primary_email(email)]);
+            }
+            let user = replace.await.map_err(upstream("updateUser"))?;
             Ok(c.json(&user_from_scim(&user)))
         }
         UserOp::List { paging } => {

@@ -7,6 +7,7 @@ from typing import Any, final
 __all__ = [
     "ListScimGroupsResponse",
     "ListScimResourceTypesResponse",
+    "ListScimResourcesResponse",
     "ListScimSchemasResponse",
     "ListScimUsersResponse",
     "ScimAuthenticationScheme",
@@ -19,6 +20,7 @@ __all__ = [
     "ScimGroup",
     "ScimGroupMember",
     "ScimMeta",
+    "ScimName",
     "ScimPatchOperation",
     "ScimPhoto",
     "ScimResourceType",
@@ -61,7 +63,7 @@ class ListScimGroupsResponse:
     @property
     def total_results(self, /) -> int:
         """
-        Number of groups in the page.
+        Number of groups that match.
         """
 
 @final
@@ -96,6 +98,40 @@ class ListScimResourceTypesResponse:
     def total_results(self, /) -> int:
         """
         Number of resource types.
+        """
+
+@final
+class ListScimResourcesResponse:
+    """
+    A page of SCIM users and groups.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def items_per_page(self, /) -> int:
+        """
+        Number of resources in the page.
+        """
+    @property
+    def resources(self, /) -> list[dict[str, Any]]:
+        """
+        The users and groups.
+        """
+    @property
+    def schemas(self, /) -> list[str]:
+        """
+        SCIM schema URIs of the response: `urn:ietf:params:scim:api:messages:2.0:ListResponse`.
+        """
+    @property
+    def start_index(self, /) -> int:
+        """
+        Index of the first resource of the page, from 1.
+        """
+    @property
+    def total_results(self, /) -> int:
+        """
+        Number of resources that match.
         """
 
 @final
@@ -146,11 +182,6 @@ class ListScimUsersResponse:
         Number of users in the page.
         """
     @property
-    def meta(self, /) -> ScimMeta | None:
-        """
-        Time of the list.
-        """
-    @property
     def resources(self, /) -> list[ScimUser]:
         """
         The users.
@@ -168,7 +199,7 @@ class ListScimUsersResponse:
     @property
     def total_results(self, /) -> int:
         """
-        Number of users in the page.
+        Number of users that match.
         """
 
 @final
@@ -193,6 +224,11 @@ class ScimAuthenticationScheme:
     def primary(self, /) -> bool:
         """
         Whether this is the preferred scheme.
+        """
+    @property
+    def spec_uri(self, /) -> str | None:
+        """
+        URL of the specification of the scheme.
         """
     @property
     def type(self, /) -> str:
@@ -249,19 +285,19 @@ class ScimBulkOp:
     @property
     def data(self, /) -> dict[str, Any] | None:
         """
-        The body of the operation: a `ScimUser` or `ScimGroup` for `POST`, a `ScimPatchOp` (without
-        `id`) for `PATCH`.
+        The body of the operation: a `ScimUser` or `ScimGroup` for `POST` and `PUT`, a `ScimPatchOp`
+        (without `id`) for `PATCH`.
         """
     @property
     def method(self, /) -> str:
         """
-        The HTTP method of the operation: `POST`, `PATCH` or `DELETE`.
+        The HTTP method of the operation: `POST`, `PUT`, `PATCH` or `DELETE`.
         """
     @property
     def path(self, /) -> str:
         """
         The resource of the operation: `/Users` or `/Groups` for `POST`, `/Users/<id>` or
-        `/Groups/<id>` for `PATCH` and `DELETE`.
+        `/Groups/<id>` for the others.
         """
 
 @final
@@ -290,7 +326,7 @@ class ScimBulkOpResult:
     @property
     def response(self, /) -> dict[str, Any] | None:
         """
-        The answer of the operation: the user or group, or an error with `status` and `detail`.
+        The SCIM error of a failed operation.
         """
     @property
     def status(self, /) -> str:
@@ -331,12 +367,18 @@ class ScimEmail:
         *,
         primary: bool | None = None,
         email_type: str | None = None,
+        display: str | None = None,
     ) -> ScimEmail: ...
     def __repr__(self, /) -> str: ...
     @property
+    def display(self, /) -> str | None:
+        """
+        A name for the address, for display.
+        """
+    @property
     def email_type(self, /) -> str | None:
         """
-        Kind of the address, such as `work`. The server does not keep it.
+        Kind of the address: `work`, `home` or `other`.
         """
     @property
     def primary(self, /) -> bool | None:
@@ -379,7 +421,12 @@ class ScimGroup:
     @property
     def display_name(self, /) -> str:
         """
-        Name of the group.
+        Name of the group, its name in grants.
+        """
+    @property
+    def external_id(self, /) -> str | None:
+        """
+        The identity the group has at an identity provider.
         """
     @property
     def id(self, /) -> str:
@@ -389,7 +436,12 @@ class ScimGroup:
     @property
     def members(self, /) -> list[ScimGroupMember]:
         """
-        Members of the group.
+        Members of the group: users.
+        """
+    @property
+    def meta(self, /) -> ScimMeta | None:
+        """
+        When the group was created and last changed.
         """
     @property
     def schemas(self, /) -> list[str]:
@@ -412,6 +464,7 @@ class ScimGroupMember:
         *,
         display: str | None = None,
         member_type: str | None = None,
+        ref: str | None = None,
     ) -> ScimGroupMember: ...
     def __repr__(self, /) -> str: ...
     @property
@@ -423,6 +476,11 @@ class ScimGroupMember:
     def member_type(self, /) -> str | None:
         """
         The SCIM resource type of the member: `User`.
+        """
+    @property
+    def ref(self, /) -> str | None:
+        """
+        URL of the user. The server sets it and ignores it in requests.
         """
     @property
     def value(self, /) -> str:
@@ -460,13 +518,62 @@ class ScimMeta:
     @property
     def location(self, /) -> str | None:
         """
-        Path of the resource, such as `/scim2/ResourceTypes/User`. Only the discovery resources have
-        it.
+        URL of the resource, such as `https://uc.example.com/api/1.0/unity-control/scim2/Users/<id>`.
         """
     @property
     def resource_type(self, /) -> str:
         """
         The SCIM resource type, such as `User`.
+        """
+
+@final
+class ScimName:
+    """
+    The parts of the name of a user.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __new__(
+        cls,
+        /,
+        *,
+        formatted: str | None = None,
+        family_name: str | None = None,
+        given_name: str | None = None,
+        middle_name: str | None = None,
+        honorific_prefix: str | None = None,
+        honorific_suffix: str | None = None,
+    ) -> ScimName: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def family_name(self, /) -> str | None:
+        """
+        The family name, or last name.
+        """
+    @property
+    def formatted(self, /) -> str | None:
+        """
+        The full name, formatted for display.
+        """
+    @property
+    def given_name(self, /) -> str | None:
+        """
+        The given name, or first name.
+        """
+    @property
+    def honorific_prefix(self, /) -> str | None:
+        """
+        The honorific prefix, such as `Ms.`.
+        """
+    @property
+    def honorific_suffix(self, /) -> str | None:
+        """
+        The honorific suffix, such as `III`.
+        """
+    @property
+    def middle_name(self, /) -> str | None:
+        """
+        The middle name.
         """
 
 @final
@@ -488,14 +595,15 @@ class ScimPatchOperation:
     @property
     def path(self, /) -> str | None:
         """
-        SCIM attribute path, such as `active`, `displayName`, `members` or
-        `members[value eq "<id>"]`. Absent for a `replace` whose `value` holds the attributes.
+        SCIM attribute path: `attr`, `attr.sub`, `attr[filter]` or `attr[filter].sub`, such as
+        `name.familyName`, `members[value eq "<id>"]` or `emails[type eq "work"].value`. Absent for
+        an `add` or `replace` whose `value` holds the attributes.
         """
     @property
     def value(self, /) -> Any:
         """
-        The new value. Any JSON: a boolean or string for `active`, a string for `displayName`, an
-        array of members for `members`, an object of attributes for a `replace` without `path`.
+        The value. Any JSON: a string for `displayName`, an array of members for `members`, an
+        object of attributes without `path`. A `remove` of a list with a value removes those values.
         """
 
 @final
@@ -505,12 +613,30 @@ class ScimPhoto:
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
-    def __new__(cls, /, value: str, *, photo_type: str | None = None) -> ScimPhoto: ...
+    def __new__(
+        cls,
+        /,
+        value: str,
+        *,
+        photo_type: str | None = None,
+        primary: bool | None = None,
+        display: str | None = None,
+    ) -> ScimPhoto: ...
     def __repr__(self, /) -> str: ...
+    @property
+    def display(self, /) -> str | None:
+        """
+        A name for the picture, for display.
+        """
     @property
     def photo_type(self, /) -> str | None:
         """
-        Kind of the picture, such as `photo`. The server does not keep it.
+        Kind of the picture: `photo` or `thumbnail`.
+        """
+    @property
+    def primary(self, /) -> bool | None:
+        """
+        Whether this is the primary picture of the user.
         """
     @property
     def value(self, /) -> str:
@@ -625,9 +751,29 @@ class ScimSchemaAttribute:
     def __ne__(self, value: object, /) -> bool: ...
     def __repr__(self, /) -> str: ...
     @property
+    def canonical_values(self, /) -> list[str]:
+        """
+        The values that the attribute usually has, such as `work` and `home`.
+        """
+    @property
+    def case_exact(self, /) -> bool | None:
+        """
+        Whether text values compare with their case: never.
+        """
+    @property
+    def description(self, /) -> str | None:
+        """
+        Description of the attribute.
+        """
+    @property
     def multi_valued(self, /) -> bool | None:
         """
-        Whether the attribute holds a list of values. Absent: a single value.
+        Whether the attribute holds a list of values.
+        """
+    @property
+    def mutability(self, /) -> str | None:
+        """
+        Whether a client may change the attribute: `readOnly`, `readWrite` or `immutable`.
         """
     @property
     def name(self, /) -> str:
@@ -635,9 +781,19 @@ class ScimSchemaAttribute:
         Name of the attribute, such as `userName`.
         """
     @property
+    def reference_types(self, /) -> list[str]:
+        """
+        What a `reference` attribute refers to, such as `external`.
+        """
+    @property
     def required(self, /) -> bool:
         """
         Whether a resource must have the attribute.
+        """
+    @property
+    def returned(self, /) -> str | None:
+        """
+        When the server returns the attribute: `default`.
         """
     @property
     def sub_attributes(self, /) -> list[ScimSchemaAttribute]:
@@ -647,12 +803,12 @@ class ScimSchemaAttribute:
     @property
     def type(self, /) -> str:
         """
-        Data type of the attribute: `string`, `boolean` or `complex`.
+        Data type of the attribute: `string`, `boolean`, `reference` or `complex`.
         """
     @property
     def uniqueness(self, /) -> str | None:
         """
-        How the server keeps values unique: `server`. Absent: not unique.
+        How the server keeps values unique: `none` or `server`.
         """
 
 @final
@@ -677,6 +833,11 @@ class ScimServiceProviderConfig:
     def change_password(self, /) -> ScimSupported | None:
         """
         Password changes.
+        """
+    @property
+    def documentation_uri(self, /) -> str | None:
+        """
+        URL of the documentation of the server's SCIM support.
         """
     @property
     def etag(self, /) -> ScimSupported | None:
@@ -727,7 +888,8 @@ class ScimSupported:
 @final
 class ScimUser:
     """
-    A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+    A SCIM 2.0 user. Its principal, its name in grants and owners, is its primary email, else its
+    first email, else its user name.
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
@@ -735,19 +897,18 @@ class ScimUser:
     @property
     def active(self, /) -> bool | None:
         """
-        Whether the user can sign in. A new user is always enabled; absent in a replace request:
-        unchanged.
+        Whether the user can sign in. Absent: enabled; a new user without it gets `true`.
         """
     @property
     def display_name(self, /) -> str | None:
         """
-        Name of the user.
+        Name of the user, for display.
         """
     @property
     def emails(self, /) -> list[ScimEmail]:
         """
-        Email addresses of the user. A new user needs one with `primary` set; a replace request
-        does not change the email.
+        Email addresses of the user. When the principal changes, the grants, owned objects and
+        tokens of the user move to the new one.
         """
     @property
     def external_id(self, /) -> str | None:
@@ -767,9 +928,14 @@ class ScimUser:
         When the user was created and last changed.
         """
     @property
+    def name(self, /) -> ScimName | None:
+        """
+        The parts of the name of the user.
+        """
+    @property
     def photos(self, /) -> list[ScimPhoto]:
         """
-        Pictures of the user. The server keeps the first; a replace request does not change it.
+        Pictures of the user.
         """
     @property
     def roles(self, /) -> list[ScimRole]:
@@ -785,5 +951,6 @@ class ScimUser:
     @property
     def user_name(self, /) -> str:
         """
-        The email of the user. Ignored in requests: the server takes the primary email.
+        The unique name of the user, such as a user principal name, in any case. Absent in a create
+        request: the principal.
         """

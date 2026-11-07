@@ -3,6 +3,7 @@
 
 from unitycatalog._core.scim import (
     ListScimGroupsResponse,
+    ListScimResourcesResponse,
     ListScimResourceTypesResponse,
     ListScimSchemasResponse,
     ListScimUsersResponse,
@@ -16,6 +17,7 @@ from unitycatalog._core.scim import (
     ScimGroup,
     ScimGroupMember,
     ScimMeta,
+    ScimName,
     ScimPatchOperation,
     ScimPhoto,
     ScimResourceType,
@@ -30,6 +32,7 @@ from unitycatalog._core.scim import (
 __all__ = [
     "ListScimGroupsResponse",
     "ListScimResourceTypesResponse",
+    "ListScimResourcesResponse",
     "ListScimSchemasResponse",
     "ListScimUsersResponse",
     "ScimAuthenticationScheme",
@@ -42,6 +45,7 @@ __all__ = [
     "ScimGroup",
     "ScimGroupMember",
     "ScimMeta",
+    "ScimName",
     "ScimPatchOperation",
     "ScimPhoto",
     "ScimResourceType",

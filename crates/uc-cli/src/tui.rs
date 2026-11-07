@@ -2146,14 +2146,14 @@ async fn create_row(
             let parts = split_create_input(raw, 2);
             let user_name = parts.first().ok_or("userName required")?.clone();
             let display_name = parts.get(1).cloned();
-            // The server names the user by its primary email.
+            // The primary email is the user's name in grants.
             let email = ScimEmail {
                 value: user_name.clone(),
                 primary: Some(true),
                 ..Default::default()
             };
             let resp = client
-                .create_user()
+                .create_user(&user_name)
                 .with_display_name(display_name)
                 .with_emails([email])
                 .await?;

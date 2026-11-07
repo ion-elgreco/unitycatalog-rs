@@ -90,6 +90,7 @@ from .schemas import SchemaClient, SchemaInfo
 from .scim import (
     ListScimGroupsResponse,
     ListScimResourceTypesResponse,
+    ListScimResourcesResponse,
     ListScimSchemasResponse,
     ListScimUsersResponse,
     ScimBulkOp,
@@ -97,8 +98,11 @@ from .scim import (
     ScimEmail,
     ScimGroup,
     ScimGroupMember,
+    ScimName,
     ScimPatchOperation,
     ScimPhoto,
+    ScimResourceType,
+    ScimSchema,
     ScimServiceProviderConfig,
     ScimUser,
 )
@@ -515,15 +519,17 @@ class Client:
         *,
         schemas: SupportsGetItem[int, str] | None = None,
         members: SupportsGetItem[int, ScimGroupMember] | None = None,
+        external_id: str | None = None,
     ) -> ScimGroup:
         """
         Create a group. Only the metastore admin can.
 
         Args:
-            display_name: Name of the group.
+            display_name: Name of the group, its name in grants.
             schemas: SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:Group`.
                      Requests send the key even when empty; the server fills it in.
-            members: Members of the group.
+            members: Members of the group: users.
+            external_id: The identity the group has at an identity provider.
 
         Returns:
             A SCIM 2.0 group of users.
@@ -535,6 +541,7 @@ class Client:
         *,
         schemas: SupportsGetItem[int, str] | None = None,
         members: SupportsGetItem[int, ScimGroupMember] | None = None,
+        external_id: str | None = None,
     ) -> Future[ScimGroup]:
         """
         Like `create_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -882,39 +889,48 @@ class Client:
     def create_user(
         self,
         /,
+        user_name: str,
         *,
         external_id: str | None = None,
         display_name: str | None = None,
         active: bool | None = None,
         emails: SupportsGetItem[int, ScimEmail] | None = None,
         photos: SupportsGetItem[int, ScimPhoto] | None = None,
+        name: ScimName | None = None,
     ) -> ScimUser:
         """
-        Create a user, named by its primary email. Only the metastore admin can.
+        Create a user. Its user name, principal and external id belong to no other user, and no group has
+        its principal as name. Only the metastore admin can.
 
         Args:
+            user_name: The unique name of the user, such as a user principal name, in any case. Absent in a
+                       create request: the principal.
             external_id: The identity the user has at an identity provider. An application's own token names
                          the user whose external id is the name of the issuer block and the client id, such
                          as `entra:<client id>`.
-            display_name: Name of the user.
-            active: Whether the user can sign in. A new user is always enabled; absent in a replace request:
-                    unchanged.
-            emails: Email addresses of the user. A new user needs one with `primary` set; a replace request
-                    does not change the email.
-            photos: Pictures of the user. The server keeps the first; a replace request does not change it.
+            display_name: Name of the user, for display.
+            active: Whether the user can sign in. Absent: enabled; a new user without it gets `true`.
+            emails: Email addresses of the user. When the principal changes, the grants, owned objects and
+                    tokens of the user move to the new one.
+            photos: Pictures of the user.
+            name: The parts of the name of the user.
 
         Returns:
-            A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+            A SCIM 2.0 user. Its principal, its name in grants and owners, is its primary email, else
+            its
+            first email, else its user name.
         """
     def create_user_async(
         self,
         /,
+        user_name: str,
         *,
         external_id: str | None = None,
         display_name: str | None = None,
         active: bool | None = None,
         emails: SupportsGetItem[int, ScimEmail] | None = None,
         photos: SupportsGetItem[int, ScimPhoto] | None = None,
+        name: ScimName | None = None,
     ) -> Future[ScimUser]:
         """
         Like `create_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1018,7 +1034,7 @@ class Client:
         """
     def delete_user(self, /, id: str) -> None:
         """
-        Disable a user and remove its grants. The user stays, disabled. Only the metastore admin can.
+        Delete a user with its grants, tokens and group memberships. Only the metastore admin can.
         """
     def delete_user_async(self, /, id: str) -> Future[None]:
         """
@@ -1403,14 +1419,32 @@ class Client:
         """
         Like `get_file_metadata`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def get_group(self, /, id: str) -> ScimGroup:
+    def get_group(
+        self,
+        /,
+        id: str,
+        *,
+        attributes: str | None = None,
+        excluded_attributes: str | None = None,
+    ) -> ScimGroup:
         """
         Get a group. Only the metastore admin can.
+
+        Args:
+            attributes: The only attributes to return, separated by commas.
+            excluded_attributes: The attributes to leave out, separated by commas.
 
         Returns:
             A SCIM 2.0 group of users.
         """
-    def get_group_async(self, /, id: str) -> Future[ScimGroup]:
+    def get_group_async(
+        self,
+        /,
+        id: str,
+        *,
+        attributes: str | None = None,
+        excluded_attributes: str | None = None,
+    ) -> Future[ScimGroup]:
         """
         Like `get_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -1446,7 +1480,9 @@ class Client:
         Get the signed-in user. The role `admin` names a caller that can do what the metastore admin does.
 
         Returns:
-            A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+            A SCIM 2.0 user. Its principal, its name in grants and owners, is its primary email, else
+            its
+            first email, else its user name.
         """
     def get_me_async(self, /) -> Future[ScimUser]:
         """
@@ -1496,6 +1532,28 @@ class Client:
         """
         Like `get_permissions`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
+    def get_scim_resource_type(self, /, id: str) -> ScimResourceType:
+        """
+        Get a SCIM resource type of the server. Any signed-in caller can.
+
+        Returns:
+            A SCIM resource type (RFC 7643, section 6).
+        """
+    def get_scim_resource_type_async(self, /, id: str) -> Future[ScimResourceType]:
+        """
+        Like `get_scim_resource_type`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def get_scim_schema(self, /, id: str) -> ScimSchema:
+        """
+        Get a SCIM schema of the server. Any signed-in caller can.
+
+        Returns:
+            A SCIM schema (RFC 7643, section 7).
+        """
+    def get_scim_schema_async(self, /, id: str) -> Future[ScimSchema]:
+        """
+        Like `get_scim_schema`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
     def get_service_provider_config(self, /) -> ScimServiceProviderConfig:
         """
         Get the SCIM features that the server supports. Any signed-in caller can.
@@ -1507,14 +1565,34 @@ class Client:
         """
         Like `get_service_provider_config`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def get_user(self, /, id: str) -> ScimUser:
+    def get_user(
+        self,
+        /,
+        id: str,
+        *,
+        attributes: str | None = None,
+        excluded_attributes: str | None = None,
+    ) -> ScimUser:
         """
         Get a user. Only the metastore admin can.
 
+        Args:
+            attributes: The only attributes to return, separated by commas.
+            excluded_attributes: The attributes to leave out, separated by commas.
+
         Returns:
-            A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+            A SCIM 2.0 user. Its principal, its name in grants and owners, is its primary email, else
+            its
+            first email, else its user name.
         """
-    def get_user_async(self, /, id: str) -> Future[ScimUser]:
+    def get_user_async(
+        self,
+        /,
+        id: str,
+        *,
+        attributes: str | None = None,
+        excluded_attributes: str | None = None,
+    ) -> Future[ScimUser]:
         """
         Like `get_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -1721,6 +1799,8 @@ class Client:
         filter: str | None = None,
         start_index: SupportsIndex | None = None,
         count: SupportsIndex | None = None,
+        attributes: str | None = None,
+        excluded_attributes: str | None = None,
     ) -> ListScimGroupsResponse:
         """
         List the groups. Only the metastore admin can.
@@ -1728,7 +1808,9 @@ class Client:
         Args:
             filter: SCIM filter (RFC 7644, section 3.4.2.2), such as `displayName eq "admins"`.
             start_index: Index of the first group to return, from 1.
-            count: The maximum number of groups to return. The default is 50.
+            count: The maximum number of groups to return, at most 1000. The default is 50.
+            attributes: The only attributes to return, separated by commas, such as `displayName`.
+            excluded_attributes: The attributes to leave out, separated by commas, such as `members`.
 
         Returns:
             A page of SCIM groups.
@@ -1740,6 +1822,8 @@ class Client:
         filter: str | None = None,
         start_index: SupportsIndex | None = None,
         count: SupportsIndex | None = None,
+        attributes: str | None = None,
+        excluded_attributes: str | None = None,
     ) -> Future[ListScimGroupsResponse]:
         """
         Like `list_groups`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1996,6 +2080,8 @@ class Client:
         filter: str | None = None,
         start_index: SupportsIndex | None = None,
         count: SupportsIndex | None = None,
+        attributes: str | None = None,
+        excluded_attributes: str | None = None,
     ) -> ListScimUsersResponse:
         """
         List the users. Only the metastore admin can.
@@ -2003,7 +2089,9 @@ class Client:
         Args:
             filter: SCIM filter (RFC 7644, section 3.4.2.2), such as `userName eq "a@example.com"`.
             start_index: Index of the first user to return, from 1.
-            count: The maximum number of users to return. The default is 50.
+            count: The maximum number of users to return, at most 1000. The default is 50.
+            attributes: The only attributes to return, separated by commas, such as `userName,emails.value`.
+            excluded_attributes: The attributes to leave out, separated by commas, such as `emails`.
 
         Returns:
             A page of SCIM users.
@@ -2015,6 +2103,8 @@ class Client:
         filter: str | None = None,
         start_index: SupportsIndex | None = None,
         count: SupportsIndex | None = None,
+        attributes: str | None = None,
+        excluded_attributes: str | None = None,
     ) -> Future[ListScimUsersResponse]:
         """
         Like `list_users`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2154,9 +2244,8 @@ class Client:
         schemas: SupportsGetItem[int, str] | None = None,
     ) -> ScimGroup:
         """
-        Change a group: `add` to `members`, `remove` of `members` or `members[value eq "<id>"]`, `replace`
-        of `displayName`, or `replace` without `path` with a whole group. Other operations are ignored. Only
-        the metastore admin can.
+        Change a group with `add`, `replace` and `remove` operations (RFC 7644, section 3.5.2), such as an
+        `add` to `members` or a `remove` of `members[value eq "<id>"]`. Only the metastore admin can.
 
         Args:
             operations: The operations, in order.
@@ -2183,15 +2272,20 @@ class Client:
         operations: SupportsGetItem[int, ScimPatchOperation],
         *,
         schemas: SupportsGetItem[int, str] | None = None,
-    ) -> None:
+    ) -> ScimUser:
         """
-        Enable or disable a user. The server takes the first `replace` whose `path` is `active` or absent;
-        without `path`, the first attribute of `value` is the state (`{"active": false}`). With no such
-        operation the server answers 501. Only the metastore admin can.
+        Change a user with `add`, `replace` and `remove` operations (RFC 7644, section 3.5.2). Operations
+        on attributes that the server does not keep change nothing; `userName` cannot be removed. Only the
+        metastore admin can.
 
         Args:
             operations: The operations, in order.
             schemas: SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:PatchOp`.
+
+        Returns:
+            A SCIM 2.0 user. Its principal, its name in grants and owners, is its primary email, else
+            its
+            first email, else its user name.
         """
     def patch_user_async(
         self,
@@ -2200,7 +2294,7 @@ class Client:
         operations: SupportsGetItem[int, ScimPatchOperation],
         *,
         schemas: SupportsGetItem[int, str] | None = None,
-    ) -> Future[None]:
+    ) -> Future[ScimUser]:
         """
         Like `patch_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -2259,15 +2353,19 @@ class Client:
         *,
         schemas: SupportsGetItem[int, str] | None = None,
         members: SupportsGetItem[int, ScimGroupMember] | None = None,
+        external_id: str | None = None,
     ) -> ScimGroup:
         """
-        Replace a group: its name and members. Only the metastore admin can.
+        Replace the attributes of a group that the body has: a value replaces, `null` removes, an absent
+        attribute stays. The body needs `displayName`. A renamed group keeps its grants. Only the metastore
+        admin can.
 
         Args:
-            display_name: Name of the group.
+            display_name: Name of the group, its name in grants.
             schemas: SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:Group`.
                      Requests send the key even when empty; the server fills it in.
-            members: Members of the group.
+            members: Members of the group: users.
+            external_id: The identity the group has at an identity provider.
 
         Returns:
             A SCIM 2.0 group of users.
@@ -2280,6 +2378,7 @@ class Client:
         *,
         schemas: SupportsGetItem[int, str] | None = None,
         members: SupportsGetItem[int, ScimGroupMember] | None = None,
+        external_id: str | None = None,
     ) -> Future[ScimGroup]:
         """
         Like `replace_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2288,41 +2387,49 @@ class Client:
         self,
         /,
         id: str,
+        user_name: str,
         *,
         external_id: str | None = None,
         display_name: str | None = None,
         active: bool | None = None,
         emails: SupportsGetItem[int, ScimEmail] | None = None,
         photos: SupportsGetItem[int, ScimPhoto] | None = None,
+        name: ScimName | None = None,
     ) -> ScimUser:
         """
-        Replace a user: the name, state and external id change when given; the email and picture stay. Only
-        the metastore admin can.
+        Replace the attributes of a user that the body has: a value replaces, `null` removes, an absent
+        attribute stays. The body needs `userName`. Only the metastore admin can.
 
         Args:
+            user_name: The unique name of the user, such as a user principal name, in any case. Absent in a
+                       create request: the principal.
             external_id: The identity the user has at an identity provider. An application's own token names
                          the user whose external id is the name of the issuer block and the client id, such
                          as `entra:<client id>`.
-            display_name: Name of the user.
-            active: Whether the user can sign in. A new user is always enabled; absent in a replace request:
-                    unchanged.
-            emails: Email addresses of the user. A new user needs one with `primary` set; a replace request
-                    does not change the email.
-            photos: Pictures of the user. The server keeps the first; a replace request does not change it.
+            display_name: Name of the user, for display.
+            active: Whether the user can sign in. Absent: enabled; a new user without it gets `true`.
+            emails: Email addresses of the user. When the principal changes, the grants, owned objects and
+                    tokens of the user move to the new one.
+            photos: Pictures of the user.
+            name: The parts of the name of the user.
 
         Returns:
-            A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+            A SCIM 2.0 user. Its principal, its name in grants and owners, is its primary email, else
+            its
+            first email, else its user name.
         """
     def replace_user_async(
         self,
         /,
         id: str,
+        user_name: str,
         *,
         external_id: str | None = None,
         display_name: str | None = None,
         active: bool | None = None,
         emails: SupportsGetItem[int, ScimEmail] | None = None,
         photos: SupportsGetItem[int, ScimPhoto] | None = None,
+        name: ScimName | None = None,
     ) -> Future[ScimUser]:
         """
         Like `replace_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2506,6 +2613,45 @@ class Client:
         """
         Like `scim_bulk`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
+    def search_groups(
+        self,
+        /,
+        *,
+        schemas: SupportsGetItem[int, str] | None = None,
+        attributes: SupportsGetItem[int, str] | None = None,
+        excluded_attributes: SupportsGetItem[int, str] | None = None,
+        filter: str | None = None,
+        start_index: SupportsIndex | None = None,
+        count: SupportsIndex | None = None,
+    ) -> ListScimGroupsResponse:
+        """
+        List the groups with a search request in the body. Only the metastore admin can.
+
+        Args:
+            schemas: SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:SearchRequest`.
+            attributes: The only attributes to return, such as `userName`.
+            excluded_attributes: The attributes to leave out.
+            filter: SCIM filter (RFC 7644, section 3.4.2.2).
+            start_index: Index of the first resource to return, from 1.
+            count: The maximum number of resources to return, at most 1000. The default is 50.
+
+        Returns:
+            A page of SCIM groups.
+        """
+    def search_groups_async(
+        self,
+        /,
+        *,
+        schemas: SupportsGetItem[int, str] | None = None,
+        attributes: SupportsGetItem[int, str] | None = None,
+        excluded_attributes: SupportsGetItem[int, str] | None = None,
+        filter: str | None = None,
+        start_index: SupportsIndex | None = None,
+        count: SupportsIndex | None = None,
+    ) -> Future[ListScimGroupsResponse]:
+        """
+        Like `search_groups`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
     def search_objects(
         self,
         /,
@@ -2539,6 +2685,84 @@ class Client:
     ) -> Future[SearchObjectsResponse]:
         """
         Like `search_objects`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def search_resources(
+        self,
+        /,
+        *,
+        schemas: SupportsGetItem[int, str] | None = None,
+        attributes: SupportsGetItem[int, str] | None = None,
+        excluded_attributes: SupportsGetItem[int, str] | None = None,
+        filter: str | None = None,
+        start_index: SupportsIndex | None = None,
+        count: SupportsIndex | None = None,
+    ) -> ListScimResourcesResponse:
+        """
+        List the users and the groups with a search request in the body. Only the metastore admin can.
+
+        Args:
+            schemas: SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:SearchRequest`.
+            attributes: The only attributes to return, such as `userName`.
+            excluded_attributes: The attributes to leave out.
+            filter: SCIM filter (RFC 7644, section 3.4.2.2).
+            start_index: Index of the first resource to return, from 1.
+            count: The maximum number of resources to return, at most 1000. The default is 50.
+
+        Returns:
+            A page of SCIM users and groups.
+        """
+    def search_resources_async(
+        self,
+        /,
+        *,
+        schemas: SupportsGetItem[int, str] | None = None,
+        attributes: SupportsGetItem[int, str] | None = None,
+        excluded_attributes: SupportsGetItem[int, str] | None = None,
+        filter: str | None = None,
+        start_index: SupportsIndex | None = None,
+        count: SupportsIndex | None = None,
+    ) -> Future[ListScimResourcesResponse]:
+        """
+        Like `search_resources`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+        """
+    def search_users(
+        self,
+        /,
+        *,
+        schemas: SupportsGetItem[int, str] | None = None,
+        attributes: SupportsGetItem[int, str] | None = None,
+        excluded_attributes: SupportsGetItem[int, str] | None = None,
+        filter: str | None = None,
+        start_index: SupportsIndex | None = None,
+        count: SupportsIndex | None = None,
+    ) -> ListScimUsersResponse:
+        """
+        List the users with a search request in the body. Only the metastore admin can.
+
+        Args:
+            schemas: SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:SearchRequest`.
+            attributes: The only attributes to return, such as `userName`.
+            excluded_attributes: The attributes to leave out.
+            filter: SCIM filter (RFC 7644, section 3.4.2.2).
+            start_index: Index of the first resource to return, from 1.
+            count: The maximum number of resources to return, at most 1000. The default is 50.
+
+        Returns:
+            A page of SCIM users.
+        """
+    def search_users_async(
+        self,
+        /,
+        *,
+        schemas: SupportsGetItem[int, str] | None = None,
+        attributes: SupportsGetItem[int, str] | None = None,
+        excluded_attributes: SupportsGetItem[int, str] | None = None,
+        filter: str | None = None,
+        start_index: SupportsIndex | None = None,
+        count: SupportsIndex | None = None,
+    ) -> Future[ListScimUsersResponse]:
+        """
+        Like `search_users`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
     def share(self, /, share_name: str) -> ShareClient:
         """

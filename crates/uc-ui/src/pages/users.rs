@@ -153,9 +153,9 @@ fn CreateUser(open: RwSignal<bool>) -> impl IntoView {
             return;
         }
         let display = name.get_untracked().trim().to_string();
-        // The server names the user by its primary email.
+        // The primary email is the user's name in grants.
         let create = api::client()
-            .create_user()
+            .create_user(&address)
             .with_display_name((!display.is_empty()).then_some(display))
             .with_emails([ScimEmail {
                 value: address,

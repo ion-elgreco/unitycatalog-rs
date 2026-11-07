@@ -15,7 +15,6 @@ from unitycatalog import (
     DeltaMaintenanceOperation,
     ModelVersionStatus,
     NotFoundError,
-    ServerError,
     UnauthenticatedError,
     UnityCatalogError,
     identity,
@@ -41,7 +40,6 @@ from unitycatalog.iceberg import (
 from unitycatalog.permissions import PermissionsChange
 from unitycatalog.scim import (
     ScimEmail,
-    ScimGroupMember,
     ScimPatchOperation,
     ScimUser,
 )
@@ -501,8 +499,8 @@ def test_permissions(uc: Calls, catalog: str) -> None:
     # The upstream server keeps no grants while authorization is off.
     user = f"{unique('user')}@example.com"
     other = f"{unique('user')}@example.com"
-    uc.create_user(emails=[ScimEmail(user, primary=True)])
-    uc.create_user(emails=[ScimEmail(other, primary=True)])
+    uc.create_user(user, emails=[ScimEmail(user, primary=True)])
+    uc.create_user(other, emails=[ScimEmail(other, primary=True)])
     assert uc.get_permissions("catalog", catalog).privilege_assignments == []
 
     grant = PermissionsChange(user, add=["USE CATALOG", "CREATE SCHEMA"])
@@ -628,7 +626,10 @@ def test_token_exchange_posts_a_form(uc: Calls) -> None:
 def test_scim_users(uc: Calls) -> None:
     email = f"{unique('user')}@example.com"
     created = uc.create_user(
-        emails=[ScimEmail(email, primary=True)], display_name="Ada", external_id=email
+        email,
+        emails=[ScimEmail(email, primary=True)],
+        display_name="Ada",
+        external_id=email,
     )
     assert created.id and created.meta and created.meta.created
     assert created.user_name == email
@@ -640,22 +641,36 @@ def test_scim_users(uc: Calls) -> None:
     assert _without_meta(listed) == _without_meta(created)
     assert len(uc.list_users(start_index=1, count=1).resources) == 1
 
-    updated = uc.replace_user(created.id, display_name="Ada L")
+    updated = uc.replace_user(created.id, email, display_name="Ada L")
     assert (updated.display_name, updated.user_name) == ("Ada L", email)
     assert updated.external_id == email
-    # As in upstream, a deleted user stays, disabled.
     assert uc.delete_user(created.id) is None
-    assert uc.get_user(created.id).active is False
-    assert uc.replace_user(created.id, active=True).active is True
+
+
+def test_scim_users_keep_their_user_name(uc: Calls) -> None:
+    # The upstream server takes the email as user name, and disables a
+    # deleted user.
+    name = unique("user")
+    email = f"{name}@example.com"
+    created = uc.create_user(name, emails=[ScimEmail(email, primary=True)])
+    assert created.user_name == name
+    [found] = uc.search_users(filter=f'emails.value eq "{email}"').resources
+    assert found.id == created.id
+    assert uc.delete_user(created.id) is None
+    with pytest.raises(NotFoundError):
+        uc.get_user(created.id)
 
 
 def test_patch_scim_user(uc: Calls) -> None:
     # The upstream server has no PATCH for users.
     email = f"{unique('user')}@example.com"
-    created = uc.create_user(emails=[ScimEmail(email, primary=True)])
+    created = uc.create_user(email, emails=[ScimEmail(email, primary=True)])
     disable = ScimPatchOperation("replace", path="active", value=False)
-    assert uc.patch_user(created.id, [disable]) is None
+    assert uc.patch_user(created.id, [disable]).active is False
     assert uc.get_user(created.id).active is False
+    rename = ScimPatchOperation("replace", path="name.givenName", value="Ada")
+    patched = uc.patch_user(created.id, [rename])
+    assert patched.name and patched.name.given_name == "Ada"
 
 
 def _without_meta(user: ScimUser) -> tuple[object, ...]:
@@ -676,12 +691,10 @@ def _without_meta(user: ScimUser) -> tuple[object, ...]:
 
 def test_me(admin: Calls, uc: Calls) -> None:
     # The server's `admin` is a caller, but without authorization no user.
-    with pytest.raises(NotFoundError) as error:
+    with pytest.raises(NotFoundError):
         admin.get_me()
-    assert error.value.code == "NOT_FOUND"
-    # Without a token the server knows no caller: a SCIM error, status 500
-    # as upstream.
-    with pytest.raises(ServerError, match="No user found"):
+    # Without a token the server knows no caller.
+    with pytest.raises(BadRequestError, match="No user found"):
         uc.get_me()
 
 
@@ -694,18 +707,21 @@ def test_scim_groups(uc: Calls) -> None:
     assert uc.list_groups(filter=f'displayName eq "{name}"').resources == [created]
 
     email = f"{unique('user')}@example.com"
-    user = uc.create_user(emails=[ScimEmail(email, primary=True)])
+    user = uc.create_user(email, emails=[ScimEmail(email, primary=True)])
     add = ScimPatchOperation("add", path="members", value=[{"value": user.id}])
     patched = uc.patch_group(created.id, [add])
-    assert patched.members == [ScimGroupMember(user.id)]
+    assert [m.value for m in patched.members] == [user.id]
+    # A replace keeps what it does not name.
     replaced = uc.replace_group(created.id, f"{name}_2")
-    assert (replaced.display_name, replaced.members) == (f"{name}_2", [])
+    assert replaced.display_name == f"{name}_2"
+    assert [m.value for m in replaced.members] == [user.id]
+    remove = ScimPatchOperation("remove", path="members")
+    assert uc.patch_group(created.id, [remove]).members == []
 
     assert uc.delete_group(created.id) is None
     assert created.id not in [g.id for g in uc.list_groups().resources]
-    with pytest.raises(NotFoundError) as error:
+    with pytest.raises(NotFoundError):
         uc.get_group(created.id)
-    assert error.value.code == "NOT_FOUND"
 
 
 def test_backup_and_restore(admin: Calls, uc: Calls, catalog: str) -> None:

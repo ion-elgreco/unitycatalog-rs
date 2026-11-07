@@ -3908,21 +3908,121 @@ impl PyClient {
     /// Args:
     ///     filter: SCIM filter (RFC 7644, section 3.4.2.2), such as `userName eq "a@example.com"`.
     ///     start_index: Index of the first user to return, from 1.
-    ///     count: The maximum number of users to return. The default is 50.
+    ///     count: The maximum number of users to return, at most 1000. The default is 50.
+    ///     attributes: The only attributes to return, separated by commas, such as `userName,emails.value`.
+    ///     excluded_attributes: The attributes to leave out, separated by commas, such as `emails`.
     ///
     /// Returns:
     ///     A page of SCIM users.
-    #[pyo3(signature = (*, filter = None, start_index = None, count = None))]
+    #[pyo3(
+        signature = (
+            *,
+            filter = None,
+            start_index = None,
+            count = None,
+            attributes = None,
+            excluded_attributes = None
+        )
+    )]
     pub fn list_users(
         &self,
         py: Python,
         filter: Option<String>,
         start_index: Option<i32>,
         count: Option<i32>,
+        attributes: Option<String>,
+        excluded_attributes: Option<String>,
     ) -> PyUnityCatalogResult<PyListScimUsersResponse> {
         let request = self
             .client
             .list_users()
+            .with_filter(filter)
+            .with_start_index(start_index)
+            .with_count(count)
+            .with_attributes(attributes)
+            .with_excluded_attributes(excluded_attributes);
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyListScimUsersResponse::from(result))
+    }
+
+    /// Like `list_users`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(
+        signature = (
+            *,
+            filter = None,
+            start_index = None,
+            count = None,
+            attributes = None,
+            excluded_attributes = None
+        )
+    )]
+    pub fn list_users_async<'py>(
+        &self,
+        py: Python<'py>,
+        filter: Option<String>,
+        start_index: Option<i32>,
+        count: Option<i32>,
+        attributes: Option<String>,
+        excluded_attributes: Option<String>,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyListScimUsersResponse>> {
+        let request = self
+            .client
+            .list_users()
+            .with_filter(filter)
+            .with_start_index(start_index)
+            .with_count(count)
+            .with_attributes(attributes)
+            .with_excluded_attributes(excluded_attributes);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(PyListScimUsersResponse::from(result))
+        })
+    }
+
+    /// List the users with a search request in the body. Only the metastore admin can.
+    ///
+    /// Args:
+    ///     schemas: SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:SearchRequest`.
+    ///     attributes: The only attributes to return, such as `userName`.
+    ///     excluded_attributes: The attributes to leave out.
+    ///     filter: SCIM filter (RFC 7644, section 3.4.2.2).
+    ///     start_index: Index of the first resource to return, from 1.
+    ///     count: The maximum number of resources to return, at most 1000. The default is 50.
+    ///
+    /// Returns:
+    ///     A page of SCIM users.
+    #[pyo3(
+        signature = (
+            *,
+            schemas = None,
+            attributes = None,
+            excluded_attributes = None,
+            filter = None,
+            start_index = None,
+            count = None
+        )
+    )]
+    pub fn search_users(
+        &self,
+        py: Python,
+        schemas: Option<Vec<String>>,
+        attributes: Option<Vec<String>>,
+        excluded_attributes: Option<Vec<String>>,
+        filter: Option<String>,
+        start_index: Option<i32>,
+        count: Option<i32>,
+    ) -> PyUnityCatalogResult<PyListScimUsersResponse> {
+        let request = self
+            .client
+            .search_users()
+            .with_schemas(schemas.unwrap_or_default())
+            .with_attributes(attributes.unwrap_or_default())
+            .with_excluded_attributes(excluded_attributes.unwrap_or_default())
             .with_filter(filter)
             .with_start_index(start_index)
             .with_count(count);
@@ -3931,18 +4031,34 @@ impl PyClient {
         Ok(PyListScimUsersResponse::from(result))
     }
 
-    /// Like `list_users`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (*, filter = None, start_index = None, count = None))]
-    pub fn list_users_async<'py>(
+    /// Like `search_users`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(
+        signature = (
+            *,
+            schemas = None,
+            attributes = None,
+            excluded_attributes = None,
+            filter = None,
+            start_index = None,
+            count = None
+        )
+    )]
+    pub fn search_users_async<'py>(
         &self,
         py: Python<'py>,
+        schemas: Option<Vec<String>>,
+        attributes: Option<Vec<String>>,
+        excluded_attributes: Option<Vec<String>>,
         filter: Option<String>,
         start_index: Option<i32>,
         count: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyListScimUsersResponse>> {
         let request = self
             .client
-            .list_users()
+            .search_users()
+            .with_schemas(schemas.unwrap_or_default())
+            .with_attributes(attributes.unwrap_or_default())
+            .with_excluded_attributes(excluded_attributes.unwrap_or_default())
             .with_filter(filter)
             .with_start_index(start_index)
             .with_count(count);
@@ -3956,43 +4072,52 @@ impl PyClient {
         })
     }
 
-    /// Create a user, named by its primary email. Only the metastore admin can.
+    /// Create a user. Its user name, principal and external id belong to no other user, and no group has
+    /// its principal as name. Only the metastore admin can.
     ///
     /// Args:
+    ///     user_name: The unique name of the user, such as a user principal name, in any case. Absent in a
+    ///                create request: the principal.
     ///     external_id: The identity the user has at an identity provider. An application's own token names
     ///                  the user whose external id is the name of the issuer block and the client id, such
     ///                  as `entra:<client id>`.
-    ///     display_name: Name of the user.
-    ///     active: Whether the user can sign in. A new user is always enabled; absent in a replace request:
-    ///             unchanged.
-    ///     emails: Email addresses of the user. A new user needs one with `primary` set; a replace request
-    ///             does not change the email.
-    ///     photos: Pictures of the user. The server keeps the first; a replace request does not change it.
+    ///     display_name: Name of the user, for display.
+    ///     active: Whether the user can sign in. Absent: enabled; a new user without it gets `true`.
+    ///     emails: Email addresses of the user. When the principal changes, the grants, owned objects and
+    ///             tokens of the user move to the new one.
+    ///     photos: Pictures of the user.
+    ///     name: The parts of the name of the user.
     ///
     /// Returns:
-    ///     A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+    ///     A SCIM 2.0 user. Its principal, its name in grants and owners, is its primary email, else
+    ///     its
+    ///     first email, else its user name.
     #[pyo3(
         signature = (
+            user_name,
             *,
             external_id = None,
             display_name = None,
             active = None,
             emails = None,
-            photos = None
+            photos = None,
+            name = None
         )
     )]
     pub fn create_user(
         &self,
         py: Python,
+        user_name: String,
         external_id: Option<String>,
         display_name: Option<String>,
         active: Option<bool>,
         emails: ::core::option::Option<::std::vec::Vec<PyScimEmail>>,
         photos: ::core::option::Option<::std::vec::Vec<PyScimPhoto>>,
+        name: ::core::option::Option<PyScimName>,
     ) -> PyUnityCatalogResult<PyScimUser> {
         let request = self
             .client
-            .create_user()
+            .create_user(user_name)
             .with_external_id(external_id)
             .with_display_name(display_name)
             .with_active(active)
@@ -4009,7 +4134,8 @@ impl PyClient {
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
+            )
+            .with_name(name.map(::core::convert::Into::into));
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
         Ok(PyScimUser::from(result))
@@ -4018,26 +4144,30 @@ impl PyClient {
     /// Like `create_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
     #[pyo3(
         signature = (
+            user_name,
             *,
             external_id = None,
             display_name = None,
             active = None,
             emails = None,
-            photos = None
+            photos = None,
+            name = None
         )
     )]
     pub fn create_user_async<'py>(
         &self,
         py: Python<'py>,
+        user_name: String,
         external_id: Option<String>,
         display_name: Option<String>,
         active: Option<bool>,
         emails: ::core::option::Option<::std::vec::Vec<PyScimEmail>>,
         photos: ::core::option::Option<::std::vec::Vec<PyScimPhoto>>,
+        name: ::core::option::Option<PyScimName>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimUser>> {
         let request = self
             .client
-            .create_user()
+            .create_user(user_name)
             .with_external_id(external_id)
             .with_display_name(display_name)
             .with_active(active)
@@ -4054,7 +4184,8 @@ impl PyClient {
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
+            )
+            .with_name(name.map(::core::convert::Into::into));
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -4067,24 +4198,46 @@ impl PyClient {
 
     /// Get a user. Only the metastore admin can.
     ///
+    /// Args:
+    ///     attributes: The only attributes to return, separated by commas.
+    ///     excluded_attributes: The attributes to leave out, separated by commas.
+    ///
     /// Returns:
-    ///     A SCIM 2.0 user. The email of the user is its user name and its one primary email.
-    #[pyo3(signature = (id))]
-    pub fn get_user(&self, py: Python, id: String) -> PyUnityCatalogResult<PyScimUser> {
-        let request = self.client.get_user(id);
+    ///     A SCIM 2.0 user. Its principal, its name in grants and owners, is its primary email, else
+    ///     its
+    ///     first email, else its user name.
+    #[pyo3(signature = (id, *, attributes = None, excluded_attributes = None))]
+    pub fn get_user(
+        &self,
+        py: Python,
+        id: String,
+        attributes: Option<String>,
+        excluded_attributes: Option<String>,
+    ) -> PyUnityCatalogResult<PyScimUser> {
+        let request = self
+            .client
+            .get_user(id)
+            .with_attributes(attributes)
+            .with_excluded_attributes(excluded_attributes);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
         Ok(PyScimUser::from(result))
     }
 
     /// Like `get_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (id))]
+    #[pyo3(signature = (id, *, attributes = None, excluded_attributes = None))]
     pub fn get_user_async<'py>(
         &self,
         py: Python<'py>,
         id: String,
+        attributes: Option<String>,
+        excluded_attributes: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimUser>> {
-        let request = self.client.get_user(id);
+        let request = self
+            .client
+            .get_user(id)
+            .with_attributes(attributes)
+            .with_excluded_attributes(excluded_attributes);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -4095,46 +4248,54 @@ impl PyClient {
         })
     }
 
-    /// Replace a user: the name, state and external id change when given; the email and picture stay. Only
-    /// the metastore admin can.
+    /// Replace the attributes of a user that the body has: a value replaces, `null` removes, an absent
+    /// attribute stays. The body needs `userName`. Only the metastore admin can.
     ///
     /// Args:
+    ///     user_name: The unique name of the user, such as a user principal name, in any case. Absent in a
+    ///                create request: the principal.
     ///     external_id: The identity the user has at an identity provider. An application's own token names
     ///                  the user whose external id is the name of the issuer block and the client id, such
     ///                  as `entra:<client id>`.
-    ///     display_name: Name of the user.
-    ///     active: Whether the user can sign in. A new user is always enabled; absent in a replace request:
-    ///             unchanged.
-    ///     emails: Email addresses of the user. A new user needs one with `primary` set; a replace request
-    ///             does not change the email.
-    ///     photos: Pictures of the user. The server keeps the first; a replace request does not change it.
+    ///     display_name: Name of the user, for display.
+    ///     active: Whether the user can sign in. Absent: enabled; a new user without it gets `true`.
+    ///     emails: Email addresses of the user. When the principal changes, the grants, owned objects and
+    ///             tokens of the user move to the new one.
+    ///     photos: Pictures of the user.
+    ///     name: The parts of the name of the user.
     ///
     /// Returns:
-    ///     A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+    ///     A SCIM 2.0 user. Its principal, its name in grants and owners, is its primary email, else
+    ///     its
+    ///     first email, else its user name.
     #[pyo3(
         signature = (
             id,
+            user_name,
             *,
             external_id = None,
             display_name = None,
             active = None,
             emails = None,
-            photos = None
+            photos = None,
+            name = None
         )
     )]
     pub fn replace_user(
         &self,
         py: Python,
         id: String,
+        user_name: String,
         external_id: Option<String>,
         display_name: Option<String>,
         active: Option<bool>,
         emails: ::core::option::Option<::std::vec::Vec<PyScimEmail>>,
         photos: ::core::option::Option<::std::vec::Vec<PyScimPhoto>>,
+        name: ::core::option::Option<PyScimName>,
     ) -> PyUnityCatalogResult<PyScimUser> {
         let request = self
             .client
-            .replace_user(id)
+            .replace_user(id, user_name)
             .with_external_id(external_id)
             .with_display_name(display_name)
             .with_active(active)
@@ -4151,7 +4312,8 @@ impl PyClient {
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
+            )
+            .with_name(name.map(::core::convert::Into::into));
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
         Ok(PyScimUser::from(result))
@@ -4161,27 +4323,31 @@ impl PyClient {
     #[pyo3(
         signature = (
             id,
+            user_name,
             *,
             external_id = None,
             display_name = None,
             active = None,
             emails = None,
-            photos = None
+            photos = None,
+            name = None
         )
     )]
     pub fn replace_user_async<'py>(
         &self,
         py: Python<'py>,
         id: String,
+        user_name: String,
         external_id: Option<String>,
         display_name: Option<String>,
         active: Option<bool>,
         emails: ::core::option::Option<::std::vec::Vec<PyScimEmail>>,
         photos: ::core::option::Option<::std::vec::Vec<PyScimPhoto>>,
+        name: ::core::option::Option<PyScimName>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimUser>> {
         let request = self
             .client
-            .replace_user(id)
+            .replace_user(id, user_name)
             .with_external_id(external_id)
             .with_display_name(display_name)
             .with_active(active)
@@ -4198,7 +4364,8 @@ impl PyClient {
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
+            )
+            .with_name(name.map(::core::convert::Into::into));
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -4209,13 +4376,18 @@ impl PyClient {
         })
     }
 
-    /// Enable or disable a user. The server takes the first `replace` whose `path` is `active` or absent;
-    /// without `path`, the first attribute of `value` is the state (`{"active": false}`). With no such
-    /// operation the server answers 501. Only the metastore admin can.
+    /// Change a user with `add`, `replace` and `remove` operations (RFC 7644, section 3.5.2). Operations
+    /// on attributes that the server does not keep change nothing; `userName` cannot be removed. Only the
+    /// metastore admin can.
     ///
     /// Args:
     ///     operations: The operations, in order.
     ///     schemas: SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:PatchOp`.
+    ///
+    /// Returns:
+    ///     A SCIM 2.0 user. Its principal, its name in grants and owners, is its primary email, else
+    ///     its
+    ///     first email, else its user name.
     #[pyo3(signature = (id, operations, *, schemas = None))]
     pub fn patch_user(
         &self,
@@ -4223,7 +4395,7 @@ impl PyClient {
         id: String,
         operations: ::std::vec::Vec<PyScimPatchOperation>,
         schemas: Option<Vec<String>>,
-    ) -> PyUnityCatalogResult<()> {
+    ) -> PyUnityCatalogResult<PyScimUser> {
         let request = self
             .client
             .patch_user(
@@ -4236,7 +4408,7 @@ impl PyClient {
             .with_schemas(schemas.unwrap_or_default());
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(result)
+        Ok(PyScimUser::from(result))
     }
 
     /// Like `patch_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4247,9 +4419,7 @@ impl PyClient {
         id: String,
         operations: ::std::vec::Vec<PyScimPatchOperation>,
         schemas: Option<Vec<String>>,
-    ) -> ::pyo3::PyResult<
-        crate::codegen::py_future::PyFuture<'py, crate::codegen::py_future::NoResult>,
-    > {
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimUser>> {
         let request = self
             .client
             .patch_user(
@@ -4266,11 +4436,11 @@ impl PyClient {
                 .into_future()
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(crate::codegen::py_future::NoResult)
+            Ok(PyScimUser::from(result))
         })
     }
 
-    /// Disable a user and remove its grants. The user stays, disabled. Only the metastore admin can.
+    /// Delete a user with its grants, tokens and group memberships. Only the metastore admin can.
     #[pyo3(signature = (id))]
     pub fn delete_user(&self, py: Python, id: String) -> PyUnityCatalogResult<()> {
         let request = self.client.delete_user(id);
@@ -4302,7 +4472,9 @@ impl PyClient {
     /// Get the signed-in user. The role `admin` names a caller that can do what the metastore admin does.
     ///
     /// Returns:
-    ///     A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+    ///     A SCIM 2.0 user. Its principal, its name in grants and owners, is its primary email, else
+    ///     its
+    ///     first email, else its user name.
     pub fn get_me(&self, py: Python) -> PyUnityCatalogResult<PyScimUser> {
         let request = self.client.get_me();
         #[allow(clippy::let_unit_value)]
@@ -4331,21 +4503,121 @@ impl PyClient {
     /// Args:
     ///     filter: SCIM filter (RFC 7644, section 3.4.2.2), such as `displayName eq "admins"`.
     ///     start_index: Index of the first group to return, from 1.
-    ///     count: The maximum number of groups to return. The default is 50.
+    ///     count: The maximum number of groups to return, at most 1000. The default is 50.
+    ///     attributes: The only attributes to return, separated by commas, such as `displayName`.
+    ///     excluded_attributes: The attributes to leave out, separated by commas, such as `members`.
     ///
     /// Returns:
     ///     A page of SCIM groups.
-    #[pyo3(signature = (*, filter = None, start_index = None, count = None))]
+    #[pyo3(
+        signature = (
+            *,
+            filter = None,
+            start_index = None,
+            count = None,
+            attributes = None,
+            excluded_attributes = None
+        )
+    )]
     pub fn list_groups(
         &self,
         py: Python,
         filter: Option<String>,
         start_index: Option<i32>,
         count: Option<i32>,
+        attributes: Option<String>,
+        excluded_attributes: Option<String>,
     ) -> PyUnityCatalogResult<PyListScimGroupsResponse> {
         let request = self
             .client
             .list_groups()
+            .with_filter(filter)
+            .with_start_index(start_index)
+            .with_count(count)
+            .with_attributes(attributes)
+            .with_excluded_attributes(excluded_attributes);
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyListScimGroupsResponse::from(result))
+    }
+
+    /// Like `list_groups`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(
+        signature = (
+            *,
+            filter = None,
+            start_index = None,
+            count = None,
+            attributes = None,
+            excluded_attributes = None
+        )
+    )]
+    pub fn list_groups_async<'py>(
+        &self,
+        py: Python<'py>,
+        filter: Option<String>,
+        start_index: Option<i32>,
+        count: Option<i32>,
+        attributes: Option<String>,
+        excluded_attributes: Option<String>,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyListScimGroupsResponse>> {
+        let request = self
+            .client
+            .list_groups()
+            .with_filter(filter)
+            .with_start_index(start_index)
+            .with_count(count)
+            .with_attributes(attributes)
+            .with_excluded_attributes(excluded_attributes);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(PyListScimGroupsResponse::from(result))
+        })
+    }
+
+    /// List the groups with a search request in the body. Only the metastore admin can.
+    ///
+    /// Args:
+    ///     schemas: SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:SearchRequest`.
+    ///     attributes: The only attributes to return, such as `userName`.
+    ///     excluded_attributes: The attributes to leave out.
+    ///     filter: SCIM filter (RFC 7644, section 3.4.2.2).
+    ///     start_index: Index of the first resource to return, from 1.
+    ///     count: The maximum number of resources to return, at most 1000. The default is 50.
+    ///
+    /// Returns:
+    ///     A page of SCIM groups.
+    #[pyo3(
+        signature = (
+            *,
+            schemas = None,
+            attributes = None,
+            excluded_attributes = None,
+            filter = None,
+            start_index = None,
+            count = None
+        )
+    )]
+    pub fn search_groups(
+        &self,
+        py: Python,
+        schemas: Option<Vec<String>>,
+        attributes: Option<Vec<String>>,
+        excluded_attributes: Option<Vec<String>>,
+        filter: Option<String>,
+        start_index: Option<i32>,
+        count: Option<i32>,
+    ) -> PyUnityCatalogResult<PyListScimGroupsResponse> {
+        let request = self
+            .client
+            .search_groups()
+            .with_schemas(schemas.unwrap_or_default())
+            .with_attributes(attributes.unwrap_or_default())
+            .with_excluded_attributes(excluded_attributes.unwrap_or_default())
             .with_filter(filter)
             .with_start_index(start_index)
             .with_count(count);
@@ -4354,18 +4626,34 @@ impl PyClient {
         Ok(PyListScimGroupsResponse::from(result))
     }
 
-    /// Like `list_groups`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (*, filter = None, start_index = None, count = None))]
-    pub fn list_groups_async<'py>(
+    /// Like `search_groups`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(
+        signature = (
+            *,
+            schemas = None,
+            attributes = None,
+            excluded_attributes = None,
+            filter = None,
+            start_index = None,
+            count = None
+        )
+    )]
+    pub fn search_groups_async<'py>(
         &self,
         py: Python<'py>,
+        schemas: Option<Vec<String>>,
+        attributes: Option<Vec<String>>,
+        excluded_attributes: Option<Vec<String>>,
         filter: Option<String>,
         start_index: Option<i32>,
         count: Option<i32>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyListScimGroupsResponse>> {
         let request = self
             .client
-            .list_groups()
+            .search_groups()
+            .with_schemas(schemas.unwrap_or_default())
+            .with_attributes(attributes.unwrap_or_default())
+            .with_excluded_attributes(excluded_attributes.unwrap_or_default())
             .with_filter(filter)
             .with_start_index(start_index)
             .with_count(count);
@@ -4382,20 +4670,24 @@ impl PyClient {
     /// Create a group. Only the metastore admin can.
     ///
     /// Args:
-    ///     display_name: Name of the group.
+    ///     display_name: Name of the group, its name in grants.
     ///     schemas: SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:Group`.
     ///              Requests send the key even when empty; the server fills it in.
-    ///     members: Members of the group.
+    ///     members: Members of the group: users.
+    ///     external_id: The identity the group has at an identity provider.
     ///
     /// Returns:
     ///     A SCIM 2.0 group of users.
-    #[pyo3(signature = (display_name, *, schemas = None, members = None))]
+    #[pyo3(
+        signature = (display_name, *, schemas = None, members = None, external_id = None)
+    )]
     pub fn create_group(
         &self,
         py: Python,
         display_name: String,
         schemas: Option<Vec<String>>,
         members: ::core::option::Option<::std::vec::Vec<PyScimGroupMember>>,
+        external_id: Option<String>,
     ) -> PyUnityCatalogResult<PyScimGroup> {
         let request = self
             .client
@@ -4407,20 +4699,24 @@ impl PyClient {
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
+            )
+            .with_external_id(external_id);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
         Ok(PyScimGroup::from(result))
     }
 
     /// Like `create_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (display_name, *, schemas = None, members = None))]
+    #[pyo3(
+        signature = (display_name, *, schemas = None, members = None, external_id = None)
+    )]
     pub fn create_group_async<'py>(
         &self,
         py: Python<'py>,
         display_name: String,
         schemas: Option<Vec<String>>,
         members: ::core::option::Option<::std::vec::Vec<PyScimGroupMember>>,
+        external_id: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimGroup>> {
         let request = self
             .client
@@ -4432,7 +4728,8 @@ impl PyClient {
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
+            )
+            .with_external_id(external_id);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -4445,24 +4742,44 @@ impl PyClient {
 
     /// Get a group. Only the metastore admin can.
     ///
+    /// Args:
+    ///     attributes: The only attributes to return, separated by commas.
+    ///     excluded_attributes: The attributes to leave out, separated by commas.
+    ///
     /// Returns:
     ///     A SCIM 2.0 group of users.
-    #[pyo3(signature = (id))]
-    pub fn get_group(&self, py: Python, id: String) -> PyUnityCatalogResult<PyScimGroup> {
-        let request = self.client.get_group(id);
+    #[pyo3(signature = (id, *, attributes = None, excluded_attributes = None))]
+    pub fn get_group(
+        &self,
+        py: Python,
+        id: String,
+        attributes: Option<String>,
+        excluded_attributes: Option<String>,
+    ) -> PyUnityCatalogResult<PyScimGroup> {
+        let request = self
+            .client
+            .get_group(id)
+            .with_attributes(attributes)
+            .with_excluded_attributes(excluded_attributes);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
         Ok(PyScimGroup::from(result))
     }
 
     /// Like `get_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (id))]
+    #[pyo3(signature = (id, *, attributes = None, excluded_attributes = None))]
     pub fn get_group_async<'py>(
         &self,
         py: Python<'py>,
         id: String,
+        attributes: Option<String>,
+        excluded_attributes: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimGroup>> {
-        let request = self.client.get_group(id);
+        let request = self
+            .client
+            .get_group(id)
+            .with_attributes(attributes)
+            .with_excluded_attributes(excluded_attributes);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -4473,17 +4790,29 @@ impl PyClient {
         })
     }
 
-    /// Replace a group: its name and members. Only the metastore admin can.
+    /// Replace the attributes of a group that the body has: a value replaces, `null` removes, an absent
+    /// attribute stays. The body needs `displayName`. A renamed group keeps its grants. Only the metastore
+    /// admin can.
     ///
     /// Args:
-    ///     display_name: Name of the group.
+    ///     display_name: Name of the group, its name in grants.
     ///     schemas: SCIM schema URIs of the resource: `urn:ietf:params:scim:schemas:core:2.0:Group`.
     ///              Requests send the key even when empty; the server fills it in.
-    ///     members: Members of the group.
+    ///     members: Members of the group: users.
+    ///     external_id: The identity the group has at an identity provider.
     ///
     /// Returns:
     ///     A SCIM 2.0 group of users.
-    #[pyo3(signature = (id, display_name, *, schemas = None, members = None))]
+    #[pyo3(
+        signature = (
+            id,
+            display_name,
+            *,
+            schemas = None,
+            members = None,
+            external_id = None
+        )
+    )]
     pub fn replace_group(
         &self,
         py: Python,
@@ -4491,6 +4820,7 @@ impl PyClient {
         display_name: String,
         schemas: Option<Vec<String>>,
         members: ::core::option::Option<::std::vec::Vec<PyScimGroupMember>>,
+        external_id: Option<String>,
     ) -> PyUnityCatalogResult<PyScimGroup> {
         let request = self
             .client
@@ -4502,14 +4832,24 @@ impl PyClient {
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
+            )
+            .with_external_id(external_id);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
         Ok(PyScimGroup::from(result))
     }
 
     /// Like `replace_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (id, display_name, *, schemas = None, members = None))]
+    #[pyo3(
+        signature = (
+            id,
+            display_name,
+            *,
+            schemas = None,
+            members = None,
+            external_id = None
+        )
+    )]
     pub fn replace_group_async<'py>(
         &self,
         py: Python<'py>,
@@ -4517,6 +4857,7 @@ impl PyClient {
         display_name: String,
         schemas: Option<Vec<String>>,
         members: ::core::option::Option<::std::vec::Vec<PyScimGroupMember>>,
+        external_id: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimGroup>> {
         let request = self
             .client
@@ -4528,7 +4869,8 @@ impl PyClient {
                     .into_iter()
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
-            );
+            )
+            .with_external_id(external_id);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
@@ -4539,9 +4881,8 @@ impl PyClient {
         })
     }
 
-    /// Change a group: `add` to `members`, `remove` of `members` or `members[value eq "<id>"]`, `replace`
-    /// of `displayName`, or `replace` without `path` with a whole group. Other operations are ignored. Only
-    /// the metastore admin can.
+    /// Change a group with `add`, `replace` and `remove` operations (RFC 7644, section 3.5.2), such as an
+    /// `add` to `members` or a `remove` of `members[value eq "<id>"]`. Only the metastore admin can.
     ///
     /// Args:
     ///     operations: The operations, in order.
@@ -4627,6 +4968,95 @@ impl PyClient {
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
             Ok(crate::codegen::py_future::NoResult)
+        })
+    }
+
+    /// List the users and the groups with a search request in the body. Only the metastore admin can.
+    ///
+    /// Args:
+    ///     schemas: SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:SearchRequest`.
+    ///     attributes: The only attributes to return, such as `userName`.
+    ///     excluded_attributes: The attributes to leave out.
+    ///     filter: SCIM filter (RFC 7644, section 3.4.2.2).
+    ///     start_index: Index of the first resource to return, from 1.
+    ///     count: The maximum number of resources to return, at most 1000. The default is 50.
+    ///
+    /// Returns:
+    ///     A page of SCIM users and groups.
+    #[pyo3(
+        signature = (
+            *,
+            schemas = None,
+            attributes = None,
+            excluded_attributes = None,
+            filter = None,
+            start_index = None,
+            count = None
+        )
+    )]
+    pub fn search_resources(
+        &self,
+        py: Python,
+        schemas: Option<Vec<String>>,
+        attributes: Option<Vec<String>>,
+        excluded_attributes: Option<Vec<String>>,
+        filter: Option<String>,
+        start_index: Option<i32>,
+        count: Option<i32>,
+    ) -> PyUnityCatalogResult<PyListScimResourcesResponse> {
+        let request = self
+            .client
+            .search_resources()
+            .with_schemas(schemas.unwrap_or_default())
+            .with_attributes(attributes.unwrap_or_default())
+            .with_excluded_attributes(excluded_attributes.unwrap_or_default())
+            .with_filter(filter)
+            .with_start_index(start_index)
+            .with_count(count);
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyListScimResourcesResponse::from(result))
+    }
+
+    /// Like `search_resources`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(
+        signature = (
+            *,
+            schemas = None,
+            attributes = None,
+            excluded_attributes = None,
+            filter = None,
+            start_index = None,
+            count = None
+        )
+    )]
+    pub fn search_resources_async<'py>(
+        &self,
+        py: Python<'py>,
+        schemas: Option<Vec<String>>,
+        attributes: Option<Vec<String>>,
+        excluded_attributes: Option<Vec<String>>,
+        filter: Option<String>,
+        start_index: Option<i32>,
+        count: Option<i32>,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyListScimResourcesResponse>>
+    {
+        let request = self
+            .client
+            .search_resources()
+            .with_schemas(schemas.unwrap_or_default())
+            .with_attributes(attributes.unwrap_or_default())
+            .with_excluded_attributes(excluded_attributes.unwrap_or_default())
+            .with_filter(filter)
+            .with_start_index(start_index)
+            .with_count(count);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(PyListScimResourcesResponse::from(result))
         })
     }
 
@@ -4723,6 +5153,36 @@ impl PyClient {
         })
     }
 
+    /// Get a SCIM schema of the server. Any signed-in caller can.
+    ///
+    /// Returns:
+    ///     A SCIM schema (RFC 7643, section 7).
+    #[pyo3(signature = (id))]
+    pub fn get_scim_schema(&self, py: Python, id: String) -> PyUnityCatalogResult<PyScimSchema> {
+        let request = self.client.get_scim_schema(id);
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyScimSchema::from(result))
+    }
+
+    /// Like `get_scim_schema`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (id))]
+    pub fn get_scim_schema_async<'py>(
+        &self,
+        py: Python<'py>,
+        id: String,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimSchema>> {
+        let request = self.client.get_scim_schema(id);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(PyScimSchema::from(result))
+        })
+    }
+
     /// List the SCIM resource types of the server: User and Group. Any signed-in caller can.
     ///
     /// Returns:
@@ -4751,6 +5211,40 @@ impl PyClient {
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
             Ok(PyListScimResourceTypesResponse::from(result))
+        })
+    }
+
+    /// Get a SCIM resource type of the server. Any signed-in caller can.
+    ///
+    /// Returns:
+    ///     A SCIM resource type (RFC 7643, section 6).
+    #[pyo3(signature = (id))]
+    pub fn get_scim_resource_type(
+        &self,
+        py: Python,
+        id: String,
+    ) -> PyUnityCatalogResult<PyScimResourceType> {
+        let request = self.client.get_scim_resource_type(id);
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyScimResourceType::from(result))
+    }
+
+    /// Like `get_scim_resource_type`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (id))]
+    pub fn get_scim_resource_type_async<'py>(
+        &self,
+        py: Python<'py>,
+        id: String,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyScimResourceType>> {
+        let request = self.client.get_scim_resource_type(id);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(PyScimResourceType::from(result))
         })
     }
 
@@ -6285,12 +6779,12 @@ pub mod extension_module {
     pub mod scim {
         #[pymodule_export]
         use super::super::{
-            PyListScimGroupsResponse, PyListScimResourceTypesResponse, PyListScimSchemasResponse,
-            PyListScimUsersResponse, PyScimAuthenticationScheme, PyScimBulkConfig, PyScimBulkOp,
-            PyScimBulkOpResult, PyScimBulkResponse, PyScimEmail, PyScimFilterConfig, PyScimGroup,
-            PyScimGroupMember, PyScimMeta, PyScimPatchOperation, PyScimPhoto, PyScimResourceType,
-            PyScimRole, PyScimSchema, PyScimSchemaAttribute, PyScimServiceProviderConfig,
-            PyScimSupported, PyScimUser,
+            PyListScimGroupsResponse, PyListScimResourceTypesResponse, PyListScimResourcesResponse,
+            PyListScimSchemasResponse, PyListScimUsersResponse, PyScimAuthenticationScheme,
+            PyScimBulkConfig, PyScimBulkOp, PyScimBulkOpResult, PyScimBulkResponse, PyScimEmail,
+            PyScimFilterConfig, PyScimGroup, PyScimGroupMember, PyScimMeta, PyScimName,
+            PyScimPatchOperation, PyScimPhoto, PyScimResourceType, PyScimRole, PyScimSchema,
+            PyScimSchemaAttribute, PyScimServiceProviderConfig, PyScimSupported, PyScimUser,
         };
     }
 

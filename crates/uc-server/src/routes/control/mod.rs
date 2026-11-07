@@ -4,6 +4,8 @@
 
 pub mod scim;
 pub mod scim_filter;
+pub mod scim_patch;
+pub mod scim_schema;
 
 use std::time::Duration;
 

@@ -22,7 +22,10 @@ async fn permissions() {
     let _storage = catalog_and_schema(&uc).await;
     // Grants need users.
     for user in [ADA, BOB] {
-        uc.create_user().with_emails([email(user)]).await.unwrap();
+        uc.create_user(user)
+            .with_emails([email(user)])
+            .await
+            .unwrap();
     }
     let none = uc.get_permissions("catalog", "c").await.unwrap();
     assert!(none.privilege_assignments.is_empty());

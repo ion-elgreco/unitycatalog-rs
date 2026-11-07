@@ -233,14 +233,19 @@ CREATE TABLE pat (
 );
 CREATE INDEX pat_by_owner ON pat (owner);
 
+-- `principal`, the user's name in grants and owners, is its primary email,
+-- else its first email, else its `user_name`.
 CREATE TABLE scim_user (
     id_string    TEXT PRIMARY KEY,
     user_name    TEXT NOT NULL UNIQUE,
+    principal    TEXT NOT NULL UNIQUE,
+    name         TEXT,
     display_name TEXT,
     external_id  TEXT,
     emails       TEXT,
-    active       BOOLEAN NOT NULL,
-    picture_url  TEXT,
+    -- NULL: enabled.
+    active       BOOLEAN,
+    photos       TEXT,
     created_at   BIGINT,
     updated_at   BIGINT
 );
@@ -249,7 +254,10 @@ CREATE INDEX scim_user_by_external_id ON scim_user (external_id);
 CREATE TABLE scim_group (
     id_string    TEXT PRIMARY KEY,
     display_name TEXT NOT NULL UNIQUE,
-    members      TEXT
+    external_id  TEXT,
+    members      TEXT,
+    created_at   BIGINT,
+    updated_at   BIGINT
 );
 -- The user ids of each group's members, written with `scim_group.members`:
 -- the groups whose grants a user gets.

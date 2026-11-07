@@ -492,8 +492,8 @@ pub(crate) async fn resolve(
             false => format!("{}:{value}", issuer.name),
         };
         let found = match is_email {
-            true => scim.find_user_by_email_any_case(&principal).await?,
-            false => scim.find_user_by_email(&principal).await?,
+            true => scim.find_user_by_principal_any_case(&principal).await?,
+            false => scim.find_user_by_principal(&principal).await?,
         };
         if let Some(user) = found {
             return assumable(user).ok_or_else(not_allowed);
@@ -580,6 +580,7 @@ async fn create(
                 value: principal.clone(),
                 primary: Some(true),
                 r#type: None,
+                display: None,
             }]
         }),
         active: Some(true),
@@ -592,7 +593,7 @@ async fn create(
         }
         // Another request, or another replica, made it first.
         Err(e) if e.code().is_already_exists() => scim
-            .find_user_by_email(&principal)
+            .find_user_by_principal(&principal)
             .await?
             .and_then(assumable)
             .ok_or_else(|| Error::invalid_argument("User not allowed")),

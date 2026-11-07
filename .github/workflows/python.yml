@@ -191,6 +191,34 @@ jobs:
       - name: Run the tests against the upstream server
         run: just test-upstream
 
+  # authentik, an identity provider, pushes users and groups to a uc-server
+  # over SCIM (python/client/tests/integrations/test_authentik.py). authentik
+  # runs in Docker, from tests/integrations/authentik/compose.yaml.
+  authentik:
+    name: SCIM tests with authentik
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    env:
+      # Those tests use no engines.
+      UV_NO_GROUP: integrations
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+
+      - name: Build and install unitycatalog
+        run: just develop-client
+
+      - name: Run the authentik tests
+        run: just test-authentik
+
   # Spark against a uc-server: upstream's connector with delta-spark, and
   # Iceberg's Spark runtime (python/client/tests/integrations/test_spark.py).
   # Spark 4.1 has Iceberg's runtime, Spark 4.2 the view catalog API.

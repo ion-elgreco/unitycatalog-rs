@@ -1,8 +1,10 @@
-//! SCIM filters (RFC 7644 §3.4.2.2), as upstream parses and evaluates them
-//! with the UnboundID SDK: `and`, `or`, `not(…)`, grouping, value paths
-//! (`emails[type eq "work"]`) and the operators `eq ne co sw ew gt ge lt le
-//! pr`. Attribute names, keywords and string comparisons ignore case;
-//! dates compare as instants.
+//! SCIM filters (RFC 7644 §3.4.2.2): `and`, `or`, `not(…)`, grouping, value
+//! paths (`emails[type eq "work"]`) and the operators `eq ne co sw ew gt ge
+//! lt le pr`. Attribute names, keywords and string comparisons ignore case;
+//! dates compare as instants. As Entra ID sends them, a value path may end
+//! in a comparison of a sub-attribute (`emails[type eq "work"].value eq
+//! "a@x"`), and a comparison of a list of complex values compares their
+//! `value` (`members eq "<id>"`).
 
 use serde_json::Value;
 
@@ -180,8 +182,25 @@ impl Parser {
             self.at += 1;
             let inner = self.or()?;
             self.expect(Token::CloseBracket, "']'")?;
+            // `attr[filter].sub op value`: a value that matches both.
+            if let Some(Token::Word(word)) = self.peek()
+                && let Some(sub) = word.strip_prefix('.')
+            {
+                let sub = attr_path(sub)?;
+                self.at += 1;
+                let compare = self.comparison(sub)?;
+                return Ok(Filter::ValuePath(
+                    path,
+                    Box::new(Filter::And(Box::new(inner), Box::new(compare))),
+                ));
+            }
             return Ok(Filter::ValuePath(path, Box::new(inner)));
         }
+        self.comparison(path)
+    }
+
+    /// The operator and value after `path`.
+    fn comparison(&mut self, path: AttrPath) -> Result<Filter, String> {
         let op = match self.next() {
             Some(Token::Word(op)) => op.to_ascii_lowercase(),
             Some(t) => return Err(format!("Expected an operator but found {}", describe(&t))),
@@ -246,6 +265,24 @@ fn attr_path(word: &str) -> Result<AttrPath, String> {
     })
 }
 
+impl Filter {
+    /// The terms of a filter that is only `attr eq value` terms joined by
+    /// `and`, such as `type eq "work"`; else `None`.
+    pub fn equalities(&self) -> Option<Vec<(String, Value)>> {
+        match self {
+            Filter::Compare(AttrPath { attr, sub: None }, Op::Eq, value) if !value.is_null() => {
+                Some(vec![(attr.clone(), value.clone())])
+            }
+            Filter::And(a, b) => {
+                let mut terms = a.equalities()?;
+                terms.extend(b.equalities()?);
+                Some(terms)
+            }
+            _ => None,
+        }
+    }
+}
+
 /// Parse `input`; the error is the SCIM `invalidFilter` detail.
 pub fn parse(input: &str) -> Result<Filter, String> {
     let mut parser = Parser {
@@ -268,7 +305,8 @@ fn member<'a>(object: &'a Value, name: &str) -> Option<&'a Value> {
         .map(|(_, v)| v)
 }
 
-/// The values at `path`, arrays flattened.
+/// The values at `path`, arrays flattened. A complex value without a
+/// sub-attribute in `path` stands for its `value`.
 fn values<'a>(resource: &'a Value, path: &AttrPath) -> Vec<&'a Value> {
     let flatten = |v: &'a Value| -> Vec<&'a Value> {
         match v {
@@ -280,7 +318,13 @@ fn values<'a>(resource: &'a Value, path: &AttrPath) -> Vec<&'a Value> {
         return vec![];
     };
     match &path.sub {
-        None => flatten(top),
+        None => flatten(top)
+            .into_iter()
+            .map(|v| match v {
+                Value::Object(_) => member(v, "value").unwrap_or(v),
+                v => v,
+            })
+            .collect(),
         Some(sub) => flatten(top)
             .into_iter()
             .filter_map(|v| member(v, sub))
@@ -431,9 +475,47 @@ mod tests {
             ),
             (r#"not (userName eq "x")"#, true),
             (r#"not(active eq true)"#, false),
+            (
+                r#"emails[type eq "work"].value eq "bjensen@example.com""#,
+                true,
+            ),
+            (
+                r#"emails[type eq "home"].value eq "bjensen@example.com""#,
+                false,
+            ),
         ] {
             assert_eq!(check(filter), expected, "{filter}");
         }
+    }
+
+    #[test]
+    fn compares_complex_values_by_their_value() {
+        let group = json!({ "id": "g1", "members": [{ "value": "u1" }, { "value": "u2" }] });
+        for (filter, expected) in [
+            (r#"id eq "g1" and members eq "u2""#, true),
+            (r#"members eq "u3""#, false),
+            (r#"members.value eq "u1""#, true),
+        ] {
+            assert_eq!(
+                matches(&parse(filter).unwrap(), &group),
+                expected,
+                "{filter}"
+            );
+        }
+    }
+
+    #[test]
+    fn equalities_are_the_terms_of_eq_filters() {
+        let terms = |f: &str| parse(f).unwrap().equalities();
+        assert_eq!(
+            terms(r#"type eq "work" and primary eq true"#),
+            Some(vec![
+                ("type".to_string(), json!("work")),
+                ("primary".to_string(), json!(true))
+            ])
+        );
+        assert_eq!(terms(r#"type co "work""#), None);
+        assert_eq!(terms(r#"type eq "a" or type eq "b""#), None);
     }
 
     #[test]

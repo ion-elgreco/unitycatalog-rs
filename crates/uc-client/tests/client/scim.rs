@@ -8,7 +8,7 @@ use uc_client::models::scim::v1::{
     ScimBulkOp, ScimGroup, ScimGroupMember, ScimPatchOperation, ScimPhoto, ScimUser,
 };
 
-use crate::common::{api_error, client, email, rejected, server_with_keys, token};
+use crate::common::{api_error, client, email, server_with_keys, token};
 
 const GROUP: &str = "urn:ietf:params:scim:schemas:core:2.0:Group";
 const PATCH_OP: &str = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
@@ -39,7 +39,7 @@ fn member_ids(group: &ScimGroup) -> Vec<&str> {
 }
 
 async fn user(uc: &Client, address: &str) -> ScimUser {
-    uc.create_user()
+    uc.create_user(address)
         .with_emails([email(address)])
         .await
         .unwrap()
@@ -53,7 +53,7 @@ async fn users() {
         ..Default::default()
     };
     let created = uc
-        .create_user()
+        .create_user("ada")
         .with_display_name("Ada".to_string())
         .with_external_id("ada-at-idp".to_string())
         .with_active(true)
@@ -61,7 +61,7 @@ async fn users() {
         .with_photos([photo.clone()])
         .await
         .unwrap();
-    assert_eq!(created.user_name, "ada@example.com");
+    assert_eq!(created.user_name, "ada");
     assert_eq!(created.display_name.as_deref(), Some("Ada"));
     assert_eq!(created.external_id.as_deref(), Some("ada-at-idp"));
     assert_eq!(created.active, Some(true));
@@ -73,11 +73,20 @@ async fn users() {
 
     let found = uc
         .list_users()
-        .with_filter(r#"userName eq "ada@example.com""#.to_string())
+        .with_filter(r#"userName eq "ada""#.to_string())
         .await
         .unwrap();
     assert_eq!(found.resources, std::slice::from_ref(&created));
     assert_eq!((found.total_results, found.start_index), (1, 1));
+    let searched = uc
+        .search_users()
+        .with_filter(r#"emails.value eq "ada@example.com""#.to_string())
+        .with_attributes(["userName".to_string()])
+        .await
+        .unwrap();
+    assert_eq!(searched.total_results, 1);
+    assert_eq!(searched.resources[0].user_name, "ada");
+    assert!(searched.resources[0].emails.is_empty());
     let mut names = Vec::new();
     for start in [1, 2] {
         let page = uc
@@ -90,26 +99,26 @@ async fn users() {
         names.extend(page.resources.into_iter().map(|u| u.user_name));
     }
     names.sort();
-    assert_eq!(names, ["ada@example.com", "bob@example.com"]);
+    assert_eq!(names, ["ada", "bob@example.com"]);
 
+    // A replace keeps what it does not name.
     let replaced = uc
-        .replace_user(&created.id)
+        .replace_user(&created.id, "ada.l")
         .with_display_name("Ada L".to_string())
         .with_external_id("ada-2".to_string())
         .await
         .unwrap();
     assert_eq!(replaced.display_name.as_deref(), Some("Ada L"));
     assert_eq!(replaced.external_id.as_deref(), Some("ada-2"));
-    assert_eq!(replaced.user_name, "ada@example.com");
+    assert_eq!(replaced.user_name, "ada.l");
+    assert_eq!(replaced.emails, created.emails);
 
-    // Deleting a user disables it, as upstream.
     uc.delete_user(&created.id).await.unwrap();
-    assert_eq!(uc.get_user(&created.id).await.unwrap().active, Some(false));
-    rejected(uc.get_user("missing").await, 404, "NOT_FOUND");
+    assert_eq!(api_error(uc.get_user(&created.id).await).status, 404);
 }
 
-/// A patch disables and enables a user; other operations are not
-/// supported (501).
+/// A patch changes the attributes of a user, and refuses a malformed
+/// operation.
 #[tokio::test]
 async fn user_patches() {
     let uc = client().await;
@@ -127,12 +136,24 @@ async fn user_patches() {
         .await
         .unwrap();
     assert_eq!(uc.get_user(&id).await.unwrap().active, Some(true));
-    let email = Some("x@example.com".into());
+    let work = Struct::from_fields([("value", "ada@work.example"), ("type", "work")]);
+    let patched = uc
+        .patch_user(
+            &id,
+            vec![operation("add", Some("emails"), Some(work.into()))],
+        )
+        .await
+        .unwrap();
+    let emails: Vec<_> = patched.emails.iter().map(|e| e.value.as_str()).collect();
+    assert_eq!(emails, ["ada@example.com", "ada@work.example"]);
     let error = api_error(
-        uc.patch_user(&id, vec![operation("add", Some("emails"), email)])
+        uc.patch_user(&id, vec![operation("remove", None, None)])
             .await,
     );
-    assert_eq!(error.status, 501);
+    assert_eq!(
+        (error.status, error.code.as_deref()),
+        (400, Some("noTarget"))
+    );
 }
 
 #[tokio::test]
@@ -159,6 +180,17 @@ async fn groups() {
         .await
         .unwrap();
     assert_eq!(found.resources, std::slice::from_ref(&created));
+    let searched = uc
+        .search_groups()
+        .with_filter(r#"displayName eq "admins""#.to_string())
+        .with_excluded_attributes(["members".to_string()])
+        .await
+        .unwrap();
+    assert_eq!(searched.total_results, 1);
+    assert!(searched.resources[0].members.is_empty());
+    // Users and groups at once.
+    let everything = uc.search_resources().await.unwrap();
+    assert_eq!(everything.total_results, 4);
     let mut names = Vec::new();
     for start in [1, 2] {
         let page = uc
@@ -204,17 +236,17 @@ async fn groups() {
     assert_eq!(member_ids(&patched), [ada.id.as_str()]);
 
     uc.delete_group(&created.id).await.unwrap();
-    rejected(uc.get_group(&created.id).await, 404, "NOT_FOUND");
+    assert_eq!(api_error(uc.get_group(&created.id).await).status, 404);
 }
 
 /// `me` is the user of the client's token. Without a token the server
-/// knows no caller: as upstream, a SCIM 400 error in an HTTP 500.
+/// knows no caller: a SCIM 400 error.
 #[tokio::test]
 async fn me() {
     let url = server_with_keys().await;
     let alice = Client::new_with_token(url.clone(), token("alice@example.com"));
     alice
-        .create_user()
+        .create_user("alice@example.com")
         .with_display_name("Alice".to_string())
         .with_emails([email("alice@example.com")])
         .await
@@ -230,7 +262,7 @@ async fn me() {
     let error = api_error(anonymous.get_me().await);
     assert_eq!(
         (error.status, error.message.as_str()),
-        (500, "No user found.")
+        (400, "No user found.")
     );
 }
 
@@ -284,17 +316,12 @@ async fn bulk() {
     );
     let created = &response.operations[0];
     assert_eq!(created.method, "POST");
-    assert!(
-        created
-            .location
-            .as_deref()
-            .is_some_and(|l| l.starts_with("/scim2/Users/"))
-    );
-    let user = created.response.as_option().unwrap();
-    assert_eq!(
-        user.get("userName").and_then(Value::as_str),
-        Some("ada@example.com")
-    );
+    let location = created.location.as_deref().unwrap();
+    assert!(location.contains("/scim2/Users/"), "{location}");
+    let failed = response.operations[2].response.as_option().unwrap();
+    assert_eq!(failed.get("status").and_then(Value::as_str), Some("404"));
+    let users = uc.list_users().await.unwrap().resources;
+    assert_eq!(users[0].user_name, "ada@example.com");
     let groups = uc.list_groups().await.unwrap().resources;
     assert_eq!(groups.len(), 1);
 }
@@ -315,7 +342,12 @@ async fn discovery() {
     let user = &schemas.resources[0];
     assert_eq!(user.name, "User");
     assert_eq!(user.attributes[0].name, "userName");
-    assert_eq!(user.attributes[3].sub_attributes[0].name, "value");
+    assert_eq!(user.attributes[4].name, "emails");
+    assert_eq!(user.attributes[4].sub_attributes[0].name, "value");
+    let group = uc.get_scim_schema(GROUP).await.unwrap();
+    assert_eq!(group.name, "Group");
+    let users = uc.get_scim_resource_type("User").await.unwrap();
+    assert_eq!(users.endpoint, "/Users");
 
     let types = uc.list_scim_resource_types().await.unwrap();
     let endpoints: Vec<_> = types

@@ -866,12 +866,16 @@ async fn users_permissions_credentials_and_locations() {
         .json(&["user", "update", "--id", &id, "--name", "Ada L"])
         .await;
     assert_eq!(renamed["name"], "Ada L");
-    // The email names the user in grants: it cannot change (upstream takes
-    // the option, and its server keeps the email).
-    let err = s
-        .fails(&["user", "update", "--id", &id, "--email", "a@example.com"])
+    // A new email moves the user's grants to it.
+    let moved = s
+        .json(&["user", "update", "--id", &id, "--email", "a@example.com"])
         .await;
-    assert!(err.contains("A user's email cannot change"), "{err}");
+    assert_eq!(
+        (moved["email"].clone(), moved["name"].clone()),
+        (json!("a@example.com"), json!("Ada L"))
+    );
+    s.json(&["user", "update", "--id", &id, "--email", "ada@example.com"])
+        .await;
     let users = s
         .json(&[
             "user",
@@ -1104,9 +1108,8 @@ async fn users_permissions_credentials_and_locations() {
     );
 
     s.ok(&["user", "delete", "--id", &id]).await;
-    // A deleted user stays, disabled.
-    let got = s.json(&["user", "get", "--id", &id]).await;
-    assert_eq!(got["state"], "DISABLED");
+    let err = s.fails(&["user", "get", "--id", &id]).await;
+    assert!(err.contains("404"), "{err}");
 
     // A bad identity token is refused by the token exchange.
     let (code, _, err) = s

@@ -37,4 +37,6 @@ integrations = [
     "obstore>=0.11",
     "polars>=2",
     "pyiceberg[pyarrow]>=0.12",
+    # A checker of SCIM servers against RFC 7643 and RFC 7644.
+    "scim2-tester[httpx2]>=0.5.3",
 ]

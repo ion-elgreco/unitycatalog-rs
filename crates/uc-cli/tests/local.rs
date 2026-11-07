@@ -178,6 +178,7 @@ async fn signed_in_server() -> (String, String) {
                 value: "alice@example.com".into(),
                 primary: Some(true),
                 r#type: None,
+                display: None,
             }]),
             active: Some(true),
             ..Default::default()
