@@ -118,6 +118,14 @@ async fn the_environment_signs_in_at_what_the_server_takes() {
     // A server without the endpoint says nothing.
     let bare = serve(Router::new()).await;
     assert!(identity::metadata(&bare).await.unwrap().is_none());
+    // A server under a path, without its last `/`.
+    let state = AppState::new(metastore().await);
+    let nested = Router::new().nest(
+        "/uc",
+        uc_server::authn::resource::router().with_state(state),
+    );
+    let below = Url::parse(&format!("{}uc", serve(nested).await)).unwrap();
+    assert!(identity::metadata(&below).await.unwrap().is_some());
 
     // Nothing in the environment: no source.
     let none = identity::detect_in(&HashMap::new(), &url, false, false)

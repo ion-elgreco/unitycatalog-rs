@@ -625,9 +625,14 @@ enum Kind {
 /// How long the server may take to give its metadata.
 const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// The server's metadata; `None` when the server has no such endpoint.
+/// The server's metadata; `None` when the server has no such endpoint. `server` is its root,
+/// such as `https://uc.example.com` or `https://example.com/uc`.
 pub async fn metadata(server: &Url) -> Result<Option<ProtectedResource>> {
-    let url = server.join(".well-known/oauth-protected-resource")?;
+    let mut root = server.clone();
+    if !root.path().ends_with('/') {
+        root.set_path(&format!("{}/", root.path()));
+    }
+    let url = root.join(".well-known/oauth-protected-resource")?;
     let client = reqwest::Client::builder()
         .timeout(METADATA_TIMEOUT)
         .build()?;
