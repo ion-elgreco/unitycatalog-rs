@@ -1,8 +1,8 @@
 //! Who the caller is: tokens, identity providers and sign-in.
 
 pub mod aws;
-pub mod chain;
 pub mod bootstrap;
+pub mod chain;
 pub mod idp;
 pub mod middleware;
 pub mod principal;
