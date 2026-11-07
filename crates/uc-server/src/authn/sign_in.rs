@@ -659,9 +659,9 @@ pub async fn callback(
                 .or_else(|| claims.get("sub"))
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            let reason = match idp::email_unverified(claims) {
-                true => format!("the identity provider has not verified the email {email}"),
-                false => format!(
+            let reason = match idp::email_trusted(&block, claims) {
+                false => format!("the identity provider has not verified the email {email}"),
+                true => format!(
                     "no active user has the email {email}. An admin adds users (SCIM, `uc user create`)."
                 ),
             };

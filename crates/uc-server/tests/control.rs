@@ -357,13 +357,30 @@ async fn token_exchange_requests_are_checked() {
     );
     let (any_audience, metastore) = self::app(&idp, "http://127.0.0.1:*", "*").await;
     user(&metastore, "alice@example.com", None, true).await;
-    let other_audience = idp.token(json!({ "email": "alice@example.com", "aud": "other" }));
+    let other_audience = idp.token(json!({
+        "email": "alice@example.com", "email_verified": true, "aud": "other",
+    }));
     assert_eq!(
         exchange(&any_audience, &other_audience, ID_TOKEN)
             .await
             .status(),
         StatusCode::OK
     );
+    // At an issuer with `*`, an email names a user only when the provider
+    // says it verified it: anyone can make an issuer that it matches.
+    for verified in [None, Some(json!(false)), Some(json!("yes"))] {
+        let mut claims = json!({ "email": "alice@example.com" });
+        if let Some(verified) = &verified {
+            claims["email_verified"] = verified.clone();
+        }
+        let err = assert_error(
+            exchange(&any_audience, &idp.token(claims), ID_TOKEN).await,
+            bad,
+            "INVALID_ARGUMENT",
+        )
+        .await;
+        assert_eq!(err["message"], "User not allowed", "{verified:?}");
+    }
 
     // Authorization off: no token exchange.
     let off = build_app(AppState::new(

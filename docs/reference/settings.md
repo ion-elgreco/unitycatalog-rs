@@ -146,7 +146,7 @@ display_name = "{app_displayname}"
 | `audiences` | required | The `aud` that its tokens must carry; `["*"]` accepts every audience, without `direct`; with `direct`, no `*`. For `aws`, the server id that the signed requests carry: the server's URL as clients call it; no `*`. Clients ask for the audience that is the server's URL. |
 | `accounts` | required for `aws` | The 12-digit AWS accounts whose identities it takes. |
 | `direct` | `false` | Take its tokens on every request, not only at the token exchange. |
-| `principal_claims` | `["email", "sub"]` | The claims that name the caller; the first present wins. An email names the user with that email; any other value names the user `<name>:<value>`. |
+| `principal_claims` | `["email", "sub"]` | The claims that name the caller; the first present wins. An email names the user with that email; with an `issuer` with `*`, only when the token says `email_verified = true`. Any other value names the user `<name>:<value>`. |
 | `client_claims` | `["azp", "client_id"]` | The claims with an application's client id: the user whose `externalId` is `<name>:<client id>` is the application. |
 | `groups_claim` | none | A claim whose values are names of groups the caller is in; a value counts when the server has the group `<name>:<value>`, such as `entra:Writers`. Not with an `issuer` that has `*`. |
 | `create_users` | `false` | Make the user at its first request when it is missing. |

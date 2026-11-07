@@ -309,7 +309,8 @@ pub struct Issuer {
     #[serde(default, deserialize_with = "scalar")]
     pub direct: bool,
     /// The claims that name the caller; the first present wins. An email
-    /// names the user with that email; any other value names the user
+    /// names the user with that email; with an `issuer` with `*`, only when
+    /// the token says `email_verified: true`. Any other value names the user
     /// `<name>:<value>` (default `["email", "sub"]`).
     #[serde(default)]
     pub principal_claims: Vec<String>,

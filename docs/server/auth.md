@@ -140,9 +140,13 @@ of another service, and have the client's identity sign for it.
 
 1. The first of `principal_claims` that the token has. A value that is an email, such as
    `alice@example.com`, names the user with that email, in any case, unless the provider says
-   `email_verified = false`. Any other value names the user `<name>:<value>`, such as
-   `entra:7f3e…`. Name only claims that the provider sets, not the user: a provider that lets its
-   users choose their `preferred_username` lets them choose an email.
+   `email_verified = false`. With an `issuer` with `*`, the provider must say
+   `email_verified = true`: anyone can make an issuer that `*` matches, such as a new Entra
+   tenant, and give its users any email. Entra does not send `email_verified`, so name its users
+   by a claim that is not an email, such as `oid`. Any other value names the user
+   `<name>:<value>`, such as `entra:7f3e…`. Name only claims that the provider sets, not the
+   user: a provider that lets its users choose their `preferred_username` lets them choose an
+   email.
 2. Nobody found, and the token is an application's own: an access token with `idtyp = app`
    (Entra), or whose `sub` is its client id (RFC 9068), or an AWS identity. Then the user whose
    `externalId` is `<name>:<client id>`, with the first of `client_claims` that the token has,

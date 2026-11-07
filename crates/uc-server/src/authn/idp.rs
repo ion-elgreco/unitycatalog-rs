@@ -430,15 +430,20 @@ pub(crate) fn verify_error(e: VerifyError) -> Error {
 /// tokens as subject tokens; any other subject token type is an ID token.
 pub(crate) const ACCESS_TOKEN: &str = "urn:ietf:params:oauth:token-type:access_token";
 
-/// Whether the provider marks the token's email as not verified
-/// (`email_verified: false`). A provider that lets its users type any
-/// address does so until they prove it.
-pub(crate) fn email_unverified(claims: &Map<String, Value>) -> bool {
-    match claims.get("email_verified") {
-        Some(Value::Bool(verified)) => !verified,
-        Some(Value::String(text)) => text.trim().eq_ignore_ascii_case("false"),
-        _ => false,
-    }
+/// Whether the token's email can name a user of `issuer`. A provider that
+/// lets its users type any address says `email_verified: false` until they
+/// prove it. An issuer with `*` also matches issuers that anyone can make,
+/// such as a new Entra tenant, whose admins can give a user any email, and
+/// Entra sends no `email_verified`: there the token must say
+/// `email_verified: true`.
+pub(crate) fn email_trusted(issuer: &IssuerSettings, claims: &Map<String, Value>) -> bool {
+    let verified = match claims.get("email_verified") {
+        Some(Value::Bool(verified)) => Some(*verified),
+        Some(Value::String(text)) if text.trim().eq_ignore_ascii_case("true") => Some(true),
+        Some(Value::String(text)) if text.trim().eq_ignore_ascii_case("false") => Some(false),
+        _ => None,
+    };
+    verified.unwrap_or(!issuer.issuer.contains('*'))
 }
 
 /// What a provider's token is: an OpenID Connect ID token, which names a
@@ -453,9 +458,8 @@ pub(crate) enum TokenKind {
 /// issuer's claims: the active user the token names.
 ///
 /// 1. The first of `principal_claims` present. A value that is an email
-///    names the user with that email, in any case, unless the provider says
-///    `email_verified: false`; any other value names the user
-///    `<issuer name>:<value>`.
+///    names the user with that email, in any case, as [`email_trusted`]
+///    allows; any other value names the user `<issuer name>:<value>`.
 /// 2. Nobody found, and the token is an application's own
 ///    ([`application`]): the user whose `externalId` is
 ///    `<issuer name>:<client id>`.
@@ -480,7 +484,7 @@ pub(crate) async fn resolve(
         };
         // An AWS identity is named by its ARN, which may hold an `@`.
         let is_email = !issuer.is_aws() && is_email(value);
-        if is_email && email_unverified(claims) {
+        if is_email && !email_trusted(issuer, claims) {
             return Err(not_allowed());
         }
         let principal = match is_email {
