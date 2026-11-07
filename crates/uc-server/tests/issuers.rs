@@ -379,6 +379,14 @@ async fn a_person_is_named_by_email_and_never_by_the_tools_client_id() {
         )
         .await;
     }
+    // An email in another case is the same user.
+    let shouting = idp.token(json!({
+        "aud": "api://uc", "preferred_username": "Alice@Example.COM", "oid": "a1",
+    }));
+    assert_eq!(
+        owner_of_a_new_catalog(&app, &shouting, "shouted").await,
+        "alice@example.com"
+    );
 }
 
 #[tokio::test]
