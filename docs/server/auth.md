@@ -88,11 +88,16 @@ uc user create --name Bob --email bob@example.com
 
 ## Users and groups
 
-- A user's email is its name in grants and as an owner. A user without an email, such as an
-  application ([Who a token names](#who-a-token-names)), uses its `userName`.
+- A user's email is its name in grants and as an owner: its primary email, else its first. A user
+  without an email, such as an application ([Who a token names](#who-a-token-names)), uses its
+  `userName`.
+- When a user's email changes, its grants, owned objects and tokens move to the new email.
+  `admin_principals` and Cedar policies still name the old one: the server logs a warning for
+  each of them.
 - A privilege granted to a group applies to each member. A group's name is its name in grants,
   and it cannot be the email of a user.
-- When you delete a user, the server disables the user and removes its grants.
+- To stop a user from signing in, disable it. When you delete a user, the server deletes it with
+  its grants, tokens and group memberships.
 - Only admins can add, change or delete users and groups.
 
 ### Manage users by hand
@@ -111,12 +116,21 @@ sign-in.
 ### Sync users from your identity provider (SCIM)
 
 SCIM is the standard API that identity providers use to copy their users and groups to other
-services. The server has the SCIM 2.0 API, so a provider such as Entra ID or Okta can make,
-change and disable its users and groups in the server. In the provider's provisioning settings,
-enter:
+services. The server has the SCIM 2.0 API (RFC 7643 and RFC 7644), so a provider such as Entra ID,
+Okta or authentik can make, change, disable and delete its users and groups in the server. In the
+provider's provisioning settings, enter:
 
-- **URL:** `https://uc.example.com/api/1.0/unity-control/scim2`
-- **Token:** a personal access token of an admin.
+- **URL:** `https://uc.example.com/api/1.0/unity-control/scim2`. Entra ID calls it the tenant
+  URL.
+- **Token:** a personal access token of an admin. Entra ID calls it the secret token.
+
+The server keeps each user's `userName`, name, display name, emails, pictures, state and external
+id as the provider sends them, and leaves out the other attributes, such as `title`. A provider
+finds its users again by `userName`, so the server never changes it.
+
+Use one way to get groups from a provider: SCIM or `groups_claim` ([Groups](#groups)). A group
+that SCIM makes has the provider's name, such as `Writers`, while `groups_claim` reads the groups
+of a token as `entra:Writers`.
 
 ## Tokens
 

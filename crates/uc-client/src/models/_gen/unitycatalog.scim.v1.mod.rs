@@ -22,9 +22,12 @@ pub mod __buffa {
         reg.register_json_any(super::__SCIM_ROLE_JSON_ANY);
         reg.register_json_any(super::__SCIM_PHOTO_JSON_ANY);
         reg.register_json_any(super::__SCIM_EMAIL_JSON_ANY);
+        reg.register_json_any(super::__SCIM_NAME_JSON_ANY);
         reg.register_json_any(super::__SCIM_USER_JSON_ANY);
         reg.register_json_any(super::__LIST_USERS_REQUEST_JSON_ANY);
         reg.register_json_any(super::__LIST_SCIM_USERS_RESPONSE_JSON_ANY);
+        reg.register_json_any(super::__LIST_SCIM_RESOURCES_RESPONSE_JSON_ANY);
+        reg.register_json_any(super::__SCIM_SEARCH_REQUEST_JSON_ANY);
         reg.register_json_any(super::__GET_USER_REQUEST_JSON_ANY);
         reg.register_json_any(super::__DELETE_USER_REQUEST_JSON_ANY);
         reg.register_json_any(super::__GET_ME_REQUEST_JSON_ANY);
@@ -43,9 +46,11 @@ pub mod __buffa {
         reg.register_json_any(super::__SCIM_SCHEMA_ATTRIBUTE_JSON_ANY);
         reg.register_json_any(super::__SCIM_SCHEMA_JSON_ANY);
         reg.register_json_any(super::__LIST_SCIM_SCHEMAS_REQUEST_JSON_ANY);
+        reg.register_json_any(super::__GET_SCIM_SCHEMA_REQUEST_JSON_ANY);
         reg.register_json_any(super::__LIST_SCIM_SCHEMAS_RESPONSE_JSON_ANY);
         reg.register_json_any(super::__SCIM_RESOURCE_TYPE_JSON_ANY);
         reg.register_json_any(super::__LIST_SCIM_RESOURCE_TYPES_REQUEST_JSON_ANY);
+        reg.register_json_any(super::__GET_SCIM_RESOURCE_TYPE_REQUEST_JSON_ANY);
         reg.register_json_any(super::__LIST_SCIM_RESOURCE_TYPES_RESPONSE_JSON_ANY);
         reg.register_json_any(super::__SCIM_SUPPORTED_JSON_ANY);
         reg.register_json_any(super::__SCIM_BULK_CONFIG_JSON_ANY);

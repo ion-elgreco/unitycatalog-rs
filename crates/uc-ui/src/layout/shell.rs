@@ -278,11 +278,7 @@ fn AccountMenu() -> impl IntoView {
         auth.session.with(|session| {
             session
                 .user()
-                .map(|user| {
-                    user.emails
-                        .first()
-                        .map_or_else(|| user.user_name.clone(), |e| e.value.clone())
-                })
+                .map(|user| crate::auth::principal_of(user).to_string())
                 .unwrap_or_default()
         })
     };

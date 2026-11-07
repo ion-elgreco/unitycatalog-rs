@@ -80,6 +80,7 @@ pub async fn active_user(metastore: &uc_metastore::DynMetastore, email: &str) ->
                 value: email.to_string(),
                 primary: Some(true),
                 r#type: None,
+                display: None,
             }]),
             active: Some(true),
             ..Default::default()

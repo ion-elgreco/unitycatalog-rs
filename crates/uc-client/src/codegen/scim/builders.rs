@@ -39,9 +39,24 @@ impl ListUsersBuilder {
         self
     }
 
-    /// The maximum number of users to return. The default is 50.
+    /// The maximum number of users to return, at most 1000. The default is 50.
     pub fn with_count(mut self, count: impl Into<Option<i32>>) -> Self {
         self.request.count = count.into();
+        self
+    }
+
+    /// The only attributes to return, separated by commas, such as `userName,emails.value`.
+    pub fn with_attributes(mut self, attributes: impl Into<Option<String>>) -> Self {
+        self.request.attributes = attributes.into();
+        self
+    }
+
+    /// The attributes to leave out, separated by commas, such as `emails`.
+    pub fn with_excluded_attributes(
+        mut self,
+        excluded_attributes: impl Into<Option<String>>,
+    ) -> Self {
+        self.request.excluded_attributes = excluded_attributes.into();
         self
     }
 }
@@ -56,6 +71,78 @@ impl IntoFuture for ListUsersBuilder {
     }
 }
 
+/// Builder for users
+pub struct SearchUsersBuilder {
+    client: ScimClient,
+    request: ScimSearchRequest,
+}
+
+impl SearchUsersBuilder {
+    /// Create a new builder instance.
+    /// Obtain via the corresponding method on `ScimClient`.
+    pub(crate) fn new(client: ScimClient) -> Self {
+        let request = ScimSearchRequest {
+            ..Default::default()
+        };
+        Self { client, request }
+    }
+
+    /// SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:SearchRequest`.
+    pub fn with_schemas<I>(mut self, schemas: I) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        self.request.schemas = schemas.into_iter().collect();
+        self
+    }
+
+    /// The only attributes to return, such as `userName`.
+    pub fn with_attributes<I>(mut self, attributes: I) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        self.request.attributes = attributes.into_iter().collect();
+        self
+    }
+
+    /// The attributes to leave out.
+    pub fn with_excluded_attributes<I>(mut self, excluded_attributes: I) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        self.request.excluded_attributes = excluded_attributes.into_iter().collect();
+        self
+    }
+
+    /// SCIM filter (RFC 7644, section 3.4.2.2).
+    pub fn with_filter(mut self, filter: impl Into<Option<String>>) -> Self {
+        self.request.filter = filter.into();
+        self
+    }
+
+    /// Index of the first resource to return, from 1.
+    pub fn with_start_index(mut self, start_index: impl Into<Option<i32>>) -> Self {
+        self.request.start_index = start_index.into();
+        self
+    }
+
+    /// The maximum number of resources to return, at most 1000. The default is 50.
+    pub fn with_count(mut self, count: impl Into<Option<i32>>) -> Self {
+        self.request.count = count.into();
+        self
+    }
+}
+
+impl IntoFuture for SearchUsersBuilder {
+    type Output = Result<ListScimUsersResponse>;
+    type IntoFuture = BoxFut<'static, Self::Output>;
+    fn into_future(self) -> Self::IntoFuture {
+        let client = self.client;
+        let request = self.request;
+        Box::pin(async move { client.search_users(&request).await })
+    }
+}
+
 /// Builder for user
 pub struct CreateUserBuilder {
     client: ScimClient,
@@ -65,8 +152,9 @@ pub struct CreateUserBuilder {
 impl CreateUserBuilder {
     /// Create a new builder instance.
     /// Obtain via the corresponding method on `ScimClient`.
-    pub(crate) fn new(client: ScimClient) -> Self {
+    pub(crate) fn new(client: ScimClient, user_name: impl Into<String>) -> Self {
         let request = ScimUser {
+            user_name: user_name.into(),
             ..Default::default()
         };
         Self { client, request }
@@ -80,21 +168,20 @@ impl CreateUserBuilder {
         self
     }
 
-    /// Name of the user.
+    /// Name of the user, for display.
     pub fn with_display_name(mut self, display_name: impl Into<Option<String>>) -> Self {
         self.request.display_name = display_name.into();
         self
     }
 
-    /// Whether the user can sign in. A new user is always enabled; absent in a replace request:
-    /// unchanged.
+    /// Whether the user can sign in. Absent: enabled; a new user without it gets `true`.
     pub fn with_active(mut self, active: impl Into<Option<bool>>) -> Self {
         self.request.active = active.into();
         self
     }
 
-    /// Email addresses of the user. A new user needs one with `primary` set; a replace request
-    /// does not change the email.
+    /// Email addresses of the user. When the principal changes, the grants, owned objects and
+    /// tokens of the user move to the new one.
     pub fn with_emails<I>(mut self, emails: I) -> Self
     where
         I: IntoIterator<Item = ScimEmail>,
@@ -103,12 +190,21 @@ impl CreateUserBuilder {
         self
     }
 
-    /// Pictures of the user. The server keeps the first; a replace request does not change it.
+    /// Pictures of the user.
     pub fn with_photos<I>(mut self, photos: I) -> Self
     where
         I: IntoIterator<Item = ScimPhoto>,
     {
         self.request.photos = photos.into_iter().collect();
+        self
+    }
+
+    /// The parts of the name of the user.
+    pub fn with_name(mut self, name: impl Into<Option<ScimName>>) -> Self {
+        self.request.name = {
+            let name: ::core::option::Option<_> = name.into();
+            buffa::MessageField::from(name)
+        };
         self
     }
 }
@@ -139,6 +235,21 @@ impl GetUserBuilder {
         };
         Self { client, request }
     }
+
+    /// The only attributes to return, separated by commas.
+    pub fn with_attributes(mut self, attributes: impl Into<Option<String>>) -> Self {
+        self.request.attributes = attributes.into();
+        self
+    }
+
+    /// The attributes to leave out, separated by commas.
+    pub fn with_excluded_attributes(
+        mut self,
+        excluded_attributes: impl Into<Option<String>>,
+    ) -> Self {
+        self.request.excluded_attributes = excluded_attributes.into();
+        self
+    }
 }
 
 impl IntoFuture for GetUserBuilder {
@@ -160,9 +271,14 @@ pub struct ReplaceUserBuilder {
 impl ReplaceUserBuilder {
     /// Create a new builder instance.
     /// Obtain via the corresponding method on `ScimClient`.
-    pub(crate) fn new(client: ScimClient, id: impl Into<String>) -> Self {
+    pub(crate) fn new(
+        client: ScimClient,
+        id: impl Into<String>,
+        user_name: impl Into<String>,
+    ) -> Self {
         let request = ScimUser {
             id: id.into(),
+            user_name: user_name.into(),
             ..Default::default()
         };
         Self { client, request }
@@ -176,21 +292,20 @@ impl ReplaceUserBuilder {
         self
     }
 
-    /// Name of the user.
+    /// Name of the user, for display.
     pub fn with_display_name(mut self, display_name: impl Into<Option<String>>) -> Self {
         self.request.display_name = display_name.into();
         self
     }
 
-    /// Whether the user can sign in. A new user is always enabled; absent in a replace request:
-    /// unchanged.
+    /// Whether the user can sign in. Absent: enabled; a new user without it gets `true`.
     pub fn with_active(mut self, active: impl Into<Option<bool>>) -> Self {
         self.request.active = active.into();
         self
     }
 
-    /// Email addresses of the user. A new user needs one with `primary` set; a replace request
-    /// does not change the email.
+    /// Email addresses of the user. When the principal changes, the grants, owned objects and
+    /// tokens of the user move to the new one.
     pub fn with_emails<I>(mut self, emails: I) -> Self
     where
         I: IntoIterator<Item = ScimEmail>,
@@ -199,12 +314,21 @@ impl ReplaceUserBuilder {
         self
     }
 
-    /// Pictures of the user. The server keeps the first; a replace request does not change it.
+    /// Pictures of the user.
     pub fn with_photos<I>(mut self, photos: I) -> Self
     where
         I: IntoIterator<Item = ScimPhoto>,
     {
         self.request.photos = photos.into_iter().collect();
+        self
+    }
+
+    /// The parts of the name of the user.
+    pub fn with_name(mut self, name: impl Into<Option<ScimName>>) -> Self {
+        self.request.name = {
+            let name: ::core::option::Option<_> = name.into();
+            buffa::MessageField::from(name)
+        };
         self
     }
 }
@@ -252,7 +376,7 @@ impl PatchUserBuilder {
 }
 
 impl IntoFuture for PatchUserBuilder {
-    type Output = Result<()>;
+    type Output = Result<ScimUser>;
     type IntoFuture = BoxFut<'static, Self::Output>;
     fn into_future(self) -> Self::IntoFuture {
         let client = self.client;
@@ -344,9 +468,24 @@ impl ListGroupsBuilder {
         self
     }
 
-    /// The maximum number of groups to return. The default is 50.
+    /// The maximum number of groups to return, at most 1000. The default is 50.
     pub fn with_count(mut self, count: impl Into<Option<i32>>) -> Self {
         self.request.count = count.into();
+        self
+    }
+
+    /// The only attributes to return, separated by commas, such as `displayName`.
+    pub fn with_attributes(mut self, attributes: impl Into<Option<String>>) -> Self {
+        self.request.attributes = attributes.into();
+        self
+    }
+
+    /// The attributes to leave out, separated by commas, such as `members`.
+    pub fn with_excluded_attributes(
+        mut self,
+        excluded_attributes: impl Into<Option<String>>,
+    ) -> Self {
+        self.request.excluded_attributes = excluded_attributes.into();
         self
     }
 }
@@ -358,6 +497,78 @@ impl IntoFuture for ListGroupsBuilder {
         let client = self.client;
         let request = self.request;
         Box::pin(async move { client.list_groups(&request).await })
+    }
+}
+
+/// Builder for groups
+pub struct SearchGroupsBuilder {
+    client: ScimClient,
+    request: ScimSearchRequest,
+}
+
+impl SearchGroupsBuilder {
+    /// Create a new builder instance.
+    /// Obtain via the corresponding method on `ScimClient`.
+    pub(crate) fn new(client: ScimClient) -> Self {
+        let request = ScimSearchRequest {
+            ..Default::default()
+        };
+        Self { client, request }
+    }
+
+    /// SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:SearchRequest`.
+    pub fn with_schemas<I>(mut self, schemas: I) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        self.request.schemas = schemas.into_iter().collect();
+        self
+    }
+
+    /// The only attributes to return, such as `userName`.
+    pub fn with_attributes<I>(mut self, attributes: I) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        self.request.attributes = attributes.into_iter().collect();
+        self
+    }
+
+    /// The attributes to leave out.
+    pub fn with_excluded_attributes<I>(mut self, excluded_attributes: I) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        self.request.excluded_attributes = excluded_attributes.into_iter().collect();
+        self
+    }
+
+    /// SCIM filter (RFC 7644, section 3.4.2.2).
+    pub fn with_filter(mut self, filter: impl Into<Option<String>>) -> Self {
+        self.request.filter = filter.into();
+        self
+    }
+
+    /// Index of the first resource to return, from 1.
+    pub fn with_start_index(mut self, start_index: impl Into<Option<i32>>) -> Self {
+        self.request.start_index = start_index.into();
+        self
+    }
+
+    /// The maximum number of resources to return, at most 1000. The default is 50.
+    pub fn with_count(mut self, count: impl Into<Option<i32>>) -> Self {
+        self.request.count = count.into();
+        self
+    }
+}
+
+impl IntoFuture for SearchGroupsBuilder {
+    type Output = Result<ListScimGroupsResponse>;
+    type IntoFuture = BoxFut<'static, Self::Output>;
+    fn into_future(self) -> Self::IntoFuture {
+        let client = self.client;
+        let request = self.request;
+        Box::pin(async move { client.search_groups(&request).await })
     }
 }
 
@@ -388,12 +599,18 @@ impl CreateGroupBuilder {
         self
     }
 
-    /// Members of the group.
+    /// Members of the group: users.
     pub fn with_members<I>(mut self, members: I) -> Self
     where
         I: IntoIterator<Item = ScimGroupMember>,
     {
         self.request.members = members.into_iter().collect();
+        self
+    }
+
+    /// The identity the group has at an identity provider.
+    pub fn with_external_id(mut self, external_id: impl Into<Option<String>>) -> Self {
+        self.request.external_id = external_id.into();
         self
     }
 }
@@ -423,6 +640,21 @@ impl GetGroupBuilder {
             ..Default::default()
         };
         Self { client, request }
+    }
+
+    /// The only attributes to return, separated by commas.
+    pub fn with_attributes(mut self, attributes: impl Into<Option<String>>) -> Self {
+        self.request.attributes = attributes.into();
+        self
+    }
+
+    /// The attributes to leave out, separated by commas.
+    pub fn with_excluded_attributes(
+        mut self,
+        excluded_attributes: impl Into<Option<String>>,
+    ) -> Self {
+        self.request.excluded_attributes = excluded_attributes.into();
+        self
     }
 }
 
@@ -468,12 +700,18 @@ impl ReplaceGroupBuilder {
         self
     }
 
-    /// Members of the group.
+    /// Members of the group: users.
     pub fn with_members<I>(mut self, members: I) -> Self
     where
         I: IntoIterator<Item = ScimGroupMember>,
     {
         self.request.members = members.into_iter().collect();
+        self
+    }
+
+    /// The identity the group has at an identity provider.
+    pub fn with_external_id(mut self, external_id: impl Into<Option<String>>) -> Self {
+        self.request.external_id = external_id.into();
         self
     }
 }
@@ -558,6 +796,78 @@ impl IntoFuture for DeleteGroupBuilder {
     }
 }
 
+/// Builder for resources
+pub struct SearchResourcesBuilder {
+    client: ScimClient,
+    request: ScimSearchRequest,
+}
+
+impl SearchResourcesBuilder {
+    /// Create a new builder instance.
+    /// Obtain via the corresponding method on `ScimClient`.
+    pub(crate) fn new(client: ScimClient) -> Self {
+        let request = ScimSearchRequest {
+            ..Default::default()
+        };
+        Self { client, request }
+    }
+
+    /// SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:SearchRequest`.
+    pub fn with_schemas<I>(mut self, schemas: I) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        self.request.schemas = schemas.into_iter().collect();
+        self
+    }
+
+    /// The only attributes to return, such as `userName`.
+    pub fn with_attributes<I>(mut self, attributes: I) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        self.request.attributes = attributes.into_iter().collect();
+        self
+    }
+
+    /// The attributes to leave out.
+    pub fn with_excluded_attributes<I>(mut self, excluded_attributes: I) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        self.request.excluded_attributes = excluded_attributes.into_iter().collect();
+        self
+    }
+
+    /// SCIM filter (RFC 7644, section 3.4.2.2).
+    pub fn with_filter(mut self, filter: impl Into<Option<String>>) -> Self {
+        self.request.filter = filter.into();
+        self
+    }
+
+    /// Index of the first resource to return, from 1.
+    pub fn with_start_index(mut self, start_index: impl Into<Option<i32>>) -> Self {
+        self.request.start_index = start_index.into();
+        self
+    }
+
+    /// The maximum number of resources to return, at most 1000. The default is 50.
+    pub fn with_count(mut self, count: impl Into<Option<i32>>) -> Self {
+        self.request.count = count.into();
+        self
+    }
+}
+
+impl IntoFuture for SearchResourcesBuilder {
+    type Output = Result<ListScimResourcesResponse>;
+    type IntoFuture = BoxFut<'static, Self::Output>;
+    fn into_future(self) -> Self::IntoFuture {
+        let client = self.client;
+        let request = self.request;
+        Box::pin(async move { client.search_resources(&request).await })
+    }
+}
+
 /// Builder for bulk
 pub struct ScimBulkBuilder {
     client: ScimClient,
@@ -636,6 +946,34 @@ impl IntoFuture for ListScimSchemasBuilder {
     }
 }
 
+/// Builder for scim schema
+pub struct GetScimSchemaBuilder {
+    client: ScimClient,
+    request: GetScimSchemaRequest,
+}
+
+impl GetScimSchemaBuilder {
+    /// Create a new builder instance.
+    /// Obtain via the corresponding method on `ScimClient`.
+    pub(crate) fn new(client: ScimClient, id: impl Into<String>) -> Self {
+        let request = GetScimSchemaRequest {
+            id: id.into(),
+            ..Default::default()
+        };
+        Self { client, request }
+    }
+}
+
+impl IntoFuture for GetScimSchemaBuilder {
+    type Output = Result<ScimSchema>;
+    type IntoFuture = BoxFut<'static, Self::Output>;
+    fn into_future(self) -> Self::IntoFuture {
+        let client = self.client;
+        let request = self.request;
+        Box::pin(async move { client.get_scim_schema(&request).await })
+    }
+}
+
 /// Builder for scim resource types
 pub struct ListScimResourceTypesBuilder {
     client: ScimClient,
@@ -660,6 +998,34 @@ impl IntoFuture for ListScimResourceTypesBuilder {
         let client = self.client;
         let request = self.request;
         Box::pin(async move { client.list_scim_resource_types(&request).await })
+    }
+}
+
+/// Builder for scim resource type
+pub struct GetScimResourceTypeBuilder {
+    client: ScimClient,
+    request: GetScimResourceTypeRequest,
+}
+
+impl GetScimResourceTypeBuilder {
+    /// Create a new builder instance.
+    /// Obtain via the corresponding method on `ScimClient`.
+    pub(crate) fn new(client: ScimClient, id: impl Into<String>) -> Self {
+        let request = GetScimResourceTypeRequest {
+            id: id.into(),
+            ..Default::default()
+        };
+        Self { client, request }
+    }
+}
+
+impl IntoFuture for GetScimResourceTypeBuilder {
+    type Output = Result<ScimResourceType>;
+    type IntoFuture = BoxFut<'static, Self::Output>;
+    fn into_future(self) -> Self::IntoFuture {
+        let client = self.client;
+        let request = self.request;
+        Box::pin(async move { client.get_scim_resource_type(&request).await })
     }
 }
 

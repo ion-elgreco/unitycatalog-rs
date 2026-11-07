@@ -10777,7 +10777,7 @@ impl PyListScimGroupsResponse {
         self.0.schemas.clone()
     }
 
-    /// Number of groups in the page.
+    /// Number of groups that match.
     #[getter]
     fn total_results(&self) -> i32 {
         self.0.total_results
@@ -10910,6 +10910,90 @@ impl ::core::convert::From<PyListScimResourceTypesResponse>
     }
 }
 
+/// A page of SCIM users and groups.
+#[::pyo3::pyclass(
+    name = "ListScimResourcesResponse",
+    eq,
+    frozen,
+    module = "unitycatalog._core.scim",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyListScimResourcesResponse(pub super::scim::v1::ListScimResourcesResponse);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3::pymethods]
+impl PyListScimResourcesResponse {
+    /// SCIM schema URIs of the response: `urn:ietf:params:scim:api:messages:2.0:ListResponse`.
+    #[getter]
+    fn schemas(&self) -> ::std::vec::Vec<::std::string::String> {
+        self.0.schemas.clone()
+    }
+
+    /// Number of resources that match.
+    #[getter]
+    fn total_results(&self) -> i32 {
+        self.0.total_results
+    }
+
+    /// The users and groups.
+    #[getter]
+    fn resources(
+        &self,
+        py: ::pyo3::Python<'_>,
+    ) -> ::pyo3::PyResult<PyJson<JsonList<JsonDict<JsonAny>>>> {
+        let items = self
+            .0
+            .resources
+            .iter()
+            .map(|value| json_struct_to_py(py, value))
+            .collect::<::pyo3::PyResult<::std::vec::Vec<_>>>()?;
+        ::core::result::Result::Ok(PyJson::new(
+            ::pyo3::types::PyList::new(py, items)?.into_any().unbind(),
+        ))
+    }
+
+    /// Index of the first resource of the page, from 1.
+    #[getter]
+    fn start_index(&self) -> i32 {
+        self.0.start_index
+    }
+
+    /// Number of resources in the page.
+    #[getter]
+    fn items_per_page(&self) -> i32 {
+        self.0.items_per_page
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[
+                ("schemas", false),
+                ("total_results", false),
+                ("resources", false),
+                ("start_index", false),
+                ("items_per_page", false),
+            ],
+        )
+    }
+}
+
+impl ::core::convert::From<super::scim::v1::ListScimResourcesResponse>
+    for PyListScimResourcesResponse
+{
+    fn from(value: super::scim::v1::ListScimResourcesResponse) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyListScimResourcesResponse>
+    for super::scim::v1::ListScimResourcesResponse
+{
+    fn from(value: PyListScimResourcesResponse) -> Self {
+        value.0
+    }
+}
+
 /// The SCIM schemas of the server, User and Group, as a SCIM list (RFC 7644, section 4).
 #[::pyo3::pyclass(
     name = "ListScimSchemasResponse",
@@ -11003,7 +11087,7 @@ impl PyListScimUsersResponse {
         self.0.schemas.clone()
     }
 
-    /// Number of users in the page.
+    /// Number of users that match.
     #[getter]
     fn total_results(&self) -> i32 {
         self.0.total_results
@@ -11032,12 +11116,6 @@ impl PyListScimUsersResponse {
         self.0.items_per_page
     }
 
-    /// Time of the list.
-    #[getter]
-    fn meta(&self) -> ::core::option::Option<PyScimMeta> {
-        self.0.meta.clone().into_option().map(PyScimMeta::from)
-    }
-
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -11047,7 +11125,6 @@ impl PyListScimUsersResponse {
                 ("resources", false),
                 ("start_index", false),
                 ("items_per_page", false),
-                ("meta", false),
             ],
         )
     }
@@ -11102,6 +11179,12 @@ impl PyScimAuthenticationScheme {
         self.0.primary
     }
 
+    /// URL of the specification of the scheme.
+    #[getter]
+    fn spec_uri(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.spec_uri.clone()
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -11110,6 +11193,7 @@ impl PyScimAuthenticationScheme {
                 ("name", false),
                 ("description", false),
                 ("primary", false),
+                ("spec_uri", false),
             ],
         )
     }
@@ -11226,14 +11310,14 @@ impl PyScimBulkOp {
         ::core::result::Result::Ok(Self(inner))
     }
 
-    /// The HTTP method of the operation: `POST`, `PATCH` or `DELETE`.
+    /// The HTTP method of the operation: `POST`, `PUT`, `PATCH` or `DELETE`.
     #[getter]
     fn method(&self) -> ::std::string::String {
         self.0.method.clone()
     }
 
     /// The resource of the operation: `/Users` or `/Groups` for `POST`, `/Users/<id>` or
-    /// `/Groups/<id>` for `PATCH` and `DELETE`.
+    /// `/Groups/<id>` for the others.
     #[getter]
     fn path(&self) -> ::std::string::String {
         self.0.path.clone()
@@ -11245,8 +11329,8 @@ impl PyScimBulkOp {
         self.0.bulk_id.clone()
     }
 
-    /// The body of the operation: a `ScimUser` or `ScimGroup` for `POST`, a `ScimPatchOp` (without
-    /// `id`) for `PATCH`.
+    /// The body of the operation: a `ScimUser` or `ScimGroup` for `POST` and `PUT`, a `ScimPatchOp`
+    /// (without `id`) for `PATCH`.
     #[getter]
     fn data(
         &self,
@@ -11321,7 +11405,7 @@ impl PyScimBulkOpResult {
         self.0.location.clone()
     }
 
-    /// The answer of the operation: the user or group, or an error with `status` and `detail`.
+    /// The SCIM error of a failed operation.
     #[getter]
     fn response(
         &self,
@@ -11421,11 +11505,12 @@ pub struct PyScimEmail(pub super::scim::v1::ScimEmail);
 #[::pyo3::pymethods]
 impl PyScimEmail {
     #[new]
-    #[pyo3(signature = (value, *, primary = None, email_type = None))]
+    #[pyo3(signature = (value, *, primary = None, email_type = None, display = None))]
     fn new(
         value: ::std::string::String,
         primary: ::core::option::Option<bool>,
         email_type: ::core::option::Option<::std::string::String>,
+        display: ::core::option::Option<::std::string::String>,
     ) -> Self {
         let mut inner = <super::scim::v1::ScimEmail as ::core::default::Default>::default();
         {
@@ -11438,6 +11523,10 @@ impl PyScimEmail {
         {
             let value = email_type;
             inner.email_type = value;
+        }
+        {
+            let value = display;
+            inner.display = value;
         }
         Self(inner)
     }
@@ -11454,16 +11543,27 @@ impl PyScimEmail {
         self.0.primary
     }
 
-    /// Kind of the address, such as `work`. The server does not keep it.
+    /// Kind of the address: `work`, `home` or `other`.
     #[getter]
     fn email_type(&self) -> ::core::option::Option<::std::string::String> {
         self.0.email_type.clone()
     }
 
+    /// A name for the address, for display.
+    #[getter]
+    fn display(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.display.clone()
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
-            &[("value", false), ("primary", false), ("email_type", false)],
+            &[
+                ("value", false),
+                ("primary", false),
+                ("email_type", false),
+                ("display", false),
+            ],
         )
     }
 }
@@ -11551,13 +11651,13 @@ impl PyScimGroup {
         self.0.id.clone()
     }
 
-    /// Name of the group.
+    /// Name of the group, its name in grants.
     #[getter]
     fn display_name(&self) -> ::std::string::String {
         self.0.display_name.clone()
     }
 
-    /// Members of the group.
+    /// Members of the group: users.
     #[getter]
     fn members(&self) -> ::std::vec::Vec<PyScimGroupMember> {
         self.0
@@ -11568,6 +11668,18 @@ impl PyScimGroup {
             .collect()
     }
 
+    /// The identity the group has at an identity provider.
+    #[getter]
+    fn external_id(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.external_id.clone()
+    }
+
+    /// When the group was created and last changed.
+    #[getter]
+    fn meta(&self) -> ::core::option::Option<PyScimMeta> {
+        self.0.meta.clone().into_option().map(PyScimMeta::from)
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -11576,6 +11688,8 @@ impl PyScimGroup {
                 ("id", false),
                 ("display_name", false),
                 ("members", false),
+                ("external_id", false),
+                ("meta", false),
             ],
         )
     }
@@ -11607,11 +11721,12 @@ pub struct PyScimGroupMember(pub super::scim::v1::ScimGroupMember);
 #[::pyo3::pymethods]
 impl PyScimGroupMember {
     #[new]
-    #[pyo3(signature = (value, *, display = None, member_type = None))]
+    #[pyo3(signature = (value, *, display = None, member_type = None, r#ref = None))]
     fn new(
         value: ::std::string::String,
         display: ::core::option::Option<::std::string::String>,
         member_type: ::core::option::Option<::std::string::String>,
+        r#ref: ::core::option::Option<::std::string::String>,
     ) -> Self {
         let mut inner = <super::scim::v1::ScimGroupMember as ::core::default::Default>::default();
         {
@@ -11624,6 +11739,10 @@ impl PyScimGroupMember {
         {
             let value = member_type;
             inner.member_type = value;
+        }
+        {
+            let value = r#ref;
+            inner.r#ref = value;
         }
         Self(inner)
     }
@@ -11646,10 +11765,21 @@ impl PyScimGroupMember {
         self.0.member_type.clone()
     }
 
+    /// URL of the user. The server sets it and ignores it in requests.
+    #[getter]
+    fn r#ref(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.r#ref.clone()
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
-            &[("value", false), ("display", false), ("member_type", false)],
+            &[
+                ("value", false),
+                ("display", false),
+                ("member_type", false),
+                ("ref", false),
+            ],
         )
     }
 }
@@ -11732,8 +11862,7 @@ impl PyScimMeta {
         self.0.last_modified.clone()
     }
 
-    /// Path of the resource, such as `/scim2/ResourceTypes/User`. Only the discovery resources have
-    /// it.
+    /// URL of the resource, such as `https://uc.example.com/api/1.0/unity-control/scim2/Users/<id>`.
     #[getter]
     fn location(&self) -> ::core::option::Option<::std::string::String> {
         self.0.location.clone()
@@ -11760,6 +11889,130 @@ impl ::core::convert::From<super::scim::v1::ScimMeta> for PyScimMeta {
 
 impl ::core::convert::From<PyScimMeta> for super::scim::v1::ScimMeta {
     fn from(value: PyScimMeta) -> Self {
+        value.0
+    }
+}
+
+/// The parts of the name of a user.
+#[::pyo3::pyclass(
+    name = "ScimName",
+    eq,
+    frozen,
+    module = "unitycatalog._core.scim",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyScimName(pub super::scim::v1::ScimName);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3::pymethods]
+impl PyScimName {
+    #[new]
+    #[pyo3(
+        signature = (
+            *,
+            formatted = None,
+            family_name = None,
+            given_name = None,
+            middle_name = None,
+            honorific_prefix = None,
+            honorific_suffix = None
+        )
+    )]
+    fn new(
+        formatted: ::core::option::Option<::std::string::String>,
+        family_name: ::core::option::Option<::std::string::String>,
+        given_name: ::core::option::Option<::std::string::String>,
+        middle_name: ::core::option::Option<::std::string::String>,
+        honorific_prefix: ::core::option::Option<::std::string::String>,
+        honorific_suffix: ::core::option::Option<::std::string::String>,
+    ) -> Self {
+        let mut inner = <super::scim::v1::ScimName as ::core::default::Default>::default();
+        {
+            let value = formatted;
+            inner.formatted = value;
+        }
+        {
+            let value = family_name;
+            inner.family_name = value;
+        }
+        {
+            let value = given_name;
+            inner.given_name = value;
+        }
+        {
+            let value = middle_name;
+            inner.middle_name = value;
+        }
+        {
+            let value = honorific_prefix;
+            inner.honorific_prefix = value;
+        }
+        {
+            let value = honorific_suffix;
+            inner.honorific_suffix = value;
+        }
+        Self(inner)
+    }
+
+    /// The full name, formatted for display.
+    #[getter]
+    fn formatted(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.formatted.clone()
+    }
+
+    /// The family name, or last name.
+    #[getter]
+    fn family_name(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.family_name.clone()
+    }
+
+    /// The given name, or first name.
+    #[getter]
+    fn given_name(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.given_name.clone()
+    }
+
+    /// The middle name.
+    #[getter]
+    fn middle_name(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.middle_name.clone()
+    }
+
+    /// The honorific prefix, such as `Ms.`.
+    #[getter]
+    fn honorific_prefix(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.honorific_prefix.clone()
+    }
+
+    /// The honorific suffix, such as `III`.
+    #[getter]
+    fn honorific_suffix(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.honorific_suffix.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[
+                ("formatted", false),
+                ("family_name", false),
+                ("given_name", false),
+                ("middle_name", false),
+                ("honorific_prefix", false),
+                ("honorific_suffix", false),
+            ],
+        )
+    }
+}
+
+impl ::core::convert::From<super::scim::v1::ScimName> for PyScimName {
+    fn from(value: super::scim::v1::ScimName) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyScimName> for super::scim::v1::ScimName {
+    fn from(value: PyScimName) -> Self {
         value.0
     }
 }
@@ -11806,15 +12059,16 @@ impl PyScimPatchOperation {
         self.0.op.clone()
     }
 
-    /// SCIM attribute path, such as `active`, `displayName`, `members` or
-    /// `members[value eq "<id>"]`. Absent for a `replace` whose `value` holds the attributes.
+    /// SCIM attribute path: `attr`, `attr.sub`, `attr[filter]` or `attr[filter].sub`, such as
+    /// `name.familyName`, `members[value eq "<id>"]` or `emails[type eq "work"].value`. Absent for
+    /// an `add` or `replace` whose `value` holds the attributes.
     #[getter]
     fn path(&self) -> ::core::option::Option<::std::string::String> {
         self.0.path.clone()
     }
 
-    /// The new value. Any JSON: a boolean or string for `active`, a string for `displayName`, an
-    /// array of members for `members`, an object of attributes for a `replace` without `path`.
+    /// The value. Any JSON: a string for `displayName`, an array of members for `members`, an
+    /// object of attributes without `path`. A `remove` of a list with a value removes those values.
     #[getter]
     fn value(&self, py: ::pyo3::Python<'_>) -> ::pyo3::PyResult<PyJson<JsonAny>> {
         let value = self
@@ -11860,10 +12114,12 @@ pub struct PyScimPhoto(pub super::scim::v1::ScimPhoto);
 #[::pyo3::pymethods]
 impl PyScimPhoto {
     #[new]
-    #[pyo3(signature = (value, *, photo_type = None))]
+    #[pyo3(signature = (value, *, photo_type = None, primary = None, display = None))]
     fn new(
         value: ::std::string::String,
         photo_type: ::core::option::Option<::std::string::String>,
+        primary: ::core::option::Option<bool>,
+        display: ::core::option::Option<::std::string::String>,
     ) -> Self {
         let mut inner = <super::scim::v1::ScimPhoto as ::core::default::Default>::default();
         {
@@ -11872,6 +12128,14 @@ impl PyScimPhoto {
         {
             let value = photo_type;
             inner.photo_type = value;
+        }
+        {
+            let value = primary;
+            inner.primary = value;
+        }
+        {
+            let value = display;
+            inner.display = value;
         }
         Self(inner)
     }
@@ -11882,14 +12146,34 @@ impl PyScimPhoto {
         self.0.value.clone()
     }
 
-    /// Kind of the picture, such as `photo`. The server does not keep it.
+    /// Kind of the picture: `photo` or `thumbnail`.
     #[getter]
     fn photo_type(&self) -> ::core::option::Option<::std::string::String> {
         self.0.photo_type.clone()
     }
 
+    /// Whether this is the primary picture of the user.
+    #[getter]
+    fn primary(&self) -> ::core::option::Option<bool> {
+        self.0.primary
+    }
+
+    /// A name for the picture, for display.
+    #[getter]
+    fn display(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.display.clone()
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
-        __python_repr(slf.as_any(), &[("value", false), ("photo_type", false)])
+        __python_repr(
+            slf.as_any(),
+            &[
+                ("value", false),
+                ("photo_type", false),
+                ("primary", false),
+                ("display", false),
+            ],
+        )
     }
 }
 
@@ -12134,7 +12418,7 @@ impl PyScimSchemaAttribute {
         self.0.name.clone()
     }
 
-    /// Data type of the attribute: `string`, `boolean` or `complex`.
+    /// Data type of the attribute: `string`, `boolean`, `reference` or `complex`.
     #[getter]
     fn r#type(&self) -> ::std::string::String {
         self.0.r#type.clone()
@@ -12146,13 +12430,13 @@ impl PyScimSchemaAttribute {
         self.0.required
     }
 
-    /// Whether the attribute holds a list of values. Absent: a single value.
+    /// Whether the attribute holds a list of values.
     #[getter]
     fn multi_valued(&self) -> ::core::option::Option<bool> {
         self.0.multi_valued
     }
 
-    /// How the server keeps values unique: `server`. Absent: not unique.
+    /// How the server keeps values unique: `none` or `server`.
     #[getter]
     fn uniqueness(&self) -> ::core::option::Option<::std::string::String> {
         self.0.uniqueness.clone()
@@ -12169,6 +12453,42 @@ impl PyScimSchemaAttribute {
             .collect()
     }
 
+    /// Description of the attribute.
+    #[getter]
+    fn description(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.description.clone()
+    }
+
+    /// Whether text values compare with their case: never.
+    #[getter]
+    fn case_exact(&self) -> ::core::option::Option<bool> {
+        self.0.case_exact
+    }
+
+    /// Whether a client may change the attribute: `readOnly`, `readWrite` or `immutable`.
+    #[getter]
+    fn mutability(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.mutability.clone()
+    }
+
+    /// When the server returns the attribute: `default`.
+    #[getter]
+    fn returned(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.returned.clone()
+    }
+
+    /// The values that the attribute usually has, such as `work` and `home`.
+    #[getter]
+    fn canonical_values(&self) -> ::std::vec::Vec<::std::string::String> {
+        self.0.canonical_values.clone()
+    }
+
+    /// What a `reference` attribute refers to, such as `external`.
+    #[getter]
+    fn reference_types(&self) -> ::std::vec::Vec<::std::string::String> {
+        self.0.reference_types.clone()
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -12179,6 +12499,12 @@ impl PyScimSchemaAttribute {
                 ("multi_valued", false),
                 ("uniqueness", false),
                 ("sub_attributes", false),
+                ("description", false),
+                ("case_exact", false),
+                ("mutability", false),
+                ("returned", false),
+                ("canonical_values", false),
+                ("reference_types", false),
             ],
         )
     }
@@ -12285,6 +12611,12 @@ impl PyScimServiceProviderConfig {
         self.0.meta.clone().into_option().map(PyScimMeta::from)
     }
 
+    /// URL of the documentation of the server's SCIM support.
+    #[getter]
+    fn documentation_uri(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.documentation_uri.clone()
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -12298,6 +12630,7 @@ impl PyScimServiceProviderConfig {
                 ("etag", false),
                 ("authentication_schemes", false),
                 ("meta", false),
+                ("documentation_uri", false),
             ],
         )
     }
@@ -12355,7 +12688,8 @@ impl ::core::convert::From<PyScimSupported> for super::scim::v1::ScimSupported {
     }
 }
 
-/// A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+/// A SCIM 2.0 user. Its principal, its name in grants and owners, is its primary email, else its
+/// first email, else its user name.
 #[::pyo3::pyclass(
     name = "ScimUser",
     eq,
@@ -12394,27 +12728,27 @@ impl PyScimUser {
         self.0.meta.clone().into_option().map(PyScimMeta::from)
     }
 
-    /// The email of the user. Ignored in requests: the server takes the primary email.
+    /// The unique name of the user, such as a user principal name, in any case. Absent in a create
+    /// request: the principal.
     #[getter]
     fn user_name(&self) -> ::std::string::String {
         self.0.user_name.clone()
     }
 
-    /// Name of the user.
+    /// Name of the user, for display.
     #[getter]
     fn display_name(&self) -> ::core::option::Option<::std::string::String> {
         self.0.display_name.clone()
     }
 
-    /// Whether the user can sign in. A new user is always enabled; absent in a replace request:
-    /// unchanged.
+    /// Whether the user can sign in. Absent: enabled; a new user without it gets `true`.
     #[getter]
     fn active(&self) -> ::core::option::Option<bool> {
         self.0.active
     }
 
-    /// Email addresses of the user. A new user needs one with `primary` set; a replace request
-    /// does not change the email.
+    /// Email addresses of the user. When the principal changes, the grants, owned objects and
+    /// tokens of the user move to the new one.
     #[getter]
     fn emails(&self) -> ::std::vec::Vec<PyScimEmail> {
         self.0
@@ -12425,7 +12759,7 @@ impl PyScimUser {
             .collect()
     }
 
-    /// Pictures of the user. The server keeps the first; a replace request does not change it.
+    /// Pictures of the user.
     #[getter]
     fn photos(&self) -> ::std::vec::Vec<PyScimPhoto> {
         self.0
@@ -12443,6 +12777,12 @@ impl PyScimUser {
         self.0.roles.iter().cloned().map(PyScimRole::from).collect()
     }
 
+    /// The parts of the name of the user.
+    #[getter]
+    fn name(&self) -> ::core::option::Option<PyScimName> {
+        self.0.name.clone().into_option().map(PyScimName::from)
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -12457,6 +12797,7 @@ impl PyScimUser {
                 ("emails", false),
                 ("photos", false),
                 ("roles", false),
+                ("name", false),
             ],
         )
     }

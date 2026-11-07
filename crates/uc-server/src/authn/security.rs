@@ -242,18 +242,14 @@ impl SecurityContext {
 /// Upstream `UnityAccessUtil.initializeAdmin`: with authorization on, the
 /// user `admin` exists and owns the metastore when it has no owner.
 pub async fn initialize_admin(metastore: &uc_metastore::DynMetastore) -> Result<()> {
-    use uc_api::scim::{ScimEmail, ScimUser, schema_uri};
+    use uc_api::scim::{ScimUser, schema_uri};
     let scim = metastore.scim();
-    if scim.find_user_by_email(ADMIN).await?.is_none() {
+    if scim.find_user_by_principal(ADMIN).await?.is_none() {
+        // No email: the user name is the principal.
         let admin = ScimUser {
             schemas: vec![schema_uri::USER.to_string()],
             user_name: ADMIN.to_string(),
             display_name: Some("Admin".to_string()),
-            emails: Some(vec![ScimEmail {
-                value: ADMIN.to_string(),
-                primary: Some(true),
-                r#type: None,
-            }]),
             active: Some(true),
             ..Default::default()
         };

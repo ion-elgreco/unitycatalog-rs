@@ -156,6 +156,7 @@ pub fn build_app(state: AppState) -> Router {
         // Outside auth, so that sign-in errors get the Delta body too.
         .layer(middleware::from_fn(routes::delta_api::error_layer))
         .layer(middleware::from_fn(routes::iceberg_rest::error_layer))
+        .layer(middleware::from_fn(routes::control::scim::error_layer))
         .layer(middleware::from_fn_with_state(state.clone(), metrics_layer))
         // Armeria's defaults: 10 MiB request bodies and a 10 s timeout.
         .layer(axum::extract::DefaultBodyLimit::max(http.max_request_length))

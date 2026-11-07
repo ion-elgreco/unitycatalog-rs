@@ -171,6 +171,7 @@ async fn user(metastore: &DynMetastore, email: &str, external_id: Option<&str>) 
                 value: email.to_string(),
                 primary: Some(true),
                 r#type: None,
+                display: None,
             }]),
             external_id: external_id.map(str::to_string),
             active: Some(true),

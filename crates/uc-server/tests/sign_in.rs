@@ -615,7 +615,7 @@ async fn behind_an_auth_proxy_its_headers_name_the_user_from_its_addresses_only(
     )
     .await;
     // A user the server does not have.
-    common::assert_error(
+    scim_error(
         call(from(
             "10.1.2.3:5000",
             me,
@@ -623,33 +623,29 @@ async fn behind_an_auth_proxy_its_headers_name_the_user_from_its_addresses_only(
         ))
         .await,
         StatusCode::FORBIDDEN,
-        "PERMISSION_DENIED",
     )
     .await;
     // Never the bootstrap admin, though it exists: a proxy user may have
     // its name.
     active_user(&metastore, "admin").await;
     for header in ["Remote-User", "Remote-Email"] {
-        let error = common::assert_error(
+        let error = scim_error(
             call(from("10.1.2.3:5000", me, &[(header, "admin")])).await,
             StatusCode::FORBIDDEN,
-            "PERMISSION_DENIED",
         )
         .await;
-        assert_eq!(error["message"], "User not allowed: admin");
+        assert_eq!(error["detail"], "User not allowed: admin");
     }
 
     // From elsewhere the headers do not count; tokens still do.
-    common::assert_error(
+    scim_error(
         call(from("192.168.1.5:5000", me, &[alice])).await,
         StatusCode::UNAUTHORIZED,
-        "UNAUTHENTICATED",
     )
     .await;
-    common::assert_error(
+    scim_error(
         call(from("10.1.2.3:5000", me, &[])).await,
         StatusCode::UNAUTHORIZED,
-        "UNAUTHENTICATED",
     )
     .await;
     let bearer = format!("Bearer {token}");
@@ -666,4 +662,14 @@ async fn behind_an_auth_proxy_its_headers_name_the_user_from_its_addresses_only(
     let logout = call(from("10.1.2.3:5000", "/auth/logout", &[alice])).await;
     assert_eq!(logout.status(), StatusCode::SEE_OTHER);
     assert_eq!(location(&logout), "/oauth2/sign_out");
+}
+
+/// The SCIM error of an answer of `/scim2/Me`, after checking its status.
+async fn scim_error(resp: axum::response::Response, status: StatusCode) -> serde_json::Value {
+    let body = common::json_body(common::assert_status(resp, status, "scim error").await).await;
+    assert_eq!(
+        body["schemas"],
+        serde_json::json!(["urn:ietf:params:scim:api:messages:2.0:Error"])
+    );
+    body
 }

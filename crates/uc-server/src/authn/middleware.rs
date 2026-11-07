@@ -93,10 +93,14 @@ pub(crate) fn token_cookie(value: &str, max_age: Duration, secure: bool) -> Resu
 }
 
 /// Upstream: `User not allowed` unless the user exists and is enabled. The
-/// caller is then named by the user's principal (its email), as grants and
-/// owners are.
+/// caller is then named by the user's principal, as grants and owners are.
 pub async fn require_active_user(state: &AppState, principal: &str) -> Result<String> {
-    match state.metastore.scim().find_user_by_email(principal).await? {
+    match state
+        .metastore
+        .scim()
+        .find_user_by_principal(principal)
+        .await?
+    {
         Some(user) if user.is_active() => Ok(user.principal().to_string()),
         _ => Err(Error::new(
             ErrorCode::PermissionDenied,

@@ -79,6 +79,16 @@ impl Mode {
     }
 }
 
+/// The name of `user` in grants and owners: the primary email, else the
+/// first email, else the user name.
+pub fn principal_of(user: &ScimUser) -> &str {
+    user.emails
+        .iter()
+        .find(|e| e.primary == Some(true))
+        .or(user.emails.first())
+        .map_or(user.user_name.as_str(), |e| e.value.as_str())
+}
+
 /// Who uses the UI, after the answer of `/scim2/Me`.
 #[derive(Clone, Debug)]
 pub enum Session {
@@ -104,16 +114,16 @@ impl Session {
     }
 
     /// The signed-in user's principal, as the server names owners and
-    /// grantees: their email.
+    /// grantees.
     pub fn principal(&self) -> Option<&str> {
-        self.user().map(|user| user.user_name.as_str())
+        self.user().map(principal_of)
     }
 
     /// Whether the user may manage `owner`'s object: its owner, or an
     /// admin. Without a user, authorization is off.
     pub fn manages(&self, owner: Option<&str>) -> bool {
         match self {
-            Session::User(user) => self.is_admin() || owner == Some(user.user_name.as_str()),
+            Session::User(user) => self.is_admin() || owner == Some(principal_of(user)),
             Session::Anonymous => true,
             Session::Unknown | Session::SignedOut | Session::Denied(_) => false,
         }

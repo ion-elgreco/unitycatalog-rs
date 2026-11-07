@@ -138,6 +138,7 @@ async fn server(idp: &Idp) -> String {
                 value: "ada@example.com".into(),
                 primary: Some(true),
                 r#type: None,
+                display: None,
             }]),
             active: Some(true),
             ..Default::default()

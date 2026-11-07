@@ -285,7 +285,7 @@ impl PermissionOps for SqlMetastore {
             SELECT g.display_name FROM scim_group g \
             JOIN scim_group_member m ON m.group_id = g.id_string \
             JOIN scim_user u ON u.id_string = m.user_id \
-            WHERE u.user_name = $1)"
+            WHERE u.principal = $1)"
             .to_string();
         let mut params: Vec<Value> = vec![principal.into()];
         // The groups of the token, only those that exist here: a grant to
@@ -495,9 +495,25 @@ pub(crate) async fn clear_principal<E: Exec + ?Sized>(ex: &E, principal: &str) -
     Ok(())
 }
 
-/// Give the grants of `from` to `to`, in `tx`: a renamed group keeps its
-/// grants.
+/// Give the grants and the owned objects and tokens of `from` to `to`, in
+/// `tx`: a renamed group, or a user whose email changed, keeps them.
 pub(crate) async fn rename_principal<E: Exec + ?Sized>(tx: &E, from: &str, to: &str) -> Result<()> {
+    rename_grants(tx, from, to).await?;
+    for table in crate::sql::rows::ALL
+        .iter()
+        .filter(|t| t.has_column("owner"))
+    {
+        tx.execute(
+            &format!("UPDATE {} SET owner = $1 WHERE owner = $2", table.name),
+            &[to.into(), from.into()],
+        )
+        .await
+        .map_err(db_err("rename owner"))?;
+    }
+    Ok(())
+}
+
+async fn rename_grants<E: Exec + ?Sized>(tx: &E, from: &str, to: &str) -> Result<()> {
     let rows: Vec<PermissionRow> = select(
         tx,
         &PERMISSION,
@@ -594,13 +610,14 @@ impl SqlMetastore {
     }
 
     /// Upstream `getUserByEmail`: grants go to users that exist, named by
-    /// user name or email. They are kept under the user's principal (its
-    /// email), the name a signed-in caller has.
-    /// The name in grants of the user with email `principal`, or of the
-    /// group named `principal`.
+    /// principal or user name. They are kept under the user's principal,
+    /// the name a signed-in caller has. A group's name is its principal.
     async fn require_principal(&self, principal: &str) -> Result<String> {
         use crate::scim::ScimOps;
-        if let Some(user) = self.find_user_by_email(principal).await? {
+        if let Some(user) = self.find_user_by_principal(principal).await? {
+            return Ok(user.principal().to_string());
+        }
+        if let Some(user) = self.get_user_by_name(principal).await? {
             return Ok(user.principal().to_string());
         }
         match self

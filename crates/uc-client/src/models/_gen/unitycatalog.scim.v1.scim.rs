@@ -38,8 +38,7 @@ pub struct ScimMeta {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub last_modified: ::core::option::Option<::buffa::alloc::string::String>,
-    /// Path of the resource, such as `/scim2/ResourceTypes/User`. Only the discovery resources have
-    /// it.
+    /// URL of the resource, such as `https://uc.example.com/api/1.0/unity-control/scim2/Users/<id>`.
     ///
     /// Field 4: `location`
     #[serde(
@@ -437,7 +436,7 @@ pub struct ScimPhoto {
     /// Field 1: `value`
     #[serde(rename = "value", with = "::buffa::json_helpers::proto_string")]
     pub value: ::buffa::alloc::string::String,
-    /// Kind of the picture, such as `photo`. The server does not keep it.
+    /// Kind of the picture: `photo` or `thumbnail`.
     ///
     /// Field 2: `photo_type`
     #[serde(
@@ -446,6 +445,22 @@ pub struct ScimPhoto {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub photo_type: ::core::option::Option<::buffa::alloc::string::String>,
+    /// Whether this is the primary picture of the user.
+    ///
+    /// Field 3: `primary`
+    #[serde(
+        rename = "primary",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub primary: ::core::option::Option<bool>,
+    /// A name for the picture, for display.
+    ///
+    /// Field 4: `display`
+    #[serde(
+        rename = "display",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub display: ::core::option::Option<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -456,6 +471,8 @@ impl ::core::fmt::Debug for ScimPhoto {
         f.debug_struct("ScimPhoto")
             .field("value", &self.value)
             .field("photo_type", &self.photo_type)
+            .field("primary", &self.primary)
+            .field("display", &self.display)
             .finish()
     }
 }
@@ -474,6 +491,22 @@ impl ScimPhoto {
     ///Sets [`Self::photo_type`] to `Some(value)`, consuming and returning `self`.
     pub fn with_photo_type(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
         self.photo_type = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::primary`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_primary(mut self, value: bool) -> Self {
+        self.primary = Some(value);
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::display`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_display(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.display = Some(value.into());
         self
     }
 }
@@ -509,6 +542,12 @@ impl ::buffa::Message for ScimPhoto {
         if let Some(ref v) = self.photo_type {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
         }
+        if self.primary.is_some() {
+            size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
+        }
+        if let Some(ref v) = self.display {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -523,6 +562,15 @@ impl ::buffa::Message for ScimPhoto {
         }
         if let Some(ref v) = self.photo_type {
             ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(v) = self.primary {
+            ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_bool(v, buf);
+        }
+        if let Some(ref v) = self.display {
+            ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(v, buf);
         }
@@ -565,6 +613,30 @@ impl ::buffa::Message for ScimPhoto {
                     buf,
                 )?;
             }
+            3u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 3u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.primary = ::core::option::Option::Some(::buffa::types::decode_bool(buf)?);
+            }
+            4u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 4u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.display
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -576,6 +648,8 @@ impl ::buffa::Message for ScimPhoto {
     fn clear(&mut self) {
         self.value.clear();
         self.photo_type = ::core::option::Option::None;
+        self.primary = ::core::option::Option::None;
+        self.display = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -632,7 +706,7 @@ pub struct ScimEmail {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub primary: ::core::option::Option<bool>,
-    /// Kind of the address, such as `work`. The server does not keep it.
+    /// Kind of the address: `work`, `home` or `other`.
     ///
     /// Field 3: `email_type`
     #[serde(
@@ -641,6 +715,14 @@ pub struct ScimEmail {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub email_type: ::core::option::Option<::buffa::alloc::string::String>,
+    /// A name for the address, for display.
+    ///
+    /// Field 4: `display`
+    #[serde(
+        rename = "display",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub display: ::core::option::Option<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -652,6 +734,7 @@ impl ::core::fmt::Debug for ScimEmail {
             .field("value", &self.value)
             .field("primary", &self.primary)
             .field("email_type", &self.email_type)
+            .field("display", &self.display)
             .finish()
     }
 }
@@ -678,6 +761,14 @@ impl ScimEmail {
     ///Sets [`Self::email_type`] to `Some(value)`, consuming and returning `self`.
     pub fn with_email_type(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
         self.email_type = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::display`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_display(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.display = Some(value.into());
         self
     }
 }
@@ -716,6 +807,9 @@ impl ::buffa::Message for ScimEmail {
         if let Some(ref v) = self.email_type {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
         }
+        if let Some(ref v) = self.display {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -734,6 +828,11 @@ impl ::buffa::Message for ScimEmail {
         }
         if let Some(ref v) = self.email_type {
             ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.display {
+            ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(v, buf);
         }
@@ -786,6 +885,20 @@ impl ::buffa::Message for ScimEmail {
                     buf,
                 )?;
             }
+            4u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 4u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.display
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -798,6 +911,7 @@ impl ::buffa::Message for ScimEmail {
         self.value.clear();
         self.primary = ::core::option::Option::None;
         self.email_type = ::core::option::Option::None;
+        self.display = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -837,7 +951,380 @@ pub const __SCIM_EMAIL_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
         is_wkt: false,
     };
 
-/// A SCIM 2.0 user. The email of the user is its user name and its one primary email.
+/// The parts of the name of a user.
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct ScimName {
+    /// The full name, formatted for display.
+    ///
+    /// Field 1: `formatted`
+    #[serde(
+        rename = "formatted",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub formatted: ::core::option::Option<::buffa::alloc::string::String>,
+    /// The family name, or last name.
+    ///
+    /// Field 2: `family_name`
+    #[serde(
+        rename = "familyName",
+        alias = "family_name",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub family_name: ::core::option::Option<::buffa::alloc::string::String>,
+    /// The given name, or first name.
+    ///
+    /// Field 3: `given_name`
+    #[serde(
+        rename = "givenName",
+        alias = "given_name",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub given_name: ::core::option::Option<::buffa::alloc::string::String>,
+    /// The middle name.
+    ///
+    /// Field 4: `middle_name`
+    #[serde(
+        rename = "middleName",
+        alias = "middle_name",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub middle_name: ::core::option::Option<::buffa::alloc::string::String>,
+    /// The honorific prefix, such as `Ms.`.
+    ///
+    /// Field 5: `honorific_prefix`
+    #[serde(
+        rename = "honorificPrefix",
+        alias = "honorific_prefix",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub honorific_prefix: ::core::option::Option<::buffa::alloc::string::String>,
+    /// The honorific suffix, such as `III`.
+    ///
+    /// Field 6: `honorific_suffix`
+    #[serde(
+        rename = "honorificSuffix",
+        alias = "honorific_suffix",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub honorific_suffix: ::core::option::Option<::buffa::alloc::string::String>,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for ScimName {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("ScimName")
+            .field("formatted", &self.formatted)
+            .field("family_name", &self.family_name)
+            .field("given_name", &self.given_name)
+            .field("middle_name", &self.middle_name)
+            .field("honorific_prefix", &self.honorific_prefix)
+            .field("honorific_suffix", &self.honorific_suffix)
+            .finish()
+    }
+}
+
+impl ScimName {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str = "type.googleapis.com/unitycatalog.scim.v1.ScimName";
+}
+
+impl ScimName {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::formatted`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_formatted(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.formatted = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::family_name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_family_name(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.family_name = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::given_name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_given_name(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.given_name = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::middle_name`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_middle_name(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.middle_name = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::honorific_prefix`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_honorific_prefix(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.honorific_prefix = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::honorific_suffix`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_honorific_suffix(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.honorific_suffix = Some(value.into());
+        self
+    }
+}
+
+impl ::buffa::DefaultInstance for ScimName {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<ScimName> = ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for ScimName {
+    const PACKAGE: &'static str = "unitycatalog.scim.v1";
+    const NAME: &'static str = "ScimName";
+    const FULL_NAME: &'static str = "unitycatalog.scim.v1.ScimName";
+    const TYPE_URL: &'static str = "type.googleapis.com/unitycatalog.scim.v1.ScimName";
+}
+
+impl ::buffa::Message for ScimName {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if let Some(ref v) = self.formatted {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if let Some(ref v) = self.family_name {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if let Some(ref v) = self.given_name {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if let Some(ref v) = self.middle_name {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if let Some(ref v) = self.honorific_prefix {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if let Some(ref v) = self.honorific_suffix {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, _cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if let Some(ref v) = self.formatted {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.family_name {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.given_name {
+            ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.middle_name {
+            ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.honorific_prefix {
+            ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.honorific_suffix {
+            ::buffa::encoding::Tag::new(6u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.formatted
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.family_name
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            3u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 3u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.given_name
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            4u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 4u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.middle_name
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            5u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 5u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.honorific_prefix
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            6u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 6u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.honorific_suffix
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.formatted = ::core::option::Option::None;
+        self.family_name = ::core::option::Option::None;
+        self.given_name = ::core::option::Option::None;
+        self.middle_name = ::core::option::Option::None;
+        self.honorific_prefix = ::core::option::Option::None;
+        self.honorific_suffix = ::core::option::Option::None;
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for ScimName {
+    const PROTO_FQN: &'static str = "unitycatalog.scim.v1.ScimName";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for ScimName {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __SCIM_NAME_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.scim.v1.ScimName",
+        to_json: ::buffa::type_registry::any_to_json::<ScimName>,
+        from_json: ::buffa::type_registry::any_from_json::<ScimName>,
+        is_wkt: false,
+    };
+
+/// A SCIM 2.0 user. Its principal, its name in grants and owners, is its primary email, else its
+/// first email, else its user name.
 #[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct ScimUser {
@@ -878,7 +1365,8 @@ pub struct ScimUser {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
     )]
     pub meta: ::buffa::MessageField<ScimMeta>,
-    /// The email of the user. Ignored in requests: the server takes the primary email.
+    /// The unique name of the user, such as a user principal name, in any case. Absent in a create
+    /// request: the principal.
     ///
     /// Field 5: `user_name`
     #[serde(
@@ -888,7 +1376,7 @@ pub struct ScimUser {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub user_name: ::buffa::alloc::string::String,
-    /// Name of the user.
+    /// Name of the user, for display.
     ///
     /// Field 6: `display_name`
     #[serde(
@@ -897,8 +1385,7 @@ pub struct ScimUser {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub display_name: ::core::option::Option<::buffa::alloc::string::String>,
-    /// Whether the user can sign in. A new user is always enabled; absent in a replace request:
-    /// unchanged.
+    /// Whether the user can sign in. Absent: enabled; a new user without it gets `true`.
     ///
     /// Field 7: `active`
     #[serde(
@@ -906,8 +1393,8 @@ pub struct ScimUser {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub active: ::core::option::Option<bool>,
-    /// Email addresses of the user. A new user needs one with `primary` set; a replace request
-    /// does not change the email.
+    /// Email addresses of the user. When the principal changes, the grants, owned objects and
+    /// tokens of the user move to the new one.
     ///
     /// Field 8: `emails`
     #[serde(
@@ -916,7 +1403,7 @@ pub struct ScimUser {
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub emails: ::buffa::alloc::vec::Vec<ScimEmail>,
-    /// Pictures of the user. The server keeps the first; a replace request does not change it.
+    /// Pictures of the user.
     ///
     /// Field 9: `photos`
     #[serde(
@@ -935,6 +1422,14 @@ pub struct ScimUser {
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub roles: ::buffa::alloc::vec::Vec<ScimRole>,
+    /// The parts of the name of the user.
+    ///
+    /// Field 11: `name`
+    #[serde(
+        rename = "name",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub name: ::buffa::MessageField<ScimName>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -953,6 +1448,7 @@ impl ::core::fmt::Debug for ScimUser {
             .field("emails", &self.emails)
             .field("photos", &self.photos)
             .field("roles", &self.roles)
+            .field("name", &self.name)
             .finish()
     }
 }
@@ -1058,6 +1554,12 @@ impl ::buffa::Message for ScimUser {
             __cache.set(__slot, inner_size);
             size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
         }
+        if self.name.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.name.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -1117,6 +1619,12 @@ impl ::buffa::Message for ScimUser {
                 .encode(buf);
             ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
+        }
+        if self.name.is_set() {
+            ::buffa::encoding::Tag::new(11u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.name.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -1251,6 +1759,20 @@ impl ::buffa::Message for ScimUser {
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
                 self.roles.push(elem);
             }
+            11u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 11u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.name.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -1270,6 +1792,7 @@ impl ::buffa::Message for ScimUser {
         self.emails.clear();
         self.photos.clear();
         self.roles.clear();
+        self.name = ::buffa::MessageField::none();
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -1330,7 +1853,7 @@ pub struct ListUsersRequest {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub start_index: ::core::option::Option<i32>,
-    /// The maximum number of users to return. The default is 50.
+    /// The maximum number of users to return, at most 1000. The default is 50.
     ///
     /// Field 3: `count`
     #[serde(
@@ -1339,6 +1862,23 @@ pub struct ListUsersRequest {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub count: ::core::option::Option<i32>,
+    /// The only attributes to return, separated by commas, such as `userName,emails.value`.
+    ///
+    /// Field 4: `attributes`
+    #[serde(
+        rename = "attributes",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub attributes: ::core::option::Option<::buffa::alloc::string::String>,
+    /// The attributes to leave out, separated by commas, such as `emails`.
+    ///
+    /// Field 5: `excluded_attributes`
+    #[serde(
+        rename = "excludedAttributes",
+        alias = "excluded_attributes",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub excluded_attributes: ::core::option::Option<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1350,6 +1890,8 @@ impl ::core::fmt::Debug for ListUsersRequest {
             .field("filter", &self.filter)
             .field("start_index", &self.start_index)
             .field("count", &self.count)
+            .field("attributes", &self.attributes)
+            .field("excluded_attributes", &self.excluded_attributes)
             .finish()
     }
 }
@@ -1384,6 +1926,25 @@ impl ListUsersRequest {
     ///Sets [`Self::count`] to `Some(value)`, consuming and returning `self`.
     pub fn with_count(mut self, value: i32) -> Self {
         self.count = Some(value);
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::attributes`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_attributes(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.attributes = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::excluded_attributes`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_excluded_attributes(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.excluded_attributes = Some(value.into());
         self
     }
 }
@@ -1423,6 +1984,12 @@ impl ::buffa::Message for ListUsersRequest {
         if let Some(v) = self.count {
             size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
         }
+        if let Some(ref v) = self.attributes {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if let Some(ref v) = self.excluded_attributes {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -1442,6 +2009,16 @@ impl ::buffa::Message for ListUsersRequest {
         if let Some(v) = self.count {
             ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::Varint).encode(buf);
             ::buffa::types::encode_int32(v, buf);
+        }
+        if let Some(ref v) = self.attributes {
+            ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.excluded_attributes {
+            ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -1492,6 +2069,34 @@ impl ::buffa::Message for ListUsersRequest {
                 }
                 self.count = ::core::option::Option::Some(::buffa::types::decode_int32(buf)?);
             }
+            4u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 4u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.attributes
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            5u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 5u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.excluded_attributes
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -1504,6 +2109,8 @@ impl ::buffa::Message for ListUsersRequest {
         self.filter = ::core::option::Option::None;
         self.start_index = ::core::option::Option::None;
         self.count = ::core::option::Option::None;
+        self.attributes = ::core::option::Option::None;
+        self.excluded_attributes = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -1556,7 +2163,7 @@ pub struct ListScimUsersResponse {
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub schemas: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
-    /// Number of users in the page.
+    /// Number of users that match.
     ///
     /// Field 2: `total_results`
     #[serde(
@@ -1596,14 +2203,6 @@ pub struct ListScimUsersResponse {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
     )]
     pub items_per_page: i32,
-    /// Time of the list.
-    ///
-    /// Field 6: `meta`
-    #[serde(
-        rename = "meta",
-        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
-    )]
-    pub meta: ::buffa::MessageField<ScimMeta>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1617,7 +2216,6 @@ impl ::core::fmt::Debug for ListScimUsersResponse {
             .field("resources", &self.resources)
             .field("start_index", &self.start_index)
             .field("items_per_page", &self.items_per_page)
-            .field("meta", &self.meta)
             .finish()
     }
 }
@@ -1675,12 +2273,6 @@ impl ::buffa::Message for ListScimUsersResponse {
         if self.items_per_page != 0i32 {
             size += 1u32 + ::buffa::types::int32_encoded_len(self.items_per_page) as u32;
         }
-        if self.meta.is_set() {
-            let __slot = __cache.reserve();
-            let inner_size = self.meta.compute_size(__cache);
-            __cache.set(__slot, inner_size);
-            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
-        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -1710,12 +2302,6 @@ impl ::buffa::Message for ListScimUsersResponse {
         if self.items_per_page != 0i32 {
             ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::Varint).encode(buf);
             ::buffa::types::encode_int32(self.items_per_page, buf);
-        }
-        if self.meta.is_set() {
-            ::buffa::encoding::Tag::new(6u32, ::buffa::encoding::WireType::LengthDelimited)
-                .encode(buf);
-            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
-            self.meta.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -1784,20 +2370,6 @@ impl ::buffa::Message for ListScimUsersResponse {
                 }
                 self.items_per_page = ::buffa::types::decode_int32(buf)?;
             }
-            6u32 => {
-                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
-                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
-                        field_number: 6u32,
-                        expected: 2u8,
-                        actual: tag.wire_type() as u8,
-                    });
-                }
-                ::buffa::Message::merge_length_delimited(
-                    self.meta.get_or_insert_default(),
-                    buf,
-                    depth,
-                )?;
-            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -1812,7 +2384,6 @@ impl ::buffa::Message for ListScimUsersResponse {
         self.resources.clear();
         self.start_index = 0i32;
         self.items_per_page = 0i32;
-        self.meta = ::buffa::MessageField::none();
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -1852,6 +2423,605 @@ pub const __LIST_SCIM_USERS_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEn
         is_wkt: false,
     };
 
+/// A page of SCIM users and groups.
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct ListScimResourcesResponse {
+    /// SCIM schema URIs of the response: `urn:ietf:params:scim:api:messages:2.0:ListResponse`.
+    ///
+    /// Field 1: `schemas`
+    #[serde(
+        rename = "schemas",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+        deserialize_with = "::buffa::json_helpers::null_as_default"
+    )]
+    pub schemas: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
+    /// Number of resources that match.
+    ///
+    /// Field 2: `total_results`
+    #[serde(
+        rename = "totalResults",
+        alias = "total_results",
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
+    )]
+    pub total_results: i32,
+    /// The users and groups.
+    ///
+    /// Field 3: `resources`
+    #[serde(
+        rename = "Resources",
+        alias = "resources",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+        deserialize_with = "::buffa::json_helpers::null_as_default"
+    )]
+    #[serde(serialize_with = "crate::models::json_value::repeated")]
+    pub resources: ::buffa::alloc::vec::Vec<::buffa_types::google::protobuf::Struct>,
+    /// Index of the first resource of the page, from 1.
+    ///
+    /// Field 4: `start_index`
+    #[serde(
+        rename = "startIndex",
+        alias = "start_index",
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
+    )]
+    pub start_index: i32,
+    /// Number of resources in the page.
+    ///
+    /// Field 5: `items_per_page`
+    #[serde(
+        rename = "itemsPerPage",
+        alias = "items_per_page",
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
+    )]
+    pub items_per_page: i32,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for ListScimResourcesResponse {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("ListScimResourcesResponse")
+            .field("schemas", &self.schemas)
+            .field("total_results", &self.total_results)
+            .field("resources", &self.resources)
+            .field("start_index", &self.start_index)
+            .field("items_per_page", &self.items_per_page)
+            .finish()
+    }
+}
+
+impl ListScimResourcesResponse {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.scim.v1.ListScimResourcesResponse";
+}
+
+impl ::buffa::DefaultInstance for ListScimResourcesResponse {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<ListScimResourcesResponse> =
+            ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for ListScimResourcesResponse {
+    const PACKAGE: &'static str = "unitycatalog.scim.v1";
+    const NAME: &'static str = "ListScimResourcesResponse";
+    const FULL_NAME: &'static str = "unitycatalog.scim.v1.ListScimResourcesResponse";
+    const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.scim.v1.ListScimResourcesResponse";
+}
+
+impl ::buffa::Message for ListScimResourcesResponse {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, __cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        for v in &self.schemas {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if self.total_results != 0i32 {
+            size += 1u32 + ::buffa::types::int32_encoded_len(self.total_results) as u32;
+        }
+        for v in &self.resources {
+            let __slot = __cache.reserve();
+            let inner_size = v.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
+        if self.start_index != 0i32 {
+            size += 1u32 + ::buffa::types::int32_encoded_len(self.start_index) as u32;
+        }
+        if self.items_per_page != 0i32 {
+            size += 1u32 + ::buffa::types::int32_encoded_len(self.items_per_page) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, __cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for v in &self.schemas {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if self.total_results != 0i32 {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_int32(self.total_results, buf);
+        }
+        for v in &self.resources {
+            ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            v.write_to(__cache, buf);
+        }
+        if self.start_index != 0i32 {
+            ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_int32(self.start_index, buf);
+        }
+        if self.items_per_page != 0i32 {
+            ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_int32(self.items_per_page, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.schemas.push(::buffa::types::decode_string(buf)?);
+            }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.total_results = ::buffa::types::decode_int32(buf)?;
+            }
+            3u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 3u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                let mut elem = ::core::default::Default::default();
+                ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
+                self.resources.push(elem);
+            }
+            4u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 4u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.start_index = ::buffa::types::decode_int32(buf)?;
+            }
+            5u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 5u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.items_per_page = ::buffa::types::decode_int32(buf)?;
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.schemas.clear();
+        self.total_results = 0i32;
+        self.resources.clear();
+        self.start_index = 0i32;
+        self.items_per_page = 0i32;
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for ListScimResourcesResponse {
+    const PROTO_FQN: &'static str = "unitycatalog.scim.v1.ListScimResourcesResponse";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for ListScimResourcesResponse {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __LIST_SCIM_RESOURCES_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.scim.v1.ListScimResourcesResponse",
+        to_json: ::buffa::type_registry::any_to_json::<ListScimResourcesResponse>,
+        from_json: ::buffa::type_registry::any_from_json::<ListScimResourcesResponse>,
+        is_wkt: false,
+    };
+
+/// A SCIM search (RFC 7644, section 3.4.3): a list request in a body.
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct ScimSearchRequest {
+    /// SCIM schema URIs of the request: `urn:ietf:params:scim:api:messages:2.0:SearchRequest`.
+    ///
+    /// Field 1: `schemas`
+    #[serde(
+        rename = "schemas",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+        deserialize_with = "::buffa::json_helpers::null_as_default"
+    )]
+    pub schemas: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
+    /// The only attributes to return, such as `userName`.
+    ///
+    /// Field 2: `attributes`
+    #[serde(
+        rename = "attributes",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+        deserialize_with = "::buffa::json_helpers::null_as_default"
+    )]
+    pub attributes: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
+    /// The attributes to leave out.
+    ///
+    /// Field 3: `excluded_attributes`
+    #[serde(
+        rename = "excludedAttributes",
+        alias = "excluded_attributes",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+        deserialize_with = "::buffa::json_helpers::null_as_default"
+    )]
+    pub excluded_attributes: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
+    /// SCIM filter (RFC 7644, section 3.4.2.2).
+    ///
+    /// Field 4: `filter`
+    #[serde(
+        rename = "filter",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub filter: ::core::option::Option<::buffa::alloc::string::String>,
+    /// Index of the first resource to return, from 1.
+    ///
+    /// Field 5: `start_index`
+    #[serde(
+        rename = "startIndex",
+        alias = "start_index",
+        with = "::buffa::json_helpers::opt_int32",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub start_index: ::core::option::Option<i32>,
+    /// The maximum number of resources to return, at most 1000. The default is 50.
+    ///
+    /// Field 6: `count`
+    #[serde(
+        rename = "count",
+        with = "::buffa::json_helpers::opt_int32",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub count: ::core::option::Option<i32>,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for ScimSearchRequest {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("ScimSearchRequest")
+            .field("schemas", &self.schemas)
+            .field("attributes", &self.attributes)
+            .field("excluded_attributes", &self.excluded_attributes)
+            .field("filter", &self.filter)
+            .field("start_index", &self.start_index)
+            .field("count", &self.count)
+            .finish()
+    }
+}
+
+impl ScimSearchRequest {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str = "type.googleapis.com/unitycatalog.scim.v1.ScimSearchRequest";
+}
+
+impl ScimSearchRequest {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::filter`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_filter(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.filter = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::start_index`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_start_index(mut self, value: i32) -> Self {
+        self.start_index = Some(value);
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::count`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_count(mut self, value: i32) -> Self {
+        self.count = Some(value);
+        self
+    }
+}
+
+impl ::buffa::DefaultInstance for ScimSearchRequest {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<ScimSearchRequest> =
+            ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for ScimSearchRequest {
+    const PACKAGE: &'static str = "unitycatalog.scim.v1";
+    const NAME: &'static str = "ScimSearchRequest";
+    const FULL_NAME: &'static str = "unitycatalog.scim.v1.ScimSearchRequest";
+    const TYPE_URL: &'static str = "type.googleapis.com/unitycatalog.scim.v1.ScimSearchRequest";
+}
+
+impl ::buffa::Message for ScimSearchRequest {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        for v in &self.schemas {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        for v in &self.attributes {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        for v in &self.excluded_attributes {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if let Some(ref v) = self.filter {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if let Some(v) = self.start_index {
+            size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
+        }
+        if let Some(v) = self.count {
+            size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, _cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        for v in &self.schemas {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        for v in &self.attributes {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        for v in &self.excluded_attributes {
+            ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.filter {
+            ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(v) = self.start_index {
+            ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_int32(v, buf);
+        }
+        if let Some(v) = self.count {
+            ::buffa::encoding::Tag::new(6u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_int32(v, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.schemas.push(::buffa::types::decode_string(buf)?);
+            }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.attributes.push(::buffa::types::decode_string(buf)?);
+            }
+            3u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 3u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.excluded_attributes
+                    .push(::buffa::types::decode_string(buf)?);
+            }
+            4u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 4u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.filter
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            5u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 5u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.start_index = ::core::option::Option::Some(::buffa::types::decode_int32(buf)?);
+            }
+            6u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 6u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.count = ::core::option::Option::Some(::buffa::types::decode_int32(buf)?);
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.schemas.clear();
+        self.attributes.clear();
+        self.excluded_attributes.clear();
+        self.filter = ::core::option::Option::None;
+        self.start_index = ::core::option::Option::None;
+        self.count = ::core::option::Option::None;
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for ScimSearchRequest {
+    const PROTO_FQN: &'static str = "unitycatalog.scim.v1.ScimSearchRequest";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for ScimSearchRequest {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __SCIM_SEARCH_REQUEST_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.scim.v1.ScimSearchRequest",
+        to_json: ::buffa::type_registry::any_to_json::<ScimSearchRequest>,
+        from_json: ::buffa::type_registry::any_from_json::<ScimSearchRequest>,
+        is_wkt: false,
+    };
+
 #[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct GetUserRequest {
@@ -1864,6 +3034,23 @@ pub struct GetUserRequest {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub id: ::buffa::alloc::string::String,
+    /// The only attributes to return, separated by commas.
+    ///
+    /// Field 2: `attributes`
+    #[serde(
+        rename = "attributes",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub attributes: ::core::option::Option<::buffa::alloc::string::String>,
+    /// The attributes to leave out, separated by commas.
+    ///
+    /// Field 3: `excluded_attributes`
+    #[serde(
+        rename = "excludedAttributes",
+        alias = "excluded_attributes",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub excluded_attributes: ::core::option::Option<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1873,6 +3060,8 @@ impl ::core::fmt::Debug for GetUserRequest {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("GetUserRequest")
             .field("id", &self.id)
+            .field("attributes", &self.attributes)
+            .field("excluded_attributes", &self.excluded_attributes)
             .finish()
     }
 }
@@ -1883,6 +3072,27 @@ impl GetUserRequest {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/unitycatalog.scim.v1.GetUserRequest";
+}
+
+impl GetUserRequest {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::attributes`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_attributes(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.attributes = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::excluded_attributes`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_excluded_attributes(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.excluded_attributes = Some(value.into());
+        self
+    }
 }
 
 impl ::buffa::DefaultInstance for GetUserRequest {
@@ -1914,6 +3124,12 @@ impl ::buffa::Message for GetUserRequest {
         if !self.id.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.id) as u32;
         }
+        if let Some(ref v) = self.attributes {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if let Some(ref v) = self.excluded_attributes {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -1925,6 +3141,16 @@ impl ::buffa::Message for GetUserRequest {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(&self.id, buf);
+        }
+        if let Some(ref v) = self.attributes {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.excluded_attributes {
+            ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -1951,6 +3177,34 @@ impl ::buffa::Message for GetUserRequest {
                 }
                 ::buffa::types::merge_string(&mut self.id, buf)?;
             }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.attributes
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            3u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 3u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.excluded_attributes
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -1961,6 +3215,8 @@ impl ::buffa::Message for GetUserRequest {
 
     fn clear(&mut self) {
         self.id.clear();
+        self.attributes = ::core::option::Option::None;
+        self.excluded_attributes = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -2292,6 +3548,15 @@ pub struct ScimGroupMember {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub member_type: ::core::option::Option<::buffa::alloc::string::String>,
+    /// URL of the user. The server sets it and ignores it in requests.
+    ///
+    /// Field 4: `ref`
+    #[serde(
+        rename = "",
+        alias = "ref",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub r#ref: ::core::option::Option<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -2303,6 +3568,7 @@ impl ::core::fmt::Debug for ScimGroupMember {
             .field("value", &self.value)
             .field("display", &self.display)
             .field("member_type", &self.member_type)
+            .field("ref", &self.r#ref)
             .finish()
     }
 }
@@ -2329,6 +3595,14 @@ impl ScimGroupMember {
     ///Sets [`Self::member_type`] to `Some(value)`, consuming and returning `self`.
     pub fn with_member_type(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
         self.member_type = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets `ref` to `Some(value)`, consuming and returning `self`.
+    pub fn with_ref(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.r#ref = Some(value.into());
         self
     }
 }
@@ -2368,6 +3642,9 @@ impl ::buffa::Message for ScimGroupMember {
         if let Some(ref v) = self.member_type {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
         }
+        if let Some(ref v) = self.r#ref {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -2387,6 +3664,11 @@ impl ::buffa::Message for ScimGroupMember {
         }
         if let Some(ref v) = self.member_type {
             ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.r#ref {
+            ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(v, buf);
         }
@@ -2443,6 +3725,20 @@ impl ::buffa::Message for ScimGroupMember {
                     buf,
                 )?;
             }
+            4u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 4u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.r#ref
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -2455,6 +3751,7 @@ impl ::buffa::Message for ScimGroupMember {
         self.value.clear();
         self.display = ::core::option::Option::None;
         self.member_type = ::core::option::Option::None;
+        self.r#ref = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -2516,7 +3813,7 @@ pub struct ScimGroup {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub id: ::buffa::alloc::string::String,
-    /// Name of the group.
+    /// Name of the group, its name in grants.
     ///
     /// Field 3: `display_name`
     #[serde(
@@ -2525,7 +3822,7 @@ pub struct ScimGroup {
         with = "::buffa::json_helpers::proto_string"
     )]
     pub display_name: ::buffa::alloc::string::String,
-    /// Members of the group.
+    /// Members of the group: users.
     ///
     /// Field 4: `members`
     #[serde(
@@ -2534,6 +3831,23 @@ pub struct ScimGroup {
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub members: ::buffa::alloc::vec::Vec<ScimGroupMember>,
+    /// The identity the group has at an identity provider.
+    ///
+    /// Field 5: `external_id`
+    #[serde(
+        rename = "externalId",
+        alias = "external_id",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub external_id: ::core::option::Option<::buffa::alloc::string::String>,
+    /// When the group was created and last changed.
+    ///
+    /// Field 6: `meta`
+    #[serde(
+        rename = "meta",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
+    )]
+    pub meta: ::buffa::MessageField<ScimMeta>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -2546,6 +3860,8 @@ impl ::core::fmt::Debug for ScimGroup {
             .field("id", &self.id)
             .field("display_name", &self.display_name)
             .field("members", &self.members)
+            .field("external_id", &self.external_id)
+            .field("meta", &self.meta)
             .finish()
     }
 }
@@ -2556,6 +3872,16 @@ impl ScimGroup {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/unitycatalog.scim.v1.ScimGroup";
+}
+
+impl ScimGroup {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::external_id`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_external_id(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.external_id = Some(value.into());
+        self
+    }
 }
 
 impl ::buffa::DefaultInstance for ScimGroup {
@@ -2598,6 +3924,15 @@ impl ::buffa::Message for ScimGroup {
             __cache.set(__slot, inner_size);
             size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
         }
+        if let Some(ref v) = self.external_id {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if self.meta.is_set() {
+            let __slot = __cache.reserve();
+            let inner_size = self.meta.compute_size(__cache);
+            __cache.set(__slot, inner_size);
+            size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -2625,6 +3960,17 @@ impl ::buffa::Message for ScimGroup {
                 .encode(buf);
             ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
+        }
+        if let Some(ref v) = self.external_id {
+            ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if self.meta.is_set() {
+            ::buffa::encoding::Tag::new(6u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
+            self.meta.write_to(__cache, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -2683,6 +4029,34 @@ impl ::buffa::Message for ScimGroup {
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
                 self.members.push(elem);
             }
+            5u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 5u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.external_id
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            6u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 6u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::Message::merge_length_delimited(
+                    self.meta.get_or_insert_default(),
+                    buf,
+                    depth,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -2696,6 +4070,8 @@ impl ::buffa::Message for ScimGroup {
         self.id.clear();
         self.display_name.clear();
         self.members.clear();
+        self.external_id = ::core::option::Option::None;
+        self.meta = ::buffa::MessageField::none();
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -2756,7 +4132,7 @@ pub struct ListGroupsRequest {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub start_index: ::core::option::Option<i32>,
-    /// The maximum number of groups to return. The default is 50.
+    /// The maximum number of groups to return, at most 1000. The default is 50.
     ///
     /// Field 3: `count`
     #[serde(
@@ -2765,6 +4141,23 @@ pub struct ListGroupsRequest {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub count: ::core::option::Option<i32>,
+    /// The only attributes to return, separated by commas, such as `displayName`.
+    ///
+    /// Field 4: `attributes`
+    #[serde(
+        rename = "attributes",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub attributes: ::core::option::Option<::buffa::alloc::string::String>,
+    /// The attributes to leave out, separated by commas, such as `members`.
+    ///
+    /// Field 5: `excluded_attributes`
+    #[serde(
+        rename = "excludedAttributes",
+        alias = "excluded_attributes",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub excluded_attributes: ::core::option::Option<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -2776,6 +4169,8 @@ impl ::core::fmt::Debug for ListGroupsRequest {
             .field("filter", &self.filter)
             .field("start_index", &self.start_index)
             .field("count", &self.count)
+            .field("attributes", &self.attributes)
+            .field("excluded_attributes", &self.excluded_attributes)
             .finish()
     }
 }
@@ -2810,6 +4205,25 @@ impl ListGroupsRequest {
     ///Sets [`Self::count`] to `Some(value)`, consuming and returning `self`.
     pub fn with_count(mut self, value: i32) -> Self {
         self.count = Some(value);
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::attributes`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_attributes(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.attributes = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::excluded_attributes`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_excluded_attributes(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.excluded_attributes = Some(value.into());
         self
     }
 }
@@ -2849,6 +4263,12 @@ impl ::buffa::Message for ListGroupsRequest {
         if let Some(v) = self.count {
             size += 1u32 + ::buffa::types::int32_encoded_len(v) as u32;
         }
+        if let Some(ref v) = self.attributes {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if let Some(ref v) = self.excluded_attributes {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -2868,6 +4288,16 @@ impl ::buffa::Message for ListGroupsRequest {
         if let Some(v) = self.count {
             ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::Varint).encode(buf);
             ::buffa::types::encode_int32(v, buf);
+        }
+        if let Some(ref v) = self.attributes {
+            ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.excluded_attributes {
+            ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -2918,6 +4348,34 @@ impl ::buffa::Message for ListGroupsRequest {
                 }
                 self.count = ::core::option::Option::Some(::buffa::types::decode_int32(buf)?);
             }
+            4u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 4u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.attributes
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            5u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 5u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.excluded_attributes
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -2930,6 +4388,8 @@ impl ::buffa::Message for ListGroupsRequest {
         self.filter = ::core::option::Option::None;
         self.start_index = ::core::option::Option::None;
         self.count = ::core::option::Option::None;
+        self.attributes = ::core::option::Option::None;
+        self.excluded_attributes = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -2982,7 +4442,7 @@ pub struct ListScimGroupsResponse {
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub schemas: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
-    /// Number of groups in the page.
+    /// Number of groups that match.
     ///
     /// Field 2: `total_results`
     #[serde(
@@ -3255,6 +4715,23 @@ pub struct GetGroupRequest {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub id: ::buffa::alloc::string::String,
+    /// The only attributes to return, separated by commas.
+    ///
+    /// Field 2: `attributes`
+    #[serde(
+        rename = "attributes",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub attributes: ::core::option::Option<::buffa::alloc::string::String>,
+    /// The attributes to leave out, separated by commas.
+    ///
+    /// Field 3: `excluded_attributes`
+    #[serde(
+        rename = "excludedAttributes",
+        alias = "excluded_attributes",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub excluded_attributes: ::core::option::Option<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -3264,6 +4741,8 @@ impl ::core::fmt::Debug for GetGroupRequest {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("GetGroupRequest")
             .field("id", &self.id)
+            .field("attributes", &self.attributes)
+            .field("excluded_attributes", &self.excluded_attributes)
             .finish()
     }
 }
@@ -3274,6 +4753,27 @@ impl GetGroupRequest {
     ///
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str = "type.googleapis.com/unitycatalog.scim.v1.GetGroupRequest";
+}
+
+impl GetGroupRequest {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::attributes`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_attributes(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.attributes = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::excluded_attributes`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_excluded_attributes(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.excluded_attributes = Some(value.into());
+        self
+    }
 }
 
 impl ::buffa::DefaultInstance for GetGroupRequest {
@@ -3305,6 +4805,12 @@ impl ::buffa::Message for GetGroupRequest {
         if !self.id.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.id) as u32;
         }
+        if let Some(ref v) = self.attributes {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if let Some(ref v) = self.excluded_attributes {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -3316,6 +4822,16 @@ impl ::buffa::Message for GetGroupRequest {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(&self.id, buf);
+        }
+        if let Some(ref v) = self.attributes {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.excluded_attributes {
+            ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -3342,6 +4858,34 @@ impl ::buffa::Message for GetGroupRequest {
                 }
                 ::buffa::types::merge_string(&mut self.id, buf)?;
             }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.attributes
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            3u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 3u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.excluded_attributes
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -3352,6 +4896,8 @@ impl ::buffa::Message for GetGroupRequest {
 
     fn clear(&mut self) {
         self.id.clear();
+        self.attributes = ::core::option::Option::None;
+        self.excluded_attributes = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -3549,8 +5095,9 @@ pub struct ScimPatchOperation {
     /// Field 1: `op`
     #[serde(rename = "op", with = "::buffa::json_helpers::proto_string")]
     pub op: ::buffa::alloc::string::String,
-    /// SCIM attribute path, such as `active`, `displayName`, `members` or
-    /// `members[value eq "<id>"]`. Absent for a `replace` whose `value` holds the attributes.
+    /// SCIM attribute path: `attr`, `attr.sub`, `attr[filter]` or `attr[filter].sub`, such as
+    /// `name.familyName`, `members[value eq "<id>"]` or `emails[type eq "work"].value`. Absent for
+    /// an `add` or `replace` whose `value` holds the attributes.
     ///
     /// Field 2: `path`
     #[serde(
@@ -3558,8 +5105,8 @@ pub struct ScimPatchOperation {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub path: ::core::option::Option<::buffa::alloc::string::String>,
-    /// The new value. Any JSON: a boolean or string for `active`, a string for `displayName`, an
-    /// array of members for `members`, an object of attributes for a `replace` without `path`.
+    /// The value. Any JSON: a string for `displayName`, an array of members for `members`, an
+    /// object of attributes without `path`. A `remove` of a list with a value removes those values.
     ///
     /// Field 3: `value`
     #[serde(
@@ -3984,13 +5531,13 @@ pub const __SCIM_PATCH_OP_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
 #[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct ScimBulkOp {
-    /// The HTTP method of the operation: `POST`, `PATCH` or `DELETE`.
+    /// The HTTP method of the operation: `POST`, `PUT`, `PATCH` or `DELETE`.
     ///
     /// Field 1: `method`
     #[serde(rename = "method", with = "::buffa::json_helpers::proto_string")]
     pub method: ::buffa::alloc::string::String,
     /// The resource of the operation: `/Users` or `/Groups` for `POST`, `/Users/<id>` or
-    /// `/Groups/<id>` for `PATCH` and `DELETE`.
+    /// `/Groups/<id>` for the others.
     ///
     /// Field 2: `path`
     #[serde(rename = "path", with = "::buffa::json_helpers::proto_string")]
@@ -4004,8 +5551,8 @@ pub struct ScimBulkOp {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub bulk_id: ::core::option::Option<::buffa::alloc::string::String>,
-    /// The body of the operation: a `ScimUser` or `ScimGroup` for `POST`, a `ScimPatchOp` (without
-    /// `id`) for `PATCH`.
+    /// The body of the operation: a `ScimUser` or `ScimGroup` for `POST` and `PUT`, a `ScimPatchOp`
+    /// (without `id`) for `PATCH`.
     ///
     /// Field 4: `data`
     #[serde(
@@ -4495,7 +6042,7 @@ pub struct ScimBulkOpResult {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub location: ::core::option::Option<::buffa::alloc::string::String>,
-    /// The answer of the operation: the user or group, or an error with `status` and `detail`.
+    /// The SCIM error of a failed operation.
     ///
     /// Field 5: `response`
     #[serde(
@@ -4952,7 +6499,7 @@ pub struct ScimSchemaAttribute {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub name: ::buffa::alloc::string::String,
-    /// Data type of the attribute: `string`, `boolean` or `complex`.
+    /// Data type of the attribute: `string`, `boolean`, `reference` or `complex`.
     ///
     /// Field 2: `type`
     #[serde(
@@ -4970,7 +6517,7 @@ pub struct ScimSchemaAttribute {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_false"
     )]
     pub required: bool,
-    /// Whether the attribute holds a list of values. Absent: a single value.
+    /// Whether the attribute holds a list of values.
     ///
     /// Field 4: `multi_valued`
     #[serde(
@@ -4979,7 +6526,7 @@ pub struct ScimSchemaAttribute {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub multi_valued: ::core::option::Option<bool>,
-    /// How the server keeps values unique: `server`. Absent: not unique.
+    /// How the server keeps values unique: `none` or `server`.
     ///
     /// Field 5: `uniqueness`
     #[serde(
@@ -4997,6 +6544,59 @@ pub struct ScimSchemaAttribute {
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub sub_attributes: ::buffa::alloc::vec::Vec<Self>,
+    /// Description of the attribute.
+    ///
+    /// Field 7: `description`
+    #[serde(
+        rename = "description",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub description: ::core::option::Option<::buffa::alloc::string::String>,
+    /// Whether text values compare with their case: never.
+    ///
+    /// Field 8: `case_exact`
+    #[serde(
+        rename = "caseExact",
+        alias = "case_exact",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub case_exact: ::core::option::Option<bool>,
+    /// Whether a client may change the attribute: `readOnly`, `readWrite` or `immutable`.
+    ///
+    /// Field 9: `mutability`
+    #[serde(
+        rename = "mutability",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub mutability: ::core::option::Option<::buffa::alloc::string::String>,
+    /// When the server returns the attribute: `default`.
+    ///
+    /// Field 10: `returned`
+    #[serde(
+        rename = "returned",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub returned: ::core::option::Option<::buffa::alloc::string::String>,
+    /// The values that the attribute usually has, such as `work` and `home`.
+    ///
+    /// Field 11: `canonical_values`
+    #[serde(
+        rename = "canonicalValues",
+        alias = "canonical_values",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+        deserialize_with = "::buffa::json_helpers::null_as_default"
+    )]
+    pub canonical_values: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
+    /// What a `reference` attribute refers to, such as `external`.
+    ///
+    /// Field 12: `reference_types`
+    #[serde(
+        rename = "referenceTypes",
+        alias = "reference_types",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_vec",
+        deserialize_with = "::buffa::json_helpers::null_as_default"
+    )]
+    pub reference_types: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -5011,6 +6611,12 @@ impl ::core::fmt::Debug for ScimSchemaAttribute {
             .field("multi_valued", &self.multi_valued)
             .field("uniqueness", &self.uniqueness)
             .field("sub_attributes", &self.sub_attributes)
+            .field("description", &self.description)
+            .field("case_exact", &self.case_exact)
+            .field("mutability", &self.mutability)
+            .field("returned", &self.returned)
+            .field("canonical_values", &self.canonical_values)
+            .field("reference_types", &self.reference_types)
             .finish()
     }
 }
@@ -5038,6 +6644,38 @@ impl ScimSchemaAttribute {
     ///Sets [`Self::uniqueness`] to `Some(value)`, consuming and returning `self`.
     pub fn with_uniqueness(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
         self.uniqueness = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::description`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_description(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.description = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::case_exact`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_case_exact(mut self, value: bool) -> Self {
+        self.case_exact = Some(value);
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::mutability`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_mutability(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.mutability = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::returned`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_returned(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.returned = Some(value.into());
         self
     }
 }
@@ -5089,6 +6727,24 @@ impl ::buffa::Message for ScimSchemaAttribute {
             __cache.set(__slot, inner_size);
             size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
         }
+        if let Some(ref v) = self.description {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if self.case_exact.is_some() {
+            size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
+        }
+        if let Some(ref v) = self.mutability {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        if let Some(ref v) = self.returned {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        for v in &self.canonical_values {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        for v in &self.reference_types {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -5124,6 +6780,35 @@ impl ::buffa::Message for ScimSchemaAttribute {
                 .encode(buf);
             ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             v.write_to(__cache, buf);
+        }
+        if let Some(ref v) = self.description {
+            ::buffa::encoding::Tag::new(7u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(v) = self.case_exact {
+            ::buffa::encoding::Tag::new(8u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_bool(v, buf);
+        }
+        if let Some(ref v) = self.mutability {
+            ::buffa::encoding::Tag::new(9u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.returned {
+            ::buffa::encoding::Tag::new(10u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        for v in &self.canonical_values {
+            ::buffa::encoding::Tag::new(11u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        for v in &self.reference_types {
+            ::buffa::encoding::Tag::new(12u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -5206,6 +6891,80 @@ impl ::buffa::Message for ScimSchemaAttribute {
                 ::buffa::Message::merge_length_delimited(&mut elem, buf, depth)?;
                 self.sub_attributes.push(elem);
             }
+            7u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 7u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.description
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            8u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 8u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.case_exact = ::core::option::Option::Some(::buffa::types::decode_bool(buf)?);
+            }
+            9u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 9u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.mutability
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            10u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 10u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.returned
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            11u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 11u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.canonical_values
+                    .push(::buffa::types::decode_string(buf)?);
+            }
+            12u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 12u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.reference_types
+                    .push(::buffa::types::decode_string(buf)?);
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -5221,6 +6980,12 @@ impl ::buffa::Message for ScimSchemaAttribute {
         self.multi_valued = ::core::option::Option::None;
         self.uniqueness = ::core::option::Option::None;
         self.sub_attributes.clear();
+        self.description = ::core::option::Option::None;
+        self.case_exact = ::core::option::Option::None;
+        self.mutability = ::core::option::Option::None;
+        self.returned = ::core::option::Option::None;
+        self.canonical_values.clear();
+        self.reference_types.clear();
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -5683,6 +7448,155 @@ pub const __LIST_SCIM_SCHEMAS_REQUEST_JSON_ANY: ::buffa::type_registry::JsonAnyE
         type_url: "type.googleapis.com/unitycatalog.scim.v1.ListScimSchemasRequest",
         to_json: ::buffa::type_registry::any_to_json::<ListScimSchemasRequest>,
         from_json: ::buffa::type_registry::any_from_json::<ListScimSchemasRequest>,
+        is_wkt: false,
+    };
+
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct GetScimSchemaRequest {
+    /// URI of the schema, such as `urn:ietf:params:scim:schemas:core:2.0:User`.
+    ///
+    /// Field 1: `id`
+    #[serde(
+        rename = "id",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub id: ::buffa::alloc::string::String,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for GetScimSchemaRequest {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("GetScimSchemaRequest")
+            .field("id", &self.id)
+            .finish()
+    }
+}
+
+impl GetScimSchemaRequest {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.scim.v1.GetScimSchemaRequest";
+}
+
+impl ::buffa::DefaultInstance for GetScimSchemaRequest {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<GetScimSchemaRequest> =
+            ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for GetScimSchemaRequest {
+    const PACKAGE: &'static str = "unitycatalog.scim.v1";
+    const NAME: &'static str = "GetScimSchemaRequest";
+    const FULL_NAME: &'static str = "unitycatalog.scim.v1.GetScimSchemaRequest";
+    const TYPE_URL: &'static str = "type.googleapis.com/unitycatalog.scim.v1.GetScimSchemaRequest";
+}
+
+impl ::buffa::Message for GetScimSchemaRequest {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if !self.id.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.id) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, _cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if !self.id.is_empty() {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.id, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.id, buf)?;
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.id.clear();
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for GetScimSchemaRequest {
+    const PROTO_FQN: &'static str = "unitycatalog.scim.v1.GetScimSchemaRequest";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for GetScimSchemaRequest {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __GET_SCIM_SCHEMA_REQUEST_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.scim.v1.GetScimSchemaRequest",
+        to_json: ::buffa::type_registry::any_to_json::<GetScimSchemaRequest>,
+        from_json: ::buffa::type_registry::any_from_json::<GetScimSchemaRequest>,
         is_wkt: false,
     };
 
@@ -6407,6 +8321,156 @@ pub const __LIST_SCIM_RESOURCE_TYPES_REQUEST_JSON_ANY: ::buffa::type_registry::J
         type_url: "type.googleapis.com/unitycatalog.scim.v1.ListScimResourceTypesRequest",
         to_json: ::buffa::type_registry::any_to_json::<ListScimResourceTypesRequest>,
         from_json: ::buffa::type_registry::any_from_json::<ListScimResourceTypesRequest>,
+        is_wkt: false,
+    };
+
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct GetScimResourceTypeRequest {
+    /// Identifier of the resource type: `User` or `Group`.
+    ///
+    /// Field 1: `id`
+    #[serde(
+        rename = "id",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub id: ::buffa::alloc::string::String,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for GetScimResourceTypeRequest {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("GetScimResourceTypeRequest")
+            .field("id", &self.id)
+            .finish()
+    }
+}
+
+impl GetScimResourceTypeRequest {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.scim.v1.GetScimResourceTypeRequest";
+}
+
+impl ::buffa::DefaultInstance for GetScimResourceTypeRequest {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<GetScimResourceTypeRequest> =
+            ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for GetScimResourceTypeRequest {
+    const PACKAGE: &'static str = "unitycatalog.scim.v1";
+    const NAME: &'static str = "GetScimResourceTypeRequest";
+    const FULL_NAME: &'static str = "unitycatalog.scim.v1.GetScimResourceTypeRequest";
+    const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.scim.v1.GetScimResourceTypeRequest";
+}
+
+impl ::buffa::Message for GetScimResourceTypeRequest {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if !self.id.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.id) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, _cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if !self.id.is_empty() {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.id, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.id, buf)?;
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.id.clear();
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for GetScimResourceTypeRequest {
+    const PROTO_FQN: &'static str = "unitycatalog.scim.v1.GetScimResourceTypeRequest";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for GetScimResourceTypeRequest {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __GET_SCIM_RESOURCE_TYPE_REQUEST_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.scim.v1.GetScimResourceTypeRequest",
+        to_json: ::buffa::type_registry::any_to_json::<GetScimResourceTypeRequest>,
+        from_json: ::buffa::type_registry::any_from_json::<GetScimResourceTypeRequest>,
         is_wkt: false,
     };
 
@@ -7255,6 +9319,15 @@ pub struct ScimAuthenticationScheme {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_false"
     )]
     pub primary: bool,
+    /// URL of the specification of the scheme.
+    ///
+    /// Field 5: `spec_uri`
+    #[serde(
+        rename = "specUri",
+        alias = "spec_uri",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub spec_uri: ::core::option::Option<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -7267,6 +9340,7 @@ impl ::core::fmt::Debug for ScimAuthenticationScheme {
             .field("name", &self.name)
             .field("description", &self.description)
             .field("primary", &self.primary)
+            .field("spec_uri", &self.spec_uri)
             .finish()
     }
 }
@@ -7278,6 +9352,16 @@ impl ScimAuthenticationScheme {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str =
         "type.googleapis.com/unitycatalog.scim.v1.ScimAuthenticationScheme";
+}
+
+impl ScimAuthenticationScheme {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::spec_uri`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_spec_uri(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.spec_uri = Some(value.into());
+        self
+    }
 }
 
 impl ::buffa::DefaultInstance for ScimAuthenticationScheme {
@@ -7319,6 +9403,9 @@ impl ::buffa::Message for ScimAuthenticationScheme {
         if self.primary {
             size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
         }
+        if let Some(ref v) = self.spec_uri {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -7344,6 +9431,11 @@ impl ::buffa::Message for ScimAuthenticationScheme {
         if self.primary {
             ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::Varint).encode(buf);
             ::buffa::types::encode_bool(self.primary, buf);
+        }
+        if let Some(ref v) = self.spec_uri {
+            ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -7400,6 +9492,20 @@ impl ::buffa::Message for ScimAuthenticationScheme {
                 }
                 self.primary = ::buffa::types::decode_bool(buf)?;
             }
+            5u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 5u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.spec_uri
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -7413,6 +9519,7 @@ impl ::buffa::Message for ScimAuthenticationScheme {
         self.name.clear();
         self.description.clear();
         self.primary = false;
+        self.spec_uri = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -7653,6 +9760,15 @@ pub struct ScimServiceProviderConfig {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
     )]
     pub meta: ::buffa::MessageField<ScimMeta>,
+    /// URL of the documentation of the server's SCIM support.
+    ///
+    /// Field 10: `documentation_uri`
+    #[serde(
+        rename = "documentationUri",
+        alias = "documentation_uri",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub documentation_uri: ::core::option::Option<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -7670,6 +9786,7 @@ impl ::core::fmt::Debug for ScimServiceProviderConfig {
             .field("etag", &self.etag)
             .field("authentication_schemes", &self.authentication_schemes)
             .field("meta", &self.meta)
+            .field("documentation_uri", &self.documentation_uri)
             .finish()
     }
 }
@@ -7681,6 +9798,19 @@ impl ScimServiceProviderConfig {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str =
         "type.googleapis.com/unitycatalog.scim.v1.ScimServiceProviderConfig";
+}
+
+impl ScimServiceProviderConfig {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::documentation_uri`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_documentation_uri(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.documentation_uri = Some(value.into());
+        self
+    }
 }
 
 impl ::buffa::DefaultInstance for ScimServiceProviderConfig {
@@ -7761,6 +9891,9 @@ impl ::buffa::Message for ScimServiceProviderConfig {
             __cache.set(__slot, inner_size);
             size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
         }
+        if let Some(ref v) = self.documentation_uri {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -7820,6 +9953,11 @@ impl ::buffa::Message for ScimServiceProviderConfig {
                 .encode(buf);
             ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.meta.write_to(__cache, buf);
+        }
+        if let Some(ref v) = self.documentation_uri {
+            ::buffa::encoding::Tag::new(10u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -7956,6 +10094,20 @@ impl ::buffa::Message for ScimServiceProviderConfig {
                     depth,
                 )?;
             }
+            10u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 10u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.documentation_uri
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -7974,6 +10126,7 @@ impl ::buffa::Message for ScimServiceProviderConfig {
         self.etag = ::buffa::MessageField::none();
         self.authentication_schemes.clear();
         self.meta = ::buffa::MessageField::none();
+        self.documentation_uri = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }

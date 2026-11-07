@@ -1133,14 +1133,22 @@ async fn admin_endpoints() {
     )
     .await;
     assert_eq!(admin_me["roles"], json!([{ "value": "admin" }]));
-    // Not signed in: 401.
+    // Not signed in: 401, as a SCIM error.
     let anonymous = w
         .app
         .clone()
         .oneshot(common::control(Method::GET, "/scim2/Me"))
         .await
         .unwrap();
-    common::assert_error(anonymous, StatusCode::UNAUTHORIZED, "UNAUTHENTICATED").await;
+    let err =
+        json_body(assert_status(anonymous, StatusCode::UNAUTHORIZED, "anonymous").await).await;
+    assert_eq!(
+        (err["schemas"].clone(), err["status"].clone()),
+        (
+            json!(["urn:ietf:params:scim:api:messages:2.0:Error"]),
+            json!("401")
+        )
+    );
     // So are shares.
     assert_eq!(
         w.status(&w.alice, Method::GET, "/shares", None).await,
@@ -1174,7 +1182,7 @@ async fn admin_bootstrap() {
     );
     let admin = metastore
         .scim()
-        .find_user_by_email("admin")
+        .find_user_by_principal("admin")
         .await
         .unwrap()
         .unwrap();
@@ -1229,12 +1237,15 @@ async fn users_of_the_settings() {
     let report = bootstrap::seed(&metastore, &seeds).await.unwrap();
     assert_eq!((report.created, report.granted), (0, 0));
     let scim = metastore.scim();
-    let alice = scim.find_user_by_email("alice@example.com").await.unwrap();
+    let alice = scim
+        .find_user_by_principal("alice@example.com")
+        .await
+        .unwrap();
     assert_eq!(alice.unwrap().display_name.as_deref(), Some("Alice"));
     let etl = scim.find_user_by_external_id("etl-client").await.unwrap();
     assert_eq!(etl.unwrap().user_name, "etl@example.com");
     assert!(
-        scim.find_user_by_email("carol@example.com")
+        scim.find_user_by_principal("carol@example.com")
             .await
             .unwrap()
             .is_some()
@@ -1298,7 +1309,10 @@ async fn users_of_the_settings() {
     );
     let report = bootstrap::seed(&metastore, &dave).await.unwrap();
     assert_eq!((report.created, report.granted), (0, 0));
-    let dave = scim.find_user_by_email("dave@example.com").await.unwrap();
+    let dave = scim
+        .find_user_by_principal("dave@example.com")
+        .await
+        .unwrap();
     assert_eq!(dave.unwrap().display_name.as_deref(), Some("Dave"));
 
     // An entry never takes over another identity, and a failed start
@@ -1320,14 +1334,14 @@ async fn users_of_the_settings() {
         assert_eq!(error.message(), message);
     }
     assert!(
-        scim.find_user_by_email("erin@example.com")
+        scim.find_user_by_principal("erin@example.com")
             .await
             .unwrap()
             .is_none()
     );
 }
 
-/// Upstream `deleteUser`: the user's grants go and its tokens stop working.
+/// A deleted user's grants go and its tokens stop working.
 #[tokio::test]
 async fn deleted_users_lose_grants_and_sign_in() {
     let w = World::new().await;
@@ -1358,7 +1372,7 @@ async fn deleted_users_lose_grants_and_sign_in() {
     );
     assert_status(
         w.app.clone().oneshot(delete).await.unwrap(),
-        StatusCode::OK,
+        StatusCode::NO_CONTENT,
         "delete",
     )
     .await;
@@ -1381,7 +1395,12 @@ async fn groups_give_their_grants_to_members() {
     const PATCH: &str = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
     let w = World::new().await;
     w.catalog_and_schema(&[]).await;
-    let alice = w.metastore.scim().find_user_by_email(ALICE).await.unwrap();
+    let alice = w
+        .metastore
+        .scim()
+        .find_user_by_principal(ALICE)
+        .await
+        .unwrap();
     let alice = alice.unwrap().id.unwrap();
     let group = json!({ "schemas": [GROUP], "displayName": "data",
         "members": [{ "value": alice, "display": ALICE }] });
@@ -1444,7 +1463,8 @@ async fn groups_give_their_grants_to_members() {
     common::assert_error(missing, StatusCode::NOT_FOUND, "NOT_FOUND").await;
     let taken = json!({ "schemas": [GROUP], "displayName": ALICE });
     let taken = w.scim(Method::POST, "/scim2/Groups", taken).await;
-    common::assert_error(taken, StatusCode::CONFLICT, "ALREADY_EXISTS").await;
+    let err = json_body(assert_status(taken, StatusCode::CONFLICT, "taken").await).await;
+    assert_eq!(err["scimType"], "uniqueness");
     let ops = json!({ "schemas": [GROUP], "displayName": "ops@example.com" });
     let ops = w.scim(Method::POST, "/scim2/Groups", ops).await;
     assert_status(ops, StatusCode::CREATED, "ops").await;

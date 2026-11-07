@@ -214,6 +214,7 @@ async fn a_missing_user_is_refused_unless_made_or_known() {
                 value: "etl@example.com".into(),
                 primary: Some(true),
                 r#type: None,
+                display: None,
             }]),
             external_id: Some(ETL.into()),
             active: Some(true),

@@ -300,11 +300,13 @@ pub(crate) const SCIM_USER: TableDef = TableDef {
     columns: &[
         ("id_string", Text),
         ("user_name", Text),
+        ("principal", Text),
+        ("name", Json),
         ("display_name", Text),
         ("external_id", Text),
         ("emails", Json),
         ("active", Bool),
-        ("picture_url", Text),
+        ("photos", Json),
         ("created_at", Int),
         ("updated_at", Int),
     ],
@@ -316,7 +318,10 @@ pub(crate) const SCIM_GROUP: TableDef = TableDef {
     columns: &[
         ("id_string", Text),
         ("display_name", Text),
+        ("external_id", Text),
         ("members", Json),
+        ("created_at", Int),
+        ("updated_at", Int),
     ],
 };
 
@@ -391,7 +396,6 @@ pub(crate) const AUDIT_EVENT: TableDef = TableDef {
 };
 
 /// Every table above.
-#[cfg(test)]
 pub(crate) const ALL: &[&TableDef] = &[
     &CATALOG,
     &SCHEMA,
@@ -415,6 +419,13 @@ pub(crate) const ALL: &[&TableDef] = &[
     &STORAGE_CLEANUP_TASK,
     &AUDIT_EVENT,
 ];
+
+impl TableDef {
+    /// Whether the table has the column `name`.
+    pub(crate) fn has_column(&self, name: &str) -> bool {
+        self.columns.iter().any(|(column, _)| *column == name)
+    }
+}
 
 fn bad_row(table: &str, column: &str, why: impl std::fmt::Display) -> Error {
     Error::internal(format!("{table}.{column}: {why}"))
@@ -642,11 +653,13 @@ mod tests {
     fn statements_number_columns_in_order() {
         assert_eq!(
             SCIM_GROUP.insert(),
-            "INSERT INTO scim_group (id_string, display_name, members) VALUES ($1, $2, $3)"
+            "INSERT INTO scim_group (id_string, display_name, external_id, members, created_at, \
+             updated_at) VALUES ($1, $2, $3, $4, $5, $6)"
         );
         assert_eq!(
             SCIM_GROUP.update(),
-            "UPDATE scim_group SET display_name = $2, members = $3 WHERE id_string = $1"
+            "UPDATE scim_group SET display_name = $2, external_id = $3, members = $4, \
+             created_at = $5, updated_at = $6 WHERE id_string = $1"
         );
         assert_eq!(
             DELTA_COMMIT.update(),
@@ -668,7 +681,10 @@ mod tests {
             [
                 Value::Text("g".into()),
                 Value::Text("admins".into()),
+                Value::Null,
                 Value::Text(r#"[{"value":"u-1"}]"#.into()),
+                Value::Null,
+                Value::Null,
             ]
         );
         let back = SCIM_GROUP.object(Row::from(values)).unwrap();
@@ -678,7 +694,7 @@ mod tests {
         let task = SCIM_USER
             .values_of(serde_json::json!({ "active": 1 }).as_object().unwrap())
             .unwrap();
-        assert_eq!(task[5], Value::Bool(true), "0 and 1 are booleans");
+        assert_eq!(task[7], Value::Bool(true), "0 and 1 are booleans");
         assert!(
             SCIM_USER
                 .values_of(serde_json::json!({ "user_name": 5 }).as_object().unwrap())
@@ -703,6 +719,8 @@ mod tests {
             Row::from(vec![
                 Value::Text("u-1".into()),
                 Value::Text("ann".into()),
+                Value::Text("ann@x.org".into()),
+                Value::Null,
                 Value::Null,
                 Value::Null,
                 Value::Text(r#"[{"value":"ann@x.org"}]"#.into()),

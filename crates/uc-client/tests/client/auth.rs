@@ -12,7 +12,7 @@ use uc_server::authn::security::{ADMIN, initialize_admin};
 use uc_server::{AppState, build_app};
 
 use crate::common::{
-    Idp, client, email, metastore, rejected, security, serve, server_with_keys, token,
+    Idp, api_error, client, email, metastore, rejected, security, serve, server_with_keys, token,
 };
 
 const ALICE: &str = "alice@example.com";
@@ -152,7 +152,8 @@ async fn token_exchange() {
     assert_eq!(exchanged.expires_in, 3600);
     let alice = Client::new_with_token(url, exchanged.access_token);
     assert_eq!(alice.get_me().await.unwrap().user_name, ALICE);
-    rejected(anonymous.get_me().await, 401, "UNAUTHENTICATED");
+    // A SCIM error, which has no UC error code.
+    assert_eq!(api_error(anonymous.get_me().await).status, 401);
 }
 
 /// The server reads each field of the form of a token exchange.
@@ -223,7 +224,7 @@ async fn server_with_idp(idp: &Idp) -> Url {
         .with_auth_settings(settings);
     let url = serve(build_app(state)).await;
     Client::new_with_token(url.clone(), token(ADMIN))
-        .create_user()
+        .create_user(ALICE)
         .with_emails([email(ALICE)])
         .await
         .unwrap();

@@ -42,6 +42,14 @@ impl ScimClient {
             url.query_pairs_mut()
                 .append_pair("count", &value.to_string());
         }
+        if let Some(ref value) = request.attributes {
+            url.query_pairs_mut()
+                .append_pair("attributes", &value.to_string());
+        }
+        if let Some(ref value) = request.excluded_attributes {
+            url.query_pairs_mut()
+                .append_pair("excludedAttributes", &value.to_string());
+        }
         let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
@@ -53,7 +61,24 @@ impl ScimClient {
         })?)
     }
 
-    /// Create a user, named by its primary email. Only the metastore admin can.
+    /// List the users with a search request in the body. Only the metastore admin can.
+    pub async fn search_users(&self, request: &ScimSearchRequest) -> Result<ListScimUsersResponse> {
+        let url = self
+            .base_url
+            .join("api/1.0/unity-control/scim2/Users/.search")?;
+        let response = self.client.post(url).json(request).send_unchecked().await?;
+        if !response.status().is_success() {
+            return Err(crate::codegen::error::parse_error_response(response).await);
+        }
+        let result = response.bytes().await?;
+        let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
+    }
+
+    /// Create a user. Its user name, principal and external id belong to no other user, and no group
+    /// has its principal as name. Only the metastore admin can.
     pub async fn create_user(&self, request: &ScimUser) -> Result<ScimUser> {
         let url = self.base_url.join("api/1.0/unity-control/scim2/Users")?;
         let response = self.client.post(url).json(request).send_unchecked().await?;
@@ -73,7 +98,15 @@ impl ScimClient {
             "api/1.0/unity-control/scim2/Users/{}",
             encode_path_value(&request.id, false)
         );
-        let url = self.base_url.join(&formatted_path)?;
+        let mut url = self.base_url.join(&formatted_path)?;
+        if let Some(ref value) = request.attributes {
+            url.query_pairs_mut()
+                .append_pair("attributes", &value.to_string());
+        }
+        if let Some(ref value) = request.excluded_attributes {
+            url.query_pairs_mut()
+                .append_pair("excludedAttributes", &value.to_string());
+        }
         let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
@@ -85,8 +118,8 @@ impl ScimClient {
         })?)
     }
 
-    /// Replace a user: the name, state and external id change when given; the email and picture
-    /// stay. Only the metastore admin can.
+    /// Replace the attributes of a user that the body has: a value replaces, `null` removes, an
+    /// absent attribute stays. The body needs `userName`. Only the metastore admin can.
     pub async fn replace_user(&self, request: &ScimUser) -> Result<ScimUser> {
         let formatted_path = format!(
             "api/1.0/unity-control/scim2/Users/{}",
@@ -104,10 +137,10 @@ impl ScimClient {
         })?)
     }
 
-    /// Enable or disable a user. The server takes the first `replace` whose `path` is `active` or
-    /// absent; without `path`, the first attribute of `value` is the state (`{"active": false}`).
-    /// With no such operation the server answers 501. Only the metastore admin can.
-    pub async fn patch_user(&self, request: &ScimPatchOp) -> Result<()> {
+    /// Change a user with `add`, `replace` and `remove` operations (RFC 7644, section 3.5.2).
+    /// Operations on attributes that the server does not keep change nothing; `userName` cannot be
+    /// removed. Only the metastore admin can.
+    pub async fn patch_user(&self, request: &ScimPatchOp) -> Result<ScimUser> {
         let formatted_path = format!(
             "api/1.0/unity-control/scim2/Users/{}",
             encode_path_value(&request.id, false)
@@ -119,10 +152,14 @@ impl ScimClient {
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
-        Ok(())
+        let result = response.bytes().await?;
+        let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
     }
 
-    /// Disable a user and remove its grants. The user stays, disabled. Only the metastore admin can.
+    /// Delete a user with its grants, tokens and group memberships. Only the metastore admin can.
     pub async fn delete_user(&self, request: &DeleteUserRequest) -> Result<()> {
         let formatted_path = format!(
             "api/1.0/unity-control/scim2/Users/{}",
@@ -166,7 +203,34 @@ impl ScimClient {
             url.query_pairs_mut()
                 .append_pair("count", &value.to_string());
         }
+        if let Some(ref value) = request.attributes {
+            url.query_pairs_mut()
+                .append_pair("attributes", &value.to_string());
+        }
+        if let Some(ref value) = request.excluded_attributes {
+            url.query_pairs_mut()
+                .append_pair("excludedAttributes", &value.to_string());
+        }
         let response = self.client.get(url).send_unchecked().await?;
+        if !response.status().is_success() {
+            return Err(crate::codegen::error::parse_error_response(response).await);
+        }
+        let result = response.bytes().await?;
+        let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
+    }
+
+    /// List the groups with a search request in the body. Only the metastore admin can.
+    pub async fn search_groups(
+        &self,
+        request: &ScimSearchRequest,
+    ) -> Result<ListScimGroupsResponse> {
+        let url = self
+            .base_url
+            .join("api/1.0/unity-control/scim2/Groups/.search")?;
+        let response = self.client.post(url).json(request).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -197,7 +261,15 @@ impl ScimClient {
             "api/1.0/unity-control/scim2/Groups/{}",
             encode_path_value(&request.id, false)
         );
-        let url = self.base_url.join(&formatted_path)?;
+        let mut url = self.base_url.join(&formatted_path)?;
+        if let Some(ref value) = request.attributes {
+            url.query_pairs_mut()
+                .append_pair("attributes", &value.to_string());
+        }
+        if let Some(ref value) = request.excluded_attributes {
+            url.query_pairs_mut()
+                .append_pair("excludedAttributes", &value.to_string());
+        }
         let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
@@ -209,7 +281,9 @@ impl ScimClient {
         })?)
     }
 
-    /// Replace a group: its name and members. Only the metastore admin can.
+    /// Replace the attributes of a group that the body has: a value replaces, `null` removes, an
+    /// absent attribute stays. The body needs `displayName`. A renamed group keeps its grants. Only
+    /// the metastore admin can.
     pub async fn replace_group(&self, request: &ScimGroup) -> Result<ScimGroup> {
         let formatted_path = format!(
             "api/1.0/unity-control/scim2/Groups/{}",
@@ -227,9 +301,9 @@ impl ScimClient {
         })?)
     }
 
-    /// Change a group: `add` to `members`, `remove` of `members` or `members[value eq "<id>"]`,
-    /// `replace` of `displayName`, or `replace` without `path` with a whole group. Other operations
-    /// are ignored. Only the metastore admin can.
+    /// Change a group with `add`, `replace` and `remove` operations (RFC 7644, section 3.5.2), such
+    /// as an `add` to `members` or a `remove` of `members[value eq "<id>"]`. Only the metastore admin
+    /// can.
     pub async fn patch_group(&self, request: &ScimPatchOp) -> Result<ScimGroup> {
         let formatted_path = format!(
             "api/1.0/unity-control/scim2/Groups/{}",
@@ -261,6 +335,24 @@ impl ScimClient {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
         Ok(())
+    }
+
+    /// List the users and the groups with a search request in the body. Only the metastore admin
+    /// can.
+    pub async fn search_resources(
+        &self,
+        request: &ScimSearchRequest,
+    ) -> Result<ListScimResourcesResponse> {
+        let url = self.base_url.join("api/1.0/unity-control/scim2/.search")?;
+        let response = self.client.post(url).json(request).send_unchecked().await?;
+        if !response.status().is_success() {
+            return Err(crate::codegen::error::parse_error_response(response).await);
+        }
+        let result = response.bytes().await?;
+        let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
     }
 
     /// Run operations on users and groups in one request. Each operation has its own status. Only
@@ -295,6 +387,24 @@ impl ScimClient {
         })?)
     }
 
+    /// Get a SCIM schema of the server. Any signed-in caller can.
+    pub async fn get_scim_schema(&self, request: &GetScimSchemaRequest) -> Result<ScimSchema> {
+        let formatted_path = format!(
+            "api/1.0/unity-control/scim2/Schemas/{}",
+            encode_path_value(&request.id, false)
+        );
+        let url = self.base_url.join(&formatted_path)?;
+        let response = self.client.get(url).send_unchecked().await?;
+        if !response.status().is_success() {
+            return Err(crate::codegen::error::parse_error_response(response).await);
+        }
+        let result = response.bytes().await?;
+        let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
+    }
+
     /// List the SCIM resource types of the server: User and Group. Any signed-in caller can.
     pub async fn list_scim_resource_types(
         &self,
@@ -303,6 +413,27 @@ impl ScimClient {
         let url = self
             .base_url
             .join("api/1.0/unity-control/scim2/ResourceTypes")?;
+        let response = self.client.get(url).send_unchecked().await?;
+        if !response.status().is_success() {
+            return Err(crate::codegen::error::parse_error_response(response).await);
+        }
+        let result = response.bytes().await?;
+        let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
+    }
+
+    /// Get a SCIM resource type of the server. Any signed-in caller can.
+    pub async fn get_scim_resource_type(
+        &self,
+        request: &GetScimResourceTypeRequest,
+    ) -> Result<ScimResourceType> {
+        let formatted_path = format!(
+            "api/1.0/unity-control/scim2/ResourceTypes/{}",
+            encode_path_value(&request.id, false)
+        );
+        let url = self.base_url.join(&formatted_path)?;
         let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);

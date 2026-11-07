@@ -150,6 +150,22 @@ test-azure:
     curl -fs --retry 60 --retry-all-errors --retry-delay 1 "$url/metadata/identity/oauth2/token?resource=https://storage.azure.com" -H "Metadata: true" > /dev/null
     UC_TEST_FLOCI_AZ_URL="$url" cargo test --profile {{ profile }} -p uc-server --test azure_emulator
 
+# Run the authentik tests (python/client/tests/integrations/test_authentik.py) against a uc-server of this repository: authentik, an identity provider, in Docker (its compose.yaml in integrations/authentik), pushes users and groups to the server over SCIM; needs the client in .venv (just develop-client)
+test-authentik:
+    #!/usr/bin/env bash
+    # A new authentik at each run: its database is in memory.
+    set -euo pipefail
+    cargo build -p uc-server --profile {{ profile }}
+    compose=(docker compose -f python/client/tests/integrations/authentik/compose.yaml)
+    export AUTHENTIK_PORT=19000 AUTHENTIK_TOKEN=uc-test-authentik-token
+    trap 'status=$?; [ $status -eq 0 ] || "${compose[@]}" logs --tail 300 server worker; "${compose[@]}" down --volumes > /dev/null 2>&1; exit $status' EXIT
+    "${compose[@]}" up -d --wait --wait-timeout 300
+    url=http://127.0.0.1:$AUTHENTIK_PORT
+    # The bootstrap token signs in once authentik has made its admin.
+    curl -fs -o /dev/null --retry 60 --retry-all-errors --retry-delay 1 -H "Authorization: Bearer $AUTHENTIK_TOKEN" "$url/api/v3/core/users/me/"
+    # In a subshell: the trap runs compose from here.
+    (cd python/client && UC_TEST_SERVER_BIN='{{ uc_server }}' UC_TEST_AUTHENTIK_URL="$url" UC_TEST_AUTHENTIK_TOKEN="$AUTHENTIK_TOKEN" uv run --no-sync pytest tests/integrations/test_authentik.py)
+
 # Run the Spark tests (python/client/tests/integrations/test_spark.py) with PySpark `spark`, 4.1.x or 4.2.x, against a uc-server of this repository; needs Java 17 or 21 and the client in .venv (just develop-client). Spark downloads its jars into ~/.ivy2.5.2
 test-spark spark="4.2.0":
     cargo build -p uc-server --profile {{ profile }}

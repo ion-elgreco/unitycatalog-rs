@@ -1740,12 +1740,26 @@ impl Client {
         ))
     }
 
-    /// Create a user, named by its primary email. Only the metastore admin can.
-    pub fn create_user(&self) -> CreateUserBuilder {
-        CreateUserBuilder::new(crate::codegen::scim::ScimClient::new(
+    /// List the users with a search request in the body. Only the metastore admin can.
+    pub fn search_users(&self) -> SearchUsersBuilder {
+        SearchUsersBuilder::new(crate::codegen::scim::ScimClient::new(
             self.client.clone(),
             self.base_url.clone(),
         ))
+    }
+
+    /// Create a user. Its user name, principal and external id belong to no other user, and no group
+    /// has its principal as name. Only the metastore admin can.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_name` - The unique name of the user, such as a user principal name, in any case. Absent in a create
+    /// request: the principal.
+    pub fn create_user(&self, user_name: impl Into<String>) -> CreateUserBuilder {
+        CreateUserBuilder::new(
+            crate::codegen::scim::ScimClient::new(self.client.clone(), self.base_url.clone()),
+            user_name,
+        )
     }
 
     /// Get a user. Only the metastore admin can.
@@ -1760,22 +1774,29 @@ impl Client {
         )
     }
 
-    /// Replace a user: the name, state and external id change when given; the email and picture
-    /// stay. Only the metastore admin can.
+    /// Replace the attributes of a user that the body has: a value replaces, `null` removes, an
+    /// absent attribute stays. The body needs `userName`. Only the metastore admin can.
     ///
     /// # Arguments
     ///
     /// * `id` - Unique identifier of the user.
-    pub fn replace_user(&self, id: impl Into<String>) -> ReplaceUserBuilder {
+    /// * `user_name` - The unique name of the user, such as a user principal name, in any case. Absent in a create
+    /// request: the principal.
+    pub fn replace_user(
+        &self,
+        id: impl Into<String>,
+        user_name: impl Into<String>,
+    ) -> ReplaceUserBuilder {
         ReplaceUserBuilder::new(
             crate::codegen::scim::ScimClient::new(self.client.clone(), self.base_url.clone()),
             id,
+            user_name,
         )
     }
 
-    /// Enable or disable a user. The server takes the first `replace` whose `path` is `active` or
-    /// absent; without `path`, the first attribute of `value` is the state (`{"active": false}`).
-    /// With no such operation the server answers 501. Only the metastore admin can.
+    /// Change a user with `add`, `replace` and `remove` operations (RFC 7644, section 3.5.2).
+    /// Operations on attributes that the server does not keep change nothing; `userName` cannot be
+    /// removed. Only the metastore admin can.
     ///
     /// # Arguments
     ///
@@ -1793,7 +1814,7 @@ impl Client {
         )
     }
 
-    /// Disable a user and remove its grants. The user stays, disabled. Only the metastore admin can.
+    /// Delete a user with its grants, tokens and group memberships. Only the metastore admin can.
     ///
     /// # Arguments
     ///
@@ -1822,11 +1843,19 @@ impl Client {
         ))
     }
 
+    /// List the groups with a search request in the body. Only the metastore admin can.
+    pub fn search_groups(&self) -> SearchGroupsBuilder {
+        SearchGroupsBuilder::new(crate::codegen::scim::ScimClient::new(
+            self.client.clone(),
+            self.base_url.clone(),
+        ))
+    }
+
     /// Create a group. Only the metastore admin can.
     ///
     /// # Arguments
     ///
-    /// * `display_name` - Name of the group.
+    /// * `display_name` - Name of the group, its name in grants.
     pub fn create_group(&self, display_name: impl Into<String>) -> CreateGroupBuilder {
         CreateGroupBuilder::new(
             crate::codegen::scim::ScimClient::new(self.client.clone(), self.base_url.clone()),
@@ -1846,12 +1875,14 @@ impl Client {
         )
     }
 
-    /// Replace a group: its name and members. Only the metastore admin can.
+    /// Replace the attributes of a group that the body has: a value replaces, `null` removes, an
+    /// absent attribute stays. The body needs `displayName`. A renamed group keeps its grants. Only
+    /// the metastore admin can.
     ///
     /// # Arguments
     ///
     /// * `id` - Unique identifier of the group. The server assigns it.
-    /// * `display_name` - Name of the group.
+    /// * `display_name` - Name of the group, its name in grants.
     pub fn replace_group(
         &self,
         id: impl Into<String>,
@@ -1864,9 +1895,9 @@ impl Client {
         )
     }
 
-    /// Change a group: `add` to `members`, `remove` of `members` or `members[value eq "<id>"]`,
-    /// `replace` of `displayName`, or `replace` without `path` with a whole group. Other operations
-    /// are ignored. Only the metastore admin can.
+    /// Change a group with `add`, `replace` and `remove` operations (RFC 7644, section 3.5.2), such
+    /// as an `add` to `members` or a `remove` of `members[value eq "<id>"]`. Only the metastore admin
+    /// can.
     ///
     /// # Arguments
     ///
@@ -1896,6 +1927,15 @@ impl Client {
         )
     }
 
+    /// List the users and the groups with a search request in the body. Only the metastore admin
+    /// can.
+    pub fn search_resources(&self) -> SearchResourcesBuilder {
+        SearchResourcesBuilder::new(crate::codegen::scim::ScimClient::new(
+            self.client.clone(),
+            self.base_url.clone(),
+        ))
+    }
+
     /// Run operations on users and groups in one request. Each operation has its own status. Only
     /// the metastore admin can.
     pub fn scim_bulk(&self) -> ScimBulkBuilder {
@@ -1913,12 +1953,36 @@ impl Client {
         ))
     }
 
+    /// Get a SCIM schema of the server. Any signed-in caller can.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - URI of the schema, such as `urn:ietf:params:scim:schemas:core:2.0:User`.
+    pub fn get_scim_schema(&self, id: impl Into<String>) -> GetScimSchemaBuilder {
+        GetScimSchemaBuilder::new(
+            crate::codegen::scim::ScimClient::new(self.client.clone(), self.base_url.clone()),
+            id,
+        )
+    }
+
     /// List the SCIM resource types of the server: User and Group. Any signed-in caller can.
     pub fn list_scim_resource_types(&self) -> ListScimResourceTypesBuilder {
         ListScimResourceTypesBuilder::new(crate::codegen::scim::ScimClient::new(
             self.client.clone(),
             self.base_url.clone(),
         ))
+    }
+
+    /// Get a SCIM resource type of the server. Any signed-in caller can.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - Identifier of the resource type: `User` or `Group`.
+    pub fn get_scim_resource_type(&self, id: impl Into<String>) -> GetScimResourceTypeBuilder {
+        GetScimResourceTypeBuilder::new(
+            crate::codegen::scim::ScimClient::new(self.client.clone(), self.base_url.clone()),
+            id,
+        )
     }
 
     /// Get the SCIM features that the server supports. Any signed-in caller can.

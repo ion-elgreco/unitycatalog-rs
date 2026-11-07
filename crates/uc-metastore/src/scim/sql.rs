@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use uc_api::{
-    PermissionsChange, ScimEmail, ScimGroup, ScimGroupMember, ScimMeta, ScimPhoto, ScimUser,
+    PermissionsChange, ScimEmail, ScimGroup, ScimGroupMember, ScimMeta, ScimName, ScimPhoto,
+    ScimUser,
 };
 use uc_common::{Error, Result, SecurableType, now_epoch_millis, require_non_empty};
 use uc_storage::Exec;
@@ -14,27 +15,29 @@ use crate::ScimOps;
 use crate::permissions::sql::{apply_permission_change, clear_principal, rename_principal};
 use crate::scim::{SeedReport, SeedUser};
 use crate::sql::rows::{SCIM_GROUP, SCIM_GROUP_MEMBER, SCIM_USER};
-use crate::sql::{
-    SqlMetastore, by_id, create_err, db_err, insert, insert_all, select, select_one, update,
-};
+use crate::sql::{SqlMetastore, by_id, create_err, db_err, insert, insert_all, select, update};
 
 use uc_api::scim::schema_uri;
 
-/// A user, upstream's `user` row: the email (as `user_name` and the one
-/// primary email), name, external id, state, picture and times.
+/// A user: its SCIM attributes, its principal and times.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ScimUserRow {
     id_string: String,
     user_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    principal: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<ScimName>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     display_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     external_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    emails: Option<Vec<ScimEmail>>,
-    active: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    picture_url: Option<String>,
+    emails: Option<Vec<ScimEmail>>,
+    /// None: enabled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    active: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    photos: Option<Vec<ScimPhoto>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     created_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -47,40 +50,36 @@ fn rfc3339(millis: i64) -> Option<String> {
     Some(time.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
 }
 
-/// Upstream `Scim2Utils.asUserResource`.
+fn meta(resource_type: &str, created_at: Option<i64>, updated_at: Option<i64>) -> ScimMeta {
+    ScimMeta {
+        resource_type: resource_type.to_string(),
+        created: created_at.and_then(rfc3339),
+        last_modified: updated_at.or(created_at).and_then(rfc3339),
+        location: None,
+    }
+}
+
 impl From<ScimUserRow> for ScimUser {
     fn from(r: ScimUserRow) -> Self {
-        let emails = r.emails.unwrap_or_default();
-        let email = emails
-            .iter()
-            .find(|e| e.primary == Some(true))
-            .or(emails.first())
-            .map(|e| e.value.clone())
-            .unwrap_or(r.user_name);
         Self {
             schemas: vec![schema_uri::USER.to_string()],
             id: Some(r.id_string),
             external_id: r.external_id,
-            meta: Some(ScimMeta {
-                resource_type: "User".to_string(),
-                created: r.created_at.and_then(rfc3339),
-                last_modified: r.updated_at.or(r.created_at).and_then(rfc3339),
-            }),
-            user_name: email.clone(),
+            meta: Some(meta("User", r.created_at, r.updated_at)),
+            user_name: r.user_name,
+            name: r.name,
             display_name: r.display_name,
-            active: Some(r.active),
-            emails: Some(vec![ScimEmail {
-                value: email,
-                primary: Some(true),
-                r#type: None,
-            }]),
-            photos: Some(vec![ScimPhoto {
-                value: r.picture_url.unwrap_or_default(),
-                r#type: None,
-            }]),
+            active: r.active,
+            emails: r.emails,
+            photos: r.photos,
             roles: None,
         }
     }
+}
+
+/// `items`, or none when empty.
+fn non_empty<T>(items: Option<Vec<T>>) -> Option<Vec<T>> {
+    items.filter(|items| !items.is_empty())
 }
 
 fn user_to_row(
@@ -89,44 +88,38 @@ fn user_to_row(
     created_at: Option<i64>,
     updated_at: Option<i64>,
 ) -> ScimUserRow {
-    let email = user.principal().to_string();
+    let principal = user.principal().to_string();
+    let user_name = match user.user_name.trim() {
+        "" => principal.clone(),
+        name => name.to_string(),
+    };
     ScimUserRow {
         id_string: id,
-        user_name: email.clone(),
-        display_name: user.display_name.clone(),
-        external_id: user.external_id.clone(),
-        emails: Some(vec![ScimEmail {
-            value: email,
-            primary: Some(true),
-            r#type: None,
-        }]),
-        active: user.is_active(),
-        picture_url: user
-            .photos
-            .into_iter()
-            .flatten()
-            .next()
-            .map(|p| p.value)
-            .filter(|v| !v.is_empty()),
+        user_name,
+        principal,
+        name: user.name.filter(|name| *name != ScimName::default()),
+        display_name: user.display_name,
+        external_id: user.external_id,
+        emails: non_empty(user.emails),
+        active: user.active,
+        photos: non_empty(user.photos),
         created_at,
         updated_at,
     }
-}
-
-/// Resolve the record id for a SCIM row: prefer the URL-bound override
-/// (PUT/PATCH path), then the body's `id`, then a fresh UUID (POST).
-fn pick_id(override_id: Option<String>, body_id: Option<String>) -> String {
-    override_id
-        .or(body_id)
-        .unwrap_or_else(|| Uuid::new_v4().to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ScimGroupRow {
     id_string: String,
     display_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    external_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     members: Option<Vec<ScimGroupMember>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    created_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    updated_at: Option<i64>,
 }
 
 impl From<ScimGroupRow> for ScimGroup {
@@ -134,17 +127,35 @@ impl From<ScimGroupRow> for ScimGroup {
         Self {
             schemas: vec![schema_uri::GROUP.to_string()],
             id: Some(r.id_string),
+            external_id: r.external_id,
+            meta: Some(meta("Group", r.created_at, r.updated_at)),
             display_name: r.display_name,
             members: r.members,
         }
     }
 }
 
-fn group_to_row(group: ScimGroup, id_override: Option<String>) -> ScimGroupRow {
+fn group_to_row(
+    group: ScimGroup,
+    id: String,
+    created_at: Option<i64>,
+    updated_at: Option<i64>,
+) -> ScimGroupRow {
+    // One entry per user.
+    let mut seen = BTreeSet::new();
+    let members: Vec<ScimGroupMember> = group
+        .members
+        .into_iter()
+        .flatten()
+        .filter(|m| seen.insert(m.value.clone()))
+        .collect();
     ScimGroupRow {
-        id_string: pick_id(id_override, group.id),
+        id_string: id,
         display_name: group.display_name,
-        members: group.members,
+        external_id: group.external_id,
+        members: non_empty(Some(members)),
+        created_at,
+        updated_at,
     }
 }
 
@@ -155,7 +166,8 @@ struct GroupMemberRow {
     user_id: String,
 }
 
-/// Make `scim_group_member` hold the members of `group`, in `tx`.
+/// Make `scim_group_member` hold the members of `group`, in `tx`. Each
+/// member must be a user.
 async fn write_members<E: Exec + ?Sized>(tx: &E, group: &ScimGroupRow) -> Result<()> {
     let failed = db_err("write group members");
     tx.execute(
@@ -164,187 +176,286 @@ async fn write_members<E: Exec + ?Sized>(tx: &E, group: &ScimGroupRow) -> Result
     )
     .await
     .map_err(&failed)?;
-    let user_ids: BTreeSet<&str> = group
-        .members
-        .iter()
-        .flatten()
-        .map(|m| m.value.as_str())
-        .collect();
-    let rows: Vec<GroupMemberRow> = user_ids
-        .into_iter()
-        .map(|user_id| GroupMemberRow {
+    let mut rows = Vec::new();
+    for member in group.members.iter().flatten() {
+        let user: Option<ScimUserRow> = by_id(tx, &SCIM_USER, &member.value).await?;
+        if user.is_none() {
+            return Err(Error::invalid_argument(format!(
+                "No user has the id of the member {}",
+                member.value
+            )));
+        }
+        rows.push(GroupMemberRow {
             group_id: group.id_string.clone(),
-            user_id: user_id.to_string(),
-        })
-        .collect();
+            user_id: member.value.clone(),
+        });
+    }
     insert_all(tx, &SCIM_GROUP_MEMBER, &rows)
         .await
         .map_err(&failed)
 }
 
-/// Grants name users by email and groups by name, so no user has a
-/// group's name and no group a user's email.
+/// Grants name users by principal and groups by name, so no user has a
+/// group's name as principal and no group a user's principal.
 fn name_taken(name: &str) -> Error {
     Error::already_exists(format!("Principal already exists: {name}"))
 }
 
 async fn require_no_group<E: Exec + ?Sized>(ex: &E, name: &str) -> Result<()> {
-    let group: Option<ScimGroupRow> =
-        select_one(ex, &SCIM_GROUP, "WHERE display_name = $1", &[name.into()]).await?;
-    match group {
-        Some(_) => Err(name_taken(name)),
-        None => Ok(()),
+    let group: Vec<ScimGroupRow> =
+        select(ex, &SCIM_GROUP, "WHERE display_name = $1", &[name.into()]).await?;
+    match group.is_empty() {
+        true => Ok(()),
+        false => Err(name_taken(name)),
     }
 }
 
 async fn require_no_user<E: Exec + ?Sized>(ex: &E, name: &str) -> Result<()> {
-    let user: Option<ScimUserRow> =
-        select_one(ex, &SCIM_USER, "WHERE user_name = $1", &[name.into()]).await?;
-    match user {
-        Some(_) => Err(name_taken(name)),
-        None => Ok(()),
+    let user: Vec<ScimUserRow> =
+        select(ex, &SCIM_USER, "WHERE principal = $1", &[name.into()]).await?;
+    match user.is_empty() {
+        true => Ok(()),
+        false => Err(name_taken(name)),
     }
 }
 
-/// The group `id`, locked for the rest of `tx`.
-async fn lock_group<E: Exec + ?Sized>(tx: &E, id: &str) -> Result<Option<ScimGroupRow>> {
-    select_one(
-        tx,
-        &SCIM_GROUP,
-        &format!("WHERE id_string = $1{}", tx.for_update()),
-        &[id.into()],
+/// The users whose `column` is `value`, other than the user `id`.
+async fn others<E: Exec + ?Sized>(
+    ex: &E,
+    column: &str,
+    value: &str,
+    id: &str,
+) -> Result<Vec<ScimUserRow>> {
+    let compare = match column {
+        // User names compare without case.
+        "user_name" => "lower(user_name) = lower($1)".to_string(),
+        column => format!("{column} = $1"),
+    };
+    select(
+        ex,
+        &SCIM_USER,
+        &format!("WHERE {compare} AND id_string <> $2"),
+        &[value.into(), id.into()],
     )
     .await
 }
 
-#[async_trait]
-impl ScimOps for SqlMetastore {
-    async fn create_user(&self, user: ScimUser) -> Result<ScimUser> {
-        let email = user.principal().to_string();
-        require_non_empty("email", &email)?;
-        // Upstream `createUser`: one user per email and per external id.
-        if self.find_user_by_email(&email).await?.is_some() {
-            return Err(Error::already_exists(format!(
-                "User already exists: {email}"
-            )));
-        }
-        if let Some(external_id) = user.external_id.as_deref()
-            && self.find_user_by_external_id(external_id).await?.is_some()
+/// Check `row` against the other users and the groups: its user name,
+/// principal and external id belong to no other user (`was` is the row
+/// before an update), and no group has the principal as name.
+async fn check_user<E: Exec + ?Sized>(
+    ex: &E,
+    row: &ScimUserRow,
+    was: Option<&ScimUserRow>,
+) -> Result<()> {
+    require_non_empty("userName", &row.user_name)?;
+    let id = row.id_string.as_str();
+    if was.is_none_or(|w| !w.user_name.eq_ignore_ascii_case(&row.user_name))
+        && !others(ex, "user_name", &row.user_name, id)
+            .await?
+            .is_empty()
+    {
+        return Err(Error::already_exists(format!(
+            "User already exists: {}",
+            row.user_name
+        )));
+    }
+    if was.is_none_or(|w| w.principal != row.principal) {
+        if !others(ex, "principal", &row.principal, id)
+            .await?
+            .is_empty()
         {
             return Err(Error::already_exists(format!(
-                "User already exists with external id: {external_id}"
+                "User already exists: {}",
+                row.principal
             )));
         }
-        require_no_group(self.db.as_ref(), &email).await?;
+        require_no_group(ex, &row.principal).await?;
+    }
+    if let Some(external_id) = row.external_id.as_deref()
+        && was.is_none_or(|w| w.external_id.as_deref() != Some(external_id))
+        && !others(ex, "external_id", external_id, id).await?.is_empty()
+    {
+        return Err(Error::already_exists(format!(
+            "User already exists with external id: {external_id}"
+        )));
+    }
+    Ok(())
+}
+
+/// The row `id` of `table`, locked for the rest of `tx`.
+async fn lock<R, E>(tx: &E, table: &crate::sql::rows::TableDef, id: &str) -> Result<Option<R>>
+where
+    R: serde::de::DeserializeOwned,
+    E: Exec + ?Sized,
+{
+    let rows = select(
+        tx,
+        table,
+        &format!("WHERE id_string = $1{}", tx.for_update()),
+        &[id.into()],
+    )
+    .await?;
+    Ok(rows.into_iter().next())
+}
+
+fn user_not_found(id: &str) -> Error {
+    Error::not_found(format!("User not found: {id}"))
+}
+
+fn group_not_found(id: &str) -> Error {
+    Error::not_found(format!("Group not found: {id}"))
+}
+
+impl SqlMetastore {
+    /// The users that `filter` picks, with `params`.
+    async fn users_where(
+        &self,
+        filter: &str,
+        params: &[uc_storage::Value],
+    ) -> Result<Vec<ScimUser>> {
+        let rows: Vec<ScimUserRow> = select(self.db.as_ref(), &SCIM_USER, filter, params).await?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    /// The user whose `column` is `value` as written, else the only one
+    /// whose `column` is `value` in another case.
+    async fn user_any_case(&self, column: &str, value: &str) -> Result<Option<ScimUser>> {
+        let exact = self
+            .users_where(&format!("WHERE {column} = $1"), &[value.into()])
+            .await?;
+        if let Some(user) = exact.into_iter().next() {
+            return Ok(Some(user));
+        }
+        let mut any = self
+            .users_where(
+                &format!("WHERE lower({column}) = lower($1) LIMIT 2"),
+                &[value.into()],
+            )
+            .await?;
+        Ok(match any.len() {
+            1 => any.pop(),
+            _ => None,
+        })
+    }
+}
+
+#[async_trait]
+impl ScimOps for SqlMetastore {
+    async fn create_user(&self, mut user: ScimUser) -> Result<ScimUser> {
+        require_non_empty("principal", user.principal())?;
+        user.active.get_or_insert(true);
         let row = user_to_row(
             user,
             Uuid::new_v4().to_string(),
             Some(now_epoch_millis()),
             None,
         );
-        insert(self.db.as_ref(), &SCIM_USER, &row)
+        let failed = db_err("create user");
+        let tx = self.db.begin().await.map_err(&failed)?;
+        check_user(tx.as_ref(), &row, None).await?;
+        insert(tx.as_ref(), &SCIM_USER, &row)
             .await
             .map_err(create_err)?;
+        tx.commit().await.map_err(&failed)?;
         Ok(row.into())
     }
 
     async fn get_user(&self, id: &str) -> Result<ScimUser> {
         let row: Option<ScimUserRow> = by_id(self.db.as_ref(), &SCIM_USER, id).await?;
-        row.map(Into::into)
-            .ok_or_else(|| Error::not_found(format!("User not found: {id}")))
+        row.map(Into::into).ok_or_else(|| user_not_found(id))
     }
 
     async fn list_users(&self) -> Result<Vec<ScimUser>> {
         // Users without a display name first.
-        let rows: Vec<ScimUserRow> = select(
-            self.db.as_ref(),
-            &SCIM_USER,
+        self.users_where(
             "ORDER BY COALESCE(display_name, ''), user_name, id_string",
             &[],
         )
-        .await?;
-        Ok(rows.into_iter().map(Into::into).collect())
-    }
-
-    async fn delete_user(&self, id: &str) -> Result<()> {
-        self.delete_by_id("scim_user", id, || {
-            Error::not_found(format!("User not found: {id}"))
-        })
         .await
     }
 
-    async fn get_user_by_name(&self, user_name: &str) -> Result<Option<ScimUser>> {
-        let row: Option<ScimUserRow> = select_one(
-            self.db.as_ref(),
-            &SCIM_USER,
-            "WHERE user_name = $1",
-            &[user_name.into()],
+    async fn delete_user(&self, id: &str) -> Result<()> {
+        let failed = db_err("delete user");
+        let tx = self.db.begin().await.map_err(&failed)?;
+        let user: ScimUserRow = lock(tx.as_ref(), &SCIM_USER, id)
+            .await?
+            .ok_or_else(|| user_not_found(id))?;
+        let groups: Vec<ScimGroupRow> = select(
+            tx.as_ref(),
+            &SCIM_GROUP,
+            &format!(
+                "WHERE id_string IN (SELECT group_id FROM scim_group_member WHERE user_id = $1){}",
+                tx.for_update()
+            ),
+            &[id.into()],
         )
         .await?;
-        Ok(row.map(Into::into))
-    }
-
-    async fn find_user_by_email(&self, email: &str) -> Result<Option<ScimUser>> {
-        // A user's email is its user name.
-        self.get_user_by_name(email).await
-    }
-
-    async fn find_user_by_email_any_case(&self, email: &str) -> Result<Option<ScimUser>> {
-        if let Some(user) = self.find_user_by_email(email).await? {
-            return Ok(Some(user));
+        for mut group in groups {
+            if let Some(members) = group.members.as_mut() {
+                members.retain(|m| m.value != id);
+            }
+            group.members = non_empty(group.members);
+            group.updated_at = Some(now_epoch_millis());
+            update(tx.as_ref(), &SCIM_GROUP, &group)
+                .await
+                .map_err(&failed)?;
         }
-        let mut rows: Vec<ScimUserRow> = select(
-            self.db.as_ref(),
-            &SCIM_USER,
-            "WHERE lower(user_name) = lower($1) LIMIT 2",
-            &[email.into()],
-        )
-        .await?;
-        Ok(match rows.len() {
-            1 => rows.pop().map(Into::into),
-            _ => None,
-        })
+        for (sql, value) in [
+            ("DELETE FROM scim_group_member WHERE user_id = $1", id),
+            ("DELETE FROM pat WHERE owner = $1", user.principal.as_str()),
+            ("DELETE FROM scim_user WHERE id_string = $1", id),
+        ] {
+            tx.execute(sql, &[value.into()]).await.map_err(&failed)?;
+        }
+        clear_principal(tx.as_ref(), &user.principal).await?;
+        tx.commit().await.map_err(&failed)?;
+        Ok(())
+    }
+
+    async fn get_user_by_name(&self, user_name: &str) -> Result<Option<ScimUser>> {
+        self.user_any_case("user_name", user_name).await
+    }
+
+    async fn find_user_by_principal(&self, principal: &str) -> Result<Option<ScimUser>> {
+        let users = self
+            .users_where("WHERE principal = $1", &[principal.into()])
+            .await?;
+        Ok(users.into_iter().next())
+    }
+
+    async fn find_user_by_principal_any_case(&self, principal: &str) -> Result<Option<ScimUser>> {
+        self.user_any_case("principal", principal).await
     }
 
     async fn find_user_by_external_id(&self, external_id: &str) -> Result<Option<ScimUser>> {
-        let row: Option<ScimUserRow> = select_one(
-            self.db.as_ref(),
-            &SCIM_USER,
-            "WHERE external_id = $1",
-            &[external_id.into()],
-        )
-        .await?;
-        Ok(row.map(Into::into))
+        let users = self
+            .users_where("WHERE external_id = $1", &[external_id.into()])
+            .await?;
+        Ok(users.into_iter().next())
     }
 
     async fn update_user(&self, id: &str, user: ScimUser) -> Result<ScimUser> {
-        let not_found = || Error::not_found(format!("User not found: {id}"));
-        let existing: ScimUserRow = by_id(self.db.as_ref(), &SCIM_USER, id)
+        require_non_empty("principal", user.principal())?;
+        let failed = db_err("update user");
+        let tx = self.db.begin().await.map_err(&failed)?;
+        let was: ScimUserRow = lock(tx.as_ref(), &SCIM_USER, id)
             .await?
-            .ok_or_else(not_found)?;
-        if let Some(external_id) = user.external_id.as_deref() {
-            let holder = self.find_user_by_external_id(external_id).await?;
-            if holder.is_some_and(|other| other.id.as_deref() != Some(id)) {
-                return Err(Error::already_exists(format!(
-                    "User already exists with external id: {external_id}"
-                )));
-            }
-        }
-        if user.principal() != existing.user_name {
-            require_no_group(self.db.as_ref(), user.principal()).await?;
-        }
+            .ok_or_else(|| user_not_found(id))?;
         let row = user_to_row(
             user,
             id.to_string(),
-            existing.created_at,
+            was.created_at,
             Some(now_epoch_millis()),
         );
-        let written = update(self.db.as_ref(), &SCIM_USER, &row)
+        check_user(tx.as_ref(), &row, Some(&was)).await?;
+        update(tx.as_ref(), &SCIM_USER, &row)
             .await
             .map_err(create_err)?;
-        if written == 0 {
-            return Err(not_found());
+        if row.principal != was.principal {
+            rename_principal(tx.as_ref(), &was.principal, &row.principal).await?;
         }
+        tx.commit().await.map_err(&failed)?;
         Ok(row.into())
     }
 
@@ -358,14 +469,14 @@ impl ScimOps for SqlMetastore {
         let tx = self.db.begin().await.map_err(&failed)?;
         for seed in users {
             let email = seed.email.as_str();
-            let found: Option<ScimUserRow> = select_one(
+            let found: Vec<ScimUserRow> = select(
                 tx.as_ref(),
                 &SCIM_USER,
-                "WHERE user_name = $1",
+                "WHERE principal = $1",
                 &[email.into()],
             )
             .await?;
-            let active = match found {
+            let active = match found.into_iter().next() {
                 Some(user) => {
                     if let Some(external_id) = seed.external_id.as_deref()
                         && user.external_id.as_deref() != Some(external_id)
@@ -374,24 +485,19 @@ impl ScimOps for SqlMetastore {
                             "User {email} exists with an external id other than {external_id}"
                         )));
                     }
-                    user.active
+                    user.active != Some(false)
                 }
                 None => {
-                    require_no_group(tx.as_ref(), email).await?;
-                    if let Some(external_id) = seed.external_id.as_deref() {
-                        let holder: Option<ScimUserRow> = select_one(
-                            tx.as_ref(),
-                            &SCIM_USER,
-                            "WHERE external_id = $1",
-                            &[external_id.into()],
-                        )
-                        .await?;
-                        if let Some(holder) = holder {
-                            return Err(Error::already_exists(format!(
-                                "The external id {external_id} of {email} belongs to {}",
-                                holder.user_name
-                            )));
-                        }
+                    if let Some(external_id) = seed.external_id.as_deref()
+                        && let Some(holder) = others(tx.as_ref(), "external_id", external_id, "")
+                            .await?
+                            .into_iter()
+                            .next()
+                    {
+                        return Err(Error::already_exists(format!(
+                            "The external id {external_id} of {email} belongs to {}",
+                            holder.principal
+                        )));
                     }
                     let user = ScimUser {
                         schemas: vec![schema_uri::USER.to_string()],
@@ -402,6 +508,7 @@ impl ScimOps for SqlMetastore {
                             value: email.to_string(),
                             primary: Some(true),
                             r#type: None,
+                            display: None,
                         }]),
                         active: Some(true),
                         ..Default::default()
@@ -412,6 +519,7 @@ impl ScimOps for SqlMetastore {
                         Some(now_epoch_millis()),
                         None,
                     );
+                    check_user(tx.as_ref(), &row, None).await?;
                     insert(tx.as_ref(), &SCIM_USER, &row)
                         .await
                         .map_err(create_err)?;
@@ -440,7 +548,12 @@ impl ScimOps for SqlMetastore {
 
     async fn create_group(&self, group: ScimGroup) -> Result<ScimGroup> {
         require_non_empty("displayName", &group.display_name)?;
-        let row = group_to_row(group, None);
+        let row = group_to_row(
+            group,
+            Uuid::new_v4().to_string(),
+            Some(now_epoch_millis()),
+            None,
+        );
         let failed = db_err("create group");
         let tx = self.db.begin().await.map_err(&failed)?;
         require_no_user(tx.as_ref(), &row.display_name).await?;
@@ -454,8 +567,7 @@ impl ScimOps for SqlMetastore {
 
     async fn get_group(&self, id: &str) -> Result<ScimGroup> {
         let row: Option<ScimGroupRow> = by_id(self.db.as_ref(), &SCIM_GROUP, id).await?;
-        row.map(Into::into)
-            .ok_or_else(|| Error::not_found(format!("scim group '{id}' not found")))
+        row.map(Into::into).ok_or_else(|| group_not_found(id))
     }
 
     async fn list_groups(&self) -> Result<Vec<ScimGroup>> {
@@ -470,13 +582,19 @@ impl ScimOps for SqlMetastore {
     }
 
     async fn update_group(&self, id: &str, group: ScimGroup) -> Result<ScimGroup> {
-        let row = group_to_row(group, Some(id.to_string()));
+        require_non_empty("displayName", &group.display_name)?;
         let failed = db_err("update group");
         let tx = self.db.begin().await.map_err(&failed)?;
-        let existing = lock_group(tx.as_ref(), id)
+        let was: ScimGroupRow = lock(tx.as_ref(), &SCIM_GROUP, id)
             .await?
-            .ok_or_else(|| Error::not_found(format!("scim group '{id}' not found")))?;
-        let renamed = existing.display_name != row.display_name;
+            .ok_or_else(|| group_not_found(id))?;
+        let row = group_to_row(
+            group,
+            id.to_string(),
+            was.created_at,
+            Some(now_epoch_millis()),
+        );
+        let renamed = was.display_name != row.display_name;
         if renamed {
             require_no_user(tx.as_ref(), &row.display_name).await?;
         }
@@ -485,7 +603,7 @@ impl ScimOps for SqlMetastore {
             .map_err(create_err)?;
         write_members(tx.as_ref(), &row).await?;
         if renamed {
-            rename_principal(tx.as_ref(), &existing.display_name, &row.display_name).await?;
+            rename_principal(tx.as_ref(), &was.display_name, &row.display_name).await?;
         }
         tx.commit().await.map_err(&failed)?;
         Ok(row.into())
@@ -494,16 +612,16 @@ impl ScimOps for SqlMetastore {
     async fn delete_group(&self, id: &str) -> Result<()> {
         let failed = db_err("delete group");
         let tx = self.db.begin().await.map_err(&failed)?;
-        let existing = lock_group(tx.as_ref(), id)
+        let was: ScimGroupRow = lock(tx.as_ref(), &SCIM_GROUP, id)
             .await?
-            .ok_or_else(|| Error::not_found(format!("Group not found: {id}")))?;
+            .ok_or_else(|| group_not_found(id))?;
         for sql in [
             "DELETE FROM scim_group_member WHERE group_id = $1",
             "DELETE FROM scim_group WHERE id_string = $1",
         ] {
             tx.execute(sql, &[id.into()]).await.map_err(&failed)?;
         }
-        clear_principal(tx.as_ref(), &existing.display_name).await?;
+        clear_principal(tx.as_ref(), &was.display_name).await?;
         tx.commit().await.map_err(&failed)?;
         Ok(())
     }

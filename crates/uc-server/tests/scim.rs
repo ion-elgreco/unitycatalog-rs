@@ -2,192 +2,252 @@ mod common;
 
 use axum::{
     Router,
-    http::{Method, StatusCode},
+    body::Body,
+    http::{Method, Request, StatusCode},
 };
+use http_body_util::BodyExt;
 use rstest::rstest;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use common::{app, assert_status, control, control_json, json_body};
+use common::{app, control, control_json, req_json};
 
 const USER_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:User";
 const GROUP_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:Group";
 const PATCH_SCHEMA: &str = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
+const ERROR_SCHEMA: &str = "urn:ietf:params:scim:api:messages:2.0:Error";
 
-/// A new user: upstream needs a primary email.
-fn new_user(email: &str) -> Value {
-    json!({ "schemas": [USER_SCHEMA], "emails": [{ "value": email, "primary": true }] })
+/// An answer: its status, headers and JSON body (`null` when empty).
+struct Answer {
+    status: StatusCode,
+    headers: axum::http::HeaderMap,
+    body: Value,
 }
 
-/// Create `email` and return its id.
-async fn create(app: &Router, email: &str) -> String {
-    let resp = app
-        .clone()
-        .oneshot(control_json(Method::POST, "/scim2/Users", new_user(email)))
-        .await
-        .unwrap();
-    let body = json_body(assert_status(resp, StatusCode::CREATED, "create").await).await;
-    body["id"].as_str().unwrap().to_string()
-}
-
-/// Upstream answers SCIM errors with HTTP 500 and the SCIM error body.
-async fn assert_scim_error(resp: axum::response::Response, status: &str) -> Value {
-    assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    let body = json_body(resp).await;
-    assert_eq!(
-        body["schemas"],
-        json!(["urn:ietf:params:scim:api:messages:2.0:Error"])
-    );
-    assert_eq!(body["status"], status);
-    body
-}
-
-#[rstest]
-#[tokio::test]
-async fn create_get_delete_scim_user(#[future(awt)] app: Router) {
-    let resp = app
-        .clone()
-        .oneshot(control_json(
-            Method::POST,
-            "/scim2/Users",
-            json!({
-                "schemas": [USER_SCHEMA],
-                "userName": "ignored",
-                "displayName": "Alice",
-                "emails": [{ "value": "alice@example.com", "primary": true }],
-                "externalId": "ext-1",
-                "active": false,
-            }),
-        ))
-        .await
-        .unwrap();
-    assert_eq!(resp.headers()["content-type"], "application/scim+json");
-    let body = json_body(assert_status(resp, StatusCode::CREATED, "create").await).await;
-    let id = body["id"].as_str().unwrap().to_string();
-    // Upstream `asUserResource`: the primary email is the user name; new
-    // users are enabled.
-    assert_eq!(body["schemas"], json!([USER_SCHEMA]));
-    assert_eq!(body["userName"], "alice@example.com");
-    assert_eq!(body["displayName"], "Alice");
-    assert_eq!(body["externalId"], "ext-1");
-    assert_eq!(body["active"], true);
-    assert_eq!(
-        body["emails"],
-        json!([{ "value": "alice@example.com", "primary": true }])
-    );
-    assert_eq!(body["photos"], json!([{ "value": "" }]));
-    assert_eq!(body["meta"]["resourceType"], "User");
-    assert!(body["meta"]["created"].as_str().unwrap().ends_with('Z'));
-
-    let resp = app
-        .clone()
-        .oneshot(control(Method::GET, &format!("/scim2/Users/{id}")))
-        .await
-        .unwrap();
-    assert_eq!(
-        json_body(assert_status(resp, StatusCode::OK, "get").await).await,
-        body
-    );
-
-    let resp = app
-        .clone()
-        .oneshot(control(Method::GET, "/scim2/Users"))
-        .await
-        .unwrap();
-    let list = json_body(assert_status(resp, StatusCode::OK, "list").await).await;
-    assert_eq!(list["totalResults"], 1);
-    assert_eq!(list["Resources"].as_array().unwrap().len(), 1);
-
-    // Upstream `deleteUser` disables the user.
-    let resp = app
-        .clone()
-        .oneshot(control(Method::DELETE, &format!("/scim2/Users/{id}")))
-        .await
-        .unwrap();
-    assert_status(resp, StatusCode::OK, "delete").await;
-    let resp = app
-        .clone()
-        .oneshot(control(Method::GET, &format!("/scim2/Users/{id}")))
-        .await
-        .unwrap();
-    assert_eq!(
-        json_body(assert_status(resp, StatusCode::OK, "get").await).await["active"],
-        false
-    );
-    let resp = app
-        .clone()
-        .oneshot(control_json(
-            Method::POST,
-            "/scim2/Users",
-            new_user("alice@example.com"),
-        ))
-        .await
-        .unwrap();
-    assert_scim_error(resp, "409").await;
-    let resp = app
-        .clone()
-        .oneshot(control(Method::DELETE, "/scim2/Users/nope"))
-        .await
-        .unwrap();
-    common::assert_error(resp, StatusCode::NOT_FOUND, "NOT_FOUND").await;
-
-    // A missing user is the UC 404.
-    let resp = app
-        .oneshot(control(Method::GET, "/scim2/Users/nope"))
-        .await
-        .unwrap();
-    let err = common::assert_error(resp, StatusCode::NOT_FOUND, "NOT_FOUND").await;
-    assert_eq!(err["message"], "User not found: nope");
-}
-
-#[rstest]
-#[tokio::test]
-async fn create_needs_a_primary_email(#[future(awt)] app: Router) {
-    for body in [
-        json!({ "schemas": [USER_SCHEMA], "userName": "bob@example.com" }),
-        json!({ "emails": [{ "value": "bob@example.com" }] }),
-    ] {
-        let resp = app
-            .clone()
-            .oneshot(control_json(Method::POST, "/scim2/Users", body))
-            .await
-            .unwrap();
-        let err = assert_scim_error(resp, "412").await;
-        assert_eq!(err["detail"], "User does not have a primary email.");
+async fn send(app: &Router, request: Request<Body>) -> Answer {
+    let resp = app.clone().oneshot(request).await.unwrap();
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+    let body = match bytes.is_empty() {
+        true => Value::Null,
+        false => serde_json::from_slice(&bytes).expect("body is json"),
+    };
+    Answer {
+        status,
+        headers,
+        body,
     }
 }
 
+async fn get(app: &Router, path: &str) -> Answer {
+    send(app, control(Method::GET, path)).await
+}
+
+async fn call(app: &Router, method: Method, path: &str, body: Value) -> Answer {
+    send(app, control_json(method, path, body)).await
+}
+
+async fn patch(app: &Router, path: &str, operations: Value) -> Answer {
+    call(
+        app,
+        Method::PATCH,
+        path,
+        json!({ "schemas": [PATCH_SCHEMA], "Operations": operations }),
+    )
+    .await
+}
+
+impl Answer {
+    /// The body, after checking the status.
+    fn ok(self, expected: StatusCode) -> Value {
+        assert_eq!(self.status, expected, "body: {}", self.body);
+        self.body
+    }
+
+    /// The SCIM error, after checking its status and `scimType`.
+    fn scim_error(self, expected: StatusCode, scim_type: Option<&str>) -> Value {
+        assert_eq!(self.status, expected, "body: {}", self.body);
+        assert_eq!(
+            self.headers["content-type"], "application/scim+json",
+            "{}",
+            self.body
+        );
+        assert_eq!(self.body["schemas"], json!([ERROR_SCHEMA]), "{}", self.body);
+        assert_eq!(self.body["status"], expected.as_u16().to_string());
+        assert_eq!(
+            self.body["scimType"].as_str(),
+            scim_type,
+            "scimType in {}",
+            self.body
+        );
+        self.body
+    }
+}
+
+/// Create a user with the email `email` (its user name too) and return its
+/// id.
+async fn create(app: &Router, email: &str) -> String {
+    let body = json!({ "schemas": [USER_SCHEMA], "userName": email,
+        "emails": [{ "value": email, "primary": true }] });
+    let user = call(app, Method::POST, "/scim2/Users", body)
+        .await
+        .ok(StatusCode::CREATED);
+    user["id"].as_str().unwrap().to_string()
+}
+
+/// The `userName` of each user that `query` lists.
+async fn user_names(app: &Router, query: &str) -> Vec<String> {
+    let list = get(app, &format!("/scim2/Users{query}"))
+        .await
+        .ok(StatusCode::OK);
+    list["Resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|u| u["userName"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// The ids of the members of `group`.
+fn member_ids(group: &Value) -> Vec<&str> {
+    group["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["value"].as_str().unwrap())
+        .collect()
+}
+
+fn encoded(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+fn filter(f: &str) -> String {
+    format!("?filter={}", encoded(f))
+}
+
 #[rstest]
 #[tokio::test]
-async fn duplicate_email_or_external_id_is_a_conflict(#[future(awt)] app: Router) {
-    let mut body = new_user("bob@example.com");
-    body["externalId"] = json!("ext-bob");
-    create(&app, "carol@example.com").await;
-    let resp = app
-        .clone()
-        .oneshot(control_json(Method::POST, "/scim2/Users", body.clone()))
-        .await
-        .unwrap();
-    assert_status(resp, StatusCode::CREATED, "create").await;
-
-    let resp = app
-        .clone()
-        .oneshot(control_json(Method::POST, "/scim2/Users", body))
-        .await
-        .unwrap();
-    let err = assert_scim_error(resp, "409").await;
-    assert_eq!(err["detail"], "User already exists: bob@example.com");
-    let mut other = new_user("dave@example.com");
-    other["externalId"] = json!("ext-bob");
-    let resp = app
-        .oneshot(control_json(Method::POST, "/scim2/Users", other))
-        .await
-        .unwrap();
-    let err = assert_scim_error(resp, "409").await;
+async fn create_get_delete_user(#[future(awt)] app: Router) {
+    let body = json!({
+        "schemas": [USER_SCHEMA],
+        "userName": "alice",
+        "name": { "givenName": "Alice", "familyName": "Doe" },
+        "displayName": "Alice",
+        "emails": [{ "value": "alice@example.com", "type": "work", "primary": true }],
+        "externalId": "ext-1",
+        "active": false,
+    });
+    let created = call(&app, Method::POST, "/scim2/Users", body).await;
+    assert_eq!(created.headers["content-type"], "application/scim+json");
+    let location = created.headers["location"].to_str().unwrap().to_string();
+    let user = created.ok(StatusCode::CREATED);
+    let id = user["id"].as_str().unwrap().to_string();
+    // The user as the client sent it.
+    assert_eq!(user["schemas"], json!([USER_SCHEMA]));
+    assert_eq!(user["userName"], "alice");
     assert_eq!(
-        err["detail"],
-        "User already exists with external id: ext-bob"
+        user["name"],
+        json!({ "givenName": "Alice", "familyName": "Doe" })
     );
+    assert_eq!(user["active"], false);
+    assert_eq!(
+        user["emails"],
+        json!([{ "value": "alice@example.com", "type": "work", "primary": true }])
+    );
+    assert!(user.get("photos").is_none());
+    assert_eq!(user["meta"]["resourceType"], "User");
+    assert!(user["meta"]["created"].as_str().unwrap().ends_with('Z'));
+    assert_eq!(user["meta"]["location"], location);
+    assert!(location.ends_with(&format!("/api/1.0/unity-control/scim2/Users/{id}")));
+
+    assert_eq!(
+        get(&app, &format!("/scim2/Users/{id}"))
+            .await
+            .ok(StatusCode::OK),
+        user
+    );
+    let list = get(&app, "/scim2/Users").await.ok(StatusCode::OK);
+    assert_eq!(list["totalResults"], 1);
+    assert!(list.get("meta").is_none());
+
+    // A deleted user is gone, so the same user can come back.
+    let deleted = send(&app, control(Method::DELETE, &format!("/scim2/Users/{id}"))).await;
+    assert_eq!(deleted.status, StatusCode::NO_CONTENT);
+    get(&app, &format!("/scim2/Users/{id}"))
+        .await
+        .scim_error(StatusCode::NOT_FOUND, None);
+    create(&app, "alice@example.com").await;
+    send(&app, control(Method::DELETE, "/scim2/Users/nope"))
+        .await
+        .scim_error(StatusCode::NOT_FOUND, None);
+}
+
+/// A user without an email is named by its user name; one without a user
+/// name by its email.
+#[rstest]
+#[tokio::test]
+async fn a_user_needs_a_user_name_or_an_email(#[future(awt)] app: Router) {
+    call(
+        &app,
+        Method::POST,
+        "/scim2/Users",
+        json!({ "schemas": [USER_SCHEMA] }),
+    )
+    .await
+    .scim_error(StatusCode::BAD_REQUEST, Some("invalidValue"));
+    let user = call(
+        &app,
+        Method::POST,
+        "/scim2/Users",
+        json!({ "userName": "svc-etl" }),
+    )
+    .await
+    .ok(StatusCode::CREATED);
+    assert!(user.get("emails").is_none());
+    let user = call(
+        &app,
+        Method::POST,
+        "/scim2/Users",
+        json!({ "emails": [{ "value": "bob@example.com" }] }),
+    )
+    .await
+    .ok(StatusCode::CREATED);
+    assert_eq!(user["userName"], "bob@example.com");
+}
+
+#[rstest]
+#[tokio::test]
+async fn the_same_user_name_principal_or_external_id_is_a_conflict(#[future(awt)] app: Router) {
+    let body = json!({ "userName": "bob", "externalId": "ext-bob",
+        "emails": [{ "value": "bob@example.com", "primary": true }] });
+    call(&app, Method::POST, "/scim2/Users", body)
+        .await
+        .ok(StatusCode::CREATED);
+    for (body, detail) in [
+        (json!({ "userName": "BOB" }), "User already exists: BOB"),
+        (
+            json!({ "userName": "robert", "emails": [{ "value": "bob@example.com" }] }),
+            "User already exists: bob@example.com",
+        ),
+        (
+            json!({ "userName": "dave", "externalId": "ext-bob" }),
+            "User already exists with external id: ext-bob",
+        ),
+    ] {
+        let err = call(&app, Method::POST, "/scim2/Users", body)
+            .await
+            .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
+        assert_eq!(err["detail"], detail);
+    }
 }
 
 /// With authorization off, the checks let every caller do what the
@@ -199,263 +259,473 @@ async fn me_names_the_admin_role_with_authorization_off() {
     let mut me = control(Method::GET, "/scim2/Me");
     me.headers_mut()
         .insert("authorization", format!("Bearer {token}").parse().unwrap());
-    let body =
-        json_body(assert_status(app.oneshot(me).await.unwrap(), StatusCode::OK, "me").await).await;
+    let body = send(&app, me).await.ok(StatusCode::OK);
     assert_eq!(body["userName"], "alice@example.com");
     assert_eq!(body["roles"], json!([{ "value": "admin" }]));
 }
 
-/// Upstream `getCurrentUser` with no caller: SCIM 400 "No user found.".
+/// Upstream `getCurrentUser` with no caller: 400 "No user found.".
 #[rstest]
 #[tokio::test]
 async fn me_without_a_caller_is_a_scim_error(#[future(awt)] app: Router) {
-    let resp = app
-        .oneshot(control(Method::GET, "/scim2/Me"))
+    let err = get(&app, "/scim2/Me")
         .await
-        .unwrap();
-    let err = assert_scim_error(resp, "400").await;
+        .scim_error(StatusCode::BAD_REQUEST, None);
     assert_eq!(err["detail"], "No user found.");
 }
 
+/// The requests of Microsoft's guide to Entra ID provisioning
+/// ("Develop a SCIM endpoint"), in the order Entra sends them.
 #[rstest]
 #[tokio::test]
-async fn create_group_with_members_then_patch_remove(#[future(awt)] app: Router) {
-    let u1_id = create(&app, "u1@x").await;
-    let u2_id = create(&app, "u2@x").await;
-
-    // Create a group with both members.
-    let resp = app
-        .clone()
-        .oneshot(control_json(
-            Method::POST,
-            "/scim2/Groups",
-            json!({
-                "schemas": [GROUP_SCHEMA],
-                "displayName": "engineering",
-                "members": [
-                    { "value": u1_id, "display": "u1@x" },
-                    { "value": u2_id, "display": "u2@x" },
-                ],
-            }),
-        ))
-        .await
-        .unwrap();
-    let body = json_body(assert_status(resp, StatusCode::CREATED, "create group").await).await;
-    let gid = body["id"].as_str().unwrap().to_string();
-    assert_eq!(body["displayName"], "engineering");
-    assert_eq!(body["members"].as_array().unwrap().len(), 2);
-
-    // PATCH remove u1 by filter expression.
-    let resp = app
-        .oneshot(control_json(
-            Method::PATCH,
-            &format!("/scim2/Groups/{gid}"),
-            json!({
-                "schemas": [PATCH_SCHEMA],
-                "Operations": [
-                    { "op": "remove", "path": format!("members[value eq \"{u1_id}\"]") },
-                ],
-            }),
-        ))
-        .await
-        .unwrap();
-    let body = json_body(assert_status(resp, StatusCode::OK, "patch remove").await).await;
-    let members = body["members"].as_array().unwrap();
-    assert_eq!(members.len(), 1);
-    assert_eq!(members[0]["value"], u2_id);
-}
-
-/// Upstream `patchUser` (Okta): a path-less `replace` sets the state from
-/// its value's first member; 200 with no body; anything else is 501.
-#[rstest]
-#[tokio::test]
-async fn patch_sets_the_state_like_okta(#[future(awt)] app: Router) {
-    let id = create(&app, "patchme@x").await;
-    let patch = |id: &str, ops: Value| {
-        let app = app.clone();
-        let path = format!("/scim2/Users/{id}");
-        async move {
-            app.oneshot(control_json(
-                Method::PATCH,
-                &path,
-                json!({ "schemas": [PATCH_SCHEMA], "Operations": ops }),
-            ))
-            .await
-            .unwrap()
-        }
-    };
-    let active = |id: String| {
-        let app = app.clone();
-        async move {
-            let resp = app
-                .oneshot(control(Method::GET, &format!("/scim2/Users/{id}")))
-                .await
-                .unwrap();
-            json_body(assert_status(resp, StatusCode::OK, "get").await).await["active"].clone()
-        }
-    };
-    let resp = patch(
-        &id,
-        json!([{ "op": "replace", "value": { "active": false } }]),
+async fn entra_id_provisions_users_and_groups(#[future(awt)] app: Router) {
+    // Test Connection: a random user and group, which are not found.
+    let none = get(
+        &app,
+        &format!("/scim2/Users{}", filter(r#"userName eq "c3f1""#)),
     )
     .await;
-    let resp = assert_status(resp, StatusCode::OK, "deactivate").await;
-    assert!(
-        axum::body::to_bytes(resp.into_body(), usize::MAX)
-            .await
-            .unwrap()
-            .is_empty()
+    let none = none.ok(StatusCode::OK);
+    assert_eq!(
+        (none["totalResults"].clone(), none["Resources"].clone()),
+        (json!(0), json!([]))
     );
-    assert_eq!(active(id.clone()).await, false);
-    // Entra ID's form, with a path and a string value.
-    let resp = patch(
-        &id,
+    let path = format!(
+        "/scim2/Groups?excludedAttributes=members&filter={}",
+        encoded(r#"displayName eq "c3f1""#)
+    );
+    assert_eq!(get(&app, &path).await.ok(StatusCode::OK)["totalResults"], 0);
+
+    // A user whose user principal name is not its email.
+    let upn = "alice@corp.onmicrosoft.com";
+    let entra_user = json!({
+        "schemas": [USER_SCHEMA, "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],
+        "externalId": "0a21f0f2-8d2a-4f8e-bf98-7363c4aed4ef",
+        "userName": upn,
+        "active": true,
+        "emails": [{ "primary": true, "type": "work", "value": "alice@corp.example" }],
+        "meta": { "resourceType": "User" },
+        "name": { "formatted": "Alice Doe", "familyName": "Doe", "givenName": "Alice" },
+        "roles": [],
+    });
+    let user = call(&app, Method::POST, "/scim2/Users", entra_user.clone())
+        .await
+        .ok(StatusCode::CREATED);
+    let id = user["id"].as_str().unwrap().to_string();
+    assert_eq!(user["userName"], upn);
+    call(&app, Method::POST, "/scim2/Users", entra_user)
+        .await
+        .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
+    for f in [
+        format!(r#"userName eq "{upn}""#),
+        r#"externalId eq "0a21f0f2-8d2a-4f8e-bf98-7363c4aed4ef""#.to_string(),
+        r#"emails[type eq "work"].value eq "alice@corp.example""#.to_string(),
+    ] {
+        assert_eq!(user_names(&app, &filter(&f)).await, [upn], "{f}");
+    }
+
+    let user_path = format!("/scim2/Users/{id}");
+    let user = patch(
+        &app,
+        &user_path,
+        json!([
+            { "op": "Replace", "path": "emails[type eq \"work\"].value", "value": "alice.doe@corp.example" },
+            { "op": "Replace", "path": "name.familyName", "value": "Smith" },
+        ]),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(user["emails"][0]["value"], "alice.doe@corp.example");
+    assert_eq!(user["name"]["familyName"], "Smith");
+    let new_upn = "alice.smith@corp.onmicrosoft.com";
+    patch(
+        &app,
+        &user_path,
+        json!([{ "op": "Replace", "path": "userName", "value": new_upn }]),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(
+        user_names(&app, &filter(&format!(r#"userName eq "{new_upn}""#))).await,
+        [new_upn]
+    );
+
+    // A disabled user is still found.
+    patch(
+        &app,
+        &user_path,
+        json!([{ "op": "Replace", "path": "active", "value": false }]),
+    )
+    .await
+    .ok(StatusCode::OK);
+    let list = get(
+        &app,
+        &format!(
+            "/scim2/Users{}",
+            filter(&format!(r#"userName eq "{new_upn}""#))
+        ),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(list["Resources"][0]["active"], false);
+    // Entra's older form: a string.
+    let user = patch(
+        &app,
+        &user_path,
         json!([{ "op": "Replace", "path": "active", "value": "True" }]),
     )
-    .await;
-    assert_status(resp, StatusCode::OK, "activate").await;
-    assert_eq!(active(id.clone()).await, true);
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(user["active"], true);
 
-    let resp = patch(
-        &id,
-        json!([{ "op": "add", "path": "displayName", "value": "x" }]),
+    // A group, created empty, then members added and removed.
+    let group = call(
+        &app,
+        Method::POST,
+        "/scim2/Groups",
+        json!({
+            "schemas": [GROUP_SCHEMA, "http://schemas.microsoft.com/2006/11/ResourceManagement/ADSCIM/2.0/Group"],
+            "externalId": "8aa1a0c0-c4c3-4bc0-b4a5-2ef676900159",
+            "displayName": "Writers",
+            "meta": { "resourceType": "Group" },
+        }),
     )
-    .await;
-    assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
-    let resp = patch(
-        &id,
-        json!([{ "op": "replace", "value": { "active": "maybe" } }]),
+    .await
+    .ok(StatusCode::CREATED);
+    let gid = group["id"].as_str().unwrap().to_string();
+    assert_eq!(group["externalId"], "8aa1a0c0-c4c3-4bc0-b4a5-2ef676900159");
+    let group_path = format!("/scim2/Groups/{gid}");
+    let member = json!([{ "$ref": null, "value": id }]);
+    patch(
+        &app,
+        &group_path,
+        json!([{ "op": "Add", "path": "members", "value": member }]),
     )
-    .await;
-    let err = assert_scim_error(resp, "500").await;
-    assert_eq!(err["detail"], "Problem with patch operation");
-    let resp = patch(
-        "nope",
-        json!([{ "op": "replace", "value": { "active": false } }]),
-    )
-    .await;
-    common::assert_error(resp, StatusCode::NOT_FOUND, "NOT_FOUND").await;
-}
-
-/// Each SCIM discovery endpoint answers with a static document.
-#[rstest]
-#[case::schemas("/scim2/Schemas")]
-#[case::resource_types("/scim2/ResourceTypes")]
-#[case::service_provider_config("/scim2/ServiceProviderConfig")]
-#[tokio::test]
-async fn discovery_endpoint_returns_static_doc(#[future(awt)] app: Router, #[case] path: &str) {
-    let resp = app.oneshot(control(Method::GET, path)).await.unwrap();
-    let _ = assert_status(resp, StatusCode::OK, path).await;
-}
-
-/// The discovery lists are ListResponses (RFC 7644, section 4): the User and Group schemas and
-/// resource types.
-#[rstest]
-#[case::schemas("/scim2/Schemas")]
-#[case::resource_types("/scim2/ResourceTypes")]
-#[tokio::test]
-async fn discovery_lists_are_list_responses(#[future(awt)] app: Router, #[case] path: &str) {
-    let resp = app.oneshot(control(Method::GET, path)).await.unwrap();
-    let body = json_body(assert_status(resp, StatusCode::OK, path).await).await;
-    assert_eq!(
-        body["schemas"],
-        json!(["urn:ietf:params:scim:api:messages:2.0:ListResponse"])
+    .await
+    .ok(StatusCode::OK);
+    let group = get(&app, &format!("{group_path}?excludedAttributes=members")).await;
+    assert!(group.ok(StatusCode::OK).get("members").is_none());
+    let membership = format!(
+        "/scim2/Groups?excludedAttributes=members&filter={}",
+        encoded(&format!(r#"id eq "{gid}" and members eq "{id}""#))
     );
-    assert_eq!(body["totalResults"], 2);
-    assert_eq!(body["Resources"].as_array().map(Vec::len), Some(2));
+    assert_eq!(
+        get(&app, &membership).await.ok(StatusCode::OK)["totalResults"],
+        1
+    );
+    patch(
+        &app,
+        &group_path,
+        json!([{ "op": "Remove", "path": "members", "value": member }]),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(
+        get(&app, &membership).await.ok(StatusCode::OK)["totalResults"],
+        0
+    );
+    patch(
+        &app,
+        &group_path,
+        json!([{ "op": "Replace", "path": "displayName", "value": "Writers 2" }]),
+    )
+    .await
+    .ok(StatusCode::OK);
+    let renamed = format!("/scim2/Groups{}", filter(r#"displayName eq "Writers 2""#));
+    assert_eq!(
+        get(&app, &renamed).await.ok(StatusCode::OK)["totalResults"],
+        1
+    );
+
+    for path in [&group_path, &user_path] {
+        assert_eq!(
+            send(&app, control(Method::DELETE, path)).await.status,
+            StatusCode::NO_CONTENT
+        );
+    }
 }
 
+/// authentik updates users with PUT, renames groups with a `replace`
+/// without a path, and finds a user by the `userName` it sent after a 409.
 #[rstest]
 #[tokio::test]
-async fn service_provider_config_advertises_patch_bulk_filter(#[future(awt)] app: Router) {
-    let resp = app
-        .oneshot(control(Method::GET, "/scim2/ServiceProviderConfig"))
-        .await
-        .unwrap();
-    let body = json_body(assert_status(resp, StatusCode::OK, "spc").await).await;
-    assert_eq!(body["patch"]["supported"], true);
-    assert_eq!(body["bulk"]["supported"], true);
-    assert_eq!(body["filter"]["supported"], true);
-}
-
-#[rstest]
-#[tokio::test]
-async fn bulk_creates_and_patches_users_atomically(#[future(awt)] app: Router) {
-    let body = json!({
-        "schemas": ["urn:ietf:params:scim:api:messages:2.0:BulkRequest"],
-        "failOnErrors": 1,
-        "Operations": [
-            { "method": "POST", "path": "/Users", "bulkId": "u1", "data": new_user("bulk1@x") },
-            { "method": "POST", "path": "/Users", "bulkId": "u2", "data": new_user("bulk2@x") },
-        ]
+async fn authentik_provisions_users_and_groups(#[future(awt)] app: Router) {
+    let sent = json!({
+        "userName": "alice-1",
+        "name": { "formatted": "Alice Liddell", "familyName": "Liddell", "givenName": "Alice" },
+        "displayName": "Alice Liddell",
+        "active": true,
+        "emails": [{ "value": "alice@example.com", "type": "other", "primary": true }],
+        "schemas": [USER_SCHEMA],
+        "externalId": "fd878ab8",
     });
-    let resp = app
-        .oneshot(control_json(Method::POST, "/scim2/Bulk", body))
+    let user = call(&app, Method::POST, "/scim2/Users", sent.clone())
         .await
+        .ok(StatusCode::CREATED);
+    let id = user["id"].as_str().unwrap().to_string();
+    // The answer holds what authentik sent, so it sends no more updates.
+    for key in [
+        "userName",
+        "name",
+        "displayName",
+        "active",
+        "emails",
+        "externalId",
+    ] {
+        assert_eq!(user[key], sent[key], "{key}");
+    }
+    call(&app, Method::POST, "/scim2/Users", sent.clone())
+        .await
+        .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
+    assert_eq!(
+        user_names(&app, &filter(r#"userName eq "alice-1""#)).await,
+        ["alice-1"]
+    );
+
+    let mut changed = sent.clone();
+    changed["id"] = json!(id);
+    changed["name"] = json!({ "formatted": "Alice H", "familyName": "H", "givenName": "Alice" });
+    changed["emails"] =
+        json!([{ "value": "alice.h@example.com", "type": "other", "primary": true }]);
+    let user = call(
+        &app,
+        Method::PUT,
+        &format!("/scim2/Users/{id}"),
+        changed.clone(),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(
+        (user["name"].clone(), user["emails"].clone()),
+        (changed["name"].clone(), changed["emails"].clone())
+    );
+
+    let group = call(
+        &app,
+        Method::POST,
+        "/scim2/Groups",
+        json!({ "displayName": "readers", "schemas": [GROUP_SCHEMA], "externalId": "2a22" }),
+    )
+    .await
+    .ok(StatusCode::CREATED);
+    let group_path = format!("/scim2/Groups/{}", group["id"].as_str().unwrap());
+    patch(
+        &app,
+        &group_path,
+        json!([{ "op": "add", "path": "members", "value": [{ "value": id }] }]),
+    )
+    .await
+    .ok(StatusCode::OK);
+    let group = patch(
+        &app,
+        &group_path,
+        json!([{ "op": "replace", "value": { "displayName": "readers-2",
+            "schemas": [GROUP_SCHEMA], "externalId": "2a22" } }]),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(group["displayName"], "readers-2");
+    assert_eq!(member_ids(&group), [id.as_str()]);
+    let url = group["members"][0]["$ref"].as_str().unwrap();
+    assert!(url.ends_with(&format!("/scim2/Users/{id}")), "{url}");
+    let group = patch(
+        &app,
+        &group_path,
+        json!([{ "op": "remove", "path": format!("members[value eq \"{id}\"]") }]),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert!(group.get("members").is_none());
+}
+
+/// Grants and owners name a user by its principal: when its email changes,
+/// they move to the new one.
+#[tokio::test]
+async fn a_new_email_moves_the_grants_and_owned_objects() {
+    let (app, metastore) = common::app_with_metastore().await;
+    let token = common::active_user(&metastore, "old@example.com").await;
+    // The catalog of the user's request is the user's.
+    let body = json!({ "name": "c1", "storage_root": common::temp_storage_root() });
+    let catalog = send(
+        &app,
+        common::signed(Method::POST, "/catalogs", Some(body), &token),
+    )
+    .await;
+    assert_eq!(catalog.ok(StatusCode::OK)["owner"], "old@example.com");
+    let grant = json!({ "changes": [{ "principal": "old@example.com", "add": ["USE CATALOG"] }] });
+    send(
+        &app,
+        req_json(Method::PATCH, "/permissions/catalog/c1", grant),
+    )
+    .await
+    .ok(StatusCode::OK);
+
+    let user = metastore
+        .scim()
+        .find_user_by_principal("old@example.com")
+        .await
+        .unwrap()
         .unwrap();
-    let resp = json_body(assert_status(resp, StatusCode::OK, "bulk").await).await;
-    let ops = resp["Operations"].as_array().unwrap();
-    assert_eq!(ops.len(), 2);
-    assert!(ops.iter().all(|o| o["status"] == "201"));
+    patch(
+        &app,
+        &format!("/scim2/Users/{}", user.id.unwrap()),
+        json!([{ "op": "replace", "path": "emails[primary eq true].value", "value": "new@example.com" }]),
+    )
+    .await
+    .ok(StatusCode::OK);
+
+    let catalog = send(&app, common::req(Method::GET, "/catalogs/c1")).await;
+    assert_eq!(catalog.ok(StatusCode::OK)["owner"], "new@example.com");
+    let grants = send(&app, common::req(Method::GET, "/permissions/catalog/c1")).await;
+    assert_eq!(
+        grants.ok(StatusCode::OK)["privilege_assignments"],
+        json!([{ "principal": "new@example.com", "privileges": ["USE CATALOG"] }])
+    );
 }
 
 #[rstest]
 #[tokio::test]
-async fn bulk_stops_after_fail_on_errors_limit(#[future(awt)] app: Router) {
-    // First op succeeds, second tries to delete a nonexistent user (404),
-    // third should be skipped because failOnErrors = 1.
-    let body = json!({
-        "schemas": ["urn:ietf:params:scim:api:messages:2.0:BulkRequest"],
-        "failOnErrors": 1,
-        "Operations": [
-            { "method": "POST", "path": "/Users", "data": new_user("ok@x") },
-            { "method": "DELETE", "path": "/Users/does-not-exist" },
-            { "method": "POST", "path": "/Users", "data": new_user("skipped@x") },
-        ]
-    });
-    let resp = app
-        .oneshot(control_json(Method::POST, "/scim2/Bulk", body))
+async fn put_replaces_what_the_body_has(#[future(awt)] app: Router) {
+    let id = create(&app, "put@example.com").await;
+    let other = create(&app, "other@example.com").await;
+    let path = format!("/scim2/Users/{id}");
+    call(
+        &app,
+        Method::PUT,
+        &path,
+        json!({ "id": other, "userName": "put@example.com" }),
+    )
+    .await
+    .scim_error(StatusCode::BAD_REQUEST, Some("mutability"));
+    // The body has the required attributes; a patch keeps them.
+    call(&app, Method::PUT, &path, json!({ "displayName": "X" }))
         .await
-        .unwrap();
-    let resp = json_body(assert_status(resp, StatusCode::OK, "bulk").await).await;
-    let ops = resp["Operations"].as_array().unwrap();
-    assert_eq!(ops.len(), 2, "third op should be skipped");
+        .scim_error(StatusCode::BAD_REQUEST, Some("invalidValue"));
+    patch(&app, &path, json!([{ "op": "remove", "path": "userName" }]))
+        .await
+        .scim_error(StatusCode::BAD_REQUEST, Some("mutability"));
+    call(
+        &app,
+        Method::PUT,
+        "/scim2/Users/nope",
+        json!({ "userName": "nope" }),
+    )
+    .await
+    .scim_error(StatusCode::NOT_FOUND, None);
+
+    let body = json!({ "displayName": "Put", "active": false, "externalId": "ext-put",
+        "userName": "put", "emails": [{ "value": "changed@example.com", "primary": true }] });
+    let user = call(&app, Method::PUT, &path, body)
+        .await
+        .ok(StatusCode::OK);
+    assert_eq!(user["displayName"], "Put");
+    assert_eq!(user["active"], false);
+    assert_eq!(user["userName"], "put");
+    assert_eq!(user["emails"][0]["value"], "changed@example.com");
+    // Absent attributes stay; `null` removes one.
+    let user = call(
+        &app,
+        Method::PUT,
+        &path,
+        json!({ "id": id, "userName": "put", "displayName": null }),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert!(user.get("displayName").is_none());
+    assert_eq!(
+        (user["active"].clone(), user["externalId"].clone()),
+        (json!(false), json!("ext-put"))
+    );
+    call(
+        &app,
+        Method::PUT,
+        &format!("/scim2/Users/{other}"),
+        json!({ "userName": "other@example.com", "externalId": "ext-put" }),
+    )
+    .await
+    .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
 }
 
 #[rstest]
 #[tokio::test]
-async fn list_users_filter_by_user_name_eq(#[future(awt)] app: Router) {
-    for n in ["alpha@x", "beta@x", "gamma@x"] {
+async fn requests_take_attribute_names_in_any_case(#[future(awt)] app: Router) {
+    let user = call(
+        &app,
+        Method::POST,
+        "/scim2/Users",
+        json!({ "UserName": "ryan", "Active": "True", "DisplayName": "Ryan",
+            "Emails": [{ "Primary": true, "Type": "work", "Value": "ryan@example.com" }] }),
+    )
+    .await
+    .ok(StatusCode::CREATED);
+    assert_eq!(user["userName"], "ryan");
+    assert_eq!(user["active"], true);
+    assert_eq!(
+        user["emails"],
+        json!([{ "value": "ryan@example.com", "primary": true, "type": "work" }])
+    );
+    let id = user["id"].as_str().unwrap();
+    let user = call(
+        &app,
+        Method::PATCH,
+        &format!("/scim2/Users/{id}"),
+        json!({ "operations": [{ "OP": "Replace", "Path": "DISPLAYNAME", "Value": "R" }] }),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(user["displayName"], "R");
+}
+
+#[rstest]
+#[tokio::test]
+async fn answers_pick_attributes(#[future(awt)] app: Router) {
+    let id = create(&app, "pick@example.com").await;
+    let user = get(
+        &app,
+        &format!("/scim2/Users/{id}?attributes=userName,emails.value"),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(
+        user,
+        json!({ "schemas": [USER_SCHEMA], "id": id, "userName": "pick@example.com",
+            "emails": [{ "value": "pick@example.com" }] })
+    );
+    let list = get(&app, "/scim2/Users?excludedAttributes=emails,meta")
+        .await
+        .ok(StatusCode::OK);
+    let user = &list["Resources"][0];
+    assert!(user.get("emails").is_none() && user.get("meta").is_none());
+    assert_eq!(user["userName"], "pick@example.com");
+}
+
+#[rstest]
+#[tokio::test]
+async fn search_takes_a_search_request(#[future(awt)] app: Router) {
+    for n in ["alpha@x.com", "beta@x.com"] {
         create(&app, n).await;
     }
-    let resp = app
-        .oneshot(control(
-            Method::GET,
-            "/scim2/Users?filter=userName%20eq%20%22beta%40x%22",
-        ))
-        .await
-        .unwrap();
-    let body = json_body(assert_status(resp, StatusCode::OK, "filter").await).await;
-    assert_eq!(body["Resources"].as_array().unwrap().len(), 1);
-    assert_eq!(body["Resources"][0]["userName"], "beta@x");
+    let list = call(
+        &app,
+        Method::POST,
+        "/scim2/Users/.search",
+        json!({ "schemas": ["urn:ietf:params:scim:api:messages:2.0:SearchRequest"],
+            "filter": "userName sw \"b\"", "attributes": ["userName"], "startIndex": 1, "count": 10 }),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(list["totalResults"], 1);
+    assert_eq!(list["Resources"][0]["userName"], "beta@x.com");
+    assert!(list["Resources"][0].get("emails").is_none());
 }
 
-/// Upstream evaluates full SCIM filters on each user.
 #[rstest]
 #[tokio::test]
 async fn list_users_takes_scim_filters(#[future(awt)] app: Router) {
     for n in ["alpha@x", "beta@x", "gamma@y"] {
         create(&app, n).await;
     }
-    let names = |body: &Value| -> Vec<String> {
-        body["Resources"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|u| u["userName"].as_str().unwrap().to_string())
-            .collect()
-    };
-    for (filter, expected) in [
+    for (f, expected) in [
         (
             r#"userName sw "A" or userName ew "@y""#,
             vec!["alpha@x", "gamma@y"],
@@ -470,140 +740,224 @@ async fn list_users_takes_scim_filters(#[future(awt)] app: Router) {
             vec![],
         ),
     ] {
-        let path = format!("/scim2/Users?filter={}", urlencoding(filter));
-        let resp = app
-            .clone()
-            .oneshot(control(Method::GET, &path))
-            .await
-            .unwrap();
-        let body = json_body(assert_status(resp, StatusCode::OK, filter).await).await;
-        assert_eq!(names(&body), expected, "{filter}");
+        assert_eq!(user_names(&app, &filter(f)).await, expected, "{f}");
     }
-    let resp = app
-        .oneshot(control(
-            Method::GET,
-            "/scim2/Users?filter=userName%20xx%20%22a%22",
-        ))
-        .await
-        .unwrap();
-    let err = assert_scim_error(resp, "400").await;
-    assert_eq!(err["scimType"], "invalidFilter");
+    get(
+        &app,
+        &format!("/scim2/Users{}", filter(r#"userName xx "a""#)),
+    )
+    .await
+    .scim_error(StatusCode::BAD_REQUEST, Some("invalidFilter"));
 }
 
-fn urlencoding(s: &str) -> String {
-    s.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (b as char).to_string()
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
-}
-
-/// Upstream pages with `startIndex` (from 1) and `count` (default 50);
-/// `totalResults` and `itemsPerPage` count the page.
+/// `totalResults` counts the matches, `itemsPerPage` the page.
 #[rstest]
 #[tokio::test]
 async fn list_users_pages_by_start_index_and_count(#[future(awt)] app: Router) {
     for i in 0..55 {
         create(&app, &format!("u{i:02}@x")).await;
     }
-    let page = |query: &'static str| {
-        let app = app.clone();
-        async move {
-            let resp = app
-                .oneshot(control(Method::GET, &format!("/scim2/Users{query}")))
-                .await
-                .unwrap();
-            json_body(assert_status(resp, StatusCode::OK, query).await).await
-        }
-    };
-    let first = page("").await;
+    let first = get(&app, "/scim2/Users").await.ok(StatusCode::OK);
     assert_eq!(first["Resources"].as_array().unwrap().len(), 50);
-    assert_eq!(first["totalResults"], 50);
-    assert_eq!(first["itemsPerPage"], 50);
-    assert_eq!(first["startIndex"], 1);
-    assert_eq!(first["meta"]["resourceType"], "User");
+    assert_eq!(
+        (
+            first["totalResults"].clone(),
+            first["itemsPerPage"].clone(),
+            first["startIndex"].clone()
+        ),
+        (json!(55), json!(50), json!(1))
+    );
     assert_eq!(first["Resources"][0]["userName"], "u00@x");
-
-    let second = page("?startIndex=51&count=10").await;
-    assert_eq!(second["startIndex"], 51);
-    assert_eq!(second["totalResults"], 5);
+    let second = get(&app, "/scim2/Users?startIndex=51&count=10")
+        .await
+        .ok(StatusCode::OK);
+    assert_eq!(
+        (
+            second["totalResults"].clone(),
+            second["itemsPerPage"].clone()
+        ),
+        (json!(55), json!(5))
+    );
     assert_eq!(second["Resources"][0]["userName"], "u50@x");
+    let filtered = format!("{}&startIndex=3&count=2", filter(r#"userName sw "u1""#));
+    assert_eq!(user_names(&app, &filtered).await, ["u12@x", "u13@x"]);
+    let none = get(&app, "/scim2/Users?count=0").await.ok(StatusCode::OK);
+    assert_eq!(
+        (none["totalResults"].clone(), none["Resources"].clone()),
+        (json!(55), json!([]))
+    );
+}
 
-    let filtered = page("?filter=userName%20sw%20%22u1%22&startIndex=3&count=2").await;
-    let names: Vec<&str> = filtered["Resources"]
+#[rstest]
+#[tokio::test]
+async fn a_group_member_must_be_a_user(#[future(awt)] app: Router) {
+    let body = json!({ "displayName": "g", "members": [{ "value": "nobody" }] });
+    call(&app, Method::POST, "/scim2/Groups", body)
+        .await
+        .scim_error(StatusCode::BAD_REQUEST, Some("invalidValue"));
+    let group = call(
+        &app,
+        Method::POST,
+        "/scim2/Groups",
+        json!({ "displayName": "g" }),
+    )
+    .await
+    .ok(StatusCode::CREATED);
+    call(
+        &app,
+        Method::POST,
+        "/scim2/Groups",
+        json!({ "displayName": "g" }),
+    )
+    .await
+    .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
+    let path = format!("/scim2/Groups/{}", group["id"].as_str().unwrap());
+    patch(
+        &app,
+        &path,
+        json!([{ "op": "add", "path": "members", "value": [{ "value": "nobody" }] }]),
+    )
+    .await
+    .scim_error(StatusCode::BAD_REQUEST, Some("invalidValue"));
+}
+
+/// A deleted user leaves its groups.
+#[rstest]
+#[tokio::test]
+async fn a_deleted_user_leaves_its_groups(#[future(awt)] app: Router) {
+    let u1 = create(&app, "u1@x").await;
+    let u2 = create(&app, "u2@x").await;
+    let group = call(
+        &app,
+        Method::POST,
+        "/scim2/Groups",
+        json!({ "displayName": "eng", "members": [{ "value": u1 }, { "value": u2 }] }),
+    )
+    .await
+    .ok(StatusCode::CREATED);
+    send(&app, control(Method::DELETE, &format!("/scim2/Users/{u1}"))).await;
+    let group = get(
+        &app,
+        &format!("/scim2/Groups/{}", group["id"].as_str().unwrap()),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(member_ids(&group), [u2.as_str()]);
+}
+
+#[rstest]
+#[tokio::test]
+async fn errors_are_scim_errors(#[future(awt)] app: Router) {
+    get(&app, "/scim2/Nope")
+        .await
+        .scim_error(StatusCode::NOT_FOUND, None);
+    get(&app, "/scim2/Users/a/b")
+        .await
+        .scim_error(StatusCode::NOT_FOUND, None);
+    send(&app, control(Method::DELETE, "/scim2/Users"))
+        .await
+        .scim_error(StatusCode::METHOD_NOT_ALLOWED, None);
+    let malformed = Request::builder()
+        .method(Method::POST)
+        .uri(format!("{}/scim2/Users", common::CONTROL))
+        .header("content-type", "application/scim+json")
+        .body(Body::from("{"))
+        .unwrap();
+    send(&app, malformed)
+        .await
+        .scim_error(StatusCode::BAD_REQUEST, Some("invalidSyntax"));
+    let id = create(&app, "p@x").await;
+    patch(
+        &app,
+        &format!("/scim2/Users/{id}"),
+        json!([{ "op": "remove" }]),
+    )
+    .await
+    .scim_error(StatusCode::BAD_REQUEST, Some("noTarget"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn discovery_documents(#[future(awt)] app: Router) {
+    for path in ["/scim2/Schemas", "/scim2/ResourceTypes"] {
+        let list = get(&app, path).await.ok(StatusCode::OK);
+        assert_eq!(
+            list["schemas"],
+            json!(["urn:ietf:params:scim:api:messages:2.0:ListResponse"])
+        );
+        assert_eq!(list["totalResults"], 2);
+    }
+    let schema = get(&app, &format!("/scim2/Schemas/{USER_SCHEMA}"))
+        .await
+        .ok(StatusCode::OK);
+    let names: Vec<&str> = schema["attributes"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|u| u["userName"].as_str().unwrap())
+        .map(|a| a["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["u12@x", "u13@x"]);
+    assert_eq!(
+        names,
+        [
+            "userName",
+            "name",
+            "displayName",
+            "active",
+            "emails",
+            "photos",
+            "roles"
+        ]
+    );
+    assert_eq!(
+        get(&app, "/scim2/ResourceTypes/Group")
+            .await
+            .ok(StatusCode::OK)["endpoint"],
+        "/Groups"
+    );
+    get(&app, "/scim2/Schemas/urn:nope")
+        .await
+        .scim_error(StatusCode::NOT_FOUND, None);
+    get(&app, "/scim2/ResourceTypes/Nope")
+        .await
+        .scim_error(StatusCode::NOT_FOUND, None);
+    let config = get(&app, "/scim2/ServiceProviderConfig")
+        .await
+        .ok(StatusCode::OK);
+    assert_eq!(
+        (
+            config["patch"]["supported"].clone(),
+            config["filter"]["supported"].clone()
+        ),
+        (json!(true), json!(true))
+    );
 }
 
-/// Upstream `updateUser`: the body names the user; the name, state and
-/// external id change; the email stays.
 #[rstest]
 #[tokio::test]
-async fn put_changes_name_state_and_external_id(#[future(awt)] app: Router) {
-    let id = create(&app, "put@x").await;
-    let other = create(&app, "other@x").await;
-    let put = |path_id: String, body: Value| {
-        let app = app.clone();
-        async move {
-            app.oneshot(control_json(
-                Method::PUT,
-                &format!("/scim2/Users/{path_id}"),
-                body,
-            ))
-            .await
+async fn bulk_runs_each_operation(#[future(awt)] app: Router) {
+    let new_user = |email: &str| json!({ "userName": email });
+    let body = json!({
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:BulkRequest"],
+        "failOnErrors": 1,
+        "Operations": [
+            { "method": "POST", "path": "/Users", "bulkId": "u1", "data": new_user("bulk1@x") },
+            { "method": "DELETE", "path": "/Users/does-not-exist" },
+            { "method": "POST", "path": "/Users", "data": new_user("skipped@x") },
+        ]
+    });
+    let resp = call(&app, Method::POST, "/scim2/Bulk", body)
+        .await
+        .ok(StatusCode::OK);
+    let ops = resp["Operations"].as_array().unwrap();
+    assert_eq!(ops.len(), 2, "the third runs after one failure");
+    assert_eq!(ops[0]["status"], "201");
+    assert_eq!(ops[0]["bulkId"], "u1");
+    assert!(
+        ops[0]["location"]
+            .as_str()
             .unwrap()
-        }
-    };
-    // The body's id must be the path's.
-    let err = assert_scim_error(put(id.clone(), json!({ "displayName": "X" })).await, "409").await;
-    assert_eq!(err["detail"], "User id mismatch.");
-    assert_scim_error(
-        put(id.clone(), json!({ "id": other, "displayName": "X" })).await,
-        "409",
-    )
-    .await;
-    let resp = put("nope".into(), json!({ "id": "nope" })).await;
-    common::assert_error(resp, StatusCode::NOT_FOUND, "NOT_FOUND").await;
-
-    let body = json!({ "id": id, "displayName": "Put", "active": false, "externalId": "ext-put",
-        "emails": [{ "value": "changed@x", "primary": true }] });
-    let resp = put(id.clone(), body).await;
-    assert_eq!(resp.headers()["content-type"], "application/scim+json");
-    let user = json_body(assert_status(resp, StatusCode::OK, "put").await).await;
-    assert_eq!(user["displayName"], "Put");
-    assert_eq!(user["active"], false);
-    assert_eq!(user["externalId"], "ext-put");
-    assert_eq!(user["userName"], "put@x");
-    // Absent fields stay.
-    let user = json_body(
-        assert_status(
-            put(id.clone(), json!({ "id": id })).await,
-            StatusCode::OK,
-            "put",
-        )
-        .await,
-    )
-    .await;
-    assert_eq!(
-        (user["displayName"].clone(), user["active"].clone()),
-        (json!("Put"), json!(false))
+            .contains("/scim2/Users/")
     );
-    // Another user's external id is the UC conflict.
-    let resp = put(
-        other.clone(),
-        json!({ "id": other, "externalId": "ext-put" }),
-    )
-    .await;
-    let err = common::assert_error(resp, StatusCode::CONFLICT, "ALREADY_EXISTS").await;
-    assert_eq!(
-        err["message"],
-        "User already exists with external id: ext-put"
-    );
+    assert_eq!(ops[1]["status"], "404");
+    assert_eq!(ops[1]["response"]["schemas"], json!([ERROR_SCHEMA]));
 }
