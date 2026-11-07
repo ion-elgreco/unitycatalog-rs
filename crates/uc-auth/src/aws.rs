@@ -193,8 +193,8 @@ impl AwsResolver {
     }
 
     /// Send the signed request to STS. An answer of 4xx refuses the token;
-    /// no answer, or one of 5xx, is [`AuthError::Unavailable`], as the
-    /// caller may well be signed in.
+    /// no answer, one of 5xx, or STS's throttling (HTTP 400 or 429) is
+    /// [`AuthError::Unavailable`], as the caller may well be signed in.
     async fn caller_identity(&self, checked: &Checked<'_>) -> Result<CallerIdentity, AuthError> {
         let mut request = self
             .http
@@ -210,6 +210,9 @@ impl AwsResolver {
         let response = (self.transport.send(request).await).map_err(|e| unreachable(&e))?;
         let status = response.status();
         let body = response.text().await.map_err(|e| unreachable(&e))?;
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS || throttled(&body) {
+            return Err(unreachable(&"STS throttles the requests"));
+        }
         if status.is_client_error() {
             tracing::warn!(
                 status = status.as_u16(),
@@ -327,6 +330,23 @@ fn signed_headers(authorization: &str) -> Option<&str> {
     signed
 }
 
+/// Whether the answer of STS is its throttling (`Throttling: Rate
+/// exceeded`), which comes as HTTP 400.
+fn throttled(xml: &str) -> bool {
+    matches!(
+        element(xml, "Code").as_deref(),
+        Some("Throttling" | "ThrottlingException" | "RequestLimitExceeded")
+    )
+}
+
+/// The text of the first element `name` of an STS answer.
+fn element(xml: &str, name: &str) -> Option<String> {
+    let open = format!("<{name}>");
+    let start = xml.find(&open)? + open.len();
+    let end = start + xml[start..].find(&format!("</{name}>"))?;
+    Some(xml[start..end].trim().to_string()).filter(|v| !v.is_empty())
+}
+
 /// What STS says of the caller.
 #[derive(Debug, PartialEq)]
 struct CallerIdentity {
@@ -337,16 +357,10 @@ struct CallerIdentity {
 
 /// The `Arn`, `Account` and `UserId` of an STS `GetCallerIdentity` answer.
 fn parse_caller_identity(xml: &str) -> Option<CallerIdentity> {
-    let element = |name: &str| -> Option<String> {
-        let open = format!("<{name}>");
-        let start = xml.find(&open)? + open.len();
-        let end = start + xml[start..].find(&format!("</{name}>"))?;
-        Some(xml[start..end].trim().to_string()).filter(|v| !v.is_empty())
-    };
     Some(CallerIdentity {
-        arn: element("Arn")?,
-        account: element("Account")?,
-        user_id: element("UserId").unwrap_or_default(),
+        arn: element(xml, "Arn")?,
+        account: element(xml, "Account")?,
+        user_id: element(xml, "UserId").unwrap_or_default(),
     })
 }
 
@@ -444,6 +458,19 @@ mod tests {
         ] {
             assert_eq!(signed_headers(forged), None, "{forged}");
         }
+    }
+
+    #[test]
+    fn throttling_is_no_refusal() {
+        let answer = |code: &str| {
+            format!(
+                "<ErrorResponse><Error><Type>Sender</Type><Code>{code}</Code>\
+                 <Message>Rate exceeded</Message></Error></ErrorResponse>"
+            )
+        };
+        assert!(throttled(&answer("Throttling")));
+        assert!(!throttled(&answer("InvalidClientTokenId")));
+        assert!(!throttled("not xml"));
     }
 
     #[test]

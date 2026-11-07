@@ -207,7 +207,8 @@ create_users = true
 
 A signed request is valid for 15 minutes. The server keeps the caller it names for five, as it
 does for tokens. AWS identities are taken on every request; there is no token exchange for them,
-and they carry no groups.
+and they carry no groups. When STS throttles its requests, the server answers with an error of
+its own (HTTP 500), not "Invalid access token."
 
 ## Sign in to the web UI
 
