@@ -614,7 +614,9 @@ impl JwtProvider {
     }
 
     /// The caller's groups, each once, as `<provider>:<group>`: a provider
-    /// can name its own groups only, not those of another provider.
+    /// can name its own groups only, not those of another provider. Every
+    /// issuer that a pattern with `*` matches is the same provider, and
+    /// names the same groups.
     pub fn groups(&self, claims: &Map<String, Value>) -> Vec<String> {
         let Some(name) = &self.groups_claim else {
             return Vec::new();

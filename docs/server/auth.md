@@ -123,7 +123,7 @@ the blocks (RFC 9728), so a client can ask the provider for a token with the rig
 | `direct` | Take its tokens on every request, not only at the exchange. | `false` |
 | `principal_claims` | The claims that name the caller; the first present wins. | `["email", "sub"]` |
 | `client_claims` | The claims with a machine's client id, matched to a user's `externalId`. | `["azp", "client_id"]` |
-| `groups_claim` | A claim whose values are names of groups the caller is in. | none |
+| `groups_claim` | A claim whose values are names of groups the caller is in. Not with an `issuer` that has `*`. | none |
 | `create_users` | Make the user at its first request when it is missing. | `false` |
 | `display_name` | The display name of a made user, with claims in braces. | the principal |
 
@@ -160,7 +160,8 @@ such as `entra:Writers` for the role `Writers` of the block `entra`, so a provid
 groups only. A name counts when the group exists in the server: make the group once
 (`uc group create --name entra:Writers`), grant to it, and every identity whose token names it
 is covered. Entra's `groups` claim holds object ids; its app roles (`roles`), assigned to Entra
-groups, arrive as names.
+groups, arrive as names. A block whose `issuer` has `*` names no groups: each issuer that it
+matches, such as each tenant, would name the same groups.
 
 ### Providers
 

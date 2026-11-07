@@ -243,6 +243,16 @@ impl IssuerSettings {
                  token that the provider made for any other application would sign in here.",
             ));
         }
+        if self.issuer.contains('*')
+            && let Some(groups_claim) = &self.groups_claim
+        {
+            return Err(invalid(
+                "groups_claim",
+                groups_claim,
+                "Not with an issuer with '*': every issuer that it matches, such as each tenant, \
+                 would name the groups of the block.",
+            ));
+        }
         Ok(())
     }
 
@@ -697,6 +707,14 @@ mod tests {
             let block = format!("name = \"a\"\nissuer = \"{pattern}\"\naudiences = [\"a\"]");
             assert!(error(&[&block]).contains("[0].issuer"), "{pattern}");
         }
+        // A pattern's issuers do not name groups.
+        assert!(
+            error(&[
+                "name = \"a\"\nissuer = \"https://login.example.com/*/v2.0\"\n\
+                     audiences = [\"a\"]\ngroups_claim = \"roles\""
+            ])
+            .contains("[0].groups_claim: 'roles'")
+        );
         // An STS endpoint is a URL without a path.
         for endpoint in [
             "sts.amazonaws.com",
