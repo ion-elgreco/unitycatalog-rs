@@ -158,7 +158,7 @@ tests:
       auth.issuers:
         - name: entra
           issuer: https://login.microsoftonline.com/t/v2.0
-          audiences: ["api://uc"]
+          audiences: [1f0a6b3c, "https://uc.example.com"]
           direct: true
           principalClaims: [preferred_username, oid]
           clientClaims: [azp, appid]
@@ -185,7 +185,7 @@ tests:
             [[auth.issuers]]
             name = "entra"
             issuer = "https://login.microsoftonline.com/t/v2.0"
-            audiences = ["api://uc"]
+            audiences = ["1f0a6b3c","https://uc.example.com"]
             direct = true
             principal_claims = ["preferred_username","oid"]
             client_claims = ["azp","appid"]

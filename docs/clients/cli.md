@@ -48,7 +48,7 @@ Without a token or a sign-in, `uc` signs in with the identity of the environment
 `UC_OAUTH_*`, or a token in `UC_TOKEN`, at an identity provider that the server takes. A service
 principal, a pod or a CI job thus needs no `uc auth login`. `uc auth login --access_token`
 exchanges a provider's access token instead of an identity token, such as the one
-`az account get-access-token --scope api://uc/.default` prints.
+`az account get-access-token --scope https://uc.example.com/.default` prints.
 
 ## Tables, volumes and functions
 

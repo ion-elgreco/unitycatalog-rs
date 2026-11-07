@@ -31,11 +31,12 @@ fn source(
     })
 }
 
-/// An Azure identity of the environment, for the scope `scope`, such as `api://uc/.default`: a
-/// service principal (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`), a workload
-/// identity (`AZURE_FEDERATED_TOKEN_FILE`), a managed identity that the environment names
-/// (`AZURE_CLIENT_ID`, `IDENTITY_ENDPOINT` or `MSI_ENDPOINT`), the sign-in of the Azure CLI when
-/// `az` is on the path, else the managed identity of the machine or pod.
+/// An Azure identity of the environment, for the scope `scope`, such as
+/// `https://uc.example.com/.default`: a service principal (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`,
+/// `AZURE_CLIENT_SECRET`), a workload identity (`AZURE_FEDERATED_TOKEN_FILE`), a managed identity
+/// that the environment names (`AZURE_CLIENT_ID`, `IDENTITY_ENDPOINT` or `MSI_ENDPOINT`), the
+/// sign-in of the Azure CLI when `az` is on the path, else the managed identity of the machine or
+/// pod.
 #[pyfunction]
 fn azure(scope: &str) -> PyResult<RustTokenSource> {
     source(sources::azure(scope))
@@ -98,7 +99,8 @@ fn token_env(var: &str) -> RustTokenSource {
 
 /// The token source of the environment for the server at `base_url`, if it has one: `UC_TOKEN`
 /// or `UC_TOKEN_FILE`, an OAuth client in `UC_OAUTH_*`, else an Azure, Google or AWS identity at
-/// one of the server's issuers. `Client(base_url)` without a token does this itself.
+/// one of the server's issuers, for the audience that `UC_AUDIENCE` names, else the server's
+/// URL. `Client(base_url)` without a token does this itself.
 #[pyfunction]
 fn detect(py: Python<'_>, base_url: &str) -> PyResult<Option<RustTokenSource>> {
     let url: url::Url = base_url

@@ -16,20 +16,26 @@ use uc_server::authn::security::{ADMIN, initialize_admin};
 use uc_server::{AppState, build_app};
 
 use crate::common::{
-    IDP_CLIENT, IDP_SECRET, Idp, STS_KEYS, Sts, metastore, security, serve, token,
+    IDP_CLIENT, IDP_SECRET, Idp, STS_KEYS, Sts, listen, metastore, security, serve, serve_on, token,
 };
 
+/// The URL `url` without its `/`, as a block's audience.
+fn audience(url: &Url) -> String {
+    url.as_str().trim_end_matches('/').to_string()
+}
+
 /// A server with authorization on that takes `idp`'s tokens for the
-/// audience `uc` on every request and makes the users they name; its root
-/// URL.
+/// audience `uc`, or its own URL, on every request and makes the users they
+/// name; its root URL.
 async fn server_with_direct_idp(idp: &Idp) -> Url {
+    let (listener, url) = listen().await;
     let metastore = metastore().await;
     initialize_admin(&metastore).await.unwrap();
     let settings = AuthSettings::new(&uc_common::settings::Auth {
         issuers: vec![uc_common::settings::Issuer {
             name: "idp".into(),
             issuer: idp.issuer.clone(),
-            audiences: vec!["uc".into()],
+            audiences: vec!["uc".into(), audience(&url)],
             direct: true,
             create_users: true,
             ..Default::default()
@@ -41,7 +47,8 @@ async fn server_with_direct_idp(idp: &Idp) -> Url {
         .with_authz(true)
         .with_security(security())
         .with_auth_settings(settings);
-    serve(build_app(state)).await
+    serve_on(listener, build_app(state));
+    url
 }
 
 fn env(vars: &[(&str, &str)]) -> identity::Env {
@@ -102,7 +109,7 @@ async fn the_environment_signs_in_at_what_the_server_takes() {
         [identity::Issuer {
             name: "idp".into(),
             issuer: idp.issuer.clone(),
-            audiences: vec!["uc".into()],
+            audiences: vec!["uc".into(), audience(&url)],
             direct: true,
             kind: "oidc".into(),
         }]
@@ -119,7 +126,7 @@ async fn the_environment_signs_in_at_what_the_server_takes() {
     assert!(none.is_none());
 
     // An OAuth client in the environment, with the audience of the server's
-    // issuer.
+    // issuer that is the server's URL.
     let oauth = env(&[
         ("UC_OAUTH_TOKEN_URL", &idp.token_url()),
         ("UC_OAUTH_CLIENT_ID", IDP_CLIENT),
@@ -163,8 +170,10 @@ async fn the_environment_signs_in_at_what_the_server_takes() {
 const SERVER_ID: &str = "https://uc.example.com";
 
 /// A server that takes the AWS identities of the account of [`Sts`],
-/// signed for [`SERVER_ID`], and makes the users they name; its root URL.
+/// signed for [`SERVER_ID`] or its own URL, and makes the users they name;
+/// its root URL.
 async fn server_with_aws(sts: &Sts) -> Url {
+    let (listener, url) = listen().await;
     let metastore = metastore().await;
     initialize_admin(&metastore).await.unwrap();
     let settings = AuthSettings::new(&uc_common::settings::Auth {
@@ -172,7 +181,7 @@ async fn server_with_aws(sts: &Sts) -> Url {
             name: "aws".into(),
             kind: uc_common::settings::IssuerKind::Aws,
             issuer: sts.endpoint.clone(),
-            audiences: vec![SERVER_ID.into()],
+            audiences: vec![SERVER_ID.into(), audience(&url)],
             accounts: vec!["123456789012".into()],
             create_users: true,
             ..Default::default()
@@ -183,7 +192,8 @@ async fn server_with_aws(sts: &Sts) -> Url {
         .with_authz(true)
         .with_security(security())
         .with_auth_settings(settings);
-    serve(build_app(state)).await
+    serve_on(listener, build_app(state));
+    url
 }
 
 #[tokio::test]
@@ -197,9 +207,9 @@ async fn an_aws_role_signs_in_with_a_signed_request() {
         ("AWS_SESSION_TOKEN", "session"),
     ]);
 
-    // The environment's keys at the server's AWS block: its STS endpoint and
-    // server id come from the server. STS takes the signature of the request
-    // that the server forwards.
+    // The environment's keys at the server's AWS block: its STS endpoint
+    // comes from the server, and the server id is the server's URL. STS takes
+    // the signature of the request that the server forwards.
     let source = identity::detect_in(&keys, &url, false, false)
         .await
         .unwrap()

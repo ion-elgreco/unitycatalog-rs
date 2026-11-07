@@ -75,7 +75,7 @@ auth:
   # principal or a service account signs in.
   # - name: entra
   #   issuer: https://login.microsoftonline.com/<tenant>/v2.0
-  #   audiences: ["api://uc"]
+  #   audiences: [<the API app's client id>, "https://uc.example.com"]
   #   direct: true
   #   principalClaims: [preferred_username, oid]
   #   clientClaims: [azp, appid]
