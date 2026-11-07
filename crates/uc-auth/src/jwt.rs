@@ -8,7 +8,7 @@
 //! RS256/384/512 and ES256/384/512 are accepted, with [`DEFAULT_LEEWAY`] of
 //! clock skew.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -34,9 +34,9 @@ const KEYS_TTL: Duration = Duration::from_secs(60 * 60);
 const MIN_REFRESH: Duration = Duration::from_secs(60);
 /// The most issuers whose keys are kept. A pattern with `*` matches many.
 const MAX_ISSUERS: u64 = 1_000;
-/// The most issuers without keys that are asked per [`MIN_REFRESH`], so
-/// tokens that name made-up issuers of a pattern with `*` do not make a
-/// call each.
+/// The most issuers without keys that are asked per [`MIN_REFRESH`], for
+/// each pattern with `*`, so tokens that name made-up issuers of a pattern
+/// do not make a call each. Issuers named exactly are not counted.
 const MAX_NEW_ISSUERS: u32 = 20;
 /// How long the identity of a token without `exp` may be kept: as long as
 /// the [`Authenticator`](crate::Authenticator) keeps any.
@@ -139,9 +139,9 @@ pub struct JwtKeys {
     transport: Box<dyn Transport>,
     leeway: Duration,
     issuers: Cache<String, Arc<IssuerKeys>>,
-    /// The start of the current [`MIN_REFRESH`], and how many issuers
-    /// without keys were asked since.
-    new_issuers: std::sync::Mutex<(Instant, u32)>,
+    /// For each pattern with `*`: the start of the current [`MIN_REFRESH`],
+    /// and how many of its issuers without keys were asked since.
+    new_issuers: std::sync::Mutex<HashMap<String, (Instant, u32)>>,
 }
 
 #[derive(Default)]
@@ -224,7 +224,7 @@ impl JwtKeys {
             transport: Box::new(transport),
             leeway: DEFAULT_LEEWAY,
             issuers: Cache::builder().max_capacity(MAX_ISSUERS).build(),
-            new_issuers: std::sync::Mutex::new((Instant::now(), 0)),
+            new_issuers: std::sync::Mutex::new(HashMap::new()),
         }
     }
 
@@ -251,6 +251,10 @@ impl JwtKeys {
     /// Check the token's signature with the issuer's key, and its issuer and
     /// times. The audience is the caller's to check.
     ///
+    /// `pattern` is the pattern with `*` that `issuer` matched, `None` for an
+    /// issuer named exactly: the issuers of a pattern that have no keys yet
+    /// are asked at most [`MAX_NEW_ISSUERS`] a minute, for each pattern.
+    ///
     /// # Errors
     ///
     /// As [`VerifyError`] says.
@@ -259,8 +263,9 @@ impl JwtKeys {
         token: &str,
         decoded: &UnverifiedJwt,
         issuer: &str,
+        pattern: Option<&str>,
     ) -> Result<(), VerifyError> {
-        let jwk = self.key(issuer, decoded.key_id.as_deref()).await?;
+        let jwk = (self.key(issuer, decoded.key_id.as_deref(), pattern)).await?;
         let failed = |e: String| VerifyError::Invalid(format!("Token verification failed: {e}"));
         let unsupported =
             |kind: &str, alg: &str| VerifyError::Unsupported(format!("Unsupported {kind}: {alg}"));
@@ -305,7 +310,12 @@ impl JwtKeys {
     }
 
     /// The issuer's key `key_id`, fetched when unknown.
-    async fn key(&self, issuer: &str, key_id: Option<&str>) -> Result<Jwk, VerifyError> {
+    async fn key(
+        &self,
+        issuer: &str,
+        key_id: Option<&str>,
+        pattern: Option<&str>,
+    ) -> Result<Jwk, VerifyError> {
         let keys = (self.issuers)
             .get_with(issuer.to_string(), async { Arc::default() })
             .await;
@@ -325,8 +335,11 @@ impl JwtKeys {
             }
             fetched.keys.is_none()
         };
-        if first && !self.may_ask_new_issuer() {
-            tracing::warn!(%issuer, "too many new issuers; the token is refused for now");
+        if first
+            && let Some(pattern) = pattern
+            && !self.may_ask_new_issuer(pattern)
+        {
+            tracing::warn!(%issuer, %pattern, "too many new issuers; the token is refused for now");
             return Err(VerifyError::Unavailable(format!(
                 "Too many new issuers, try again later: {issuer}"
             )));
@@ -349,10 +362,11 @@ impl JwtKeys {
         fetched.answer(key_id, issuer)
     }
 
-    /// Whether an issuer without keys may be asked now: at most
-    /// [`MAX_NEW_ISSUERS`] per [`MIN_REFRESH`].
-    fn may_ask_new_issuer(&self) -> bool {
-        let mut window = self.new_issuers.lock().unwrap_or_else(|e| e.into_inner());
+    /// Whether an issuer of `pattern` without keys may be asked now: at most
+    /// [`MAX_NEW_ISSUERS`] per [`MIN_REFRESH`] for each pattern.
+    fn may_ask_new_issuer(&self, pattern: &str) -> bool {
+        let mut windows = self.new_issuers.lock().unwrap_or_else(|e| e.into_inner());
+        let window = (windows.entry(pattern.to_string())).or_insert((Instant::now(), 0));
         if window.0.elapsed() >= MIN_REFRESH {
             *window = (Instant::now(), 0);
         }
@@ -535,6 +549,12 @@ impl JwtProvider {
         self.issuers.is_allowed(iss)
     }
 
+    /// The pattern with `*` that `iss` matches, for [`JwtKeys::verify`];
+    /// `None` when the provider names it exactly, or does not have it.
+    pub fn pattern(&self, iss: &str) -> Option<&str> {
+        self.issuers.matching(iss).flatten()
+    }
+
     /// Whether one of the token's `aud` is accepted.
     pub fn audience_allowed(&self, claims: &Map<String, Value>) -> bool {
         let any = self.audiences.len() == 1 && self.audiences[0] == "*";
@@ -597,7 +617,12 @@ impl<S: Send + Sync> Resolver<S> for JwtResolver {
         if providers.is_empty() {
             return Resolution::Pass;
         }
-        if let Err(e) = self.keys.verify(token, &decoded, iss).await {
+        // An issuer that one of the providers names exactly is no pattern's.
+        let pattern = match providers.iter().all(|p| p.pattern(iss).is_some()) {
+            true => providers.first().and_then(|p| p.pattern(iss)),
+            false => None,
+        };
+        if let Err(e) = self.keys.verify(token, &decoded, iss, pattern).await {
             tracing::warn!(%iss, reason = %e, "token refused");
             return Resolution::Refused(match e {
                 // The caller may well be signed in.
@@ -738,16 +763,22 @@ mod tests {
         let calls = || down.0.load(std::sync::atomic::Ordering::SeqCst);
         let keys = JwtKeys::new(down.clone());
         for _ in 0..3 {
-            let key = keys.key("https://a", Some("k1")).await;
+            let key = keys.key("https://a", Some("k1"), None).await;
             assert!(matches!(key, Err(VerifyError::Unavailable(_))));
         }
         assert_eq!(calls(), 1);
         // Made-up issuers of a pattern with `*`.
         for n in 0..2 * MAX_NEW_ISSUERS {
-            let key = keys.key(&format!("https://t{n}.a"), Some("k1")).await;
+            let key = (keys.key(&format!("https://t{n}.a"), Some("k1"), Some("https://*.a"))).await;
             assert!(matches!(key, Err(VerifyError::Unavailable(_))));
         }
-        assert_eq!(calls(), MAX_NEW_ISSUERS as usize);
+        assert_eq!(calls(), 1 + MAX_NEW_ISSUERS as usize);
+        // They take nothing from issuers named exactly, nor from another
+        // pattern.
+        assert!(keys.key("https://b", Some("k1"), None).await.is_err());
+        let other = keys.key("https://t.b", Some("k1"), Some("https://*.b"));
+        assert!(other.await.is_err());
+        assert_eq!(calls(), 3 + MAX_NEW_ISSUERS as usize);
     }
 
     #[test]

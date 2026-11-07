@@ -364,6 +364,16 @@ impl AuthSettings {
         self.issuers.iter().find(|issuer| issuer.matches(iss))
     }
 
+    /// The pattern with `*` that `iss` matches, for [`JwtKeys::verify`]:
+    /// `None` when a block names it exactly.
+    pub fn pattern(&self, iss: &str) -> Option<&str> {
+        let mut patterns = (self.issuers.iter())
+            .filter(|issuer| issuer.matches(iss))
+            .map(|issuer| issuer.jwt.pattern(iss));
+        let first = patterns.next().flatten()?;
+        patterns.all(|p| p.is_some()).then_some(first)
+    }
+
     /// The first block that `iss` matches and that takes the audience of
     /// `claims`, if any: blocks of one issuer can differ by audience.
     pub fn issuer_taking(&self, iss: &str, claims: &Map<String, Value>) -> Option<&IssuerSettings> {
@@ -699,6 +709,24 @@ mod tests {
             );
             assert!(error(&[&block]).contains("[0].issuer"), "{endpoint}");
         }
+    }
+
+    #[test]
+    fn the_pattern_of_an_issuer() {
+        let settings = AuthSettings::new(&settings::Auth {
+            issuers: vec![
+                issuer("name = \"a\"\nissuer = \"https://*.a.example\"\naudiences = [\"a\"]"),
+                issuer("name = \"b\"\nissuer = \"https://x.a.example\"\naudiences = [\"b\"]"),
+            ],
+            ..Default::default()
+        });
+        assert_eq!(
+            settings.pattern("https://y.a.example"),
+            Some("https://*.a.example")
+        );
+        // Named exactly by one block: no pattern's.
+        assert_eq!(settings.pattern("https://x.a.example"), None);
+        assert_eq!(settings.pattern("https://other"), None);
     }
 
     #[test]

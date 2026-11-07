@@ -173,7 +173,9 @@ groups, arrive as names.
 
 The server checks a token's signature with the provider's keys, which it fetches once an hour
 and keeps while the provider does not answer, its issuer, audience and times, with 60 seconds of
-clock skew. It asks a provider at most once a minute. A token that a `direct` issuer's
+clock skew. It asks a provider at most once a minute. Of the issuers that an `issuer` with `*`
+matches, it asks at most 20 a minute that it has no keys of yet, so tokens of made-up issuers
+cannot make it call out for each. A token that a `direct` issuer's
 block accepts is kept until it expires, at most five minutes, so a busy client costs one check
 per token, not per request; a user disabled in the server keeps working that long.
 
