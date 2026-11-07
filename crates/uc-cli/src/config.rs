@@ -82,8 +82,8 @@ pub fn client(url: &str, token: Option<&str>) -> anyhow::Result<Client> {
 
 /// The API client of the server at `url`: with `token`, as [`client`];
 /// without, signed in with the identity of the environment
-/// ([`uc_client::identity::detect`]) when it has one: an Azure or Google
-/// identity, an OAuth client, or a token in `UC_TOKEN`.
+/// ([`uc_client::identity::detect`]) when it has one: an Azure, Google or
+/// AWS identity, an OAuth client, or a token in `UC_TOKEN`.
 pub async fn client_of_environment(url: &str, token: Option<&str>) -> anyhow::Result<Client> {
     if token.is_some() {
         return client(url, token);
