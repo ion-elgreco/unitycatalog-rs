@@ -184,6 +184,7 @@ pub fn call_error(e: &ClientError) -> uc_common::Error {
         },
         ClientError::Url(e) => Error::internal(format!("url join: {e}")),
         ClientError::Http(e) => Error::internal(format!("http: {}", with_cause(e))),
+        ClientError::Transport(e) => Error::internal(format!("http: {}", with_cause(e))),
         ClientError::Json(e) => Error::internal(format!("decode: {e}")),
         e => Error::internal(e.to_string()),
     }
@@ -191,7 +192,7 @@ pub fn call_error(e: &ClientError) -> uc_common::Error {
 
 /// `e` and its deepest cause, which reqwest's text leaves out: "error
 /// sending request for url (…): Connection refused (os error 61)".
-fn with_cause(e: &reqwest::Error) -> String {
+fn with_cause(e: &(dyn std::error::Error + 'static)) -> String {
     let mut deepest = None;
     let mut next = std::error::Error::source(e);
     while let Some(cause) = next {
@@ -219,6 +220,7 @@ impl std::error::Error for CallError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match &self.0 {
             ClientError::Http(e) => Some(e),
+            ClientError::Transport(e) => Some(e),
             ClientError::Url(e) => Some(e),
             ClientError::Json(e) => Some(e),
             _ => None,
@@ -331,7 +333,15 @@ pub async fn run(global: &Global, settings: &Settings, entity: Entity) -> i32 {
         &origin,
         SignIns::of_user().as_ref(),
     );
-    let client = match config::client(&origin, token.as_ref().map(|(token, _)| token.as_str())) {
+    let given = token.as_ref().map(|(token, _)| token.as_str());
+    // `auth` signs in itself, and `--auth_token`, also empty, is the token to send: neither
+    // signs in with the identity of the environment.
+    let signs_in = matches!(entity, Entity::Auth(_));
+    let client = match signs_in || global.auth_token.is_some() {
+        true => config::client(&origin, given),
+        false => config::client_of_environment(&origin, given).await,
+    };
+    let client = match client {
         Ok(client) => client,
         Err(e) => {
             eprintln!("Error: {e}");
@@ -346,8 +356,6 @@ pub async fn run(global: &Global, settings: &Settings, entity: Entity) -> i32 {
     };
     let as_is = prints_as_is(&entity);
     let quiet = prints_nothing(&entity);
-    // `auth` signs in itself.
-    let signs_in = matches!(entity, Entity::Auth(_));
     let result = match entity {
         Entity::Catalog(op) => catalog::run(&c, op).await,
         Entity::Schema(op) => schema::run(&c, op).await,

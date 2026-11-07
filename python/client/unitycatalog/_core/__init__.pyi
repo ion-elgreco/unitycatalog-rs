@@ -14,6 +14,7 @@ from . import (
     functions as functions,
     health as health,
     iceberg as iceberg,
+    identity as identity,
     metastore as metastore,
     models as models,
     permissions as permissions,
@@ -140,6 +141,7 @@ __all__ = [
     "PermissionDeniedError",
     "RateLimitError",
     "ServerError",
+    "TokenProvider",
     "UnauthenticatedError",
     "UnityCatalogError",
     "admin",
@@ -153,6 +155,7 @@ __all__ = [
     "functions",
     "health",
     "iceberg",
+    "identity",
     "metastore",
     "models",
     "permissions",
@@ -191,10 +194,19 @@ class Client:
     """
     A client of the API at one base URL.
     """
-    def __new__(cls, /, base_url: str, token: str | None = None) -> Client:
+    def __new__(
+        cls,
+        /,
+        base_url: str,
+        token: str | None = None,
+        token_provider: Any | None = None,
+    ) -> Client:
         """
-        A client of the API at `base_url`. `token`, when set, goes in every
-        request as the bearer token.
+        A client of the API at `base_url`. `token`, when set, goes in every request as
+        the bearer token. `token_provider` is asked for the token instead: a
+        `TokenProvider`, or a callable that returns the token, or a pair of the token
+        and the time it expires, in seconds since the epoch; a token with its expiry is
+        kept until a minute before it, a bare token is asked for at every request.
         """
     def catalog(self, /, catalog_name: str) -> CatalogClient:
         """
@@ -881,8 +893,9 @@ class Client:
         Create a user, named by its primary email. Only the metastore admin can.
 
         Args:
-            external_id: The identity the user has at the client's identity provider. The token exchange
-                         resolves an OAuth client (`azp`, `client_id`) to the user by it.
+            external_id: The identity the user has at an identity provider. An application's own token names
+                         the user whose external id is the name of the issuer block and the client id, such
+                         as `entra:<client id>`.
             display_name: Name of the user.
             active: Whether the user can sign in. A new user is always enabled; absent in a replace request:
                     unchanged.
@@ -2287,8 +2300,9 @@ class Client:
         the metastore admin can.
 
         Args:
-            external_id: The identity the user has at the client's identity provider. The token exchange
-                         resolves an OAuth client (`azp`, `client_id`) to the user by it.
+            external_id: The identity the user has at an identity provider. An application's own token names
+                         the user whose external id is the name of the issuer block and the client id, such
+                         as `entra:<client id>`.
             display_name: Name of the user.
             active: Whether the user can sign in. A new user is always enabled; absent in a replace request:
                     unchanged.
@@ -2854,6 +2868,14 @@ class ServerError(UnityCatalogError):
         status: SupportsIndex | None = None,
         details: list | None = None,
     ) -> ServerError: ...
+
+@final
+class TokenProvider:
+    """
+    A token provider made in Rust, for `token_provider=`. The binding crate makes one
+    from any `olai_http::RequestSigner`, such as a bearer provider in a
+    `BearerProviderSigner`.
+    """
 
 @final
 class UnauthenticatedError(UnityCatalogError):

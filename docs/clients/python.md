@@ -14,15 +14,70 @@ pip install unitycatalog-rs
 ## Connect
 
 ```python
-import os
-
 from unitycatalog import Client
 
 client = Client("http://localhost:8080/")
-
-# With sign-in: a personal access token, or a token of the server.
-client = Client("https://uc.example.com/", token=os.environ["UC_TOKEN"])
 ```
+
+With sign-in, the client sends a bearer token with each request. It gets one in one of these
+ways:
+
+- **The identity of the environment.** `Client(url)` without a token signs in with what the
+  environment has, at an identity provider that the server takes
+  ([Identity providers](../server/auth.md#identity-providers)). Nothing in the code names it:
+  the variables are the configuration, and moving from a laptop to a pod changes none of it.
+
+    | Identity | What the environment has |
+    | --- | --- |
+    | Azure service principal | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` |
+    | Azure workload identity | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_FEDERATED_TOKEN_FILE` |
+    | Azure managed identity | `AZURE_CLIENT_ID` for a user-assigned one, else `IDENTITY_ENDPOINT` or `MSI_ENDPOINT` |
+    | Azure CLI | `az` on the path, signed in, without the variables of a managed identity |
+    | Google service account | `GOOGLE_APPLICATION_CREDENTIALS` |
+    | Google Cloud CLI | `gcloud` on the path, signed in |
+    | Google machine or pod | `GCE_METADATA_HOST` or `K_SERVICE` |
+    | AWS access keys | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, with `AWS_SESSION_TOKEN` for temporary ones |
+    | AWS web identity (EKS) | `AWS_ROLE_ARN`, `AWS_WEB_IDENTITY_TOKEN_FILE` |
+    | AWS container (ECS, EKS Pod Identity) | `AWS_CONTAINER_CREDENTIALS_FULL_URI` or `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` |
+    | AWS instance role (EC2) | `AWS_REGION` or `AWS_DEFAULT_REGION` |
+    | Any OAuth client | `UC_OAUTH_TOKEN_URL`, `UC_OAUTH_CLIENT_ID`, `UC_OAUTH_CLIENT_SECRET`, with `UC_OAUTH_SCOPE` and `UC_OAUTH_AUDIENCE` when the provider needs them |
+    | A token | `UC_TOKEN`, or a file with one in `UC_TOKEN_FILE` |
+
+    The Azure and Google identities ask for a token for an audience of the server's issuer, so
+    the server must list the provider with `direct = true`. An AWS identity signs a request for
+    STS with the server id of the server's AWS block ([AWS](../server/auth.md#aws)). The audience
+    or server id is the one that `UC_AUDIENCE` names, else the server's URL as the client calls
+    it: the client asks for no other, so a server cannot have the identity sign for another
+    service. The AWS CLI's profiles are not read: `aws configure export-credentials --format env`
+    puts a profile's keys in the environment.
+
+    `Client(url)` asks the server which providers it takes. A server that cannot answer yet is
+    asked again at each call, and the calls go without a token until it answers.
+
+- **A token provider.** `token_provider=` names one: one of `unitycatalog.identity`, with the scope
+  or audience of the server's issuer, or a callable that returns the token, or a pair of the
+  token and when it expires, in seconds since the epoch. The callable runs on a thread of its
+  own, one call at a time, so it can call the methods of a client.
+
+    ```python
+    import time
+
+    from unitycatalog import Client, identity
+
+    Client(url, token_provider=identity.azure("https://uc.example.com/.default"))
+    Client(url, token_provider=identity.google("https://uc.example.com"))
+    Client(url, token_provider=identity.aws("https://uc.example.com"))
+    Client(url, token_provider=identity.client_credentials(token_url, client_id, client_secret))
+    Client(url, token_provider=lambda: (fetch_token(), time.time() + 3600))
+    ```
+
+- **A fixed token.** `token=`: a personal access token, or a token of the server.
+
+    ```python
+    import os
+
+    client = Client("https://uc.example.com/", token=os.environ["UC_TOKEN"])
+    ```
 
 ## Catalogs, schemas and tables
 

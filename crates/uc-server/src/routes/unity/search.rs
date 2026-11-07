@@ -54,7 +54,7 @@ pub async fn search_objects(
             .filter(|n| *n >= 0)
             .ok_or_else(|| Error::invalid_argument(format!("Invalid page token: {token}")))?,
     };
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let mut results = Vec::new();
     // The offset of the next result in the index's order, if any.
     let mut next = Some(start);
@@ -74,7 +74,7 @@ pub async fn search_objects(
                 next = Some(offset + i as i64);
                 break;
             }
-            if visible(&access, &hit) {
+            if visible(&access, &hit).await {
                 results.push(hit.result);
             }
         }
@@ -86,16 +86,19 @@ pub async fn search_objects(
 }
 
 /// Whether the caller may see a result: the rule of its type's `get`.
-fn visible(access: &Access, hit: &SearchHit) -> bool {
-    let rule = match hit.result.securable_type {
-        SecurableType::Catalog => rules::get_catalog,
-        SecurableType::Schema => rules::get_schema,
-        SecurableType::Table => rules::get_table,
-        SecurableType::Volume => rules::get_volume,
-        SecurableType::Function => rules::get_function,
-        _ => rules::get_model,
-    };
-    !access.enabled() || rule(access, &hit.lineage)
+async fn visible(access: &Access, hit: &SearchHit) -> bool {
+    if !access.enabled() {
+        return true;
+    }
+    let l = &hit.lineage;
+    match hit.result.securable_type {
+        SecurableType::Catalog => rules::get_catalog(access, l).await,
+        SecurableType::Schema => rules::get_schema(access, l).await,
+        SecurableType::Table => rules::get_table(access, l).await,
+        SecurableType::Volume => rules::get_volume(access, l).await,
+        SecurableType::Function => rules::get_function(access, l).await,
+        _ => rules::get_model(access, l).await,
+    }
 }
 
 pub fn router() -> OpenApiRouter<AppState> {

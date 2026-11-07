@@ -14,7 +14,7 @@ url = "postgresql://uc@postgres.example.com:5432/uc?sslmode=verify-full"
 
 [auth]
 enabled = true
-allowed_issuers = ["https://accounts.google.com"]
+admin_principals = ["alice@example.com"]
 ```
 
 The same with variables:
@@ -23,7 +23,7 @@ The same with variables:
 export UC_SERVER_DATA_DIR=/var/lib/uc
 export UC_DB_URL='postgresql://uc@postgres.example.com:5432/uc?sslmode=verify-full'
 export UC_AUTH_ENABLED=true
-export UC_AUTH_ALLOWED_ISSUERS=https://accounts.google.com
+export UC_AUTH_ADMIN_PRINCIPALS=alice@example.com
 ```
 
 ## Where the settings come from
@@ -47,7 +47,7 @@ defaults apply.
 - Variables are text. The server reads numbers and booleans from the text. An empty variable is
   unset.
 - A duration is text such as `30s`, `5m`, `24h` or `5d`.
-- A list is a TOML array, or text with commas: `UC_AUTH_ALLOWED_ISSUERS=https://a.example,https://b.example`.
+- A list is a TOML array, or text with commas: `UC_AUTH_ADMIN_PRINCIPALS=alice@example.com,bob@example.com`.
 
 ## Cloud identities and locations
 
@@ -103,12 +103,11 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 | `users` | none | none | `[[auth.users]]`: the users that the server makes at each start when they are missing. Only in `uc.toml`. See [The first users](../server/auth.md#the-first-users). |
 | `cedar` | `UC_AUTH_CEDAR` | `false` | Check privileges with the Cedar policy engine. |
 | `cedar_policies` | `UC_AUTH_CEDAR_POLICIES` | none | Files of Cedar policies, on top of the default policies. |
-| **Tokens** |  |  | The server's own tokens, and the identity tokens that clients exchange for them, such as with `uc auth login`. |
+| **Tokens** |  |  | The server's own tokens, and the identity providers whose tokens it takes. |
 | `signing_key_file` | `UC_AUTH_SIGNING_KEY_FILE` | none | The PEM file of the RSA keys of the server's tokens, newest first: the first signs. Without it, the server makes a key in memory at each start. See [The signing key](../server/auth.md#the-signing-key). |
 | `access_token_timeout` | `UC_AUTH_ACCESS_TOKEN_TIMEOUT` | `24h` | The life of the server's access tokens. |
 | `cookie_timeout` | `UC_AUTH_COOKIE_TIMEOUT` | `5d` | The life of the `UC_TOKEN` cookie of the web UI. |
-| `allowed_issuers` | `UC_AUTH_ALLOWED_ISSUERS` | none | The issuers of identity tokens that the server exchanges: exact, or with `*` for one DNS label. |
-| `audiences` | `UC_AUTH_AUDIENCES` | none | The audiences that those tokens must have. `*` alone accepts every audience. |
+| `issuers` | none | none | `[[auth.issuers]]`: the identity providers whose tokens the server takes, at the token exchange and, with `direct`, on every request. Only in `uc.toml`. The keys follow. |
 | **Web UI sign-in** |  |  | How users sign in to the web UI. The settings of each mode follow. |
 | `mode` | `UC_AUTH_MODE` | `none` | The web UI's sign-in: `none`, `oidc` or `forward`. |
 | **OpenID Connect** |  |  | `mode = "oidc"`: the server signs users in with an OpenID Connect provider. |
@@ -123,6 +122,37 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 | `forward_email_header` | `UC_AUTH_FORWARD_EMAIL_HEADER` | `Remote-Email` | The header with the user's email. |
 | `forward_user_header` | `UC_AUTH_FORWARD_USER_HEADER` | `Remote-User` | The header with the user, without the email header. |
 | `forward_logout_url` | `UC_AUTH_FORWARD_LOGOUT_URL` | none | The proxy's sign-out, where the web UI's "Log out" goes. |
+
+### `[[auth.issuers]]`
+
+```toml
+[[auth.issuers]]
+name = "entra"
+issuer = "https://login.microsoftonline.com/<tenant>/v2.0"
+audiences = ["<the API app's client id>", "https://uc.example.com"]
+direct = true
+principal_claims = ["preferred_username", "oid"]
+client_claims = ["azp", "appid"]
+groups_claim = "roles"
+create_users = true
+display_name = "{app_displayname}"
+```
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `name` | required | A short name of lowercase letters, digits, `-` and `_`: the prefix of the principals it names without an email, such as `entra:<oid>`. |
+| `kind` | `oidc` | `oidc` for an OpenID Connect provider; `aws` for AWS identities, whose signed `GetCallerIdentity` requests the server sends to STS. |
+| `issuer` | required | The `iss` claim of its tokens, as they write it, with a trailing `/` if they have one; `*` stands for one DNS label of letters, digits and `-`, and in the host it needs two fixed labels after it. For `aws`, the URL of the STS endpoint, by default AWS's global and regional ones. |
+| `audiences` | required | The `aud` that its tokens must carry; `["*"]` accepts every audience, without `direct`; with `direct`, no `*`. For `aws`, the server id that the signed requests carry: the server's URL as clients call it; no `*`. Clients ask for the audience that is the server's URL. |
+| `accounts` | required for `aws` | The 12-digit AWS accounts whose identities it takes. |
+| `direct` | `false` | Take its tokens on every request, not only at the token exchange. |
+| `principal_claims` | `["email", "sub"]` | The claims that name the caller; the first present wins. An email names the user with that email; with an `issuer` with `*`, only when the token says `email_verified = true`. Any other value names the user `<name>:<value>`. |
+| `client_claims` | `["azp", "client_id"]` | The claims with an application's client id: the user whose `externalId` is `<name>:<client id>` is the application. |
+| `groups_claim` | none | A claim whose values are names of groups the caller is in; a value counts when the server has the group `<name>:<value>`, such as `entra:Writers`. Not with an `issuer` that has `*`. |
+| `create_users` | `false` | Make the user at its first request when it is missing. |
+| `display_name` | the principal | The display name of a made user, with claims in braces. |
+
+[Identity providers](../server/auth.md#identity-providers) tells how a block names the caller.
 
 [Sign-in and authorization](../server/auth.md) tells how these settings work together.
 

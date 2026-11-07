@@ -8,8 +8,12 @@ repository.workspace = true
 authors.workspace = true
 
 [features]
-# The PyO3 classes of the models, for the Python client (`python/client`).
-python = ["dep:pyo3"]
+# The PyO3 classes of the models, for the Python client (`python/client`), which also signs
+# in with the identity of the environment.
+python = ["dep:pyo3", "identity"]
+# `identity`: the signers of cloud identities (Azure, Google, AWS, any OAuth client), on
+# olai-http's bearer providers.
+identity = ["dep:tokio"]
 
 [dependencies]
 uc-common.workspace = true
@@ -22,6 +26,16 @@ url.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 pyo3 = { workspace = true, optional = true }
+# `sync`: the signer of a server that could not say what it takes yet.
+tokio = { workspace = true, features = ["sync"], optional = true }
+
+# The transport of the generated client: `CloudClient` on native targets, which also has the
+# bearer providers of cloud identities, and `WasmClient` in the browser.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+olai-http.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+olai-http-wasm.workspace = true
 
 [dev-dependencies]
 uc-server = { path = "../uc-server" }
@@ -31,3 +45,9 @@ tokio.workspace = true
 tempfile = "3"
 # The ID tokens of the identity provider of the token exchange tests.
 jsonwebtoken.workspace = true
+# The signed request of an AWS identity's token.
+base64 = "0.22"
+# The SigV4 check of the fake STS of the AWS tests.
+sha2.workspace = true
+hmac = "0.12"
+hex.workspace = true

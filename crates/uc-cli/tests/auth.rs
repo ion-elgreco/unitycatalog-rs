@@ -146,8 +146,12 @@ async fn server(idp: &Idp) -> String {
         .unwrap();
     let security = Arc::new(SecurityContext::generate().unwrap());
     let settings = AuthSettings::new(&uc_common::settings::Auth {
-        allowed_issuers: vec![idp.issuer.clone()],
-        audiences: vec!["uc".into()],
+        issuers: vec![uc_common::settings::Issuer {
+            name: "idp".into(),
+            issuer: idp.issuer.clone(),
+            audiences: vec!["uc".into()],
+            ..Default::default()
+        }],
         access_token_timeout: Duration::from_secs(3600),
         cookie_timeout: Duration::from_secs(600),
         ..Default::default()
@@ -262,6 +266,30 @@ async fn an_identity_token_is_exchanged_for_an_access_token() {
     assert_eq!(code, 1);
     assert!(err.contains("Error authenticating - "), "{err}");
     assert!(err.contains("User not allowed"), "{err}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_given_token_is_sent_instead_of_the_environments() {
+    let dir = TempDir::new().unwrap();
+    let idp = Idp::start().await;
+    let url = server(&idp).await;
+    // Without a token, `UC_TOKEN` is the identity of the environment.
+    let (code, _, err) = run(uc(dir.path(), &url)
+        .env("UC_TOKEN", "not-valid")
+        .args(["catalog", "list"]))
+    .await;
+    assert_eq!(code, 1);
+    assert!(err.contains("Invalid access token."), "{err}");
+    // `--auth_token ''` sends no token.
+    let (code, _, err) = run(uc(dir.path(), &url).env("UC_TOKEN", "not-valid").args([
+        "catalog",
+        "list",
+        "--auth_token",
+        "",
+    ]))
+    .await;
+    assert_eq!(code, 1);
+    assert!(err.contains("No authorization found."), "{err}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

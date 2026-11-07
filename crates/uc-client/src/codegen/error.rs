@@ -11,6 +11,9 @@ pub enum Error {
     Api(ApiError),
     /// The request got no answer, or the answer could not be read.
     Http(::reqwest::Error),
+    /// The transport failed before an answer, or after retries.
+    #[cfg(not(target_arch = "wasm32"))]
+    Transport(::olai_http::Error),
     /// The request URL could not be built.
     Url(::url::ParseError),
     /// A body could not be written or read as JSON.
@@ -45,6 +48,8 @@ impl ::std::fmt::Display for Error {
         match self {
             Error::Api(e) => ::std::fmt::Display::fmt(e, f),
             Error::Http(e) => write!(f, "request failed: {e}"),
+            #[cfg(not(target_arch = "wasm32"))]
+            Error::Transport(e) => write!(f, "request failed: {e}"),
             Error::Url(e) => write!(f, "invalid URL: {e}"),
             Error::Json(e) => write!(f, "invalid JSON: {e}"),
         }
@@ -56,6 +61,8 @@ impl ::std::error::Error for Error {
         match self {
             Error::Api(e) => Some(e),
             Error::Http(e) => Some(e),
+            #[cfg(not(target_arch = "wasm32"))]
+            Error::Transport(e) => Some(e),
             Error::Url(e) => Some(e),
             Error::Json(e) => Some(e),
         }
@@ -71,6 +78,13 @@ impl ::core::convert::From<ApiError> for Error {
 impl ::core::convert::From<::reqwest::Error> for Error {
     fn from(e: ::reqwest::Error) -> Self {
         Error::Http(e)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl ::core::convert::From<::olai_http::Error> for Error {
+    fn from(e: ::olai_http::Error) -> Self {
+        Error::Transport(e)
     }
 }
 

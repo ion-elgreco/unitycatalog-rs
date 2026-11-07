@@ -77,12 +77,6 @@ spec:
               value: {{ .Values.auth.cookieTimeout | quote }}
             - name: UC_AUTH_ACCESS_TOKEN_TIMEOUT
               value: {{ .Values.auth.accessTokenTimeout | quote }}
-            - name: UC_AUTH_ALLOWED_ISSUERS
-              value: {{ .Values.auth.allowedIssuers | quote }}
-            {{- with .Values.auth.audiences }}
-            - name: UC_AUTH_AUDIENCES
-              value: {{ . | quote }}
-            {{- end }}
             {{- end }}
             {{- with .Values.storage.tableStorageRoot }}
             - name: UC_STORAGE_TABLES_ROOT

@@ -42,10 +42,10 @@ pub async fn create_catalog(
     principal: Principal,
     Json(req): Json<CreateCatalog>,
 ) -> ApiResult<Json<CatalogInfo>> {
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let storage_root =
         authz::storage_root_allowed(&state, &access, req.storage_root.as_deref()).await?;
-    access.check(rules::create_catalog(&access, storage_root))?;
+    access.check(rules::create_catalog(&access, storage_root).await)?;
     let info = state
         .metastore
         .catalogs()
@@ -66,13 +66,16 @@ pub async fn list_catalogs(
     principal: Principal,
     Query(page): Query<Pagination>,
 ) -> ApiResult<Json<ListCatalogsResponse>> {
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let (catalogs, next) = state.metastore.catalogs().list(&page).await?;
     // Upstream filters each page, which may then hold fewer items.
-    let catalogs = catalogs
-        .into_iter()
-        .filter(|c| rules::get_catalog(&access, &lineage_of(c)))
-        .collect();
+    let mut kept = Vec::with_capacity(catalogs.len());
+    for catalog in catalogs {
+        if rules::get_catalog(&access, &lineage_of(&catalog)).await {
+            kept.push(catalog);
+        }
+    }
+    let catalogs = kept;
     Ok(Json(ListCatalogsResponse {
         catalogs,
         next_page_token: next.map(PageToken::new),
@@ -95,8 +98,8 @@ pub async fn get_catalog(
     Path(name): Path<String>,
 ) -> ApiResult<Json<CatalogInfo>> {
     let info = state.metastore.catalogs().get(&name).await?;
-    let access = Access::load(&state, &principal.username).await?;
-    access.check(rules::get_catalog(&access, &lineage_of(&info)))?;
+    let access = Access::load(&state, &principal).await?;
+    access.check(rules::get_catalog(&access, &lineage_of(&info)).await)?;
     Ok(Json(info))
 }
 
@@ -119,7 +122,7 @@ pub async fn update_catalog(
 ) -> ApiResult<Json<CatalogInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Catalog,
         &name,
         rules::update_catalog,
@@ -154,7 +157,7 @@ pub async fn delete_catalog(
 ) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Catalog,
         &name,
         rules::delete_catalog,

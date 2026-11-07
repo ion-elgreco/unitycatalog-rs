@@ -37,6 +37,9 @@ pub trait ScimOps: Send + Sync {
     async fn get_user_by_name(&self, user_name: &str) -> Result<Option<ScimUser>>;
     /// The user with the email `email`, which is also its user name.
     async fn find_user_by_email(&self, email: &str) -> Result<Option<ScimUser>>;
+    /// The user with the email `email` in any case: the one with it as it is
+    /// written, else the only one with it in another case.
+    async fn find_user_by_email_any_case(&self, email: &str) -> Result<Option<ScimUser>>;
     async fn find_user_by_external_id(&self, external_id: &str) -> Result<Option<ScimUser>>;
     /// Replace the user at `id` with `user`, which the caller has changed and
     /// validated.

@@ -55,8 +55,8 @@ pub async fn create_credential(
     principal: Principal,
     Json(req): Json<CreateCredentialRequest>,
 ) -> ApiResult<Json<CredentialInfo>> {
-    let access = Access::load(&state, &principal.username).await?;
-    access.check(rules::create_credential(&access))?;
+    let access = Access::load(&state, &principal).await?;
+    access.check(rules::create_credential(&access).await)?;
     let info = state
         .metastore
         .credentials()
@@ -85,11 +85,17 @@ pub async fn list_credentials(
         .credentials()
         .list(params.purpose, &params.page)
         .await?;
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
+    let mut kept = Vec::with_capacity(credentials.len());
+    for credential in credentials {
+        if rules::get_credential(&access, &lineage_of(&credential)).await {
+            kept.push(credential);
+        }
+    }
+    let credentials = kept;
     Ok(Json(ListCredentialsResponse {
         credentials: credentials
             .into_iter()
-            .filter(|c| rules::get_credential(&access, &lineage_of(c)))
             .map(|c| present(&state, c))
             .collect(),
         next_page_token: next.map(PageToken::new),
@@ -111,8 +117,8 @@ pub async fn get_credential(
     Path(name): Path<String>,
 ) -> ApiResult<Json<CredentialInfo>> {
     let info = state.metastore.credentials().get(&name).await?;
-    let access = Access::load(&state, &principal.username).await?;
-    access.check(rules::get_credential(&access, &lineage_of(&info)))?;
+    let access = Access::load(&state, &principal).await?;
+    access.check(rules::get_credential(&access, &lineage_of(&info)).await)?;
     Ok(Json(present(&state, info)))
 }
 
@@ -134,7 +140,7 @@ pub async fn update_credential(
 ) -> ApiResult<Json<CredentialInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Credential,
         &name,
         rules::admin_or_owner,
@@ -169,7 +175,7 @@ pub async fn delete_credential(
 ) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Credential,
         &name,
         rules::admin_or_owner,

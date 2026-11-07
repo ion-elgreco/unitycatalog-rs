@@ -1,22 +1,26 @@
 // @generated — do not edit by hand.
 #![allow(unused_imports)]
 
+#[cfg(not(target_arch = "wasm32"))]
+use ::olai_http::CloudClient as Transport;
+
 use super::super::encode_path_value;
 use crate::codegen::error::Result;
-use crate::codegen::transport::HttpClient;
+#[cfg(target_arch = "wasm32")]
+use ::olai_http_wasm::WasmClient as Transport;
 use uc_client::models::permissions::v1::*;
 use url::Url;
 
 /// HTTP client for service operations
 #[derive(Clone)]
 pub struct PermissionClient {
-    pub(crate) client: HttpClient,
+    pub(crate) client: Transport,
     pub(crate) base_url: Url,
 }
 
 impl PermissionClient {
     /// Create a new client instance
-    pub fn new(client: HttpClient, mut base_url: Url) -> Self {
+    pub fn new(client: Transport, mut base_url: Url) -> Self {
         if !base_url.path().ends_with('/') {
             base_url.set_path(&format!("{}/", base_url.path()));
         }
@@ -38,7 +42,7 @@ impl PermissionClient {
             url.query_pairs_mut()
                 .append_pair("principal", &value.to_string());
         }
-        let response = self.client.get(url).send().await?;
+        let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -61,7 +65,7 @@ impl PermissionClient {
         let mut body = request.clone();
         body.securable_type = Default::default();
         body.full_name = Default::default();
-        let response = self.client.patch(url).json(&body).send().await?;
+        let response = self.client.patch(url).json(&body).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }

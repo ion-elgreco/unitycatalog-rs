@@ -37,14 +37,7 @@ pub async fn create_table(
         uc_api::TableType::External => Some(req.storage_location.as_deref()),
         _ => None,
     };
-    authz::check_create(
-        &state,
-        &principal.username,
-        &parent,
-        external,
-        rules::create_table,
-    )
-    .await?;
+    authz::check_create(&state, &principal, &parent, external, rules::create_table).await?;
     state.check_delta_api_only_for_managed(
         Some(req.table_type),
         "POST /delta/v1/catalogs/{catalog}/schemas/{schema}/tables",
@@ -80,7 +73,7 @@ pub async fn list_tables(
         .tables()
         .list(&params.catalog_name, &params.schema_name, &params.page)
         .await?;
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let schema = schema_full_name(&params.catalog_name, &params.schema_name);
     let tables = authz::filter_children(
         &state,
@@ -114,7 +107,7 @@ pub async fn get_table(
 ) -> ApiResult<Json<TableInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::get_table,
@@ -142,7 +135,7 @@ pub async fn update_table(
 ) -> ApiResult<Json<TableInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::own_child,
@@ -174,7 +167,7 @@ pub async fn delete_table(
 ) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Table,
         &full_name,
         rules::own_child,
@@ -202,7 +195,7 @@ pub async fn create_staging_table(
     let parent = schema_full_name(&req.catalog_name, &req.schema_name);
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Schema,
         &parent,
         rules::create_staging_table,

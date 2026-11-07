@@ -50,7 +50,8 @@ app.kubernetes.io/component: server
 
 {{/*
 The server's uc.toml: server.config.toml, then the users of auth.users,
-which the server makes at each start when they are missing.
+which the server makes at each start when they are missing, then the
+identity providers of auth.issuers.
 */}}
 {{- define "unitycatalog.server.ucToml" -}}
 {{ .Values.server.config.toml }}
@@ -66,6 +67,44 @@ external_id = {{ . | toJson }}
 {{- end }}
 {{- with $user.privileges }}
 privileges = {{ . | toJson }}
+{{- end }}
+{{- end }}
+{{- range $index, $issuer := .Values.auth.issuers }}
+
+[[auth.issuers]]
+name = {{ required (printf "auth.issuers[%d].name is required" $index) $issuer.name | toJson }}
+{{- if eq ($issuer.kind | default "oidc") "aws" }}
+kind = "aws"
+{{- with $issuer.issuer }}
+issuer = {{ . | toJson }}
+{{- end }}
+accounts = {{ required (printf "auth.issuers[%d].accounts is required" $index) $issuer.accounts | toJson }}
+{{- else }}
+issuer = {{ required (printf "auth.issuers[%d].issuer is required" $index) $issuer.issuer | toJson }}
+{{- end }}
+audiences = {{ required (printf "auth.issuers[%d].audiences is required" $index) $issuer.audiences | toJson }}
+{{- range $key := list "direct" "createUsers" }}
+{{- if and (hasKey $issuer $key) (not (kindIs "bool" (get $issuer $key))) }}
+{{- fail (printf "auth.issuers[%d].%s must be true or false, not %q" $index $key (toString (get $issuer $key))) }}
+{{- end }}
+{{- end }}
+{{- if $issuer.direct }}
+direct = true
+{{- end }}
+{{- with $issuer.principalClaims }}
+principal_claims = {{ . | toJson }}
+{{- end }}
+{{- with $issuer.clientClaims }}
+client_claims = {{ . | toJson }}
+{{- end }}
+{{- with $issuer.groupsClaim }}
+groups_claim = {{ . | toJson }}
+{{- end }}
+{{- if $issuer.createUsers }}
+create_users = true
+{{- end }}
+{{- with $issuer.displayName }}
+display_name = {{ . | toJson }}
 {{- end }}
 {{- end }}
 {{- end }}

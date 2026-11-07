@@ -10,17 +10,20 @@
 //!   external locations have no parents.
 //! - Each endpoint combines these as upstream's expression does, see
 //!   [`rules`]. A denial is 403 "Access denied.".
+//! - An [`Authorizer`], such as Cedar's ([`cedar`]), can decide the
+//!   privileges instead of the grants alone.
 //!
 //! With authorization off every check passes, as upstream's
 //! `AllowingAuthorizer`.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
+use serde_json::{Map, Value, json};
 
 use uc_api::Privilege;
+use uc_auth::authz::{AuthorizeRequest, Authorizer, EntityRef};
 use uc_common::{Error, ErrorCode, Result, SecurableType};
-use uc_metastore::DynMetastore;
 
 pub use uc_metastore::{Lineage, Node, PathOwner};
 
@@ -28,63 +31,38 @@ use crate::{authn::principal::Principal, server::state::AppState};
 
 pub mod cedar;
 
-/// The grants of one principal.
-pub trait Grants: Send + Sync {
-    /// Whether `privilege` is granted on `chain[0]` or on one of its parents
-    /// (the rest of `chain`, ending with the metastore).
-    fn holds(&self, chain: &[&Node], privilege: Privilege) -> bool;
-}
+/// The entity type of principals.
+pub const USER: &str = "User";
+/// The entity type of actions: one per privilege, `Action::"SELECT"`.
+pub const ACTION: &str = "Action";
 
-/// Where grants come from.
-#[async_trait]
-pub trait PolicyEngine: Send + Sync + 'static {
-    async fn grants(&self, principal: &str) -> Result<Box<dyn Grants>>;
-}
-
-/// Every privilege is held: authorization off.
-struct AllowAll;
-
-impl Grants for AllowAll {
-    fn holds(&self, _chain: &[&Node], _privilege: Privilege) -> bool {
-        true
+/// The entity type of a securable: `Catalog`, `Schema`, `Table` and so on.
+pub fn entity_type(kind: SecurableType) -> &'static str {
+    match kind {
+        SecurableType::Metastore => "Metastore",
+        SecurableType::Catalog => "Catalog",
+        SecurableType::Schema => "Schema",
+        SecurableType::Table => "Table",
+        SecurableType::Volume => "Volume",
+        SecurableType::Function => "Function",
+        SecurableType::RegisteredModel => "RegisteredModel",
+        SecurableType::ExternalLocation => "ExternalLocation",
+        SecurableType::Credential => "Credential",
     }
 }
 
-/// The principal's grants in the `permission` table, read once per request.
-pub struct PermissionEnforcer {
-    metastore: DynMetastore,
+/// The action of `privilege`, by its wire name (`Action::"USE CATALOG"`).
+pub fn action(privilege: Privilege) -> EntityRef {
+    let name = serde_json::to_value(privilege)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| format!("{privilege:?}"));
+    EntityRef::new(ACTION, name)
 }
 
-impl PermissionEnforcer {
-    pub fn new(metastore: DynMetastore) -> Self {
-        Self { metastore }
-    }
-}
-
-/// Grants by resource id.
-pub struct TableGrants(pub HashMap<String, HashSet<Privilege>>);
-
-impl Grants for TableGrants {
-    fn holds(&self, chain: &[&Node], privilege: Privilege) -> bool {
-        chain.iter().any(|node| {
-            self.0
-                .get(&node.id)
-                .is_some_and(|held| held.contains(&privilege))
-        })
-    }
-}
-
-#[async_trait]
-impl PolicyEngine for PermissionEnforcer {
-    async fn grants(&self, principal: &str) -> Result<Box<dyn Grants>> {
-        let grants = self.metastore.permissions().grants_of(principal).await?;
-        Ok(Box::new(TableGrants(
-            grants
-                .into_iter()
-                .map(|(id, p)| (id, p.into_iter().collect()))
-                .collect(),
-        )))
-    }
+/// The entity of a securable.
+fn entity(node: &Node) -> EntityRef {
+    EntityRef::new(entity_type(node.kind), node.id.clone())
 }
 
 /// Upstream's denial.
@@ -101,46 +79,67 @@ pub enum Level {
     Object,
 }
 
-/// One caller's authorization for a request.
+/// One caller's authorization for a request: who the caller is, its grants,
+/// read once per request, and the authorizer that decides each privilege.
 pub struct Access {
     enabled: bool,
     principal: String,
     admin: bool,
     metastore: Node,
-    grants: Box<dyn Grants>,
+    /// What is granted to the caller and its groups, by securable id.
+    grants: HashMap<String, HashSet<Privilege>>,
+    /// The authorizer; with none, the grants decide.
+    authorizer: Option<Arc<dyn Authorizer>>,
+    /// The authorizer's answers for this request, by the ids of the
+    /// securable and its parents, and the privilege: the checks of a list
+    /// ask for the same parents each time.
+    decided: Mutex<HashMap<(Vec<String>, Privilege), bool>>,
+    /// The context of the request ([`Principal::context`]).
+    context: Map<String, Value>,
 }
 
 impl Access {
-    pub async fn load(state: &AppState, principal: &str) -> Result<Self> {
+    /// The authorization of `principal`: its grants, and those of its
+    /// groups, the server's and its token's.
+    pub async fn load(state: &AppState, principal: &Principal) -> Result<Self> {
+        let name = principal.username.as_str();
         if !state.authorization_enabled {
             return Ok(Self {
                 enabled: false,
-                principal: principal.to_string(),
+                principal: name.to_string(),
                 admin: true,
                 metastore: Node {
                     kind: SecurableType::Metastore,
                     id: String::new(),
                     owner: None,
                 },
-                grants: Box::new(AllowAll),
+                grants: HashMap::new(),
+                authorizer: None,
+                decided: Mutex::default(),
+                context: Map::new(),
             });
         }
         let permissions = state.metastore.permissions();
         let (metastore_id, owner, grants) = tokio::try_join!(
             permissions.metastore_id(),
             permissions.metastore_owner(),
-            state.policy.grants(principal),
+            permissions.grants_of(name, &principal.groups),
         )?;
         Ok(Self {
             enabled: true,
-            principal: principal.to_string(),
-            admin: is_metastore_admin(state, principal, owner.as_deref()),
+            principal: name.to_string(),
+            admin: is_metastore_admin(state, name, owner.as_deref()),
             metastore: Node {
                 kind: SecurableType::Metastore,
                 id: metastore_id,
                 owner,
             },
-            grants,
+            grants: (grants.into_iter())
+                .map(|(id, privileges)| (id, privileges.into_iter().collect()))
+                .collect(),
+            authorizer: state.authorizer.clone(),
+            decided: Mutex::default(),
+            context: principal.context.as_map().clone(),
         })
     }
 
@@ -186,9 +185,10 @@ impl Access {
             .is_some_and(|n| n.owner.as_deref() == Some(self.principal.as_str()))
     }
 
-    /// `#authorize(#principal, #<level>, privilege)`: granted there or on a
-    /// parent.
-    pub fn has(&self, lineage: &Lineage, level: Level, privilege: Privilege) -> bool {
+    /// `#authorize(#principal, #<level>, privilege)`: what the authorizer
+    /// says, else whether it is granted there or on a parent. An answer
+    /// with errors is a denial.
+    pub async fn has(&self, lineage: &Lineage, level: Level, privilege: Privilege) -> bool {
         if !self.enabled {
             return true;
         }
@@ -215,17 +215,84 @@ impl Access {
                 }
             }
         }
-        self.grants.holds(&chain, privilege)
+        let Some(authorizer) = &self.authorizer else {
+            return (chain.iter())
+                .any(|n| (self.grants.get(&n.id)).is_some_and(|held| held.contains(&privilege)));
+        };
+        let key = (chain.iter().map(|n| n.id.clone()).collect(), privilege);
+        if let Some(allowed) = self.decided().get(&key) {
+            return *allowed;
+        }
+        let answer = authorizer.authorize(&self.request(&chain, privilege)).await;
+        if !answer.errors.is_empty() {
+            tracing::warn!(errors = ?answer.errors, "authorization errors; denying");
+        }
+        let allowed = answer.is_allowed();
+        self.decided().insert(key, allowed);
+        allowed
+    }
+
+    fn decided(&self) -> std::sync::MutexGuard<'_, HashMap<(Vec<String>, Privilege), bool>> {
+        self.decided.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The request for `privilege` on `chain[0]`, whose parents are the rest
+    /// of `chain`. The resource entity has every parent as a parent, its
+    /// owner, and in `granted_privileges` what is granted to the caller on
+    /// it or a parent; the context is the request's.
+    pub fn request(&self, chain: &[&Node], privilege: Privilege) -> AuthorizeRequest {
+        let resource = entity(chain[0]);
+        let mut granted: Vec<Value> = Vec::new();
+        for node in chain {
+            for held in self.grants.get(&node.id).into_iter().flatten() {
+                let held = json!({ "__entity": action(*held) });
+                if !granted.contains(&held) {
+                    granted.push(held);
+                }
+            }
+        }
+        let mut attrs = Map::new();
+        attrs.insert("granted_privileges".into(), Value::Array(granted));
+        if let Some(owner) = &chain[0].owner {
+            attrs.insert("owner".into(), Value::from(owner.clone()));
+        }
+        let parents: Vec<EntityRef> = chain[1..].iter().map(|node| entity(node)).collect();
+        let resource_entity = json!({ "uid": resource, "attrs": attrs, "parents": parents });
+        AuthorizeRequest::new(
+            EntityRef::new(USER, self.principal.clone()),
+            action(privilege),
+            resource,
+        )
+        .with_context(self.context.clone())
+        .with_resource_entity(resource_entity)
     }
 
     /// `#authorizeAny(#principal, #<level>, OWNER, privileges…)`.
-    pub fn owner_or_any(&self, lineage: &Lineage, level: Level, privileges: &[Privilege]) -> bool {
-        self.owner(lineage, level) || privileges.iter().any(|p| self.has(lineage, level, *p))
+    pub async fn owner_or_any(
+        &self,
+        lineage: &Lineage,
+        level: Level,
+        privileges: &[Privilege],
+    ) -> bool {
+        if self.owner(lineage, level) {
+            return true;
+        }
+        for privilege in privileges {
+            if self.has(lineage, level, *privilege).await {
+                return true;
+            }
+        }
+        false
     }
 
     /// `#authorizeAll(#principal, #<level>, privileges…)`.
-    pub fn all(&self, lineage: &Lineage, level: Level, privileges: &[Privilege]) -> bool {
-        privileges.iter().all(|p| self.has(lineage, level, *p))
+    pub async fn all(&self, lineage: &Lineage, level: Level, privileges: &[Privilege]) -> bool {
+        for privilege in privileges {
+            if !self.has(lineage, level, *privilege).await {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -246,13 +313,13 @@ pub async fn lineage(state: &AppState, kind: SecurableType, name: &str) -> Resul
 /// checking. Nothing is looked up with authorization off.
 pub async fn check<F>(
     state: &AppState,
-    principal: &str,
+    principal: &Principal,
     kind: SecurableType,
     name: &str,
     rule: F,
 ) -> Result<()>
 where
-    F: FnOnce(&Access, &Lineage) -> bool,
+    F: AsyncFnOnce(&Access, &Lineage) -> bool,
 {
     if !state.authorization_enabled {
         return Ok(());
@@ -262,7 +329,7 @@ where
         tokio::join!(lineage(state, kind, name), Access::load(state, principal));
     let lineage = lineage?;
     let access = access?;
-    access.check(rule(&access, &lineage))
+    access.check(rule(&access, &lineage).await)
 }
 
 /// Check `rule` on creating a table or volume in the schema `schema`;
@@ -270,10 +337,10 @@ where
 /// owner the rule also gets. Nothing is looked up with authorization off.
 pub async fn check_create(
     state: &AppState,
-    principal: &str,
+    principal: &Principal,
     schema: &str,
     external: Option<Option<&str>>,
-    rule: fn(&Access, &Lineage, Option<&PathOwner>) -> bool,
+    rule: impl AsyncFnOnce(&Access, &Lineage, Option<&PathOwner>) -> bool,
 ) -> Result<()> {
     if !state.authorization_enabled {
         return Ok(());
@@ -286,7 +353,7 @@ pub async fn check_create(
         None => None,
     };
     let access = Access::load(state, principal).await?;
-    match (rule(&access, &lineage, owner.as_ref()), location) {
+    match (rule(&access, &lineage, owner.as_ref()).await, location) {
         (true, _) => Ok(()),
         (false, Some(location)) if owner == Some(PathOwner::Unowned) => Err(uncovered(location)),
         (false, _) => Err(denied()),
@@ -305,12 +372,12 @@ pub fn uncovered(url: &str) -> Error {
 /// `table_id` (a UUID; upstream refuses others before checking).
 pub async fn check_table_id<F>(
     state: &AppState,
-    principal: &str,
+    principal: &Principal,
     table_id: &str,
     rule: F,
 ) -> Result<()>
 where
-    F: FnOnce(&Access, &Lineage) -> bool,
+    F: AsyncFnOnce(&Access, &Lineage) -> bool,
 {
     if !state.authorization_enabled {
         return Ok(());
@@ -323,7 +390,7 @@ where
     );
     let lineage = lineage?;
     let access = access?;
-    access.check(rule(&access, &lineage))
+    access.check(rule(&access, &lineage).await)
 }
 
 /// Keep the schema children the caller may read: `rule` on each item's
@@ -335,7 +402,7 @@ pub async fn filter_children<T>(
     kind: SecurableType,
     items: Vec<T>,
     keys: impl Fn(&T) -> (String, Option<String>, Option<String>),
-    rule: fn(&Access, &Lineage) -> bool,
+    rule: impl AsyncFn(&Access, &Lineage) -> bool,
 ) -> Result<Vec<T>> {
     if !access.enabled() {
         return Ok(items);
@@ -352,7 +419,7 @@ pub async fn filter_children<T>(
             object: node(kind, id.as_deref(), owner.as_deref()),
             ..schemas[&schema].clone()
         };
-        if rule(access, &lineage) {
+        if rule(access, &lineage).await {
             kept.push(item);
         }
     }
@@ -370,7 +437,7 @@ pub async fn storage_root_allowed(
         return Ok(None);
     };
     let owner = path_owner(state, root).await?;
-    Ok(Some(rules::managed_storage(access, &owner)))
+    Ok(Some(rules::managed_storage(access, &owner).await))
 }
 
 /// Upstream's `#external_location` and `#no_overlap_with_data_securable`
@@ -458,68 +525,81 @@ pub mod rules {
     use uc_common::SecurableType;
 
     /// `GET_CATALOG`: catalog reads and the Delta/Iceberg config.
-    pub fn get_catalog(a: &Access, l: &Lineage) -> bool {
-        a.admin() || a.owner_or_any(l, Catalog, &[UseCatalog])
+    pub async fn get_catalog(a: &Access, l: &Lineage) -> bool {
+        a.admin() || a.owner_or_any(l, Catalog, &[UseCatalog]).await
     }
 
     /// `createCatalog`, given whether a storage root is set and, then,
     /// whether it is allowed (see [`managed_storage`]).
-    pub fn create_catalog(a: &Access, storage_root_allowed: Option<bool>) -> bool {
+    pub async fn create_catalog(a: &Access, storage_root_allowed: Option<bool>) -> bool {
         let empty = Lineage::default();
-        (a.admin() || a.has(&empty, Metastore, CreateCatalog))
+        (a.admin() || a.has(&empty, Metastore, CreateCatalog).await)
             && storage_root_allowed.unwrap_or(true)
     }
 
     /// `updateCatalog`.
-    pub fn update_catalog(a: &Access, l: &Lineage) -> bool {
+    pub async fn update_catalog(a: &Access, l: &Lineage) -> bool {
         a.owner(l, Catalog)
     }
 
     /// `deleteCatalog`.
-    pub fn delete_catalog(a: &Access, l: &Lineage) -> bool {
+    pub async fn delete_catalog(a: &Access, l: &Lineage) -> bool {
         a.admin() || a.owner(l, Catalog)
     }
 
     /// A storage root under an external location that the caller owns or
     /// has `CREATE MANAGED STORAGE` on, with no data securable under it.
-    pub fn managed_storage(a: &Access, owner: &PathOwner) -> bool {
+    pub async fn managed_storage(a: &Access, owner: &PathOwner) -> bool {
         match owner {
-            PathOwner::ExternalLocation(el) => a.owner_or_any(el, Object, &[CreateManagedStorage]),
+            PathOwner::ExternalLocation(el) => {
+                a.owner_or_any(el, Object, &[CreateManagedStorage]).await
+            }
             PathOwner::Data(..) | PathOwner::Unowned => false,
         }
     }
 
     /// `GET_SCHEMA`: schema reads and the schema/namespace list filter.
-    pub fn get_schema(a: &Access, l: &Lineage) -> bool {
+    pub async fn get_schema(a: &Access, l: &Lineage) -> bool {
         a.admin()
             || a.owner(l, Catalog)
-            || (a.has(l, Catalog, UseCatalog) && a.owner_or_any(l, Schema, &[UseSchema]))
+            || (a.has(l, Catalog, UseCatalog).await
+                && a.owner_or_any(l, Schema, &[UseSchema]).await)
     }
 
     /// `CREATE_SCHEMA` (catalog tier).
-    pub fn create_schema(a: &Access, l: &Lineage) -> bool {
-        a.owner(l, Catalog) || a.all(l, Catalog, &[UseCatalog, CreateSchema])
+    pub async fn create_schema(a: &Access, l: &Lineage) -> bool {
+        a.owner(l, Catalog) || a.all(l, Catalog, &[UseCatalog, CreateSchema]).await
     }
 
     /// `UPDATE_SCHEMA` and `DELETE_SCHEMA`.
-    pub fn update_schema(a: &Access, l: &Lineage) -> bool {
-        a.owner(l, Catalog) || (a.has(l, Catalog, UseCatalog) && a.owner(l, Schema))
+    pub async fn update_schema(a: &Access, l: &Lineage) -> bool {
+        a.owner(l, Catalog) || (a.has(l, Catalog, UseCatalog).await && a.owner(l, Schema))
     }
 
     /// The catalog and schema tiers of creating a child: catalog `OWNER` or
     /// `USE_CATALOG`, and schema `OWNER` or `USE_SCHEMA` + one of `create`.
-    pub fn create_in_schema(a: &Access, l: &Lineage, create: &[uc_api::Privilege]) -> bool {
-        a.owner_or_any(l, Catalog, &[UseCatalog])
-            && (a.owner(l, Schema) || create.iter().any(|c| a.all(l, Schema, &[UseSchema, *c])))
+    pub async fn create_in_schema(a: &Access, l: &Lineage, create: &[uc_api::Privilege]) -> bool {
+        a.owner_or_any(l, Catalog, &[UseCatalog]).await
+            && (a.owner(l, Schema) || any_create(a, l, create).await)
+    }
+
+    /// `USE_SCHEMA` and one of `create` on the schema.
+    async fn any_create(a: &Access, l: &Lineage, create: &[uc_api::Privilege]) -> bool {
+        for c in create {
+            if a.all(l, Schema, &[UseSchema, *c]).await {
+                return true;
+            }
+        }
+        false
     }
 
     /// The external-location tier of an EXTERNAL table or volume: an
     /// external location covers the path, with no data securable at it, and
     /// the caller has `OWNER` or `create` on it. Unlike upstream, a path
     /// that no external location covers is refused, also for admins.
-    pub fn external_path(a: &Access, owner: &PathOwner, create: uc_api::Privilege) -> bool {
+    pub async fn external_path(a: &Access, owner: &PathOwner, create: uc_api::Privilege) -> bool {
         match owner {
-            PathOwner::ExternalLocation(el) => a.owner_or_any(el, Object, &[create]),
+            PathOwner::ExternalLocation(el) => a.owner_or_any(el, Object, &[create]).await,
             PathOwner::Data(..) | PathOwner::Unowned => false,
         }
     }
@@ -528,139 +608,150 @@ pub mod rules {
     /// `USE_CATALOG`, or `USE_CATALOG` + `USE_SCHEMA` + one of `read` (or
     /// `OWNER`) on the child (`GET_TABLE` and the volume, function and model
     /// read rules).
-    pub fn read_child(a: &Access, l: &Lineage, read: &[uc_api::Privilege]) -> bool {
-        a.admin()
-            || a.owner(l, Catalog)
-            || (a.has(l, Catalog, UseCatalog) && a.owner(l, Schema))
-            || (a.has(l, Catalog, UseCatalog)
-                && a.has(l, Schema, UseSchema)
-                && a.owner_or_any(l, Object, read))
+    pub async fn read_child(a: &Access, l: &Lineage, read: &[uc_api::Privilege]) -> bool {
+        if a.admin() || a.owner(l, Catalog) {
+            return true;
+        }
+        a.has(l, Catalog, UseCatalog).await
+            && (a.owner(l, Schema)
+                || (a.has(l, Schema, UseSchema).await && a.owner_or_any(l, Object, read).await))
     }
 
     /// Changes and deletes of a schema child (`DELETE_TABLE` and the volume,
     /// function and model rules): catalog owner, schema owner with
     /// `USE_CATALOG`, or `USE_CATALOG` + `USE_SCHEMA` + child owner.
-    pub fn own_child(a: &Access, l: &Lineage) -> bool {
-        a.owner(l, Catalog)
-            || (a.has(l, Catalog, UseCatalog) && a.owner(l, Schema))
-            || (a.has(l, Catalog, UseCatalog) && a.has(l, Schema, UseSchema) && a.owner(l, Object))
+    pub async fn own_child(a: &Access, l: &Lineage) -> bool {
+        if a.owner(l, Catalog) {
+            return true;
+        }
+        a.has(l, Catalog, UseCatalog).await
+            && (a.owner(l, Schema) || (a.owner(l, Object) && a.has(l, Schema, UseSchema).await))
     }
 
     /// The catalog and schema tiers of using a child: `OWNER` or `USE_*` on
     /// each.
-    pub fn use_parents(a: &Access, l: &Lineage) -> bool {
-        a.owner_or_any(l, Catalog, &[UseCatalog]) && a.owner_or_any(l, Schema, &[UseSchema])
+    pub async fn use_parents(a: &Access, l: &Lineage) -> bool {
+        a.owner_or_any(l, Catalog, &[UseCatalog]).await
+            && a.owner_or_any(l, Schema, &[UseSchema]).await
     }
 
     /// `GET_TABLE`.
-    pub fn get_table(a: &Access, l: &Lineage) -> bool {
-        read_child(a, l, &[Select, Modify])
+    pub async fn get_table(a: &Access, l: &Lineage) -> bool {
+        read_child(a, l, &[Select, Modify]).await
     }
 
     /// `CREATE_TABLE` on the schema `l`; for an EXTERNAL table, what holds
     /// its location.
-    pub fn create_table(a: &Access, l: &Lineage, external: Option<&PathOwner>) -> bool {
-        create_in_schema(a, l, &[CreateTable])
-            && external.is_none_or(|owner| external_path(a, owner, CreateExternalTable))
+    pub async fn create_table(a: &Access, l: &Lineage, external: Option<&PathOwner>) -> bool {
+        create_in_schema(a, l, &[CreateTable]).await
+            && match external {
+                Some(owner) => external_path(a, owner, CreateExternalTable).await,
+                None => true,
+            }
     }
 
     /// `CREATE_STAGING_TABLE` on the schema `l`.
-    pub fn create_staging_table(a: &Access, l: &Lineage) -> bool {
-        create_in_schema(a, l, &[CreateTable])
+    pub async fn create_staging_table(a: &Access, l: &Lineage) -> bool {
+        create_in_schema(a, l, &[CreateTable]).await
     }
 
     /// Volume reads.
-    pub fn get_volume(a: &Access, l: &Lineage) -> bool {
-        read_child(a, l, &[ReadVolume])
+    pub async fn get_volume(a: &Access, l: &Lineage) -> bool {
+        read_child(a, l, &[ReadVolume]).await
     }
 
     /// `createVolume` on the schema `l`; for an EXTERNAL volume, what holds
     /// its location.
-    pub fn create_volume(a: &Access, l: &Lineage, external: Option<&PathOwner>) -> bool {
-        create_in_schema(a, l, &[CreateVolume])
-            && external.is_none_or(|owner| external_path(a, owner, CreateExternalVolume))
+    pub async fn create_volume(a: &Access, l: &Lineage, external: Option<&PathOwner>) -> bool {
+        create_in_schema(a, l, &[CreateVolume]).await
+            && match external {
+                Some(owner) => external_path(a, owner, CreateExternalVolume).await,
+                None => true,
+            }
     }
 
     /// Function reads.
-    pub fn get_function(a: &Access, l: &Lineage) -> bool {
-        read_child(a, l, &[Execute])
+    pub async fn get_function(a: &Access, l: &Lineage) -> bool {
+        read_child(a, l, &[Execute]).await
     }
 
     /// `createFunction` on the schema `l`.
-    pub fn create_function(a: &Access, l: &Lineage) -> bool {
-        create_in_schema(a, l, &[CreateFunction])
+    pub async fn create_function(a: &Access, l: &Lineage) -> bool {
+        create_in_schema(a, l, &[CreateFunction]).await
     }
 
     /// Registered model and model version reads.
-    pub fn get_model(a: &Access, l: &Lineage) -> bool {
-        read_child(a, l, &[Execute])
+    pub async fn get_model(a: &Access, l: &Lineage) -> bool {
+        read_child(a, l, &[Execute]).await
     }
 
     /// `createRegisteredModel` on the schema `l`: `CREATE MODEL` or
     /// `CREATE FUNCTION`.
-    pub fn create_model(a: &Access, l: &Lineage) -> bool {
-        create_in_schema(a, l, &[CreateModel, CreateFunction])
+    pub async fn create_model(a: &Access, l: &Lineage) -> bool {
+        create_in_schema(a, l, &[CreateModel, CreateFunction]).await
     }
 
     /// `UPDATE_TABLE`: commits and Delta updates.
-    pub fn update_table(a: &Access, l: &Lineage) -> bool {
-        use_parents(a, l) && (a.owner(l, Object) || a.all(l, Object, &[Select, Modify]))
+    pub async fn update_table(a: &Access, l: &Lineage) -> bool {
+        use_parents(a, l).await && (a.owner(l, Object) || a.all(l, Object, &[Select, Modify]).await)
     }
 
     /// `RENAME_TABLE`.
-    pub fn rename_table(a: &Access, l: &Lineage) -> bool {
-        own_child(a, l) && create_in_schema(a, l, &[CreateTable])
+    pub async fn rename_table(a: &Access, l: &Lineage) -> bool {
+        own_child(a, l).await && create_in_schema(a, l, &[CreateTable]).await
     }
 
     /// `VEND_TABLE_CREDENTIAL`: `write` for `READ_WRITE`.
-    pub fn vend_table(a: &Access, l: &Lineage, write: bool) -> bool {
-        use_parents(a, l)
+    pub async fn vend_table(a: &Access, l: &Lineage, write: bool) -> bool {
+        use_parents(a, l).await
             && match write {
-                false => a.owner_or_any(l, Object, &[Select]),
-                true => a.owner(l, Object) || a.all(l, Object, &[Select, Modify]),
+                false => a.owner_or_any(l, Object, &[Select]).await,
+                true => a.owner(l, Object) || a.all(l, Object, &[Select, Modify]).await,
             }
     }
 
     /// `getCommits`.
-    pub fn get_commits(a: &Access, l: &Lineage) -> bool {
-        use_parents(a, l) && a.owner_or_any(l, Object, &[Select])
+    pub async fn get_commits(a: &Access, l: &Lineage) -> bool {
+        use_parents(a, l).await && a.owner_or_any(l, Object, &[Select]).await
     }
 
     /// Volume credentials: `READ_VOLUME`, else owner.
-    pub fn vend_volume(a: &Access, l: &Lineage, write: bool) -> bool {
-        use_parents(a, l)
+    pub async fn vend_volume(a: &Access, l: &Lineage, write: bool) -> bool {
+        use_parents(a, l).await
             && match write {
-                false => a.owner_or_any(l, Object, &[ReadVolume]),
+                false => a.owner_or_any(l, Object, &[ReadVolume]).await,
                 true => a.owner(l, Object),
             }
     }
 
     /// Model version credentials: `EXECUTE`, else owner.
-    pub fn vend_model(a: &Access, l: &Lineage, write: bool) -> bool {
-        use_parents(a, l)
+    pub async fn vend_model(a: &Access, l: &Lineage, write: bool) -> bool {
+        use_parents(a, l).await
             && match write {
-                false => a.owner_or_any(l, Object, &[Execute]),
+                false => a.owner_or_any(l, Object, &[Execute]).await,
                 true => a.owner(l, Object),
             }
     }
 
     /// Credential reads.
-    pub fn get_credential(a: &Access, l: &Lineage) -> bool {
-        a.admin() || a.owner_or_any(l, Object, &[CreateExternalLocation])
+    pub async fn get_credential(a: &Access, l: &Lineage) -> bool {
+        a.admin() || a.owner_or_any(l, Object, &[CreateExternalLocation]).await
     }
 
     /// Credential changes and deletes; external location deletes.
-    pub fn admin_or_owner(a: &Access, l: &Lineage) -> bool {
+    pub async fn admin_or_owner(a: &Access, l: &Lineage) -> bool {
         a.admin() || a.owner(l, Object)
     }
 
     /// `createCredential`.
-    pub fn create_credential(a: &Access) -> bool {
-        a.admin() || a.has(&Lineage::default(), Metastore, CreateStorageCredential)
+    pub async fn create_credential(a: &Access) -> bool {
+        a.admin()
+            || a.has(&Lineage::default(), Metastore, CreateStorageCredential)
+                .await
     }
 
     /// External location reads.
-    pub fn get_external_location(a: &Access, l: &Lineage) -> bool {
+    pub async fn get_external_location(a: &Access, l: &Lineage) -> bool {
         a.admin()
             || a.owner_or_any(
                 l,
@@ -673,42 +764,53 @@ pub mod rules {
                     CreateManagedStorage,
                 ],
             )
+            .await
     }
 
     /// `createExternalLocation`, `credential` being the credential's lineage.
-    pub fn create_external_location(a: &Access, credential: &Lineage) -> bool {
+    pub async fn create_external_location(a: &Access, credential: &Lineage) -> bool {
         a.admin()
-            || (a.has(&Lineage::default(), Metastore, CreateExternalLocation)
-                && a.owner_or_any(credential, Object, &[CreateExternalLocation]))
+            || (a
+                .has(&Lineage::default(), Metastore, CreateExternalLocation)
+                .await
+                && a.owner_or_any(credential, Object, &[CreateExternalLocation])
+                    .await)
     }
 
     /// `updateExternalLocation`, `credential` being a new credential's
     /// lineage, if any.
-    pub fn update_external_location(a: &Access, l: &Lineage, credential: Option<&Lineage>) -> bool {
+    pub async fn update_external_location(
+        a: &Access,
+        l: &Lineage,
+        credential: Option<&Lineage>,
+    ) -> bool {
         a.admin()
             || (a.owner(l, Object)
-                && credential.is_none_or(|c| a.owner_or_any(c, Object, &[CreateExternalLocation])))
+                && match credential {
+                    Some(c) => a.owner_or_any(c, Object, &[CreateExternalLocation]).await,
+                    None => true,
+                })
     }
 
     /// Who sees every grant on a securable, after upstream
     /// `getAuthorization`: the admin, or the owner of it, of its parent or
     /// of its grandparent. Others see their own grants only.
-    pub fn see_permissions(a: &Access, l: &Lineage) -> bool {
+    pub async fn see_permissions(a: &Access, l: &Lineage) -> bool {
         a.admin() || a.owner(l, Object) || a.owner(l, Schema) || a.owner(l, Catalog)
     }
 
     /// `update<Securable>Authorization`.
-    pub fn update_permissions(a: &Access, kind: SecurableType, l: &Lineage) -> bool {
+    pub async fn update_permissions(a: &Access, kind: SecurableType, l: &Lineage) -> bool {
         a.admin()
             || match kind {
                 SecurableType::Metastore => false,
                 SecurableType::Catalog => a.owner(l, Catalog),
-                SecurableType::Schema => update_schema(a, l),
+                SecurableType::Schema => update_schema(a, l).await,
                 SecurableType::ExternalLocation | SecurableType::Credential => a.owner(l, Object),
                 SecurableType::Table
                 | SecurableType::Volume
                 | SecurableType::Function
-                | SecurableType::RegisteredModel => own_child(a, l),
+                | SecurableType::RegisteredModel => own_child(a, l).await,
             }
     }
 }

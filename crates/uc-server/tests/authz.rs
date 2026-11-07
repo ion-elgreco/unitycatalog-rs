@@ -1271,7 +1271,7 @@ async fn users_of_the_settings() {
         .unwrap();
     assert!(
         permissions
-            .grants_of("alice@example.com")
+            .grants_of("alice@example.com", &[])
             .await
             .unwrap()
             .is_empty()

@@ -39,10 +39,10 @@ pub async fn create_schema(
     Json(req): Json<CreateSchema>,
 ) -> ApiResult<Json<SchemaInfo>> {
     let catalog = authz::lineage(&state, SecurableType::Catalog, &req.catalog_name).await?;
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let storage_root =
         authz::storage_root_allowed(&state, &access, req.storage_root.as_deref()).await?;
-    access.check(rules::create_schema(&access, &catalog) && storage_root.unwrap_or(true))?;
+    access.check(rules::create_schema(&access, &catalog).await && storage_root.unwrap_or(true))?;
     Ok(Json(
         state
             .metastore
@@ -73,16 +73,19 @@ pub async fn list_schemas(
         .schemas()
         .list(&params.catalog_name, &params.page)
         .await?;
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     let schemas = match access.enabled() {
         false => schemas,
         true => {
             let catalog =
                 authz::lineage(&state, SecurableType::Catalog, &params.catalog_name).await?;
-            schemas
-                .into_iter()
-                .filter(|s| rules::get_schema(&access, &schema_lineage(&catalog, s)))
-                .collect()
+            let mut kept = Vec::with_capacity(schemas.len());
+            for schema in schemas {
+                if rules::get_schema(&access, &schema_lineage(&catalog, &schema)).await {
+                    kept.push(schema);
+                }
+            }
+            kept
         }
     };
     Ok(Json(ListSchemasResponse {
@@ -108,7 +111,7 @@ pub async fn get_schema(
 ) -> ApiResult<Json<SchemaInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Schema,
         &full_name,
         rules::get_schema,
@@ -136,7 +139,7 @@ pub async fn update_schema(
 ) -> ApiResult<Json<SchemaInfo>> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Schema,
         &full_name,
         rules::update_schema,
@@ -173,7 +176,7 @@ pub async fn delete_schema(
 ) -> ApiResult<EmptyObject> {
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::Schema,
         &full_name,
         rules::update_schema,

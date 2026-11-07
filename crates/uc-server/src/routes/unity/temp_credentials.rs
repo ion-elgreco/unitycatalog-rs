@@ -56,8 +56,8 @@ pub async fn temp_table_credentials(
     Json(req): Json<GenerateTemporaryTableCredential>,
 ) -> ApiResult<Json<TemporaryCredentials>> {
     let write = req.operation != TableOperation::Read;
-    authz::check_table_id(&state, &principal.username, &req.table_id, |a, l| {
-        rules::vend_table(a, l, write)
+    authz::check_table_id(&state, &principal, &req.table_id, async |a, l| {
+        rules::vend_table(a, l, write).await
     })
     .await?;
     let table_id = uc_delta::commits::parse_table_id(&req.table_id)?;
@@ -98,7 +98,7 @@ pub async fn temp_volume_credentials(
     if req.volume_id.is_empty() {
         return Err(Error::invalid_argument("Volume ID is required.").into());
     }
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     if access.enabled() {
         let lineage = state
             .metastore
@@ -106,7 +106,7 @@ pub async fn temp_volume_credentials(
             .lineage_by_id(SecurableType::Volume, &req.volume_id)
             .await?;
         let write = req.operation != VolumeOperation::ReadVolume;
-        access.check(rules::vend_volume(&access, &lineage, write))?;
+        access.check(rules::vend_volume(&access, &lineage, write).await)?;
     }
     let volume = state.metastore.volumes().get_by_id(&req.volume_id).await?;
     let privileges: &[StoragePrivilege] = match req.operation {
@@ -137,10 +137,10 @@ pub async fn temp_model_version_credentials(
     let write = req.operation != ModelVersionOperation::ReadModelVersion;
     authz::check(
         &state,
-        &principal.username,
+        &principal,
         SecurableType::RegisteredModel,
         &full_name,
-        |a, l| rules::vend_model(a, l, write),
+        async |a, l| rules::vend_model(a, l, write).await,
     )
     .await?;
     let version = req.version;
@@ -212,13 +212,13 @@ pub async fn temp_path_credentials(
     principal: Principal,
     Json(req): Json<GenerateTemporaryPathCredential>,
 ) -> ApiResult<Json<TemporaryCredentials>> {
-    let access = Access::load(&state, &principal.username).await?;
+    let access = Access::load(&state, &principal).await?;
     if access.enabled() {
         let owner = authz::path_owner(&state, &req.url).await?;
         if owner == PathOwner::Unowned {
             return Err(authz::uncovered(&req.url).into());
         }
-        access.check(path_allowed(&access, &owner, req.operation))?;
+        access.check(path_allowed(&access, &owner, req.operation).await)?;
     }
     let privileges: &[StoragePrivilege] = match req.operation {
         PathOperation::PathRead => &[Select],
@@ -230,7 +230,7 @@ pub async fn temp_path_credentials(
 
 /// Upstream's path credential rule: by the operation and what owns the
 /// path (a table, volume or model, else an external location).
-fn path_allowed(a: &Access, owner: &PathOwner, operation: PathOperation) -> bool {
+async fn path_allowed(a: &Access, owner: &PathOwner, operation: PathOperation) -> bool {
     use uc_api::Privilege::*;
     let object = authz::Level::Object;
     match (operation, owner) {
@@ -240,22 +240,22 @@ fn path_allowed(a: &Access, owner: &PathOwner, operation: PathOperation) -> bool
                 SecurableType::Volume => ReadVolume,
                 _ => Execute,
             };
-            rules::use_parents(a, l) && a.owner_or_any(l, object, &[read])
+            rules::use_parents(a, l).await && a.owner_or_any(l, object, &[read]).await
         }
         (PathOperation::PathRead, PathOwner::ExternalLocation(l)) => {
-            a.owner_or_any(l, object, &[ReadFiles])
+            a.owner_or_any(l, object, &[ReadFiles]).await
         }
         (PathOperation::PathReadWrite, PathOwner::Data(SecurableType::Table, l)) => {
-            rules::update_table(a, l)
+            rules::update_table(a, l).await
         }
         (PathOperation::PathReadWrite, PathOwner::Data(_, l)) => {
-            rules::use_parents(a, l) && a.owner(l, object)
+            rules::use_parents(a, l).await && a.owner(l, object)
         }
         (PathOperation::PathReadWrite, PathOwner::ExternalLocation(l)) => {
-            a.owner(l, object) || a.all(l, object, &[ReadFiles, WriteFiles])
+            a.owner(l, object) || a.all(l, object, &[ReadFiles, WriteFiles]).await
         }
         (PathOperation::PathCreateTable, PathOwner::ExternalLocation(l)) => {
-            a.owner_or_any(l, object, &[CreateExternalTable])
+            a.owner_or_any(l, object, &[CreateExternalTable]).await
         }
         _ => false,
     }

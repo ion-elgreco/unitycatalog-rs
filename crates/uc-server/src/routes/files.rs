@@ -365,14 +365,18 @@ async fn open(
 ) -> ApiResult<Target> {
     let write = op == VendOp::ReadWrite;
     let full_name = path.full_name();
-    let user = &principal.username;
+    let user = principal;
     // The check's error comes first: it is a 404 for a missing securable.
     let location = match path.root {
         Root::Volumes => {
             let (allowed, volume) = tokio::join!(
-                authz::check(state, user, SecurableType::Volume, &full_name, |a, l| {
-                    rules::vend_volume(a, l, write)
-                }),
+                authz::check(
+                    state,
+                    user,
+                    SecurableType::Volume,
+                    &full_name,
+                    async |a, l| { rules::vend_volume(a, l, write).await }
+                ),
                 state.metastore.volumes().get(&full_name),
             );
             allowed?;
@@ -386,9 +390,13 @@ async fn open(
                 .into());
             }
             let (allowed, table) = tokio::join!(
-                authz::check(state, user, SecurableType::Table, &full_name, |a, l| {
-                    rules::vend_table(a, l, false)
-                }),
+                authz::check(
+                    state,
+                    user,
+                    SecurableType::Table,
+                    &full_name,
+                    async |a, l| { rules::vend_table(a, l, false).await }
+                ),
                 state.metastore.tables().get(&full_name),
             );
             allowed?;

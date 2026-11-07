@@ -19,9 +19,8 @@ services:
       # Settings are UC_<GROUP>_<KEY> variables, or a mounted uc.toml that
       # UC_CONFIG names. Require sign-in and enforce authorization:
       # UC_AUTH_ENABLED: "true"
-      # Token exchange (POST /api/1.0/unity-control/auth/tokens):
-      # UC_AUTH_ALLOWED_ISSUERS: "https://issuer.example.com"
-      # UC_AUTH_AUDIENCES: "uc-server"
+      # The identity providers whose tokens the server takes are
+      # [[auth.issuers]] blocks of the mounted uc.toml.
       # A PostgreSQL server instead of the embedded store, for replicas:
       # UC_DB_URL: "postgresql://uc@postgres:5432/uc"
       # UC_DB_PASSWORD: "change-me"

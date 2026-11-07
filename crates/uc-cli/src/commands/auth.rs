@@ -1,8 +1,8 @@
 //! `auth login`, as upstream's `AuthCli` and `Oauth2CliExchange`: an
-//! identity token, given or got in the browser, is exchanged at the
-//! control API's `/auth/tokens` for a Unity Catalog access token. Unlike
-//! upstream, uc keeps the token as its sign-in to the server
-//! ([`crate::sign_in`]), which `auth logout` removes.
+//! identity token, given or got in the browser, or an access token of the
+//! provider, is exchanged at the control API's `/auth/tokens` for a Unity
+//! Catalog access token. Unlike upstream, uc keeps the token as its sign-in
+//! to the server ([`crate::sign_in`]), which `auth logout` removes.
 
 use std::collections::HashMap;
 
@@ -30,8 +30,12 @@ pub enum AuthOp {
     /// Sign in to the server; the commands after it use the sign-in
     Login {
         /// The identity token; without it, sign in in the browser
-        #[arg(long)]
+        #[arg(long, conflicts_with = "access_token")]
         identity_token: Option<String>,
+        /// An access token of the identity provider instead, such as the one
+        /// `az account get-access-token` prints
+        #[arg(long)]
+        access_token: Option<String>,
     },
     /// Remove the sign-in to the server
     Logout,
@@ -49,8 +53,15 @@ pub async fn run(
     // of `--auth_token` is only for this one.
     let setting = config::given_token(settings, None).map(|_| settings::name("cli.token"));
     match op {
-        AuthOp::Login { identity_token } => {
-            let response = login(c, identity_token, &settings.cli).await?;
+        AuthOp::Login {
+            identity_token,
+            access_token,
+        } => {
+            let subject = match access_token {
+                Some(token) => Subject::AccessToken(token),
+                None => Subject::IdentityToken(identity_token),
+            };
+            let response = login(c, subject, &settings.cli).await?;
             let token = Some(response.access_token.as_str())
                 .filter(|token| !token.is_empty())
                 .ok_or_else(|| anyhow!("The server's answer has no access_token"))?;
@@ -93,19 +104,28 @@ fn expiry(response: &OAuthTokenExchangeInfo) -> Option<String> {
     Some(until.format("%Y-%m-%d %H:%M").to_string())
 }
 
+/// The token that the exchange takes.
+enum Subject {
+    /// An identity token, given or got in the browser.
+    IdentityToken(Option<String>),
+    /// An access token of the provider.
+    AccessToken(String),
+}
+
 /// The server's answer to the token exchange.
 async fn login(
     c: &Context<'_>,
-    identity_token: Option<String>,
+    subject: Subject,
     settings: &Cli,
 ) -> anyhow::Result<OAuthTokenExchangeInfo> {
-    let identity_token = match identity_token {
-        Some(token) => token,
-        None => browser_login(settings).await?,
+    let (token, token_type) = match subject {
+        Subject::AccessToken(token) => (token, ACCESS_TOKEN),
+        Subject::IdentityToken(Some(token)) => (token, ID_TOKEN),
+        Subject::IdentityToken(None) => (browser_login(settings).await?, ID_TOKEN),
     };
     match c
         .client
-        .exchange_token(TOKEN_EXCHANGE, ACCESS_TOKEN, identity_token, ID_TOKEN)
+        .exchange_token(TOKEN_EXCHANGE, ACCESS_TOKEN, token, token_type)
         .await
     {
         Ok(response) => Ok(response),

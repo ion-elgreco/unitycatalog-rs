@@ -6,7 +6,8 @@
 //!
 //! - `GET /auth/login?rd=<path>` sends the browser to the provider.
 //! - `GET /auth/callback` takes the code, checks the ID token, and sets the
-//!   `UC_TOKEN` cookie of the token exchange for the user its email names;
+//!   `UC_TOKEN` cookie of the token exchange for the user it names, as the
+//!   provider's `[[auth.issuers]]` block says (`crate::authn::idp::resolve`);
 //!   then it returns the browser to `rd`.
 //! - A sign-in that fails returns the browser to the web UI's login page,
 //!   `/login?error=<code>`, which tells the user what failed ([`Failure`]).
@@ -53,6 +54,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use uc_auth::TrustedHeaders;
 use uc_common::ErrorCode;
 use uc_common::settings::{self, SignInMode};
 
@@ -283,6 +285,9 @@ impl OidcSignIn {
     }
 }
 
+/// The provider name of the auth proxy's users.
+pub const FORWARD_PROVIDER: &str = "forward";
+
 /// The auth proxy of `auth.mode = "forward"`: it signs users in, and names
 /// the user in its headers on every request.
 pub struct ForwardSignIn {
@@ -296,6 +301,8 @@ pub struct ForwardSignIn {
     pub user_header: String,
     /// The proxy's sign-out, where `/auth/logout` sends the browser.
     pub logout_url: Option<String>,
+    /// The resolver of the proxy's users.
+    resolver: TrustedHeaders,
 }
 
 impl ForwardSignIn {
@@ -312,37 +319,36 @@ impl ForwardSignIn {
                 settings::name("auth.forward_trusted_proxies")
             ));
         }
+        let email_header = set(&auth.forward_email_header).unwrap_or_else(|| "Remote-Email".into());
+        let user_header = set(&auth.forward_user_header).unwrap_or_else(|| "Remote-User".into());
+        let resolver = TrustedHeaders::new(
+            FORWARD_PROVIDER,
+            trusted_proxies.iter().copied(),
+            [email_header.clone(), user_header.clone()],
+        );
         Ok(Self {
             trusted_proxies,
-            email_header: set(&auth.forward_email_header).unwrap_or_else(|| "Remote-Email".into()),
-            user_header: set(&auth.forward_user_header).unwrap_or_else(|| "Remote-User".into()),
+            email_header,
+            user_header,
             logout_url: set(&auth.forward_logout_url),
+            resolver,
         })
     }
 
-    /// Whether `peer`, the address of the connection, is a trusted proxy. An
-    /// IPv4 peer of a dual-stack listener shows as `::ffff:a.b.c.d`.
+    /// The resolver of the proxy's users, for the auth chain
+    /// (`crate::authn::chain`).
+    pub fn resolver(&self) -> &TrustedHeaders {
+        &self.resolver
+    }
+
+    /// Whether `peer`, the address of the connection, is a trusted proxy.
     pub fn trusts(&self, peer: IpAddr) -> bool {
-        let v4 = match peer {
-            IpAddr::V6(v6) => v6.to_ipv4_mapped().map(IpAddr::V4),
-            IpAddr::V4(_) => None,
-        };
-        self.trusted_proxies
-            .iter()
-            .any(|net| net.contains(&peer) || v4.is_some_and(|v4| net.contains(&v4)))
+        self.resolver.trusts(peer)
     }
 
     /// The user the proxy names: its email header, else its user header.
-    pub fn user(&self, headers: &HeaderMap) -> Option<String> {
-        let get = |name: &str| {
-            headers
-                .get(name)
-                .and_then(|v| v.to_str().ok())
-                .map(str::trim)
-                .filter(|v| !v.is_empty())
-                .map(str::to_string)
-        };
-        get(&self.email_header).or_else(|| get(&self.user_header))
+    pub fn user<'a>(&self, headers: &'a HeaderMap) -> Option<&'a str> {
+        self.resolver.user(headers)
     }
 }
 
@@ -434,7 +440,7 @@ pub enum Failure {
     /// `token`: the provider did not take the code, or the ID token is
     /// invalid, is for another client, or has another nonce.
     Token,
-    /// `user`: no active user has the ID token's email.
+    /// `user`: the ID token names no active user.
     User,
     /// `server`: the server failed.
     Server,
@@ -614,21 +620,21 @@ pub async fn callback(
 
     // The ID token: signed by the issuer, current, for this client and
     // this sign-in (OpenID Connect Core §3.1.3.7).
-    let decoded = match idp::decode(&id_token) {
+    let decoded = match uc_auth::jwt::decode(&id_token) {
         Ok(decoded) => decoded,
         Err(e) => return failed(Failure::Token, format!("invalid ID token: {e}")),
     };
     if let Err(e) = state
         .auth
-        .providers
-        .verify(&id_token, &decoded, &oidc.issuer)
+        .keys
+        .verify(&id_token, &decoded, &oidc.issuer, None)
         .await
     {
-        return failed(Failure::Token, e.message().to_string());
+        return failed(Failure::Token, e.to_string());
     }
     let claims = &decoded.claims;
     let azp = claims.get("azp").and_then(Value::as_str);
-    if !idp::audiences(claims).contains(&oidc.client_id)
+    if !uc_auth::jwt::audiences(claims).contains(&oidc.client_id)
         || azp.is_some_and(|azp| azp != oidc.client_id)
     {
         return failed(Failure::Token, "the ID token is for another client".into());
@@ -637,8 +643,15 @@ pub async fn callback(
         return failed(Failure::Token, "the nonce does not match".into());
     }
 
-    // The user that the token exchange would sign in.
-    let principal = match idp::resolve_principal(&state, idp::ID_TOKEN, claims).await {
+    // The user that the token exchange would sign in, named as the
+    // provider's `[[auth.issuers]]` block says: the one that takes the
+    // client id, else the first of the issuer. Without one, by `email`,
+    // else `sub`, and never made here.
+    let block = (state.auth.issuer_taking(&oidc.issuer, claims))
+        .or_else(|| state.auth.issuer(&oidc.issuer))
+        .cloned()
+        .unwrap_or_else(|| idp::IssuerSettings::implicit(&oidc.issuer));
+    let principal = match idp::resolve(&state, &block, claims, idp::TokenKind::IdToken).await {
         Ok(principal) => principal,
         Err(e) if e.code() == ErrorCode::InvalidArgument => {
             let email = claims
@@ -646,9 +659,9 @@ pub async fn callback(
                 .or_else(|| claims.get("sub"))
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            let reason = match idp::email_unverified(claims) {
-                true => format!("the identity provider has not verified the email {email}"),
-                false => format!(
+            let reason = match idp::email_trusted(&block, claims) {
+                false => format!("the identity provider has not verified the email {email}"),
+                true => format!(
                     "no active user has the email {email}. An admin adds users (SCIM, `uc user create`)."
                 ),
             };
@@ -808,18 +821,14 @@ mod tests {
         assert_eq!(proxy.user(&headers(&[])), None);
         assert_eq!(proxy.user(&headers(&[("remote-email", " ")])), None);
         assert_eq!(
-            proxy
-                .user(&headers(&[("remote-user", "alice@example.com")]))
-                .as_deref(),
+            proxy.user(&headers(&[("remote-user", "alice@example.com")])),
             Some("alice@example.com")
         );
         assert_eq!(
-            proxy
-                .user(&headers(&[
-                    ("remote-user", "alice"),
-                    ("remote-email", "alice@example.com")
-                ]))
-                .as_deref(),
+            proxy.user(&headers(&[
+                ("remote-user", "alice"),
+                ("remote-email", "alice@example.com")
+            ])),
             Some("alice@example.com")
         );
     }

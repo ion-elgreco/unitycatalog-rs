@@ -1,6 +1,9 @@
 // @generated — do not edit by hand.
 #![allow(unused_imports)]
 
+#[cfg(not(target_arch = "wasm32"))]
+use ::olai_http::CloudClient as Transport;
+
 use crate::codegen::admin::*;
 use crate::codegen::audit::*;
 use crate::codegen::auth::*;
@@ -27,8 +30,9 @@ use crate::codegen::staging_tables::*;
 use crate::codegen::tables::*;
 use crate::codegen::temporary_credentials::*;
 use crate::codegen::tokens::*;
-use crate::codegen::transport::HttpClient;
 use crate::codegen::volumes::*;
+#[cfg(target_arch = "wasm32")]
+use ::olai_http_wasm::WasmClient as Transport;
 use uc_client::models::admin::v1::*;
 use uc_client::models::audit::v1::*;
 use uc_client::models::auth::v1::*;
@@ -56,7 +60,7 @@ use url::Url;
 
 #[derive(Clone)]
 pub struct Client {
-    pub(crate) client: HttpClient,
+    pub(crate) client: Transport,
     pub(crate) base_url: Url,
 }
 
@@ -65,30 +69,93 @@ impl Client {
     ///
     /// Per-service clients are constructed on demand (they only hold a cheaply-cloneable
     /// `CloudClient` + `Url`), so nothing is allocated per service here.
-    pub fn new(client: HttpClient, mut base_url: Url) -> Self {
+    pub fn new(client: Transport, mut base_url: Url) -> Self {
         if !base_url.path().ends_with('/') {
             base_url.set_path(&format!("{}/", base_url.path()));
         }
         Self { client, base_url }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     /// Create a new aggregate client with no authentication.
     pub fn new_unauthenticated(base_url: Url) -> Self {
-        Self::new(HttpClient::default(), base_url)
-    }
-
-    /// Create a new aggregate client authenticating with a bearer token.
-    pub fn new_with_token(base_url: Url, token: impl ToString) -> Self {
         Self::new(
-            HttpClient::default().with_token(token.to_string()),
+            Transport::new_unauthenticated_with_options(
+                &Self::client_options(),
+                ::olai_http::RetryConfig::default(),
+                None,
+            )
+            .expect("the HTTP client of the default options"),
             base_url,
         )
     }
 
-    /// The same client, sending `user_agent` as the `User-Agent` of every request.
-    pub fn with_user_agent(mut self, user_agent: impl Into<String>) -> Self {
-        self.client = self.client.with_user_agent(user_agent);
-        self
+    #[cfg(not(target_arch = "wasm32"))]
+    /// Create a new aggregate client authenticating with a bearer token.
+    pub fn new_with_token(base_url: Url, token: impl ToString) -> Self {
+        Self::new(
+            Transport::new_with_bearer(
+                ::olai_http::bearer::BearerAuth::static_token(token.to_string()),
+                &Self::client_options(),
+                ::olai_http::RetryConfig::default(),
+                None,
+            )
+            .expect("the HTTP client of the default options"),
+            base_url,
+        )
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    /// The HTTP settings of the constructors that make the `CloudClient`: plain
+    /// `http` URLs are allowed, and no timeout ends a request.
+    /// The `User-Agent` is `uc-client/<client crate version>`.
+    pub fn client_options() -> ::olai_http::ClientOptions {
+        ::olai_http::ClientOptions::new()
+            .with_allow_http(true)
+            .with_timeout_disabled()
+            .with_config(
+                ::olai_http::ClientConfigKey::UserAgent,
+                concat!("uc-client/", env!("CARGO_PKG_VERSION")),
+            )
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    /// Create a new aggregate client whose bearer token comes from `provider`, such as
+    /// one of [`olai_http::bearer::BearerAuth`], which keeps and refreshes its tokens.
+    pub fn new_with_bearer(
+        base_url: Url,
+        provider: ::olai_http::bearer::BearerCredentialProvider,
+    ) -> ::olai_http::Result<Self> {
+        let client = Transport::new_with_bearer(
+            provider,
+            &Self::client_options(),
+            ::olai_http::RetryConfig::default(),
+            None,
+        )?;
+        Ok(Self::new(client, base_url))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    /// Create a new aggregate client that signs its requests with `signer`, for
+    /// authentication that a bearer provider does not cover.
+    pub fn new_with_signer(
+        base_url: Url,
+        signer: ::std::sync::Arc<dyn ::olai_http::RequestSigner>,
+    ) -> ::olai_http::Result<Self> {
+        let client = Transport::new_with_request_signer(
+            signer,
+            &Self::client_options(),
+            ::olai_http::RetryConfig::default(),
+            None,
+        )?;
+        Ok(Self::new(client, base_url))
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    /// Create a new aggregate client. The browser supplies the session
+    /// (cookies / forwarded auth) on each request.
+    pub fn new_in_browser(base_url: Url) -> Self {
+        Self::new(Transport::new(), base_url)
     }
 
     ///Low-level `admin` client exposing request/response passthrough methods.

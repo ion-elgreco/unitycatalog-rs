@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import time
 
 import pytest
@@ -17,6 +18,7 @@ from unitycatalog import (
     ServerError,
     UnauthenticatedError,
     UnityCatalogError,
+    identity,
 )
 from unitycatalog.credentials import (
     AwsIamRoleRequest,
@@ -555,6 +557,60 @@ def test_personal_access_tokens(admin: Calls, uc: Calls, server) -> None:
     assert created.token_value not in repr(answer)
     admin.token(created.id).delete()
     assert created.id not in [p.id for p in admin.list_tokens()]
+
+
+def test_token_providers(server, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A callable: the token, or the token with its expiry.
+    calls: list[int] = []
+
+    def provider() -> str:
+        calls.append(1)
+        return server.token
+
+    Client(server.address, token_provider=provider).list_tokens()
+    assert calls == [1]
+    kept = Client(
+        server.address, token_provider=lambda: (server.token, time.time() + 3600)
+    )
+    kept.list_tokens()
+    kept.list_tokens()
+    # A provider made in Rust: the token of a variable, read at each refresh.
+    monkeypatch.setenv("UC_TEST_TOKEN", server.token)
+    from_env = identity.token_env("UC_TEST_TOKEN")
+    Client(server.address, token_provider=from_env).list_tokens()
+    # A provider that returns something else fails the call, before the request.
+    with pytest.raises(UnityCatalogError, match="token_provider"):
+        Client(server.address, token_provider=lambda: 7).list_tokens()
+    with pytest.raises(ValueError, match="both"):
+        Client(server.address, token="t", token_provider=provider)
+    # An AWS identity: a provider made in Rust, which signs requests for STS.
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
+    assert isinstance(identity.aws("https://uc.example.com"), identity.TokenProvider)
+    # A provider may call the client's methods.
+    nested = Client(
+        server.address,
+        token_provider=lambda: (
+            Client(server.address, token=server.token).list_tokens(),
+            server.token,
+        )[1],
+    )
+    nested.list_tokens()
+    # An identity, and a server that does not answer: the client is made, and
+    # its calls go without a token until the server says what it takes.
+    gone = f"http://127.0.0.1:{_closed_port()}/"
+    with pytest.raises(UnityCatalogError, match="request failed"):
+        Client(gone).list_catalogs()
+    # Nothing in the environment: no identity to detect.
+    for var in list(os.environ):
+        if var.startswith(("UC_", "AWS_", "AZURE_", "GOOGLE_", "GCE_")) or var in (
+            "IDENTITY_ENDPOINT",
+            "MSI_ENDPOINT",
+            "K_SERVICE",
+        ):
+            monkeypatch.delenv(var)
+    monkeypatch.setenv("PATH", "")
+    assert identity.detect(gone) is None
 
 
 @pytest.mark.upstream

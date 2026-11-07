@@ -33,7 +33,13 @@ pub fn client() -> Client {
     let root = format!("{origin}/")
         .parse()
         .expect("the page's origin is a URL");
-    Client::new_unauthenticated(root)
+    // The browser sends the session with each request; the native build, for the tests, has
+    // none.
+    #[cfg(target_arch = "wasm32")]
+    let client = Client::new_in_browser(root);
+    #[cfg(not(target_arch = "wasm32"))]
+    let client = Client::new_unauthenticated(root);
+    client
 }
 
 /// What the UI shows for a failed call: the server's message, else

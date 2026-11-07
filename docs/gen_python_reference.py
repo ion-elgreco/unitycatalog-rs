@@ -69,8 +69,7 @@ def main() -> None:
     # on the module's page.
     public: dict[str, tuple[str, str]] = {}
     for page in pages[1:] + pages[:1]:
-        for name in page.module.exports or []:
-            target = page.module.members[name].final_target
+        for name, target in exports(page.module):
             public.setdefault(target.path, (page.slug, f"{page.title}.{name}"))
 
     if OUT.exists():
@@ -93,6 +92,17 @@ def check_nav(slugs: list[str]) -> None:
             "mkdocs.yml's nav lacks these pages of the Python client's reference: "
             + ", ".join(f"{NAV_PREFIX}{s}.md" for s in missing)
         )
+
+
+def exports(module: griffe.Module) -> list[tuple[str, griffe.Object]]:
+    """The objects in the module's `__all__`, by their exported name. A submodule in it, such as
+    `unitycatalog.identity`, has a page of its own."""
+    out = []
+    for name in module.exports or []:
+        member = module.members[name]
+        if not member.is_module:
+            out.append((name, member.final_target))
+    return out
 
 
 def first_paragraph(obj: griffe.Object | griffe.Alias) -> str:
@@ -330,13 +340,13 @@ class Renderer:
 
     def render(self) -> str:
         module = self.page.module
-        exports = [(n, module.members[n].final_target) for n in (module.exports or [])]
+        exported = exports(module)
         if self.page.slug == PACKAGE:
             # Enums are documented on the pages of their modules.
-            exports = [(n, t) for n, t in exports if not self.is_enum(t)]
-        classes = [(n, t) for n, t in exports if t.is_class and not self.is_enum(t)]
-        enums = [(n, t) for n, t in exports if self.is_enum(t)]
-        others = [(n, t) for n, t in exports if not t.is_class]
+            exported = [(n, t) for n, t in exported if not self.is_enum(t)]
+        classes = [(n, t) for n, t in exported if t.is_class and not self.is_enum(t)]
+        enums = [(n, t) for n, t in exported if self.is_enum(t)]
+        others = [(n, t) for n, t in exported if not t.is_class]
 
         doc = module.docstring.value.strip() if module.docstring else ""
         out = [
@@ -357,15 +367,19 @@ class Renderer:
             out.append(self.cls(name, target))
         for name, target in others:
             anchor = f"{self.page.title}.{name}"
-            ann = (
-                f": {self.type(target.annotation)}"
-                if getattr(target, "annotation", None)
-                else ""
-            )
-            sig = f'<span class="uc-sig"><span class="uc-sig__name">{html.escape(name)}</span>{ann}</span>'
-            out.append(
-                self.heading(2, sig, anchor, name) + self.body(self.docstring(target))
-            )
+            if target.is_function:
+                # A module-level function, such as those of `unitycatalog.identity`.
+                sig = self.signature("", name, target)
+                text = self.docstring(target, target)
+            else:
+                ann = (
+                    f": {self.type(target.annotation)}"
+                    if getattr(target, "annotation", None)
+                    else ""
+                )
+                sig = f'<span class="uc-sig"><span class="uc-sig__name">{html.escape(name)}</span>{ann}</span>'
+                text = self.docstring(target)
+            out.append(self.heading(2, sig, anchor, name) + self.body(text))
         return "\n".join(out)
 
     @staticmethod

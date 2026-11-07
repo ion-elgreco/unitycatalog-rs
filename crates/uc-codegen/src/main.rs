@@ -26,9 +26,9 @@ use std::process::{Command, Stdio};
 
 use olai_codegen::postprocess::{JsonFieldNames, ModelRewrites, field_options, space_items};
 use olai_codegen::{
-    BindingsConfig, ClientProtocols, CodeGenConfig, CodeGenOutput, ErrorModuleConfig,
-    PyPackageConfig, PythonOptions, REQWEST_TRANSPORT_TYPE_PATH, RestClientOptions, Runtime,
-    generate_code, parse_file_descriptor_set,
+    BindingsConfig, ClientProtocols, CodeGenConfig, CodeGenOutput, DEFAULT_TRANSPORT_TYPE_PATH,
+    ErrorModuleConfig, PyPackageConfig, PythonOptions, RestClientOptions, Runtime, generate_code,
+    parse_file_descriptor_set,
 };
 use protobuf::Message;
 use protobuf::descriptor::FileDescriptorSet;
@@ -205,8 +205,10 @@ fn config(scratch: &Path) -> CodeGenConfig {
         models_path_crate_template: "crate::models::{service}::{version}".into(),
         resource_store_crate_name: "olai_store".into(),
         runtime: Runtime::Buffa,
-        transport_type_path: REQWEST_TRANSPORT_TYPE_PATH.into(),
-        dual_transport: false,
+        // `olai_http::CloudClient` on native targets, `olai_http_wasm::WasmClient` in the
+        // browser (the web UI).
+        transport_type_path: DEFAULT_TRANSPORT_TYPE_PATH.into(),
+        dual_transport: true,
         client_protocols: ClientProtocols::default(),
         connect_client_path: None,
         rest_client: RestClientOptions {
@@ -270,7 +272,11 @@ fn config(scratch: &Path) -> CodeGenConfig {
                 public_modules: true,
                 // `unitycatalog-rs/<version>`, the name of the package on PyPI.
                 user_agent: Some("unitycatalog-rs".into()),
-                exports: Vec::new(),
+                exports: vec![],
+                // `Client(url)` without a token signs in with the identity of the environment.
+                default_signer: Some("uc_client::identity::detect".into()),
+                // The hand-written `unitycatalog._core.identity`.
+                submodules: vec!["crate::identity::identity".into()],
             }),
         }),
     }
@@ -341,7 +347,7 @@ fn copy_tree(from: &Path, to: &Path, written: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(from)? {
         let path = entry?.path();
         let name = path.file_name().expect("a directory entry has a name");
-        if name == "_include.rs" || name == "client.pyi" {
+        if name == "_include.rs" {
             continue;
         }
         let target = to.join(name);

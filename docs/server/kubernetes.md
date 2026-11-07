@@ -43,8 +43,10 @@ auth:
   oidc:                                    # the web UI's sign-in
     issuer: https://accounts.google.com
     clientSecretName: uc-oauth             # a Secret with clientId and clientSecret
-  allowedIssuers: https://accounts.google.com   # for `uc auth login`
-  audiences: <client id>
+  issuers:                                 # the providers whose tokens the API takes
+    - name: google                         # for `uc auth login`; with direct, on every request
+      issuer: https://accounts.google.com
+      audiences: [<client id>]
 server:
   deployment:
     env:

@@ -8,7 +8,6 @@ use uc_metastore::DynMetastore;
 use crate::{
     authn::idp::AuthSettings,
     authn::security::SecurityContext,
-    authz::{PermissionEnforcer, PolicyEngine},
     observability::audit::sink::{self as audit_sink, AuditHandle},
     storage::StoreCache,
     storage::s3_region::S3Regions,
@@ -41,10 +40,11 @@ pub struct AppStateInner {
     /// `auth.enabled`: privileges are checked and every
     /// API request must be signed in.
     pub authorization_enabled: bool,
-    /// Where the grants of a caller come from when authorization is on:
-    /// the `permission` table ([`PermissionEnforcer`]), or the Cedar engine
-    /// ([`Self::with_cedar`]).
-    pub policy: Arc<dyn PolicyEngine>,
+    /// What decides each privilege when authorization is on: Cedar policies
+    /// ([`Self::with_cedar`]) or any other authorizer
+    /// ([`Self::with_authorizer`]); with none, the grants of the
+    /// `permission` table.
+    pub authorizer: Option<Arc<dyn uc_auth::authz::Authorizer>>,
     /// Mints temporary cloud credentials for the `/temporary-*-credentials`
     /// endpoints: [`PlaceholderVendor`] by default, `CloudVendor` (AWS STS,
     /// Azure SAS, GCP OAuth) in the server.
@@ -82,13 +82,12 @@ pub struct AppStateInner {
 impl AppState {
     pub fn new(metastore: DynMetastore) -> Self {
         let audit = audit_sink::spawn_drainer(metastore.clone(), audit_sink::DEFAULT_CAPACITY);
-        let policy = Arc::new(PermissionEnforcer::new(metastore.clone()));
         Self(Arc::new(AppStateInner {
             metastore,
             security: None,
             auth: Arc::new(AuthSettings::default()),
             authorization_enabled: false,
-            policy,
+            authorizer: None,
             vendor: Arc::new(PlaceholderVendor),
             admin_principals: Arc::new(HashSet::new()),
             aws_identity_arn: None,
@@ -194,13 +193,20 @@ impl AppState {
         self
     }
 
-    /// The Cedar policy engine, with the policies of the `.cedar` files
-    /// `paths` on top of its defaults.
-    pub fn with_cedar(mut self, paths: &[PathBuf]) -> Result<Self, uc_common::Error> {
-        let engine =
-            crate::authz::cedar::CedarEngine::with_policy_files(self.metastore.clone(), paths)?;
-        self.inner().policy = Arc::new(engine);
-        Ok(self)
+    /// Cedar policies decide, those of the `.cedar` files `paths` on top of
+    /// the default ([`crate::authz::cedar`]).
+    pub fn with_cedar(self, paths: &[PathBuf]) -> Result<Self, uc_common::Error> {
+        let authorizer = crate::authz::cedar::with_policy_files(paths)?;
+        Ok(self.with_authorizer(authorizer))
+    }
+
+    /// `authorizer` decides each privilege, such as a remote policy
+    /// decision point ([`uc_auth::authz::HttpAuthorizer`]). Its answers are
+    /// kept for the rest of a request; wrap a remote one in
+    /// [`uc_auth::authz::CachedAuthorizer`] to keep them across requests.
+    pub fn with_authorizer(mut self, authorizer: impl uc_auth::authz::Authorizer) -> Self {
+        self.inner().authorizer = Some(Arc::new(authorizer));
+        self
     }
 
     pub fn with_vendor<V: CredentialVendor>(mut self, vendor: V) -> Self {
