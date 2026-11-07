@@ -35,8 +35,9 @@ serde.workspace = true
 serde_json.workspace = true
 pyo3 = { workspace = true, optional = true }
 olai-http = { workspace = true, optional = true }
-# `gcloud auth print-identity-token`, and the `exp` of the token it prints.
-tokio = { workspace = true, features = ["process"], optional = true }
+# `gcloud auth print-identity-token`; `sync`: the source of a server that could not say what it
+# takes yet.
+tokio = { workspace = true, features = ["process", "sync"], optional = true }
 base64 = { version = "0.22", optional = true }
 # The SigV4 signature of an AWS identity's signed request.
 chrono = { workspace = true, optional = true }

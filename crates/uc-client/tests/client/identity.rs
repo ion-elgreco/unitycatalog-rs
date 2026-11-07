@@ -4,9 +4,14 @@
 //! the server says it takes.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use axum::Router;
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::routing::get;
 use url::Url;
 
 use uc_client::error::Error;
@@ -172,6 +177,57 @@ async fn the_environment_signs_in_at_what_the_server_takes() {
         .list_catalogs()
         .await
         .unwrap();
+}
+
+/// A server whose metadata answers 503 until `up`, then names an AWS block
+/// for its URL, and whose catalogs say how a request signed in; its root
+/// URL.
+async fn server_that_comes_back(up: Arc<AtomicBool>) -> Url {
+    let (listener, url) = listen().await;
+    let block = serde_json::json!({ "issuers": [{
+        "name": "aws", "kind": "aws", "issuer": "", "audiences": [audience(&url)], "direct": true,
+    }]});
+    let metadata = get(move |State(up): State<Arc<AtomicBool>>| async move {
+        match up.load(Ordering::SeqCst) {
+            true => (StatusCode::OK, block.to_string()),
+            false => (StatusCode::SERVICE_UNAVAILABLE, String::new()),
+        }
+    });
+    let catalogs = get(|headers: HeaderMap| async move {
+        let signed = (headers.get(header::AUTHORIZATION))
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("Bearer uc-aws-v1."));
+        let name = if signed { "signed" } else { "none" };
+        format!(r#"{{"catalogs":[{{"name":"{name}"}}]}}"#)
+    });
+    let app = Router::new()
+        .route("/.well-known/oauth-protected-resource", metadata)
+        .route("/api/2.1/unity-catalog/catalogs", catalogs)
+        .with_state(up);
+    serve_on(listener, app);
+    url
+}
+
+#[tokio::test]
+async fn a_client_made_while_the_server_is_away_signs_in_when_it_is_back() {
+    let up = Arc::new(AtomicBool::new(false));
+    let url = server_that_comes_back(up.clone()).await;
+    let keys = env(&[
+        ("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE"),
+        ("AWS_SECRET_ACCESS_KEY", "secret"),
+    ]);
+    let source = identity::detect_in(&keys, &url, false, false)
+        .await
+        .unwrap()
+        .unwrap();
+    let client = Client::new_with_token_source(url, source);
+    let name =
+        |page: uc_client::models::catalogs::v1::ListCatalogsResponse| page.catalogs[0].name.clone();
+    // Until the server says what it takes, the requests go without a token.
+    assert_eq!(name(client.list_catalogs().await.unwrap()), "none");
+    // Then with the identity of its AWS block.
+    up.store(true, Ordering::SeqCst);
+    assert_eq!(name(client.list_catalogs().await.unwrap()), "signed");
 }
 
 /// The server id of the AWS tests' server.

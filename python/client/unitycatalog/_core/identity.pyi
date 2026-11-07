@@ -51,7 +51,9 @@ def detect(base_url: str) -> TokenSource | None:
     The token source of the environment for the server at `base_url`, if it has one: `UC_TOKEN`
     or `UC_TOKEN_FILE`, an OAuth client in `UC_OAUTH_*`, else an Azure, Google or AWS identity at
     one of the server's issuers, for the audience that `UC_AUDIENCE` names, else the server's
-    URL. `Client(base_url)` without a token does this itself.
+    URL. `Client(base_url)` without a token does this itself. A server that cannot say which
+    providers it takes yet is asked again at each request, which goes without a token until it
+    answers.
     """
 
 def google(audience: str) -> TokenSource:
