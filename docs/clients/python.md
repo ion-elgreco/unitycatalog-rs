@@ -56,7 +56,8 @@ ways:
 
 - **A token source.** `token_provider=` names one: one of `unitycatalog.identity`, with the scope
   or audience of the server's issuer, or a callable that returns the token, or a pair of the
-  token and when it expires, in seconds since the epoch.
+  token and when it expires, in seconds since the epoch. The callable runs on a thread of its
+  own, one call at a time, so it can call the methods of a client.
 
     ```python
     import time

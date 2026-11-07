@@ -587,6 +587,15 @@ def test_token_sources(server, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
     assert isinstance(identity.aws("https://uc.example.com"), identity.TokenSource)
+    # A provider may call the client's methods.
+    nested = Client(
+        server.address,
+        token_provider=lambda: (
+            Client(server.address, token=server.token).list_tokens(),
+            server.token,
+        )[1],
+    )
+    nested.list_tokens()
     # An identity, and a server that does not answer: the client is made, and
     # its calls go without a token until the server says what it takes.
     gone = f"http://127.0.0.1:{_closed_port()}/"
