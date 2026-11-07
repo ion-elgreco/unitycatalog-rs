@@ -3552,11 +3552,7 @@ pub struct UpdateModelVersion {
     /// empty one clears it.
     ///
     /// Field 3: `comment`
-    #[serde(
-        rename = "comment",
-        with = "::buffa::json_helpers::proto_string",
-        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
-    )]
+    #[serde(rename = "comment", with = "::buffa::json_helpers::proto_string")]
     pub comment: ::buffa::alloc::string::String,
     #[serde(skip)]
     #[doc(hidden)]

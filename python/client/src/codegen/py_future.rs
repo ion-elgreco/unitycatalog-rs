@@ -21,7 +21,7 @@ where
         py: Python<'py>,
         future: impl Future<Output = PyResult<T>> + Send + 'static,
     ) -> PyResult<Self> {
-        crate::codegen::runtime::rt();
+        crate::codegen::runtime::init_async_runtime();
         Ok(Self {
             future: ::pyo3_async_runtimes::tokio::future_into_py(py, future)?,
             result: PhantomData,

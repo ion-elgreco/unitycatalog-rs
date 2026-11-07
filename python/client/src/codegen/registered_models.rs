@@ -23,12 +23,9 @@ impl PyRegisteredModelClient {
     ///     model versions.
     pub fn get(&self, py: Python) -> PyUnityCatalogResult<PyRegisteredModelInfo> {
         let request = self.client.get();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyRegisteredModelInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyRegisteredModelInfo::from(result))
     }
 
     /// Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -69,12 +66,9 @@ impl PyRegisteredModelClient {
             .update()
             .with_comment(comment)
             .with_new_name(new_name);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyRegisteredModelInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyRegisteredModelInfo::from(result))
     }
 
     /// Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -107,12 +101,9 @@ impl PyRegisteredModelClient {
     #[pyo3(signature = (*, force = None))]
     pub fn delete(&self, py: Python, force: Option<bool>) -> PyUnityCatalogResult<()> {
         let request = self.client.delete().with_force(force);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `delete`, but returns an `asyncio.Future` of the result. Call it in a running event loop.

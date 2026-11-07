@@ -229,6 +229,8 @@ fn config(scratch: &Path) -> CodeGenConfig {
             json_query_packages: CAMEL_CASE_PACKAGES.iter().map(|p| p.to_string()).collect(),
             // `uc-client/<version>`; the web UI sends the browser's.
             user_agent: Some("uc-client".into()),
+            resource_features: false,
+            handler_impls: None,
         },
         output: CodeGenOutput {
             // No request extractors: the server is hand-written.
@@ -268,6 +270,7 @@ fn config(scratch: &Path) -> CodeGenConfig {
                 public_modules: true,
                 // `unitycatalog-rs/<version>`, the name of the package on PyPI.
                 user_agent: Some("unitycatalog-rs".into()),
+                exports: Vec::new(),
             }),
         }),
     }

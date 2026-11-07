@@ -22,12 +22,9 @@ impl PyFunctionClient {
     ///     a schema.
     pub fn get(&self, py: Python) -> PyUnityCatalogResult<PyFunctionInfo> {
         let request = self.client.get();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyFunctionInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyFunctionInfo::from(result))
     }
 
     /// Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -49,12 +46,9 @@ impl PyFunctionClient {
     /// Delete a function.
     pub fn delete(&self, py: Python) -> PyUnityCatalogResult<()> {
         let request = self.client.delete();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `delete`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
