@@ -371,7 +371,10 @@ forbid (
 );
 ```
 
-For each check, the server asks Cedar whether a principal may do an action on a resource.
+For each check, the server asks Cedar whether a principal may do an action on a resource. A
+policy's `@id("…")` names it among the policies that decided; each `@id` is used once in all the
+files, and `granted` is the default policy's. A file that repeats one stops the server at start,
+with the name of the file.
 
 | Part | Cedar | Example |
 | --- | --- | --- |
