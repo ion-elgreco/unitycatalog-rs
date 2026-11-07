@@ -623,8 +623,7 @@ pub struct TokenRequest {
     #[serde(
         rename = "grant_type",
         alias = "grantType",
-        with = "::buffa::json_helpers::proto_string",
-        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+        with = "::buffa::json_helpers::proto_string"
     )]
     pub grant_type: ::buffa::alloc::string::String,
     /// The `id` of the personal access token. When given, it must name the token of

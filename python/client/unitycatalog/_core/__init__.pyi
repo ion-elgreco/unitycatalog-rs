@@ -2532,7 +2532,7 @@ class Client:
         """
     def sharing_get_table_metadata(
         self, /, share: str, schema: str, table: str
-    ) -> SharingTableLine:
+    ) -> list[SharingTableLine]:
         """
         Get the protocol and the metadata of a table. The response also has the version of the table in the
         `Delta-Table-Version` header (always 0).
@@ -2544,7 +2544,7 @@ class Client:
         """
     def sharing_get_table_metadata_async(
         self, /, share: str, schema: str, table: str
-    ) -> Future[SharingTableLine]:
+    ) -> Future[list[SharingTableLine]]:
         """
         Like `sharing_get_table_metadata`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -2617,7 +2617,7 @@ class Client:
         """
     def sharing_query_table(
         self, /, share: str, schema: str, table: str
-    ) -> SharingTableLine:
+    ) -> list[SharingTableLine]:
         """
         Read a table. The server does not read the Delta log: the answer is that of
         `SharingGetTableMetadata`, with no data files. The server ignores the request body.
@@ -2629,7 +2629,7 @@ class Client:
         """
     def sharing_query_table_async(
         self, /, share: str, schema: str, table: str
-    ) -> Future[SharingTableLine]:
+    ) -> Future[list[SharingTableLine]]:
         """
         Like `sharing_query_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """

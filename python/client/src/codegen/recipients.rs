@@ -23,12 +23,9 @@ impl PyRecipientClient {
     ///     a bearer token. The server keeps a hash of the token only.
     pub fn get(&self, py: Python) -> PyUnityCatalogResult<PyRecipientInfo> {
         let request = self.client.get();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyRecipientInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyRecipientInfo::from(result))
     }
 
     /// Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -72,12 +69,9 @@ impl PyRecipientClient {
             .with_comment(comment)
             .with_add_shares(add_shares.unwrap_or_default())
             .with_remove_shares(remove_shares.unwrap_or_default());
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyRecipientInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyRecipientInfo::from(result))
     }
 
     /// Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -108,12 +102,9 @@ impl PyRecipientClient {
     /// Delete a recipient.
     pub fn delete(&self, py: Python) -> PyUnityCatalogResult<()> {
         let request = self.client.delete();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `delete`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -143,12 +134,9 @@ impl PyRecipientClient {
     ///     a bearer token. The server keeps a hash of the token only.
     pub fn rotate_recipient_token(&self, py: Python) -> PyUnityCatalogResult<PyRecipientInfo> {
         let request = self.client.rotate_recipient_token();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyRecipientInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyRecipientInfo::from(result))
     }
 
     /// Like `rotate_recipient_token`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -176,12 +164,9 @@ impl PyRecipientClient {
     ///     the server as a recipient.
     pub fn create_recipient_profile(&self, py: Python) -> PyUnityCatalogResult<PyRecipientProfile> {
         let request = self.client.create_recipient_profile();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyRecipientProfile::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyRecipientProfile::from(result))
     }
 
     /// Like `create_recipient_profile`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
