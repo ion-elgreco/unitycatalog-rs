@@ -11,8 +11,9 @@ pub enum Error {
     Api(ApiError),
     /// The request got no answer, or the answer could not be read.
     Http(::reqwest::Error),
-    /// The token source of the transport failed, so the request was not sent.
-    Token(::std::boxed::Box<dyn ::std::error::Error + Send + Sync>),
+    /// The transport failed before an answer, or after retries.
+    #[cfg(not(target_arch = "wasm32"))]
+    Transport(::olai_http::Error),
     /// The request URL could not be built.
     Url(::url::ParseError),
     /// A body could not be written or read as JSON.
@@ -47,7 +48,8 @@ impl ::std::fmt::Display for Error {
         match self {
             Error::Api(e) => ::std::fmt::Display::fmt(e, f),
             Error::Http(e) => write!(f, "request failed: {e}"),
-            Error::Token(e) => write!(f, "no bearer token: {e}"),
+            #[cfg(not(target_arch = "wasm32"))]
+            Error::Transport(e) => write!(f, "request failed: {e}"),
             Error::Url(e) => write!(f, "invalid URL: {e}"),
             Error::Json(e) => write!(f, "invalid JSON: {e}"),
         }
@@ -59,7 +61,8 @@ impl ::std::error::Error for Error {
         match self {
             Error::Api(e) => Some(e),
             Error::Http(e) => Some(e),
-            Error::Token(e) => Some(e.as_ref()),
+            #[cfg(not(target_arch = "wasm32"))]
+            Error::Transport(e) => Some(e),
             Error::Url(e) => Some(e),
             Error::Json(e) => Some(e),
         }
@@ -78,12 +81,10 @@ impl ::core::convert::From<::reqwest::Error> for Error {
     }
 }
 
-impl ::core::convert::From<crate::codegen::transport::SendError> for Error {
-    fn from(e: crate::codegen::transport::SendError) -> Self {
-        match e {
-            crate::codegen::transport::SendError::Http(e) => Error::Http(e),
-            crate::codegen::transport::SendError::Token(e) => Error::Token(e),
-        }
+#[cfg(not(target_arch = "wasm32"))]
+impl ::core::convert::From<::olai_http::Error> for Error {
+    fn from(e: ::olai_http::Error) -> Self {
+        Error::Transport(e)
     }
 }
 

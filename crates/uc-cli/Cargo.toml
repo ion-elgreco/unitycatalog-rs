@@ -16,6 +16,8 @@ path = "src/main.rs"
 uc-common = { workspace = true, features = ["ui"] }
 # `identity`: uc signs in with the identity of the environment when it has no token.
 uc-client = { workspace = true, features = ["identity"] }
+# The transport of uc-client, with the `User-Agent` of uc.
+olai-http.workspace = true
 
 clap.workspace = true
 tokio = { workspace = true, features = ["process", "io-util", "io-std"] }

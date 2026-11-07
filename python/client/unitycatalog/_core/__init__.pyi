@@ -141,7 +141,7 @@ __all__ = [
     "PermissionDeniedError",
     "RateLimitError",
     "ServerError",
-    "TokenSource",
+    "TokenProvider",
     "UnauthenticatedError",
     "UnityCatalogError",
     "admin",
@@ -204,9 +204,9 @@ class Client:
         """
         A client of the API at `base_url`. `token`, when set, goes in every request as
         the bearer token. `token_provider` is asked for the token instead: a
-        `TokenSource`, or a callable that returns the token, or a pair of the token
-        and the time it expires, in seconds since the epoch; a token with its expiry
-        is kept until a minute before it, a bare token is asked for at every request.
+        `TokenProvider`, or a callable that returns the token, or a pair of the token
+        and the time it expires, in seconds since the epoch; a token with its expiry is
+        kept until a minute before it, a bare token is asked for at every request.
         """
     def catalog(self, /, catalog_name: str) -> CatalogClient:
         """
@@ -2870,10 +2870,11 @@ class ServerError(UnityCatalogError):
     ) -> ServerError: ...
 
 @final
-class TokenSource:
+class TokenProvider:
     """
-    A token source made in Rust, for `token_provider=`. The binding crate makes
-    one from any `TokenSource` of the client crate.
+    A token provider made in Rust, for `token_provider=`. The binding crate makes one
+    from any `olai_http::RequestSigner`, such as a bearer provider in a
+    `BearerProviderSigner`.
     """
 
 @final

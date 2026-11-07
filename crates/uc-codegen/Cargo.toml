@@ -12,6 +12,6 @@ publish = false
 [dependencies]
 # The generator of the clients: trestle's library, from the branch with the options that the
 # clients use.
-olai-codegen = { git = "https://github.com/ion-elgreco/trestle", branch = "feat/uc-client-token-source" }
+olai-codegen = { git = "https://github.com/ion-elgreco/trestle", branch = "feat/client-credential-provider" }
 buffa-build = "0.7"
 protobuf = "3"

@@ -50,8 +50,10 @@ NOT_REQUESTS = {
     "new",
     "new_unauthenticated",
     "new_with_token",
-    "new_with_token_source",
-    "with_user_agent",
+    "new_with_bearer",
+    "new_with_signer",
+    "new_in_browser",
+    "client_options",
     "name",
     "full_name",
 }

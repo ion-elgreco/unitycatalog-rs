@@ -121,7 +121,8 @@ async fn a_server_that_does_not_answer() {
         .list_catalogs()
         .await
         .unwrap_err();
-    assert!(matches!(error, Error::Http(_)), "{error:?}");
+    // CloudClient's failure, after its retries.
+    assert!(matches!(error, Error::Transport(_)), "{error:?}");
     assert_eq!((error.status(), error.code()), (None, None));
     // The cause is in the chain of sources.
     let mut causes = Vec::new();
