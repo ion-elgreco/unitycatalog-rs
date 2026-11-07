@@ -200,6 +200,18 @@ const AWS_GLOBAL_REGION: &str = "us-east-1";
 /// How long a signed request is reused. STS takes one for 15 minutes; the server keeps the
 /// caller it names for 5.
 const AWS_REUSE: Duration = Duration::from_secs(5 * 60);
+/// The variables that [`aws_in`] gives olai-http. Not `AWS_ROLE_ARN`: it is the role of a web
+/// identity, which olai-http reads itself, and as `role_arn` it would assume the role again.
+const AWS_VARIABLES: [&str; 8] = [
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_REGION",
+    "AWS_DEFAULT_REGION",
+    "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+    "AWS_METADATA_ENDPOINT",
+    "AWS_IMDSV1_FALLBACK",
+];
 
 /// An AWS identity of the environment, for the server whose AWS issuer block has the audience
 /// `server_id`. AWS gives no token that the server can check, so each token is a signed
@@ -220,8 +232,10 @@ pub fn aws(server_id: &str) -> Result<Arc<dyn TokenSource>> {
 pub fn aws_in(env: &Env, server_id: &str, endpoint: Option<&str>) -> Result<Arc<dyn TokenSource>> {
     let (url, region) = aws_endpoint(env, endpoint)?;
     let mut builder = olai_http::aws::AmazonBuilder::new();
-    for (name, value) in env.iter().filter(|(name, _)| name.starts_with("AWS_")) {
-        if let Ok(key) = name.to_ascii_lowercase().parse() {
+    for name in AWS_VARIABLES {
+        if let Some(value) = set(env, name)
+            && let Ok(key) = name.to_ascii_lowercase().parse()
+        {
             builder = builder.with_config(key, value);
         }
     }
@@ -1187,6 +1201,29 @@ mod tests {
             })
         );
         assert_eq!(choose(&service_principal, &[aws], false, false), None);
+    }
+
+    #[tokio::test]
+    async fn a_role_of_the_environment_is_not_assumed_again() {
+        // `AWS_ROLE_ARN` is the role of a web identity: with keys, the keys sign, and no STS
+        // is asked for the role.
+        let vars = env(&[
+            ("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE"),
+            ("AWS_SECRET_ACCESS_KEY", "s"),
+            ("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/etl"),
+        ]);
+        let source = aws_in(&vars, "https://uc.example.com", Some("http://127.0.0.1:1")).unwrap();
+        let token = source.token().await.unwrap();
+        use base64::Engine;
+        let signed = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(token.strip_prefix(AWS_PREFIX).unwrap())
+            .unwrap();
+        let signed: serde_json::Value = serde_json::from_slice(&signed).unwrap();
+        let authorization = signed["headers"]["authorization"].as_str().unwrap();
+        assert!(
+            authorization.contains("Credential=AKIAEXAMPLE/"),
+            "{authorization}"
+        );
     }
 
     #[test]
