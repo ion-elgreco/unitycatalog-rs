@@ -47,7 +47,7 @@ defaults apply.
 - Variables are text. The server reads numbers and booleans from the text. An empty variable is
   unset.
 - A duration is text such as `30s`, `5m`, `24h` or `5d`.
-- A list is a TOML array, or text with commas: `UC_AUTH_ALLOWED_ISSUERS=https://a.example,https://b.example`.
+- A list is a TOML array, or text with commas: `UC_AUTH_ADMIN_PRINCIPALS=alice@example.com,bob@example.com`.
 
 ## Cloud identities and locations
 
