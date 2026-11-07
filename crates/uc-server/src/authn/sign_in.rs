@@ -627,7 +627,7 @@ pub async fn callback(
     if let Err(e) = state
         .auth
         .keys
-        .verify(&id_token, &decoded, &oidc.issuer)
+        .verify(&id_token, &decoded, &oidc.issuer, None)
         .await
     {
         return failed(Failure::Token, e.to_string());

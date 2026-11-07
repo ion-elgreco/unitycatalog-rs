@@ -141,7 +141,7 @@ pub async fn grant_token(
     }
     settings
         .keys
-        .verify(&subject_token, &decoded, iss)
+        .verify(&subject_token, &decoded, iss, settings.pattern(iss))
         .await
         .map_err(idp::verify_error)?;
     let Some(issuer) = settings.issuer_taking(iss, &decoded.claims) else {
