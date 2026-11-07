@@ -272,11 +272,12 @@ impl JwtKeys {
                     .parse()
                     .map_err(|_| unsupported("algorithm", algorithm))?;
                 let key = DecodingKey::from_jwk(&jwk).map_err(|e| failed(e.to_string()))?;
+                // The signature only: `jsonwebtoken` skips an `exp` or `nbf`
+                // with a fraction, so the times are checked below.
                 let mut validation = Validation::new(algorithm);
                 validation.set_issuer(&[issuer]);
                 validation.validate_aud = false;
-                validation.validate_nbf = true;
-                validation.leeway = self.leeway.as_secs();
+                validation.validate_exp = false;
                 validation.required_spec_claims.clear();
                 jsonwebtoken::decode::<Value>(token, &key, &validation)
                     .map(|_| ())
@@ -286,7 +287,6 @@ impl JwtKeys {
                 if params.curve == EllipticCurve::P521 =>
             {
                 verify_es512(token, &params.x, &params.y)
-                    .and_then(|()| check_times(&decoded.claims, issuer, self.leeway))
             }
             (AlgorithmParameters::RSA(_), other) => {
                 return Err(unsupported("RSA algorithm", other));
@@ -299,7 +299,9 @@ impl JwtKeys {
                 return Err(unsupported("key type", "OKP"));
             }
         };
-        checked.map_err(failed)
+        checked
+            .and_then(|()| check_times(&decoded.claims, issuer, self.leeway))
+            .map_err(failed)
     }
 
     /// The issuer's key `key_id`, fetched when unknown.
@@ -453,28 +455,31 @@ fn now_secs() -> i64 {
         .map_or(0, |d| d.as_secs() as i64)
 }
 
-/// The issuer and time checks for tokens verified outside `jsonwebtoken`.
+/// The issuer and time checks of a token whose signature checks out.
 fn check_times(claims: &Map<String, Value>, issuer: &str, leeway: Duration) -> Result<(), String> {
     if claims.get("iss").and_then(Value::as_str) != Some(issuer) {
         return Err("InvalidIssuer".into());
     }
-    let now = now_secs();
-    let leeway = leeway.as_secs() as i64;
-    if claims
-        .get("exp")
-        .and_then(Value::as_i64)
-        .is_some_and(|exp| exp + leeway < now)
-    {
+    let now = now_secs() as f64;
+    let leeway = leeway.as_secs_f64();
+    if time_claim(claims, "exp")?.is_some_and(|exp| exp + leeway < now) {
         return Err("ExpiredSignature".into());
     }
-    if claims
-        .get("nbf")
-        .and_then(Value::as_i64)
-        .is_some_and(|nbf| nbf - leeway > now)
-    {
+    if time_claim(claims, "nbf")?.is_some_and(|nbf| nbf - leeway > now) {
         return Err("ImmatureSignature".into());
     }
     Ok(())
+}
+
+/// The time claim `name` in seconds since the epoch, which may have a
+/// fraction; an error when it is there but not a number.
+fn time_claim(claims: &Map<String, Value>, name: &str) -> Result<Option<f64>, String> {
+    match claims.get(name) {
+        None => Ok(None),
+        Some(value) => (value.as_f64())
+            .map(Some)
+            .ok_or_else(|| format!("InvalidClaimFormat: {name}")),
+    }
 }
 
 /// A provider whose tokens a [`JwtResolver`] takes: the `iss` it matches,
@@ -609,8 +614,8 @@ impl<S: Send + Sync> Resolver<S> for JwtResolver {
             );
             return Resolution::Refused(AuthError::invalid("audience not allowed"));
         };
-        let left = match claims.get("exp").and_then(Value::as_i64) {
-            Some(exp) => Duration::from_secs((exp - now_secs()).max(0) as u64),
+        let left = match claims.get("exp").and_then(Value::as_f64) {
+            Some(exp) => Duration::from_secs_f64((exp - now_secs() as f64).clamp(0.0, 1e9)),
             None => NO_EXPIRY,
         };
         let mut identity = Identity::new(
@@ -755,5 +760,13 @@ mod tests {
         assert!(check_times(&claims(-30), "i", leeway).is_ok());
         assert!(check_times(&claims(-90), "i", leeway).is_err());
         assert!(check_times(&claims(10), "other", leeway).is_err());
+        // A time with a fraction is a time; one that is not a number fails.
+        let claims = |exp: Value| -> Map<String, Value> {
+            serde_json::from_value(serde_json::json!({ "iss": "i", "exp": exp })).unwrap()
+        };
+        let past = now_secs() as f64 - 120.5;
+        assert!(check_times(&claims(past.into()), "i", leeway).is_err());
+        assert!(check_times(&claims((past + 240.0).into()), "i", leeway).is_ok());
+        assert!(check_times(&claims("soon".into()), "i", leeway).is_err());
     }
 }
