@@ -269,6 +269,30 @@ async fn an_identity_token_is_exchanged_for_an_access_token() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_given_token_is_sent_instead_of_the_environments() {
+    let dir = TempDir::new().unwrap();
+    let idp = Idp::start().await;
+    let url = server(&idp).await;
+    // Without a token, `UC_TOKEN` is the identity of the environment.
+    let (code, _, err) = run(uc(dir.path(), &url)
+        .env("UC_TOKEN", "not-valid")
+        .args(["catalog", "list"]))
+    .await;
+    assert_eq!(code, 1);
+    assert!(err.contains("Invalid access token."), "{err}");
+    // `--auth_token ''` sends no token.
+    let (code, _, err) = run(uc(dir.path(), &url).env("UC_TOKEN", "not-valid").args([
+        "catalog",
+        "list",
+        "--auth_token",
+        "",
+    ]))
+    .await;
+    assert_eq!(code, 1);
+    assert!(err.contains("No authorization found."), "{err}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn later_commands_use_the_sign_in() {
     let dir = TempDir::new().unwrap();
     let idp = Idp::start().await;
