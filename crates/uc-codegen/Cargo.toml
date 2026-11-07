@@ -10,8 +10,8 @@ description = "Generates the Rust and Python clients from proto/: `just generate
 publish = false
 
 [dependencies]
-# The generator of the clients: trestle's library, from the branch with the options that the
-# clients use.
-olai-codegen = { git = "https://github.com/ion-elgreco/trestle", branch = "feat/uc-client-plan" }
+# The generator of the clients: trestle's library, with the custom field options and NDJSON
+# streams that the clients use.
+olai-codegen = { git = "https://github.com/ion-elgreco/trestle", rev = "d8ddcce" }
 buffa-build = "0.7"
 protobuf = "3"

@@ -43,12 +43,9 @@ impl PyTableClient {
             .get()
             .with_read_streaming_table_as_managed(read_streaming_table_as_managed)
             .with_read_materialized_view_as_managed(read_materialized_view_as_managed);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyTableInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyTableInfo::from(result))
     }
 
     /// Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -102,12 +99,9 @@ impl PyTableClient {
                 .map(::core::convert::Into::into)
                 .collect::<::std::vec::Vec<_>>(),
         );
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyTableInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyTableInfo::from(result))
     }
 
     /// Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -138,12 +132,9 @@ impl PyTableClient {
     /// Delete a table.
     pub fn delete(&self, py: Python) -> PyUnityCatalogResult<()> {
         let request = self.client.delete();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `delete`, but returns an `asyncio.Future` of the result. Call it in a running event loop.

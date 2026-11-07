@@ -21,12 +21,9 @@ impl PyCredentialClient {
     ///     A credential that gives access to storage or to external services.
     pub fn get(&self, py: Python) -> PyUnityCatalogResult<PyCredentialInfo> {
         let request = self.client.get();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyCredentialInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyCredentialInfo::from(result))
     }
 
     /// Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -94,12 +91,9 @@ impl PyCredentialClient {
             .with_azure_managed_identity(azure_managed_identity.map(::core::convert::Into::into))
             .with_gcp_service_account(gcp_service_account.map(::core::convert::Into::into))
             .with_gcp_service_account_key(gcp_service_account_key.map(::core::convert::Into::into));
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyCredentialInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyCredentialInfo::from(result))
     }
 
     /// Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -153,12 +147,9 @@ impl PyCredentialClient {
     #[pyo3(signature = (*, force = None))]
     pub fn delete(&self, py: Python, force: Option<bool>) -> PyUnityCatalogResult<()> {
         let request = self.client.delete().with_force(force);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `delete`, but returns an `asyncio.Future` of the result. Call it in a running event loop.

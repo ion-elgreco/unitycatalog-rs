@@ -97,12 +97,9 @@ impl PyClient {
     ///     it.
     pub fn get_backup(&self, py: Python) -> PyUnityCatalogResult<PyBackupResponse> {
         let request = self.client.get_backup();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyBackupResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyBackupResponse::from(result))
     }
 
     /// Like `get_backup`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -150,12 +147,9 @@ impl PyClient {
                 })
                 .collect::<::pyo3::PyResult<::std::vec::Vec<_>>>()?
         });
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyRestoreResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyRestoreResponse::from(result))
     }
 
     /// Like `restore_backup`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -234,12 +228,9 @@ impl PyClient {
             .with_until(until)
             .with_max_results(max_results)
             .with_page_token(page_token);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyListAuditEventsResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyListAuditEventsResponse::from(result))
     }
 
     /// Like `list_audit_events`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -337,12 +328,9 @@ impl PyClient {
             .with_scope(scope)
             .with_actor_token(actor_token)
             .with_actor_token_type(actor_token_type);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyOAuthTokenExchangeInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyOAuthTokenExchangeInfo::from(result))
     }
 
     /// Like `exchange_token`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -417,12 +405,9 @@ impl PyClient {
             .request_access_token(grant_type, client_secret)
             .with_client_id(client_id)
             .with_scope(scope);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyTokenResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyTokenResponse::from(result))
     }
 
     /// Like `request_access_token`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -453,12 +438,9 @@ impl PyClient {
     /// Sign out: expire the `UC_TOKEN` cookie of the request, if any.
     pub fn logout(&self, py: Python) -> PyUnityCatalogResult<()> {
         let request = self.client.logout();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `logout`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -485,12 +467,9 @@ impl PyClient {
     ///     How the web UI signs in, and where its "Log out" goes.
     pub fn get_auth_mode(&self, py: Python) -> PyUnityCatalogResult<PyAuthMode> {
         let request = self.client.get_auth_mode();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyAuthMode::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyAuthMode::from(result))
     }
 
     /// Like `get_auth_mode`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -523,22 +502,17 @@ impl PyClient {
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyCatalogInfo>> {
         let request = self.client.list_catalogs().with_max_results(max_results);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(async move {
-                request
-                    .into_stream()
-                    .try_collect::<::std::vec::Vec<_>>()
-                    .await
-            })?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PyCatalogInfo::from)
-                    .collect::<::std::vec::Vec<_>>(),
-            )
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, async move {
+            request
+                .into_stream()
+                .try_collect::<::std::vec::Vec<_>>()
+                .await
+        })??;
+        Ok(result
+            .into_iter()
+            .map(PyCatalogInfo::from)
+            .collect::<::std::vec::Vec<_>>())
     }
 
     /// Like `list_catalogs`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -594,12 +568,9 @@ impl PyClient {
             .with_comment(comment)
             .with_properties(properties.unwrap_or_default())
             .with_storage_root(storage_root);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyCatalogInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyCatalogInfo::from(result))
     }
 
     /// Like `create_catalog`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -650,22 +621,17 @@ impl PyClient {
             .list_credentials()
             .with_max_results(max_results)
             .with_purpose(purpose.map(::core::convert::Into::into));
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(async move {
-                request
-                    .into_stream()
-                    .try_collect::<::std::vec::Vec<_>>()
-                    .await
-            })?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PyCredentialInfo::from)
-                    .collect::<::std::vec::Vec<_>>(),
-            )
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, async move {
+            request
+                .into_stream()
+                .try_collect::<::std::vec::Vec<_>>()
+                .await
+        })??;
+        Ok(result
+            .into_iter()
+            .map(PyCredentialInfo::from)
+            .collect::<::std::vec::Vec<_>>())
     }
 
     /// Like `list_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -750,12 +716,9 @@ impl PyClient {
             .with_azure_managed_identity(azure_managed_identity.map(::core::convert::Into::into))
             .with_gcp_service_account(gcp_service_account.map(::core::convert::Into::into))
             .with_gcp_service_account_key(gcp_service_account_key.map(::core::convert::Into::into));
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyCredentialInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyCredentialInfo::from(result))
     }
 
     /// Like `create_credential`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -823,12 +786,9 @@ impl PyClient {
         protocol_versions: String,
     ) -> PyUnityCatalogResult<PyDeltaCatalogConfig> {
         let request = self.client.get_delta_config(catalog, protocol_versions);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyDeltaCatalogConfig::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyDeltaCatalogConfig::from(result))
     }
 
     /// Like `get_delta_config`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -871,12 +831,9 @@ impl PyClient {
         let request = self
             .client
             .create_delta_staging_table(catalog, schema, name);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyDeltaStagingTableResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyDeltaStagingTableResponse::from(result))
     }
 
     /// Like `create_delta_staging_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -974,12 +931,9 @@ impl PyClient {
             .with_properties(properties.unwrap_or_default())
             .with_domain_metadata(domain_metadata.map(::core::convert::Into::into))
             .with_uniform(uniform.map(::core::convert::Into::into));
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyDeltaLoadTableResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyDeltaLoadTableResponse::from(result))
     }
 
     /// Like `create_delta_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1060,12 +1014,9 @@ impl PyClient {
         table: String,
     ) -> PyUnityCatalogResult<PyDeltaLoadTableResponse> {
         let request = self.client.load_delta_table(catalog, schema, table);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyDeltaLoadTableResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyDeltaLoadTableResponse::from(result))
     }
 
     /// Like `load_delta_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1123,12 +1074,9 @@ impl PyClient {
                 .map(::core::convert::Into::into)
                 .collect(),
         );
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyDeltaLoadTableResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyDeltaLoadTableResponse::from(result))
     }
 
     /// Like `update_delta_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1175,12 +1123,9 @@ impl PyClient {
         table: String,
     ) -> PyUnityCatalogResult<bool> {
         let request = self.client.delta_table_exists(catalog, schema, table);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `delta_table_exists`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1213,12 +1158,9 @@ impl PyClient {
         table: String,
     ) -> PyUnityCatalogResult<()> {
         let request = self.client.delete_delta_table(catalog, schema, table);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `delete_delta_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1259,12 +1201,9 @@ impl PyClient {
         let request = self
             .client
             .rename_delta_table(catalog, schema, table, new_name);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `rename_delta_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1311,12 +1250,9 @@ impl PyClient {
             .client
             .report_delta_table_metrics(catalog, schema, table, table_id)
             .with_report(report.map(::core::convert::Into::into));
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `report_delta_table_metrics`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1365,12 +1301,9 @@ impl PyClient {
         let request =
             self.client
                 .get_delta_table_credentials(catalog, schema, table, operation.into());
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyDeltaCredentialsResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyDeltaCredentialsResponse::from(result))
     }
 
     /// Like `get_delta_table_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1409,12 +1342,9 @@ impl PyClient {
         table_id: String,
     ) -> PyUnityCatalogResult<PyDeltaCredentialsResponse> {
         let request = self.client.get_delta_staging_table_credentials(table_id);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyDeltaCredentialsResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyDeltaCredentialsResponse::from(result))
     }
 
     /// Like `get_delta_staging_table_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1475,12 +1405,9 @@ impl PyClient {
             .with_latest_backfilled_version(latest_backfilled_version)
             .with_metadata(metadata.map(::core::convert::Into::into))
             .with_uniform(uniform.map(::core::convert::Into::into));
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `commit_delta`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1551,12 +1478,9 @@ impl PyClient {
             .get_delta_commits(table_id, start_version)
             .with_table_uri(table_uri)
             .with_end_version(end_version);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyDeltaGetCommitsResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyDeltaGetCommitsResponse::from(result))
     }
 
     /// Like `get_delta_commits`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1603,22 +1527,17 @@ impl PyClient {
             .client
             .list_external_locations()
             .with_max_results(max_results);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(async move {
-                request
-                    .into_stream()
-                    .try_collect::<::std::vec::Vec<_>>()
-                    .await
-            })?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PyExternalLocationInfo::from)
-                    .collect::<::std::vec::Vec<_>>(),
-            )
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, async move {
+            request
+                .into_stream()
+                .try_collect::<::std::vec::Vec<_>>()
+                .await
+        })??;
+        Ok(result
+            .into_iter()
+            .map(PyExternalLocationInfo::from)
+            .collect::<::std::vec::Vec<_>>())
     }
 
     /// Like `list_external_locations`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1674,12 +1593,9 @@ impl PyClient {
             .client
             .create_external_location(name, url, credential_name)
             .with_comment(comment);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyExternalLocationInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyExternalLocationInfo::from(result))
     }
 
     /// Like `create_external_location`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1728,12 +1644,9 @@ impl PyClient {
             .list_directory_contents(directory_path)
             .with_page_size(page_size)
             .with_page_token(page_token);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyListDirectoryContentsResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyListDirectoryContentsResponse::from(result))
     }
 
     /// Like `list_directory_contents`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1769,12 +1682,9 @@ impl PyClient {
         directory_path: String,
     ) -> PyUnityCatalogResult<bool> {
         let request = self.client.get_directory_metadata(directory_path);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `get_directory_metadata`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1800,12 +1710,9 @@ impl PyClient {
     #[pyo3(signature = (directory_path))]
     pub fn create_directory(&self, py: Python, directory_path: String) -> PyUnityCatalogResult<()> {
         let request = self.client.create_directory(directory_path);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `create_directory`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1845,12 +1752,9 @@ impl PyClient {
             .client
             .delete_directory(directory_path)
             .with_recursive(recursive);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `delete_directory`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1893,12 +1797,9 @@ impl PyClient {
         range: Option<String>,
     ) -> PyUnityCatalogResult<PyDownloadFileResponse> {
         let request = self.client.download_file(file_path).with_range(range);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyDownloadFileResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyDownloadFileResponse::from(result))
     }
 
     /// Like `download_file`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1931,12 +1832,9 @@ impl PyClient {
         file_path: String,
     ) -> PyUnityCatalogResult<PyGetFileMetadataResponse> {
         let request = self.client.get_file_metadata(file_path);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyGetFileMetadataResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyGetFileMetadataResponse::from(result))
     }
 
     /// Like `get_file_metadata`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1975,12 +1873,9 @@ impl PyClient {
             .client
             .upload_file(file_path, contents.to_vec())
             .with_overwrite(overwrite);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `upload_file`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2012,12 +1907,9 @@ impl PyClient {
     #[pyo3(signature = (file_path))]
     pub fn delete_file(&self, py: Python, file_path: String) -> PyUnityCatalogResult<()> {
         let request = self.client.delete_file(file_path);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `delete_file`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2061,22 +1953,17 @@ impl PyClient {
             .client
             .list_functions(catalog_name, schema_name)
             .with_max_results(max_results);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(async move {
-                request
-                    .into_stream()
-                    .try_collect::<::std::vec::Vec<_>>()
-                    .await
-            })?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PyFunctionInfo::from)
-                    .collect::<::std::vec::Vec<_>>(),
-            )
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, async move {
+            request
+                .into_stream()
+                .try_collect::<::std::vec::Vec<_>>()
+                .await
+        })??;
+        Ok(result
+            .into_iter()
+            .map(PyFunctionInfo::from)
+            .collect::<::std::vec::Vec<_>>())
     }
 
     /// Like `list_functions`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2125,12 +2012,9 @@ impl PyClient {
         function_info: PyCreateFunction,
     ) -> PyUnityCatalogResult<PyFunctionInfo> {
         let request = self.client.create_function(function_info.into());
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyFunctionInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyFunctionInfo::from(result))
     }
 
     /// Like `create_function`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2157,12 +2041,9 @@ impl PyClient {
     ///     The state of the server.
     pub fn get_health(&self, py: Python) -> PyUnityCatalogResult<PyHealthResponse> {
         let request = self.client.get_health();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyHealthResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyHealthResponse::from(result))
     }
 
     /// Like `get_health`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2187,12 +2068,9 @@ impl PyClient {
     ///     The server and its versions.
     pub fn get_version(&self, py: Python) -> PyUnityCatalogResult<PyVersionResponse> {
         let request = self.client.get_version();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyVersionResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyVersionResponse::from(result))
     }
 
     /// Like `get_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2225,12 +2103,9 @@ impl PyClient {
         warehouse: String,
     ) -> PyUnityCatalogResult<PyIcebergConfigResponse> {
         let request = self.client.get_iceberg_config(warehouse);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyIcebergConfigResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyIcebergConfigResponse::from(result))
     }
 
     /// Like `get_iceberg_config`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2279,12 +2154,9 @@ impl PyClient {
             .with_parent(parent)
             .with_page_token(page_token)
             .with_page_size(page_size);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyIcebergListNamespacesResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyIcebergListNamespacesResponse::from(result))
     }
 
     /// Like `list_iceberg_namespaces`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2334,12 +2206,9 @@ impl PyClient {
             .client
             .create_iceberg_namespace(catalog, namespace)
             .with_properties(properties.unwrap_or_default());
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyIcebergNamespaceResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyIcebergNamespaceResponse::from(result))
     }
 
     /// Like `create_iceberg_namespace`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2378,12 +2247,9 @@ impl PyClient {
         namespace: String,
     ) -> PyUnityCatalogResult<PyIcebergNamespaceResponse> {
         let request = self.client.load_iceberg_namespace(catalog, namespace);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyIcebergNamespaceResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyIcebergNamespaceResponse::from(result))
     }
 
     /// Like `load_iceberg_namespace`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2415,12 +2281,9 @@ impl PyClient {
         namespace: String,
     ) -> PyUnityCatalogResult<bool> {
         let request = self.client.iceberg_namespace_exists(catalog, namespace);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `iceberg_namespace_exists`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2451,12 +2314,9 @@ impl PyClient {
         namespace: String,
     ) -> PyUnityCatalogResult<()> {
         let request = self.client.drop_iceberg_namespace(catalog, namespace);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `drop_iceberg_namespace`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2502,12 +2362,9 @@ impl PyClient {
             .update_iceberg_namespace_properties(catalog, namespace)
             .with_removals(removals.unwrap_or_default())
             .with_updates(updates.unwrap_or_default());
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyIcebergUpdateNamespacePropertiesResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyIcebergUpdateNamespacePropertiesResponse::from(result))
     }
 
     /// Like `update_iceberg_namespace_properties`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2562,12 +2419,9 @@ impl PyClient {
             .list_iceberg_tables(catalog, namespace)
             .with_page_token(page_token)
             .with_page_size(page_size);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyIcebergListTablesResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyIcebergListTablesResponse::from(result))
     }
 
     /// Like `list_iceberg_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2647,12 +2501,9 @@ impl PyClient {
             .with_write_order(write_order.map(::core::convert::Into::into))
             .with_stage_create(stage_create)
             .with_properties(properties.unwrap_or_default());
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyIcebergLoadTableResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyIcebergLoadTableResponse::from(result))
     }
 
     /// Like `create_iceberg_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2723,12 +2574,9 @@ impl PyClient {
             .client
             .load_iceberg_table(catalog, namespace, table)
             .with_snapshots(snapshots);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyIcebergLoadTableResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyIcebergLoadTableResponse::from(result))
     }
 
     /// Like `load_iceberg_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2766,12 +2614,9 @@ impl PyClient {
         table: String,
     ) -> PyUnityCatalogResult<bool> {
         let request = self.client.iceberg_table_exists(catalog, namespace, table);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `iceberg_table_exists`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2843,12 +2688,9 @@ impl PyClient {
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyIcebergLoadTableResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyIcebergLoadTableResponse::from(result))
     }
 
     /// Like `commit_iceberg_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2920,12 +2762,9 @@ impl PyClient {
             .client
             .drop_iceberg_table(catalog, namespace, table)
             .with_purge_requested(purge_requested);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `drop_iceberg_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2969,12 +2808,9 @@ impl PyClient {
         let request = self
             .client
             .load_iceberg_table_credentials(catalog, namespace, table);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyIcebergLoadCredentialsResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyIcebergLoadCredentialsResponse::from(result))
     }
 
     /// Like `load_iceberg_table_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3066,12 +2902,9 @@ impl PyClient {
             .with_operation(operation)
             .with_metrics(metrics.as_ref().map(json_struct_from_py).transpose()?)
             .with_metadata(metadata.unwrap_or_default());
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `report_iceberg_metrics`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3147,12 +2980,9 @@ impl PyClient {
         view: String,
     ) -> PyUnityCatalogResult<()> {
         let request = self.client.load_iceberg_view(catalog, namespace, view);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `load_iceberg_view`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3193,12 +3023,9 @@ impl PyClient {
         let request = self
             .client
             .rename_iceberg_table(catalog, source.into(), destination.into());
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `rename_iceberg_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3234,12 +3061,9 @@ impl PyClient {
         py: Python,
     ) -> PyUnityCatalogResult<PyGetMetastoreSummaryResponse> {
         let request = self.client.get_metastore_summary();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyGetMetastoreSummaryResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyGetMetastoreSummaryResponse::from(result))
     }
 
     /// Like `get_metastore_summary`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3277,22 +3101,17 @@ impl PyClient {
             .client
             .list_model_versions(full_name)
             .with_max_results(max_results);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(async move {
-                request
-                    .into_stream()
-                    .try_collect::<::std::vec::Vec<_>>()
-                    .await
-            })?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PyModelVersionInfo::from)
-                    .collect::<::std::vec::Vec<_>>(),
-            )
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, async move {
+            request
+                .into_stream()
+                .try_collect::<::std::vec::Vec<_>>()
+                .await
+        })??;
+        Ok(result
+            .into_iter()
+            .map(PyModelVersionInfo::from)
+            .collect::<::std::vec::Vec<_>>())
     }
 
     /// Like `list_model_versions`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3366,12 +3185,9 @@ impl PyClient {
             .create_model_version(model_name, catalog_name, schema_name, source)
             .with_run_id(run_id)
             .with_comment(comment);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyModelVersionInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyModelVersionInfo::from(result))
     }
 
     /// Like `create_model_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3423,12 +3239,9 @@ impl PyClient {
         version: i64,
     ) -> PyUnityCatalogResult<PyModelVersionInfo> {
         let request = self.client.get_model_version(full_name, version);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyModelVersionInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyModelVersionInfo::from(result))
     }
 
     /// Like `get_model_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3469,12 +3282,9 @@ impl PyClient {
         let request = self
             .client
             .update_model_version(full_name, version, comment);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyModelVersionInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyModelVersionInfo::from(result))
     }
 
     /// Like `update_model_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3508,12 +3318,9 @@ impl PyClient {
         version: i64,
     ) -> PyUnityCatalogResult<()> {
         let request = self.client.delete_model_version(full_name, version);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `delete_model_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3550,12 +3357,9 @@ impl PyClient {
         version: i64,
     ) -> PyUnityCatalogResult<PyModelVersionInfo> {
         let request = self.client.finalize_model_version(full_name, version);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyModelVersionInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyModelVersionInfo::from(result))
     }
 
     /// Like `finalize_model_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3596,12 +3400,9 @@ impl PyClient {
             .client
             .get_permissions(securable_type, full_name)
             .with_principal(principal);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyPermissionsList::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyPermissionsList::from(result))
     }
 
     /// Like `get_permissions`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3651,12 +3452,9 @@ impl PyClient {
                 .map(::core::convert::Into::into)
                 .collect(),
         );
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyPermissionsList::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyPermissionsList::from(result))
     }
 
     /// Like `update_permissions`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3700,22 +3498,17 @@ impl PyClient {
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyRecipientInfo>> {
         let request = self.client.list_recipients().with_max_results(max_results);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(async move {
-                request
-                    .into_stream()
-                    .try_collect::<::std::vec::Vec<_>>()
-                    .await
-            })?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PyRecipientInfo::from)
-                    .collect::<::std::vec::Vec<_>>(),
-            )
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, async move {
+            request
+                .into_stream()
+                .try_collect::<::std::vec::Vec<_>>()
+                .await
+        })??;
+        Ok(result
+            .into_iter()
+            .map(PyRecipientInfo::from)
+            .collect::<::std::vec::Vec<_>>())
     }
 
     /// Like `list_recipients`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3768,12 +3561,9 @@ impl PyClient {
             .create_recipient(name)
             .with_authentication_type(authentication_type.map(::core::convert::Into::into))
             .with_comment(comment);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyRecipientInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyRecipientInfo::from(result))
     }
 
     /// Like `create_recipient`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3823,22 +3613,17 @@ impl PyClient {
             .with_catalog_name(catalog_name)
             .with_schema_name(schema_name)
             .with_max_results(max_results);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(async move {
-                request
-                    .into_stream()
-                    .try_collect::<::std::vec::Vec<_>>()
-                    .await
-            })?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PyRegisteredModelInfo::from)
-                    .collect::<::std::vec::Vec<_>>(),
-            )
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, async move {
+            request
+                .into_stream()
+                .try_collect::<::std::vec::Vec<_>>()
+                .await
+        })??;
+        Ok(result
+            .into_iter()
+            .map(PyRegisteredModelInfo::from)
+            .collect::<::std::vec::Vec<_>>())
     }
 
     /// Like `list_registered_models`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3900,12 +3685,9 @@ impl PyClient {
             .client
             .create_registered_model(name, catalog_name, schema_name)
             .with_comment(comment);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyRegisteredModelInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyRegisteredModelInfo::from(result))
     }
 
     /// Like `create_registered_model`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -3951,22 +3733,17 @@ impl PyClient {
             .client
             .list_schemas(catalog_name)
             .with_max_results(max_results);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(async move {
-                request
-                    .into_stream()
-                    .try_collect::<::std::vec::Vec<_>>()
-                    .await
-            })?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PySchemaInfo::from)
-                    .collect::<::std::vec::Vec<_>>(),
-            )
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, async move {
+            request
+                .into_stream()
+                .try_collect::<::std::vec::Vec<_>>()
+                .await
+        })??;
+        Ok(result
+            .into_iter()
+            .map(PySchemaInfo::from)
+            .collect::<::std::vec::Vec<_>>())
     }
 
     /// Like `list_schemas`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4036,12 +3813,9 @@ impl PyClient {
             .with_comment(comment)
             .with_properties(properties.unwrap_or_default())
             .with_storage_root(storage_root);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PySchemaInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PySchemaInfo::from(result))
     }
 
     /// Like `create_schema`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4103,12 +3877,9 @@ impl PyClient {
             .with_filter(filter)
             .with_start_index(start_index)
             .with_count(count);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyListScimUsersResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyListScimUsersResponse::from(result))
     }
 
     /// Like `list_users`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4189,12 +3960,9 @@ impl PyClient {
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyScimUser::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyScimUser::from(result))
     }
 
     /// Like `create_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4254,12 +4022,9 @@ impl PyClient {
     #[pyo3(signature = (id))]
     pub fn get_user(&self, py: Python, id: String) -> PyUnityCatalogResult<PyScimUser> {
         let request = self.client.get_user(id);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyScimUser::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyScimUser::from(result))
     }
 
     /// Like `get_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4336,12 +4101,9 @@ impl PyClient {
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyScimUser::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyScimUser::from(result))
     }
 
     /// Like `replace_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4421,12 +4183,9 @@ impl PyClient {
                     .collect(),
             )
             .with_schemas(schemas.unwrap_or_default());
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `patch_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4464,12 +4223,9 @@ impl PyClient {
     #[pyo3(signature = (id))]
     pub fn delete_user(&self, py: Python, id: String) -> PyUnityCatalogResult<()> {
         let request = self.client.delete_user(id);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `delete_user`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4498,12 +4254,9 @@ impl PyClient {
     ///     A SCIM 2.0 user. The email of the user is its user name and its one primary email.
     pub fn get_me(&self, py: Python) -> PyUnityCatalogResult<PyScimUser> {
         let request = self.client.get_me();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyScimUser::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyScimUser::from(result))
     }
 
     /// Like `get_me`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4545,12 +4298,9 @@ impl PyClient {
             .with_filter(filter)
             .with_start_index(start_index)
             .with_count(count);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyListScimGroupsResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyListScimGroupsResponse::from(result))
     }
 
     /// Like `list_groups`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4607,12 +4357,9 @@ impl PyClient {
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyScimGroup::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyScimGroup::from(result))
     }
 
     /// Like `create_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4652,12 +4399,9 @@ impl PyClient {
     #[pyo3(signature = (id))]
     pub fn get_group(&self, py: Python, id: String) -> PyUnityCatalogResult<PyScimGroup> {
         let request = self.client.get_group(id);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyScimGroup::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyScimGroup::from(result))
     }
 
     /// Like `get_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4708,12 +4452,9 @@ impl PyClient {
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyScimGroup::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyScimGroup::from(result))
     }
 
     /// Like `replace_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4775,12 +4516,9 @@ impl PyClient {
                     .collect(),
             )
             .with_schemas(schemas.unwrap_or_default());
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyScimGroup::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyScimGroup::from(result))
     }
 
     /// Like `patch_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4816,12 +4554,9 @@ impl PyClient {
     #[pyo3(signature = (id))]
     pub fn delete_group(&self, py: Python, id: String) -> PyUnityCatalogResult<()> {
         let request = self.client.delete_group(id);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(result)
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result)
     }
 
     /// Like `delete_group`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4874,12 +4609,9 @@ impl PyClient {
                     .map(::core::convert::Into::into)
                     .collect::<::std::vec::Vec<_>>(),
             );
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyScimBulkResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyScimBulkResponse::from(result))
     }
 
     /// Like `scim_bulk`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4919,12 +4651,9 @@ impl PyClient {
     ///     The SCIM schemas of the server, User and Group, as a SCIM list (RFC 7644, section 4).
     pub fn list_scim_schemas(&self, py: Python) -> PyUnityCatalogResult<PyListScimSchemasResponse> {
         let request = self.client.list_scim_schemas();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyListScimSchemasResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyListScimSchemasResponse::from(result))
     }
 
     /// Like `list_scim_schemas`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4952,12 +4681,9 @@ impl PyClient {
         py: Python,
     ) -> PyUnityCatalogResult<PyListScimResourceTypesResponse> {
         let request = self.client.list_scim_resource_types();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyListScimResourceTypesResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyListScimResourceTypesResponse::from(result))
     }
 
     /// Like `list_scim_resource_types`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -4986,12 +4712,9 @@ impl PyClient {
         py: Python,
     ) -> PyUnityCatalogResult<PyScimServiceProviderConfig> {
         let request = self.client.get_service_provider_config();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyScimServiceProviderConfig::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyScimServiceProviderConfig::from(result))
     }
 
     /// Like `get_service_provider_config`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5045,12 +4768,9 @@ impl PyClient {
             .with_securable_type(securable_type)
             .with_max_results(max_results)
             .with_page_token(page_token);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PySearchObjectsResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PySearchObjectsResponse::from(result))
     }
 
     /// Like `search_objects`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5101,22 +4821,17 @@ impl PyClient {
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyShareInfo>> {
         let request = self.client.list_shares().with_max_results(max_results);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(async move {
-                request
-                    .into_stream()
-                    .try_collect::<::std::vec::Vec<_>>()
-                    .await
-            })?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PyShareInfo::from)
-                    .collect::<::std::vec::Vec<_>>(),
-            )
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, async move {
+            request
+                .into_stream()
+                .try_collect::<::std::vec::Vec<_>>()
+                .await
+        })??;
+        Ok(result
+            .into_iter()
+            .map(PyShareInfo::from)
+            .collect::<::std::vec::Vec<_>>())
     }
 
     /// Like `list_shares`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5161,12 +4876,9 @@ impl PyClient {
         comment: Option<String>,
     ) -> PyUnityCatalogResult<PyShareInfo> {
         let request = self.client.create_share(name).with_comment(comment);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyShareInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyShareInfo::from(result))
     }
 
     /// Like `create_share`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5197,12 +4909,9 @@ impl PyClient {
         py: Python,
     ) -> PyUnityCatalogResult<PySharingListSharesResponse> {
         let request = self.client.sharing_list_shares();
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PySharingListSharesResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PySharingListSharesResponse::from(result))
     }
 
     /// Like `sharing_list_shares`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5233,12 +4942,9 @@ impl PyClient {
         share: String,
     ) -> PyUnityCatalogResult<PySharingListSchemasResponse> {
         let request = self.client.sharing_list_schemas(share);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PySharingListSchemasResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PySharingListSchemasResponse::from(result))
     }
 
     /// Like `sharing_list_schemas`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5272,12 +4978,9 @@ impl PyClient {
         schema: String,
     ) -> PyUnityCatalogResult<PySharingListTablesResponse> {
         let request = self.client.sharing_list_tables(share, schema);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PySharingListTablesResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PySharingListTablesResponse::from(result))
     }
 
     /// Like `sharing_list_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5311,12 +5014,9 @@ impl PyClient {
         share: String,
     ) -> PyUnityCatalogResult<PySharingListTablesResponse> {
         let request = self.client.sharing_list_all_tables(share);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PySharingListTablesResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PySharingListTablesResponse::from(result))
     }
 
     /// Like `sharing_list_all_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5351,12 +5051,9 @@ impl PyClient {
         table: String,
     ) -> PyUnityCatalogResult<PySharingGetTableVersionResponse> {
         let request = self.client.sharing_get_table_version(share, schema, table);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PySharingGetTableVersionResponse::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PySharingGetTableVersionResponse::from(result))
     }
 
     /// Like `sharing_get_table_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5394,14 +5091,14 @@ impl PyClient {
         share: String,
         schema: String,
         table: String,
-    ) -> PyUnityCatalogResult<PySharingTableLine> {
+    ) -> PyUnityCatalogResult<Vec<PySharingTableLine>> {
         let request = self.client.sharing_get_table_metadata(share, schema, table);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PySharingTableLine::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result
+            .into_iter()
+            .map(PySharingTableLine::from)
+            .collect::<Vec<_>>())
     }
 
     /// Like `sharing_get_table_metadata`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5412,7 +5109,7 @@ impl PyClient {
         share: String,
         schema: String,
         table: String,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PySharingTableLine>> {
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, Vec<PySharingTableLine>>> {
         let request = self.client.sharing_get_table_metadata(share, schema, table);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
@@ -5420,7 +5117,10 @@ impl PyClient {
                 .into_future()
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(PySharingTableLine::from(result))
+            Ok(result
+                .into_iter()
+                .map(PySharingTableLine::from)
+                .collect::<Vec<_>>())
         })
     }
 
@@ -5438,14 +5138,14 @@ impl PyClient {
         share: String,
         schema: String,
         table: String,
-    ) -> PyUnityCatalogResult<PySharingTableLine> {
+    ) -> PyUnityCatalogResult<Vec<PySharingTableLine>> {
         let request = self.client.sharing_query_table(share, schema, table);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PySharingTableLine::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(result
+            .into_iter()
+            .map(PySharingTableLine::from)
+            .collect::<Vec<_>>())
     }
 
     /// Like `sharing_query_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5456,7 +5156,7 @@ impl PyClient {
         share: String,
         schema: String,
         table: String,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PySharingTableLine>> {
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, Vec<PySharingTableLine>>> {
         let request = self.client.sharing_query_table(share, schema, table);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
@@ -5464,7 +5164,10 @@ impl PyClient {
                 .into_future()
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(PySharingTableLine::from(result))
+            Ok(result
+                .into_iter()
+                .map(PySharingTableLine::from)
+                .collect::<Vec<_>>())
         })
     }
 
@@ -5489,12 +5192,9 @@ impl PyClient {
         let request = self
             .client
             .create_staging_table(name, catalog_name, schema_name);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyStagingTableInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyStagingTableInfo::from(result))
     }
 
     /// Like `create_staging_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5540,22 +5240,17 @@ impl PyClient {
             .client
             .list_tables(catalog_name, schema_name)
             .with_max_results(max_results);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(async move {
-                request
-                    .into_stream()
-                    .try_collect::<::std::vec::Vec<_>>()
-                    .await
-            })?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PyTableInfo::from)
-                    .collect::<::std::vec::Vec<_>>(),
-            )
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, async move {
+            request
+                .into_stream()
+                .try_collect::<::std::vec::Vec<_>>()
+                .await
+        })??;
+        Ok(result
+            .into_iter()
+            .map(PyTableInfo::from)
+            .collect::<::std::vec::Vec<_>>())
     }
 
     /// Like `list_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5656,12 +5351,9 @@ impl PyClient {
             .with_properties(properties.unwrap_or_default())
             .with_view_definition(view_definition)
             .with_view_dependencies(view_dependencies.map(::core::convert::Into::into));
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyTableInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyTableInfo::from(result))
     }
 
     /// Like `create_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5741,12 +5433,9 @@ impl PyClient {
         let request = self
             .client
             .generate_temporary_table_credentials(table_id, operation.into());
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyTemporaryCredentials::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyTemporaryCredentials::from(result))
     }
 
     /// Like `generate_temporary_table_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5789,12 +5478,9 @@ impl PyClient {
         let request = self
             .client
             .generate_temporary_volume_credentials(volume_id, operation.into());
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyTemporaryCredentials::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyTemporaryCredentials::from(result))
     }
 
     /// Like `generate_temporary_volume_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5837,12 +5523,9 @@ impl PyClient {
         let request = self
             .client
             .generate_temporary_path_credentials(url, operation.into());
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyTemporaryCredentials::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyTemporaryCredentials::from(result))
     }
 
     /// Like `generate_temporary_path_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5895,12 +5578,9 @@ impl PyClient {
             version,
             operation.into(),
         );
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyTemporaryCredentials::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyTemporaryCredentials::from(result))
     }
 
     /// Like `generate_temporary_model_version_credentials`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -5945,22 +5625,17 @@ impl PyClient {
         max_results: Option<i32>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyPatInfo>> {
         let request = self.client.list_tokens().with_max_results(max_results);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(async move {
-                request
-                    .into_stream()
-                    .try_collect::<::std::vec::Vec<_>>()
-                    .await
-            })?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PyPatInfo::from)
-                    .collect::<::std::vec::Vec<_>>(),
-            )
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, async move {
+            request
+                .into_stream()
+                .try_collect::<::std::vec::Vec<_>>()
+                .await
+        })??;
+        Ok(result
+            .into_iter()
+            .map(PyPatInfo::from)
+            .collect::<::std::vec::Vec<_>>())
     }
 
     /// Like `list_tokens`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -6008,12 +5683,9 @@ impl PyClient {
         expires_at: Option<i64>,
     ) -> PyUnityCatalogResult<PyPatInfo> {
         let request = self.client.create_token(name).with_expires_at(expires_at);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyPatInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyPatInfo::from(result))
     }
 
     /// Like `create_token`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -6056,22 +5728,17 @@ impl PyClient {
             .client
             .list_volumes(catalog_name, schema_name)
             .with_max_results(max_results);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(async move {
-                request
-                    .into_stream()
-                    .try_collect::<::std::vec::Vec<_>>()
-                    .await
-            })?;
-            Ok::<_, PyUnityCatalogError>(
-                result
-                    .into_iter()
-                    .map(PyVolumeInfo::from)
-                    .collect::<::std::vec::Vec<_>>(),
-            )
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, async move {
+            request
+                .into_stream()
+                .try_collect::<::std::vec::Vec<_>>()
+                .await
+        })??;
+        Ok(result
+            .into_iter()
+            .map(PyVolumeInfo::from)
+            .collect::<::std::vec::Vec<_>>())
     }
 
     /// Like `list_volumes`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -6144,12 +5811,9 @@ impl PyClient {
             .create_volume(catalog_name, schema_name, name, volume_type.into())
             .with_comment(comment)
             .with_storage_location(storage_location);
-        let runtime = crate::codegen::runtime::rt();
-        py.detach(|| {
-            #[allow(clippy::let_unit_value)]
-            let result = runtime.block_on(request.into_future())?;
-            Ok::<_, PyUnityCatalogError>(PyVolumeInfo::from(result))
-        })
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyVolumeInfo::from(result))
     }
 
     /// Like `create_volume`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -6534,7 +6198,6 @@ pub mod extension_module {
     /// module in full.
     #[pymodule_init]
     fn init(py: Python<'_>) -> PyResult<()> {
-        crate::codegen::runtime::init_async_runtime();
         let modules = py.import("sys")?.getattr("modules")?;
         match modules.get_item(super::CORE_MODULE) {
             Ok(module) => super::add_submodules_to_sys_modules(module.cast()?),
