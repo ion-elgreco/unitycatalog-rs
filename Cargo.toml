@@ -66,8 +66,9 @@ utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-axum = "0.2"
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 
-# HTTP client
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream", "query", "form"] }
+# HTTP client. No `stream`: on wasm32 it pulls in wasm-streams 0.5, whose exports clash with
+# the wasm-streams 0.4 of leptos in uc-ui. A crate that streams bodies turns it on.
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "query", "form"] }
 # The transport of uc-client on native targets, and the bearer tokens of cloud identities (its
 # `identity` feature).
 olai-http = { git = "https://github.com/ion-elgreco/trestle", branch = "feat/client-credential-provider" }
