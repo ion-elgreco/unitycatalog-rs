@@ -215,6 +215,18 @@ tests:
       - failedTemplate:
           errorMessage: auth.issuers[0].audiences is required
 
+  - it: needs direct and createUsers as booleans, not text
+    set:
+      auth.issuers:
+        - name: entra
+          issuer: https://login.microsoftonline.com/t/v2.0
+          audiences: ["https://uc.example.com"]
+          direct: "false"
+    template: templates/server/deployment.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: auth.issuers[0].direct must be true or false, not "false"
+
   - it: needs the accounts of an AWS identity provider, not its issuer
     set:
       auth.issuers:
