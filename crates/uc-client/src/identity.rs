@@ -873,7 +873,14 @@ impl Gcloud {
     }
 
     async fn print_identity_token(&self, audience: bool) -> Result<String> {
-        let mut command = tokio::process::Command::new("gcloud");
+        // On Windows, gcloud is a batch file, which `Command` finds only by its full name; it
+        // quotes the arguments of batch files for `cmd`.
+        let program = if cfg!(windows) {
+            "gcloud.cmd"
+        } else {
+            "gcloud"
+        };
+        let mut command = tokio::process::Command::new(program);
         command.args(["auth", "print-identity-token"]);
         if audience {
             command.arg("--audiences").arg(&self.audience);
