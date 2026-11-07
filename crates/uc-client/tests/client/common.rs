@@ -28,8 +28,21 @@ use uc_server::{AppState, build_app};
 
 /// Serve `app` on a free port of this machine; its root URL.
 pub async fn serve(app: Router) -> Url {
+    let (listener, url) = listen().await;
+    serve_on(listener, app);
+    url
+}
+
+/// A free port of this machine, and the root URL of a server on it, for a
+/// server that needs its URL before it is made.
+pub async fn listen() -> (tokio::net::TcpListener, Url) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
+    let url = format!("http://{}/", listener.local_addr().unwrap());
+    (listener, url.parse().unwrap())
+}
+
+/// Serve `app` on `listener`.
+pub fn serve_on(listener: tokio::net::TcpListener, app: Router) {
     tokio::spawn(async move {
         axum::serve(
             listener,
@@ -38,7 +51,6 @@ pub async fn serve(app: Router) -> Url {
         .await
         .unwrap();
     });
-    format!("http://{addr}/").parse().unwrap()
 }
 
 /// A new test database.

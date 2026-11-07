@@ -561,12 +561,19 @@ pub struct Issuer {
 }
 
 impl Issuer {
-    /// The audience to ask the provider for: the first that is not `*`.
-    fn audience(&self) -> Option<&str> {
-        self.audiences
-            .iter()
-            .map(String::as_str)
-            .find(|audience| *audience != "*")
+    /// The audience to ask the provider for, for the server at `server`: the block's audience
+    /// that `UC_AUDIENCE` names, else the one that is the server's URL (its scheme, host and
+    /// port). The server's metadata needs no sign-in, so the client does not take any other:
+    /// a server could name the audience of another server or service, and have the identity
+    /// of the environment sign for it.
+    fn audience(&self, env: &Env, server: &Url) -> Option<&str> {
+        let mut audiences = self.audiences.iter().map(String::as_str);
+        match set(env, "UC_AUDIENCE") {
+            Some(wanted) => audiences.find(|audience| *audience == wanted),
+            None => audiences.find(|audience| {
+                Url::parse(audience).is_ok_and(|url| url.origin() == server.origin())
+            }),
+        }
     }
 
     /// The provider, by its kind and its issuer.
@@ -630,6 +637,9 @@ pub async fn metadata(server: &Url) -> Result<Option<ProtectedResource>> {
 ///    on the path, or the machine is Google's), an AWS identity at an AWS block ([`aws`], when
 ///    the AWS variables of keys, a web identity, a container or a region are set).
 ///
+/// The audience of an issuer is the one that `UC_AUDIENCE` names, else the server's URL: a
+/// block without either is skipped.
+///
 /// Without any of these, `None`, and the server is not asked anything. A server that does not
 /// answer, or has no metadata, gives `None` too: the call that follows says what is wrong.
 pub async fn detect(server: &Url) -> Result<Option<Arc<dyn TokenSource>>> {
@@ -646,7 +656,7 @@ pub async fn detect_in(
     if !hints(env, az, gcloud) {
         return Ok(None);
     }
-    let issuers = match choose(env, &[], az, gcloud) {
+    let issuers = match choose(env, server, &[], az, gcloud) {
         // A token needs no issuer; an OAuth client takes the audience from one.
         Some(Choice::Token(_) | Choice::TokenFile(_)) => Vec::new(),
         _ => metadata(server)
@@ -656,7 +666,7 @@ pub async fn detect_in(
             .map(|resource| resource.issuers)
             .unwrap_or_default(),
     };
-    match choose(env, &issuers, az, gcloud) {
+    match choose(env, server, &issuers, az, gcloud) {
         Some(choice) => build(choice, env, az, gcloud).map(Some),
         None => Ok(None),
     }
@@ -741,8 +751,9 @@ fn google_hints(env: &Env, gcloud: bool) -> bool {
         .any(|var| set(env, var).is_some())
 }
 
-/// The choice of [`detect`] for the variables `env` and the server's `issuers`.
-fn choose(env: &Env, issuers: &[Issuer], az: bool, gcloud: bool) -> Option<Choice> {
+/// The choice of [`detect`] for the variables `env`, and the `issuers` of the server at
+/// `server`.
+fn choose(env: &Env, server: &Url, issuers: &[Issuer], az: bool, gcloud: bool) -> Option<Choice> {
     if let Some(token) = set(env, "UC_TOKEN") {
         return Some(Choice::Token(token.to_string()));
     }
@@ -758,9 +769,9 @@ fn choose(env: &Env, issuers: &[Issuer], az: bool, gcloud: bool) -> Option<Choic
         let audience = set(env, "UC_OAUTH_AUDIENCE")
             .map(str::to_string)
             .or_else(|| {
-                direct
-                    .iter()
-                    .find_map(|issuer| issuer.audience().map(str::to_string))
+                (direct.iter())
+                    .filter(|issuer| issuer.kind() != Kind::Aws)
+                    .find_map(|issuer| issuer.audience(env, server).map(str::to_string))
             });
         return Some(Choice::ClientCredentials {
             token_url: token_url.to_string(),
@@ -771,7 +782,7 @@ fn choose(env: &Env, issuers: &[Issuer], az: bool, gcloud: bool) -> Option<Choic
         });
     }
     for issuer in direct {
-        let Some(audience) = issuer.audience() else {
+        let Some(audience) = issuer.audience(env, server) else {
             continue;
         };
         match issuer.kind() {
@@ -960,6 +971,11 @@ mod tests {
         }
     }
 
+    /// The server of the tests.
+    fn server() -> Url {
+        Url::parse("https://uc.example.com/").unwrap()
+    }
+
     #[test]
     fn scopes_and_kinds() {
         assert_eq!(azure_scope("api://uc"), "api://uc/.default");
@@ -974,11 +990,31 @@ mod tests {
         assert_eq!(kind("https://accounts.google.com"), Kind::Google);
         assert_eq!(kind("http://localhost:8090/realms/uc"), Kind::Other);
         assert_eq!(kind("not a url"), Kind::Other);
-        let any = Issuer {
-            audiences: vec!["*".into()],
+    }
+
+    #[test]
+    fn the_audience_is_the_servers_url_or_the_one_named() {
+        let block = Issuer {
+            audiences: vec![
+                "*".into(),
+                "https://management.azure.com".into(),
+                "1f0a6b3c".into(),
+                "https://uc.example.com:443/api".into(),
+            ],
             ..issuer("x", "https://a", "", true)
         };
-        assert_eq!(any.audience(), None);
+        let none = env(&[]);
+        assert_eq!(
+            block.audience(&none, &server()),
+            Some("https://uc.example.com:443/api")
+        );
+        let other = Url::parse("http://uc.example.com").unwrap();
+        assert_eq!(block.audience(&none, &other), None);
+        let named = env(&[("UC_AUDIENCE", "1f0a6b3c")]);
+        assert_eq!(block.audience(&named, &server()), Some("1f0a6b3c"));
+        // Only one of the block's.
+        let unknown = env(&[("UC_AUDIENCE", "https://graph.microsoft.com")]);
+        assert_eq!(block.audience(&unknown, &server()), None);
     }
 
     #[test]
@@ -991,14 +1027,28 @@ mod tests {
 
     #[test]
     fn the_environment_chooses() {
+        let server = server();
+        let choose = |env: &Env, issuers: &[Issuer], az: bool, gcloud: bool| {
+            super::choose(env, &server, issuers, az, gcloud)
+        };
         let entra = issuer(
             "entra",
             "https://login.microsoftonline.com/t/v2.0",
-            "api://uc",
+            "https://uc.example.com",
             true,
         );
-        let google = issuer("google", "https://accounts.google.com", "uc", true);
-        let exchange_only = issuer("ferriskey", "http://localhost:8090/realms/uc", "uc", false);
+        let google = issuer(
+            "google",
+            "https://accounts.google.com",
+            "https://uc.example.com",
+            true,
+        );
+        let exchange_only = issuer(
+            "ferriskey",
+            "http://localhost:8090/realms/uc",
+            "https://uc.example.com",
+            false,
+        );
         let issuers = [exchange_only.clone(), entra.clone(), google.clone()];
 
         // Nothing to sign in with.
@@ -1013,54 +1063,48 @@ mod tests {
             choose(&env(&[("UC_TOKEN_FILE", "/run/token")]), &[], false, false),
             Some(Choice::TokenFile("/run/token".into()))
         );
-        // An OAuth client takes the audience of the first direct issuer.
+        // An OAuth client takes the audience of the first direct issuer that is not AWS's.
         let oauth = env(&[
             ("UC_OAUTH_TOKEN_URL", "https://idp/token"),
             ("UC_OAUTH_CLIENT_ID", "etl"),
             ("UC_OAUTH_CLIENT_SECRET", "s"),
         ]);
         assert!(hints(&oauth, false, false));
+        let aws = Issuer {
+            kind: "aws".into(),
+            ..issuer("aws", "", "https://uc.example.com", true)
+        };
         assert_eq!(
-            choose(&oauth, &issuers, false, false),
+            choose(&oauth, &[aws.clone(), entra.clone()], false, false),
             Some(Choice::ClientCredentials {
                 token_url: "https://idp/token".into(),
                 client_id: "etl".into(),
                 client_secret: "s".into(),
                 scope: None,
-                audience: Some("api://uc".into()),
+                audience: Some("https://uc.example.com".into()),
             })
         );
+        assert!(matches!(
+            choose(&oauth, std::slice::from_ref(&aws), false, false),
+            Some(Choice::ClientCredentials { audience: None, .. })
+        ));
         // The first direct issuer the environment can sign in to.
         let service_principal = env(&[
             ("AZURE_TENANT_ID", "t"),
             ("AZURE_CLIENT_ID", "c"),
             ("AZURE_CLIENT_SECRET", "s"),
         ]);
-        assert_eq!(
-            choose(&service_principal, &issuers, false, false),
-            Some(Choice::Azure {
-                scope: "api://uc/.default".into()
-            })
-        );
-        assert_eq!(
-            choose(&env(&[]), &issuers, true, false),
-            Some(Choice::Azure {
-                scope: "api://uc/.default".into()
-            })
-        );
+        let scope = Some(Choice::Azure {
+            scope: "https://uc.example.com/.default".into(),
+        });
+        assert_eq!(choose(&service_principal, &issuers, false, false), scope);
+        assert_eq!(choose(&env(&[]), &issuers, true, false), scope);
         let key_file = env(&[("GOOGLE_APPLICATION_CREDENTIALS", "/k.json")]);
-        assert_eq!(
-            choose(&key_file, &issuers, false, false),
-            Some(Choice::Google {
-                audience: "uc".into()
-            })
-        );
-        assert_eq!(
-            choose(&env(&[]), &issuers, false, true),
-            Some(Choice::Google {
-                audience: "uc".into()
-            })
-        );
+        let audience = Some(Choice::Google {
+            audience: "https://uc.example.com".into(),
+        });
+        assert_eq!(choose(&key_file, &issuers, false, false), audience);
+        assert_eq!(choose(&env(&[]), &issuers, false, true), audience);
         // Not at an issuer the environment cannot sign in to, nor one taken at the exchange
         // only.
         assert_eq!(
@@ -1071,18 +1115,32 @@ mod tests {
             choose(&service_principal, &[exchange_only], false, false),
             None
         );
-        // Not without an audience to ask for.
-        let any = Issuer {
-            audiences: vec!["*".into()],
+        // Not without an audience to ask for: one for another service, or any.
+        for audiences in [
+            vec!["*".to_string()],
+            vec!["https://management.azure.com".into()],
+        ] {
+            let other = Issuer {
+                audiences,
+                ..entra.clone()
+            };
+            assert_eq!(choose(&service_principal, &[other], false, false), None);
+        }
+        // Unless `UC_AUDIENCE` names it.
+        let client_id = Issuer {
+            audiences: vec!["1f0a6b3c".into()],
             ..entra
         };
-        assert_eq!(choose(&service_principal, &[any], false, false), None);
+        let mut named = service_principal.clone();
+        named.insert("UC_AUDIENCE".into(), "1f0a6b3c".into());
+        assert_eq!(
+            choose(&named, &[client_id], false, false),
+            Some(Choice::Azure {
+                scope: "1f0a6b3c/.default".into()
+            })
+        );
 
         // An AWS identity at an AWS block: AWS's endpoints, or the block's own.
-        let aws = Issuer {
-            kind: "aws".into(),
-            ..issuer("aws", "", "https://uc.example.com", true)
-        };
         let keys = env(&[
             ("AWS_ACCESS_KEY_ID", "AKIA"),
             ("AWS_SECRET_ACCESS_KEY", "s"),
@@ -1095,6 +1153,12 @@ mod tests {
                 endpoint: None,
             })
         );
+        // Never the server id of another server.
+        let elsewhere = Issuer {
+            audiences: vec!["https://other.example.com".into()],
+            ..aws.clone()
+        };
+        assert_eq!(choose(&keys, &[elsewhere], false, false), None);
         let vpc = Issuer {
             issuer: "https://vpce-1.sts.eu-west-1.vpce.amazonaws.com/".into(),
             ..aws.clone()

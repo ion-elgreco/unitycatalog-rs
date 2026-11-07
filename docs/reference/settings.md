@@ -129,7 +129,7 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 [[auth.issuers]]
 name = "entra"
 issuer = "https://login.microsoftonline.com/<tenant>/v2.0"
-audiences = ["api://uc"]
+audiences = ["<the API app's client id>", "https://uc.example.com"]
 direct = true
 principal_claims = ["preferred_username", "oid"]
 client_claims = ["azp", "appid"]
@@ -143,7 +143,7 @@ display_name = "{app_displayname}"
 | `name` | required | A short name of lowercase letters, digits, `-` and `_`: the prefix of the principals it names without an email, such as `entra:<oid>`. |
 | `kind` | `oidc` | `oidc` for an OpenID Connect provider; `aws` for AWS identities, whose signed `GetCallerIdentity` requests the server sends to STS. |
 | `issuer` | required | The `iss` claim of its tokens, as they write it, with a trailing `/` if they have one; `*` stands for one DNS label of letters, digits and `-`, and in the host it needs two fixed labels after it. For `aws`, the URL of the STS endpoint, by default AWS's global and regional ones. |
-| `audiences` | required | The `aud` that its tokens must carry; `["*"]` accepts every audience, without `direct`; with `direct`, no `*`. For `aws`, the server id that the signed requests carry; no `*`. |
+| `audiences` | required | The `aud` that its tokens must carry; `["*"]` accepts every audience, without `direct`; with `direct`, no `*`. For `aws`, the server id that the signed requests carry: the server's URL as clients call it; no `*`. Clients ask for the audience that is the server's URL. |
 | `accounts` | required for `aws` | The 12-digit AWS accounts whose identities it takes. |
 | `direct` | `false` | Take its tokens on every request, not only at the token exchange. |
 | `principal_claims` | `["email", "sub"]` | The claims that name the caller; the first present wins. An email names the user with that email; any other value names the user `<name>:<value>`. |

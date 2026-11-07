@@ -89,7 +89,7 @@ A request signs in with one of these tokens:
     [[auth.issuers]]
     name = "entra"
     issuer = "https://login.microsoftonline.com/<tenant>/v2.0"
-    audiences = ["api://uc"]
+    audiences = ["<the API app's client id>", "https://uc.example.com"]
     direct = true
     principal_claims = ["preferred_username", "oid"]
     client_claims = ["azp", "appid"]
@@ -131,6 +131,11 @@ Several blocks can have the same issuer with other audiences: a token is the fir
 has its issuer and takes its audience. For `aws`, a signed request is the first block's that takes
 its endpoint, server id and account.
 
+The [Python client](../clients/python.md#connect) and `uc` take the audience of a block from that
+list: the one that `UC_AUDIENCE` names, else the one that is the server's URL, as they call it.
+The list needs no sign-in, so a client takes no other audience: a server could name the audience
+of another service, and have the client's identity sign for it.
+
 ### Who a token names
 
 1. The first of `principal_claims` that the token has. A value that is an email, such as
@@ -171,8 +176,8 @@ matches, such as each tenant, would name the same groups.
 
 | Provider | Block | Notes |
 | --- | --- | --- |
-| Microsoft Entra | `issuer = "https://login.microsoftonline.com/<tenant>/v2.0"`, `audiences = ["api://<app id uri>"]` or the API app's client id, `principal_claims = ["preferred_username", "oid"]`, `client_claims = ["azp", "appid"]`, `groups_claim = "roles"` | Set `accessTokenAcceptedVersion` to 2 on the API app, or add a block for `https://sts.windows.net/<tenant>/` with `principal_claims = ["upn", "oid"]` and `client_claims = ["appid"]`. Add the `idtyp` optional claim so applications are told from people. A client asks for the scope `api://<app id uri>/.default`. |
-| Google | `issuer = "https://accounts.google.com"`, `audiences = ["<your audience>"]`, `principal_claims = ["email", "sub"]` | Google's access tokens are opaque: clients send an ID token with your audience. |
+| Microsoft Entra | `issuer = "https://login.microsoftonline.com/<tenant>/v2.0"`, `audiences = ["<the API app's client id>", "https://uc.example.com"]`, `principal_claims = ["preferred_username", "oid"]`, `client_claims = ["azp", "appid"]`, `groups_claim = "roles"` | The `aud` of Entra's v2 access tokens is the API app's client id. Give the API app the server's URL as its Application ID URI (its domain must be verified), and clients ask for the scope `https://uc.example.com/.default`. Set `accessTokenAcceptedVersion` to 2 on the API app, or add a block for `https://sts.windows.net/<tenant>/` with `principal_claims = ["upn", "oid"]` and `client_claims = ["appid"]`. Add the `idtyp` optional claim so applications are told from people. |
+| Google | `issuer = "https://accounts.google.com"`, `audiences = ["https://uc.example.com"]`, `principal_claims = ["email", "sub"]` | Google's access tokens are opaque: clients send an ID token for the audience, the server's URL. |
 | Any OpenID Connect provider | `issuer`, `audiences = ["<client id>"]` | FerrisKey, Keycloak, Okta, GitHub Actions, GitLab CI, a Kubernetes cluster's issuer. The provider must publish `<issuer>/.well-known/openid-configuration` and its keys. |
 | AWS | `kind = "aws"`, `audiences = ["<server id>"]`, `accounts = ["<account id>"]` | See [AWS](#aws). |
 
@@ -200,8 +205,11 @@ accounts = ["123456789012"]
 create_users = true
 ```
 
-- **The server id** is the block's audience. The client signs it into the request, so a request
-  signed for another server is refused here. Use the server's URL, or any fixed name.
+- **The server id** is the block's audience: the server's URL, as clients call it, such as
+  `https://uc.example.com`. List each URL that clients use. The client signs it into the
+  request, so a request signed for another server is refused here. A client signs only the URL
+  it calls, else the server id that `UC_AUDIENCE` names, so another server cannot have it sign
+  for this one.
 - **The endpoint** is AWS's global or regional STS endpoint, unless `issuer` names another one,
   such as a VPC endpoint. The server sends signed requests to no other host.
 - **The caller** is named by its ARN: `aws:arn:aws:iam::<account>:role/<name>` for an assumed

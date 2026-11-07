@@ -43,11 +43,13 @@ ways:
     | Any OAuth client | `UC_OAUTH_TOKEN_URL`, `UC_OAUTH_CLIENT_ID`, `UC_OAUTH_CLIENT_SECRET`, with `UC_OAUTH_SCOPE` and `UC_OAUTH_AUDIENCE` when the provider needs them |
     | A token | `UC_TOKEN`, or a file with one in `UC_TOKEN_FILE` |
 
-    The Azure and Google identities ask for a token for the audience of the server's issuer, so
+    The Azure and Google identities ask for a token for an audience of the server's issuer, so
     the server must list the provider with `direct = true`. An AWS identity signs a request for
-    STS with the server id of the server's AWS block ([AWS](../server/auth.md#aws)). The AWS
-    CLI's profiles are not read: `aws configure export-credentials --format env` puts a profile's
-    keys in the environment.
+    STS with the server id of the server's AWS block ([AWS](../server/auth.md#aws)). The audience
+    or server id is the one that `UC_AUDIENCE` names, else the server's URL as the client calls
+    it: the client asks for no other, so a server cannot have the identity sign for another
+    service. The AWS CLI's profiles are not read: `aws configure export-credentials --format env`
+    puts a profile's keys in the environment.
 
 - **A token source.** `token_provider=` names one: one of `unitycatalog.identity`, with the scope
   or audience of the server's issuer, or a callable that returns the token, or a pair of the
@@ -58,8 +60,8 @@ ways:
 
     from unitycatalog import Client, identity
 
-    Client(url, token_provider=identity.azure("api://uc/.default"))
-    Client(url, token_provider=identity.google("uc"))
+    Client(url, token_provider=identity.azure("https://uc.example.com/.default"))
+    Client(url, token_provider=identity.google("https://uc.example.com"))
     Client(url, token_provider=identity.aws("https://uc.example.com"))
     Client(url, token_provider=identity.client_credentials(token_url, client_id, client_secret))
     Client(url, token_provider=lambda: (fetch_token(), time.time() + 3600))
