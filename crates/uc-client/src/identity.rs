@@ -58,6 +58,11 @@ pub fn azure_scope(audience: &str) -> String {
     }
 }
 
+/// A character of an Entra scope: a letter, a digit, or one of `-._~:/`.
+fn scope_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || "-._~:/".contains(c)
+}
+
 /// The resource of a scope: `api://uc/.default` is `api://uc`.
 fn azure_resource(scope: &str) -> String {
     scope.trim_end_matches("/.default").to_string()
@@ -74,6 +79,11 @@ pub fn azure(scope: &str) -> Result<Arc<dyn TokenSource>> {
 }
 
 fn azure_in(env: &Env, scope: &str, az: bool) -> Result<Arc<dyn TokenSource>> {
+    // The Azure CLI runs through `cmd /C` on Windows, which reads `&`, `|`, `%` and the like
+    // in its arguments; an Entra scope is a URI without them.
+    if scope.is_empty() || !scope.chars().all(scope_char) {
+        return Err(format!("not an Entra scope: {scope:?}").into());
+    }
     let auth = BearerAuth::new();
     let authority = set(env, "AZURE_AUTHORITY_HOST").map(str::to_string);
     let provider = match azure_identity(env, az) {
@@ -969,6 +979,14 @@ mod tests {
             ..issuer("x", "https://a", "", true)
         };
         assert_eq!(any.audience(), None);
+    }
+
+    #[test]
+    fn scopes_cannot_hold_commands() {
+        for scope in ["api://x&calc&rem/.default", "a|b", "%PATH%", "a b", ""] {
+            assert!(azure_in(&env(&[]), scope, true).is_err(), "{scope}");
+        }
+        assert!(azure_in(&env(&[]), "https://uc.example.com/.default", true).is_ok());
     }
 
     #[test]
