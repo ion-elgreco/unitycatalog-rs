@@ -859,8 +859,9 @@ pub struct ScimUser {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub id: ::buffa::alloc::string::String,
-    /// The identity the user has at the client's identity provider. The token exchange resolves an
-    /// OAuth client (`azp`, `client_id`) to the user by it.
+    /// The identity the user has at an identity provider. An application's own token names the user
+    /// whose external id is the name of the issuer block and the client id, such as
+    /// `entra:<client id>`.
     ///
     /// Field 3: `external_id`
     #[serde(

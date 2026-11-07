@@ -122,7 +122,7 @@ the blocks (RFC 9728), so a client can ask the provider for a token with the rig
 | `accounts` | For `aws`: the AWS accounts whose identities it takes. | required for `aws` |
 | `direct` | Take its tokens on every request, not only at the exchange. | `false` |
 | `principal_claims` | The claims that name the caller; the first present wins. | `["email", "sub"]` |
-| `client_claims` | The claims with a machine's client id, matched to a user's `externalId`. | `["azp", "client_id"]` |
+| `client_claims` | The claims with an application's client id: the user whose `externalId` is `<name>:<client id>` is the application. | `["azp", "client_id"]` |
 | `groups_claim` | A claim whose values are names of groups the caller is in. Not with an `issuer` that has `*`. | none |
 | `create_users` | Make the user at its first request when it is missing. | `false` |
 | `display_name` | The display name of a made user, with claims in braces. | the principal |
@@ -136,14 +136,16 @@ its endpoint, server id and account.
 1. The first of `principal_claims` that the token has. A value with `@` is an email and names
    the user with that email, unless the provider says `email_verified = false`. Any other value
    names the user `<name>:<value>`, such as `entra:7f3e…`.
-2. Nobody found, and the token is an application's own (an access token with `idtyp = app`, or
-   without an email-like claim): the first of `client_claims` whose value is a user's
-   `externalId`. This is how a user made ahead of time, with `uc user create --external_id` or
-   `[[auth.users]]`, is the service principal. A person's token from `az` or `gcloud` carries
-   that tool's client id, so a person is never matched by it.
-3. Nobody found: with `create_users`, the server makes the user, named as in step 1, with the
-   client id of an application as `externalId` and `display_name` filled from the token. Else
-   the request is refused with "User not allowed".
+2. Nobody found, and the token is an application's own: an access token with `idtyp = app`
+   (Entra), or whose `sub` is its client id (RFC 9068), or an AWS identity. Then the user whose
+   `externalId` is `<name>:<client id>`, with the first of `client_claims` that the token has,
+   such as `entra:<client id>`. This is how a user made ahead of time, with
+   `uc user create --external_id` or `[[auth.users]]`, is the service principal. A person's
+   token carries the client id of the tool or the page they signed in with, such as `az`, which
+   many people share, so it never names such a user.
+3. Nobody found: with `create_users`, the server makes the user, named as in step 1, with
+   `<name>:<client id>` of an application as `externalId` and `display_name` filled from the
+   token. Else the request is refused with "User not allowed".
 
 A user that is disabled names nobody, and the server's own `admin` can never be assumed. The web
 UI's sign-in (`oidc_issuer`) names its users the same way, with the block of that issuer when
@@ -203,7 +205,8 @@ create_users = true
 - **The caller** is named by its ARN: `aws:arn:aws:iam::<account>:role/<name>` for an assumed
   role, so every session of a role is one user. A role's path is not part of it. An IAM user is
   `aws:arn:aws:iam::<account>:user/<name>`.
-- **A user made ahead of time** is the role when its `externalId` is the role's ARN.
+- **A user made ahead of time** is the role when its `externalId` is `<name>:<the role's ARN>`,
+  such as `aws:arn:aws:iam::123456789012:role/etl`.
 - **Accounts.** STS answers for any account, so only identities of `accounts` are taken.
 
 A signed request is valid for 15 minutes. The server keeps the caller it names for five, as it

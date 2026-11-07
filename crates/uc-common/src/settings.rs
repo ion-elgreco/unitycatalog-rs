@@ -271,8 +271,9 @@ pub struct AuthUser {
     pub email: String,
     /// The display name.
     pub name: Option<String>,
-    /// The id of the user's OAuth client (`azp` or `client_id`), for a
-    /// machine client that signs in with its own access tokens.
+    /// `<issuer block name>:<client id>` of the application that the user is,
+    /// for an application that signs in with its own access tokens, such as
+    /// `entra:<client id>`.
     pub external_id: Option<String>,
     /// Privileges on the metastore, such as `CREATE CATALOG`.
     #[serde(default)]
@@ -312,8 +313,9 @@ pub struct Issuer {
     /// `<name>:<value>` (default `["email", "sub"]`).
     #[serde(default)]
     pub principal_claims: Vec<String>,
-    /// The claims with a machine's client id, matched to a user's
-    /// `externalId` (default `["azp", "client_id"]`).
+    /// The claims with an application's client id: the user whose
+    /// `externalId` is `<name>:<client id>` is the application (default
+    /// `["azp", "client_id"]`).
     #[serde(default)]
     pub client_claims: Vec<String>,
     /// A claim whose values are names of groups the caller is in: the

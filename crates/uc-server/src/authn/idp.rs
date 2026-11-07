@@ -455,11 +455,9 @@ pub(crate) enum TokenKind {
 /// 1. The first of `principal_claims` present. An email names the user
 ///    with that email, unless the provider says `email_verified: false`;
 ///    any other value names the user `<issuer name>:<value>`.
-/// 2. Nobody found, and the token is an application's own (an access
-///    token with `idtyp = app`, or without an email-like claim): the first
-///    of `client_claims` present that is a user's `externalId`. A person's
-///    token from `az` or `gcloud` carries that tool's client id, so a
-///    person is never matched by it.
+/// 2. Nobody found, and the token is an application's own
+///    ([`application`]): the user whose `externalId` is
+///    `<issuer name>:<client id>`.
 /// 3. Nobody found: with `create_users`, the user is made; else
 ///    "User not allowed".
 ///
@@ -495,37 +493,50 @@ pub(crate) async fn resolve(
             }
         }
     }
-    let app_token = kind == TokenKind::AccessToken
-        && (claim(claims, "idtyp").is_some_and(|t| t.eq_ignore_ascii_case("app"))
-            || !candidate.as_ref().is_some_and(|(_, is_email)| *is_email));
-    if app_token {
-        for name in &issuer.client_claims {
-            let Some(client) = claim(claims, name) else {
-                continue;
-            };
-            if let Some(user) = scim.find_user_by_external_id(client).await? {
-                return assumable(user).ok_or_else(not_allowed);
-            }
-        }
+    let external_id = application(issuer, claims, kind);
+    if let Some(external_id) = &external_id
+        && let Some(user) = scim.find_user_by_external_id(external_id).await?
+    {
+        return assumable(user).ok_or_else(not_allowed);
     }
     match candidate {
         Some((principal, is_email)) if issuer.create_users && principal != ADMIN => {
-            create(state, issuer, claims, principal, is_email, app_token).await
+            create(state, issuer, claims, principal, is_email, external_id).await
         }
         _ => Err(not_allowed()),
     }
 }
 
+/// The `externalId` of an application's user, `<issuer name>:<client id>`
+/// with the first of `client_claims` present, when the token is that
+/// application's own: an access token with `idtyp = app` (Entra), or whose
+/// `sub` is its client id (RFC 9068), or an AWS identity. A person's token
+/// carries the client id of the tool or the page that the person signed in
+/// with, which many people share, so it is no application's. The name of
+/// the issuer keeps the client ids of providers apart.
+fn application(
+    issuer: &IssuerSettings,
+    claims: &Map<String, Value>,
+    kind: TokenKind,
+) -> Option<String> {
+    let client = (issuer.client_claims.iter()).find_map(|name| claim(claims, name))?;
+    let own = issuer.is_aws()
+        || (kind == TokenKind::AccessToken
+            && (claim(claims, "idtyp").is_some_and(|t| t.eq_ignore_ascii_case("app"))
+                || claim(claims, "sub") == Some(client)));
+    own.then(|| format!("{}:{client}", issuer.name))
+}
+
 /// Make the user `principal` at its first request: its email when the
-/// principal is one, `externalId` from the first client claim of an
-/// application's token, and `displayName` from the issuer's template.
+/// principal is one, `external_id` for an application ([`application`]),
+/// and `displayName` from the issuer's template.
 async fn create(
     state: &AppState,
     issuer: &IssuerSettings,
     claims: &Map<String, Value>,
     principal: String,
     is_email: bool,
-    app_token: bool,
+    external_id: Option<String>,
 ) -> Result<String> {
     let scim = state.metastore.scim();
     let display_name = issuer
@@ -534,16 +545,6 @@ async fn create(
         .map(|text| template(text, claims))
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| principal.clone());
-    let mut external_id = None;
-    if app_token
-        && let Some(client) = issuer
-            .client_claims
-            .iter()
-            .find_map(|name| claim(claims, name))
-        && scim.find_user_by_external_id(client).await?.is_none()
-    {
-        external_id = Some(client.to_string());
-    }
     let user = ScimUser {
         schemas: vec![schema_uri::USER.to_string()],
         user_name: principal.clone(),

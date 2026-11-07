@@ -752,8 +752,9 @@ class ScimUser:
     @property
     def external_id(self, /) -> str | None:
         """
-        The identity the user has at the client's identity provider. The token exchange resolves an
-        OAuth client (`azp`, `client_id`) to the user by it.
+        The identity the user has at an identity provider. An application's own token names the user
+        whose external id is the name of the issuer block and the client id, such as
+        `entra:<client id>`.
         """
     @property
     def id(self, /) -> str:

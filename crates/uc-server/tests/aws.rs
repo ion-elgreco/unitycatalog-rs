@@ -111,7 +111,7 @@ async fn a_role_signs_in_with_a_signed_request() {
         .unwrap();
     assert_eq!(
         (made.principal(), made.external_id.as_deref()),
-        (ETL, Some("arn:aws:iam::123456789012:role/etl"))
+        (ETL, Some(ETL))
     );
     // The token is kept: STS is asked once for it.
     assert_eq!(get(&app, &token).await.status(), StatusCode::OK);
@@ -206,7 +206,7 @@ async fn a_missing_user_is_refused_unless_made_or_known() {
     .await;
     assert_eq!(err["message"], "User not allowed");
 
-    // A user with the role's ARN as its external id.
+    // A user whose external id is the block's name and the role's ARN.
     (metastore.scim())
         .create_user(ScimUser {
             user_name: "etl@example.com".into(),
@@ -215,7 +215,7 @@ async fn a_missing_user_is_refused_unless_made_or_known() {
                 primary: Some(true),
                 r#type: None,
             }]),
-            external_id: Some("arn:aws:iam::123456789012:role/etl".into()),
+            external_id: Some(ETL.into()),
             active: Some(true),
             ..Default::default()
         })
