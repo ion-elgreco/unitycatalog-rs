@@ -5974,24 +5974,25 @@ pub struct RustTokenSource {
 
 /// The bearer tokens of a `token_provider` callable: the token, or a
 /// `(token, expires_at)` pair with the expiry in seconds since the epoch, kept
-/// until a minute before it.
+/// until a minute before it. The callable runs on a blocking thread, one call
+/// at a time: it may block, and call the blocking methods of this module.
 pub struct PyTokenSource {
-    provider: ::pyo3::Py<::pyo3::PyAny>,
-    kept: ::std::sync::Mutex<Option<(String, ::std::time::Instant)>>,
+    provider: ::std::sync::Arc<::pyo3::Py<::pyo3::PyAny>>,
+    kept: ::futures::lock::Mutex<Option<(String, ::std::time::Instant)>>,
 }
 
 impl PyTokenSource {
     fn new(provider: ::pyo3::Py<::pyo3::PyAny>) -> Self {
         Self {
-            provider,
-            kept: ::std::sync::Mutex::new(None),
+            provider: ::std::sync::Arc::new(provider),
+            kept: ::futures::lock::Mutex::new(None),
         }
     }
 
     /// Ask the callable: the token, and its expiry when it gives one.
-    fn ask(&self) -> PyResult<(String, Option<f64>)> {
+    fn ask(provider: &::pyo3::Py<::pyo3::PyAny>) -> PyResult<(String, Option<f64>)> {
         ::pyo3::Python::attach(|py| {
-            let value = self.provider.bind(py).call0()?;
+            let value = provider.bind(py).call0()?;
             if let Ok(token) = value.extract::<String>() {
                 return Ok((token, None));
             }
@@ -6017,14 +6018,16 @@ impl ::std::fmt::Debug for PyTokenSource {
 impl uc_client::transport::TokenSource for PyTokenSource {
     fn token(&self) -> uc_client::transport::TokenFuture<'_> {
         Box::pin(async move {
-            if let Ok(kept) = self.kept.lock()
-                && let Some((token, until)) = kept.as_ref()
+            let mut kept = self.kept.lock().await;
+            if let Some((token, until)) = kept.as_ref()
                 && ::std::time::Instant::now() < *until
             {
                 return Ok(token.clone());
             }
-            let (token, expires_at) = self
-                .ask()
+            let provider = self.provider.clone();
+            let (token, expires_at) = ::tokio::task::spawn_blocking(move || Self::ask(&provider))
+                .await
+                .map_err(|e| Box::new(e) as uc_client::transport::TokenError)?
                 .map_err(|e| Box::new(e) as uc_client::transport::TokenError)?;
             if let Some(expires_at) = expires_at {
                 let now = ::std::time::SystemTime::now()
@@ -6038,9 +6041,7 @@ impl uc_client::transport::TokenSource for PyTokenSource {
                 };
                 let until =
                     ::std::time::Instant::now() + ::std::time::Duration::from_secs_f64(left);
-                if let Ok(mut kept) = self.kept.lock() {
-                    *kept = Some((token.clone(), until));
-                }
+                *kept = Some((token.clone(), until));
             }
             Ok(token)
         })
