@@ -133,9 +133,11 @@ its endpoint, server id and account.
 
 ### Who a token names
 
-1. The first of `principal_claims` that the token has. A value with `@` is an email and names
-   the user with that email, unless the provider says `email_verified = false`. Any other value
-   names the user `<name>:<value>`, such as `entra:7f3e…`.
+1. The first of `principal_claims` that the token has. A value that is an email, such as
+   `alice@example.com`, names the user with that email, unless the provider says
+   `email_verified = false`. Any other value names the user `<name>:<value>`, such as
+   `entra:7f3e…`. Name only claims that the provider sets, not the user: a provider that lets its
+   users choose their `preferred_username` lets them choose an email.
 2. Nobody found, and the token is an application's own: an access token with `idtyp = app`
    (Entra), or whose `sub` is its client id (RFC 9068), or an AWS identity. Then the user whose
    `externalId` is `<name>:<client id>`, with the first of `client_claims` that the token has,

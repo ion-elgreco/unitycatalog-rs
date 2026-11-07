@@ -361,18 +361,24 @@ async fn a_person_is_named_by_email_and_never_by_the_tools_client_id() {
         "User not allowed",
     )
     .await;
-    // An email that the provider has not verified names nobody.
-    let unverified = idp.token(json!({
-        "aud": "api://uc", "email": "alice@example.com", "email_verified": false, "oid": "a1",
-    }));
-    refused(
-        &app,
-        &unverified,
-        StatusCode::FORBIDDEN,
-        "PERMISSION_DENIED",
-        "User not allowed",
-    )
-    .await;
+    // An email that the provider has not verified names nobody, in any
+    // claim.
+    for unverified in [
+        json!({ "aud": "api://uc", "email": "alice@example.com", "email_verified": false }),
+        json!({
+            "aud": "api://uc", "preferred_username": "alice@example.com",
+            "email_verified": false,
+        }),
+    ] {
+        refused(
+            &app,
+            &idp.token(unverified),
+            StatusCode::FORBIDDEN,
+            "PERMISSION_DENIED",
+            "User not allowed",
+        )
+        .await;
+    }
 }
 
 #[tokio::test]

@@ -452,9 +452,10 @@ pub(crate) enum TokenKind {
 /// Upstream `TokenExchangeSubjectTokenHandler`, as a walk over the
 /// issuer's claims: the active user the token names.
 ///
-/// 1. The first of `principal_claims` present. An email names the user
-///    with that email, unless the provider says `email_verified: false`;
-///    any other value names the user `<issuer name>:<value>`.
+/// 1. The first of `principal_claims` present. A value that is an email
+///    names the user with that email, unless the provider says
+///    `email_verified: false`; any other value names the user
+///    `<issuer name>:<value>`.
 /// 2. Nobody found, and the token is an application's own
 ///    ([`application`]): the user whose `externalId` is
 ///    `<issuer name>:<client id>`.
@@ -477,10 +478,11 @@ pub(crate) async fn resolve(
         let Some(value) = claim(claims, name) else {
             continue;
         };
-        if name == "email" && email_unverified(claims) {
+        // An AWS identity is named by its ARN, which may hold an `@`.
+        let is_email = !issuer.is_aws() && is_email(value);
+        if is_email && email_unverified(claims) {
             return Err(not_allowed());
         }
-        let is_email = value.contains('@');
         let principal = match is_email {
             true => value.to_string(),
             false => format!("{}:{value}", issuer.name),
@@ -504,6 +506,23 @@ pub(crate) async fn resolve(
             create(state, issuer, claims, principal, is_email, external_id).await
         }
         _ => Err(not_allowed()),
+    }
+}
+
+/// Whether a claim's value is an email: one `@` between a local part and a
+/// domain with a dot, and no space, `:` or `/`, which subjects and ARNs
+/// hold.
+fn is_email(value: &str) -> bool {
+    match value.split_once('@') {
+        Some((local, domain)) => {
+            !local.is_empty()
+                && domain.contains('.')
+                && !domain.starts_with('.')
+                && !domain.ends_with('.')
+                && !domain.contains('@')
+                && !value.contains([' ', ':', '/'])
+        }
+        None => false,
     }
 }
 
@@ -738,7 +757,21 @@ mod tests {
     }
 
     #[test]
-    fn the_pattern_of_an_issuer() {
+    fn emails_and_patterns() {
+        for email in ["alice@example.com", "Alice.Smith@contoso.onmicrosoft.com"] {
+            assert!(is_email(email), "{email}");
+        }
+        for other in [
+            "alice",
+            "abc@clients",
+            "arn:aws:iam::1:user/bob@corp.com",
+            "a@b@c.com",
+            "@example.com",
+            "a b@example.com",
+            "a@.com",
+        ] {
+            assert!(!is_email(other), "{other}");
+        }
         let settings = AuthSettings::new(&settings::Auth {
             issuers: vec![
                 issuer("name = \"a\"\nissuer = \"https://*.a.example\"\naudiences = [\"a\"]"),
