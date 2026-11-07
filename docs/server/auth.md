@@ -181,29 +181,55 @@ that has its issuer and its audience.
 
 ### Who a token names
 
-A principal is the name of a user in grants, owners, `admin_principals` and Cedar's `User::"…"`:
-the user's email, or `<name>:<value>`. The server finds the user of a token in three steps:
+The server finds one user for each token. The user's principal is its name in grants, owners,
+`admin_principals` and Cedar's `User::"…"`: an email, or `<name>:<value>`.
 
-1. **By a name claim.** The server reads the first claim of `principal_claims` that the token has.
-    - An email, such as `alice@example.com`, names the user with that email, in any case. It
-      names nobody when the token has `email_verified = false`.
-    - With an `issuer` with `*`, an email names a user only when the token has
-      `email_verified = true`. Anyone can make an issuer that `*` matches, such as a new Entra
-      tenant, and give its users any email. Entra does not send `email_verified`, so name its
-      users by a claim that is not an email, such as `oid`.
-    - Any other value names the user `<name>:<value>`, such as `entra:7f3e…`.
-    - Use only claims that the provider sets. Some providers let users set a claim, such as
-      `preferred_username`. Then a user can set it to the email of another user.
-2. **As an application.** When step 1 finds no user and the token is an application's own, the
-   server looks for the user whose `externalId` is `<name>:<client id>`, such as
-   `entra:<client id>`. The client id comes from `client_claims`. An application's own token is an
-   Entra access token with `idtyp = app`, a token whose `sub` is its client id (RFC 9068), or an
-   AWS identity. To set up a service principal ahead of time, make its user with
-   `uc user create --external_id` or `external_id` in `[[auth.users]]`. A person's token never
-   matches here: it holds the client id of a shared tool, such as `az`.
-3. **As a new user.** When no user is found and the block has `create_users = true`, the server
-   makes the user. It names the user as in step 1, sets `externalId` for an application, and
-   fills in `display_name`. Else the server refuses the request with "User not allowed".
+The examples use the Entra block above: `name = "entra"`,
+`principal_claims = ["preferred_username", "oid"]`, `client_claims = ["azp", "appid"]` and
+`create_users = true`. The server tries three steps, in order.
+
+**1. A name claim.** The server takes the first claim of `principal_claims` that the token has:
+
+| The token has | User | Why |
+| --- | --- | --- |
+| `"preferred_username": "alice@example.com"` | `alice@example.com` | An email names the user with that email, in any case: `Alice@Example.com` is the same user. |
+| `"oid": "7f3e…"`, and no `preferred_username` | `entra:7f3e…` | Any other value gets the block's `name` as a prefix. |
+| `"preferred_username": "alice@example.com"`, `"email_verified": false` | nobody | The provider has not verified the email. |
+| `"preferred_username": "alice@example.com"`, at an `issuer` with `*` | nobody | At an `issuer` with `*`, an email needs `"email_verified": true`. |
+
+- Use only claims that the provider sets. If users can set a claim themselves, a user can set it
+  to the email of another user.
+- Anyone can make an issuer that `*` matches, such as a new Entra tenant, and give its users any
+  email. Entra does not send `email_verified`, so a block for many Entra tenants needs
+  `principal_claims = ["oid"]`.
+
+**2. An application.** When step 1 finds no user and the token is an application's own, the
+server looks for the user whose `externalId` is `<name>:<client id>`. A token of an ETL job's
+service principal:
+
+```json
+{ "idtyp": "app", "oid": "9a1b…", "azp": "c0ffee…", "app_displayname": "ETL" }
+```
+
+No user is named `entra:9a1b…`. The token has `idtyp = app`, so the server looks for the user
+whose `externalId` is `entra:c0ffee…`: `azp` is the first of `client_claims`. To give the job a
+name of your choice, make its user ahead of time, with `uc` or `external_id` in `[[auth.users]]`:
+
+```bash
+uc user create --name ETL --email etl@example.com --external_id entra:c0ffee…
+```
+
+The token then names `etl@example.com`. An application's own token is an Entra access token with
+`idtyp = app`, a token whose `sub` is its client id (RFC 9068), or an AWS identity. A person's
+token never matches here: it holds the client id of a tool that many people share, such as `az`.
+
+**3. A new user.** When no user is found, `create_users = true` makes one:
+
+- Alice's token makes `alice@example.com`.
+- The ETL token makes `entra:9a1b…`, with the `externalId` `entra:c0ffee…` and the display name
+  `ETL` (from `display_name = "{app_displayname}"`).
+
+Without `create_users`, the server refuses the request with "User not allowed".
 
 A disabled user names nobody. No token can name the server's own `admin` user.
 
@@ -230,22 +256,144 @@ keeps each provider to its own groups.
 
 ### Providers
 
-- **Microsoft Entra.** Use the block above. On the API app:
-    - Set `accessTokenAcceptedVersion` to 2. The `aud` of a v2 access token is the API app's
-      client id. For v1 tokens instead, add a block with
-      `issuer = "https://sts.windows.net/<tenant>/"`, `principal_claims = ["upn", "oid"]` and
-      `client_claims = ["appid"]`.
-    - Set the Application ID URI to the server's URL. Its domain must be verified. Clients then
-      ask for the scope `https://uc.example.com/.default`.
-    - Add the optional claim `idtyp`, so the server can tell applications from people.
-- **Google.** `issuer = "https://accounts.google.com"`, `audiences = ["https://uc.example.com"]`,
-  `principal_claims = ["email", "sub"]`. Google's access tokens have no claims that the server
-  can read. So clients send an ID token instead, with the server's URL as its audience.
-- **Any OpenID Connect provider**, such as FerrisKey, Keycloak, Okta, GitHub Actions, GitLab CI
-  or a Kubernetes cluster's issuer. Set `issuer` and `audiences = ["<client id>"]`. The provider
-  must publish `<issuer>/.well-known/openid-configuration` and its keys.
-- **AWS.** `kind = "aws"`, `audiences = ["<server id>"]`, `accounts = ["<account id>"]`. See
-  [AWS](#aws).
+=== "Microsoft Entra"
+
+    Use the block at the top of [Identity providers](#identity-providers). In Entra, on the app
+    registration of the server (the API app):
+
+    1. Set the Application ID URI to the server's URL, such as `https://uc.example.com`. Its
+       domain must be verified in the tenant. Clients then ask for the scope
+       `https://uc.example.com/.default`.
+    2. In the manifest, set `accessTokenAcceptedVersion` to 2. A v2 access token has the API
+       app's client id as its `aud`, so `audiences` lists it.
+    3. Add the optional claim `idtyp` to access tokens, so the server can tell applications from
+       people.
+    4. For groups, make app roles and assign them to Entra groups ([Groups](#groups)).
+
+    Then Alice's token names `alice@example.com`, and an application's token names the user whose
+    `externalId` is `entra:<client id>` ([Who a token names](#who-a-token-names)).
+
+    To take v1 tokens instead of step 2, add a block with
+    `issuer = "https://sts.windows.net/<tenant id>/"`, `principal_claims = ["upn", "oid"]` and
+    `client_claims = ["appid"]`.
+
+=== "Google"
+
+    ```toml
+    [[auth.issuers]]
+    name = "google"
+    issuer = "https://accounts.google.com"
+    audiences = ["https://uc.example.com"]
+    direct = true
+    create_users = true
+    ```
+
+    - Google's access tokens have no claims that the server can read. So clients send an ID
+      token, with the server's URL as its audience. The Python client and `uc` do this for a
+      service account, the Google Cloud CLI, and a Google machine or pod.
+    - The default `principal_claims` (`email`, then `sub`) fit Google: the service account
+      `etl@my-project.iam.gserviceaccount.com` is the user with that email.
+
+=== "Keycloak, Okta and others"
+
+    Any OpenID Connect provider works, such as Keycloak, Okta or FerrisKey:
+
+    ```toml
+    [[auth.issuers]]
+    name = "keycloak"
+    issuer = "https://keycloak.example.com/realms/main"
+    audiences = ["<client id>"]
+    ```
+
+    - `issuer` is the `issuer` of the provider's `<issuer>/.well-known/openid-configuration`. The
+      server reads that document and the provider's keys, so it must reach them.
+    - Without `direct`, the block takes tokens only at the exchange: users sign in with
+      [`uc auth login`](../clients/cli.md#sign-in), whose OAuth client is `<client id>`.
+
+=== "GitHub Actions"
+
+    ```toml
+    [[auth.issuers]]
+    name = "github"
+    issuer = "https://token.actions.githubusercontent.com"
+    audiences = ["https://uc.example.com"]
+    direct = true
+    principal_claims = ["sub"]
+    ```
+
+    A job asks GitHub for a token with the server's URL as its audience, and gives it to the
+    client in `UC_TOKEN`:
+
+    ```yaml
+    permissions:
+      id-token: write
+    steps:
+      - run: |
+          token=$(curl -sH "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://uc.example.com" | jq -r .value)
+          echo "UC_TOKEN=$token" >> "$GITHUB_ENV"
+    ```
+
+    The token's `sub` names the repository and the branch: a job of `octo-org/etl` on `main` is
+    the user `github:repo:octo-org/etl:ref:refs/heads/main`. Any repository can ask GitHub for a
+    token with your audience, so leave `create_users` off, and make the users of your own jobs
+    ahead of time:
+
+    ```bash
+    uc user create --name "etl CI" --email github:repo:octo-org/etl:ref:refs/heads/main
+    ```
+
+=== "Kubernetes"
+
+    ```toml
+    [[auth.issuers]]
+    name = "k8s"
+    issuer = "https://oidc.eks.eu-west-1.amazonaws.com/id/<cluster id>"
+    audiences = ["https://uc.example.com"]
+    direct = true
+    create_users = true
+    ```
+
+    - `issuer` is the cluster's issuer, as `kubectl get --raw /.well-known/openid-configuration`
+      shows. The server must reach it.
+    - Give the pod a token for the server, and point `UC_TOKEN_FILE` at it:
+
+        ```yaml
+        spec:
+          serviceAccountName: etl
+          containers:
+            - name: etl
+              env:
+                - name: UC_TOKEN_FILE
+                  value: /var/run/secrets/uc/token
+              volumeMounts:
+                - name: uc-token
+                  mountPath: /var/run/secrets/uc
+          volumes:
+            - name: uc-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      audience: https://uc.example.com
+                      path: token
+        ```
+
+    - The token names the pod's service account: `etl` in the namespace `data` is the user
+      `k8s:system:serviceaccount:data:etl`.
+
+=== "AWS"
+
+    AWS roles and IAM users have no tokens. They sign a request instead:
+
+    ```toml
+    [[auth.issuers]]
+    name = "aws"
+    kind = "aws"
+    audiences = ["https://uc.example.com"]
+    accounts = ["123456789012"]
+    ```
+
+    See [AWS](#aws).
 
 ### How the server checks a token
 
