@@ -44,7 +44,6 @@ pub mod client;
 pub use client::*;
 
 pub mod error;
-pub mod transport;
 use futures::Future;
 
 pub(super) fn stream_paginated<F, Fut, S, T>(

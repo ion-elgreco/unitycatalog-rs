@@ -3161,7 +3161,6 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
- "webpki-roots",
 ]
 
 [[package]]
@@ -4713,8 +4712,8 @@ dependencies = [
 
 [[package]]
 name = "olai-codegen"
-version = "0.0.12"
-source = "git+https://github.com/ion-elgreco/trestle?branch=feat%2Fuc-client-token-source#726fca5fd14211933796c0098291491950c8c251"
+version = "0.0.13"
+source = "git+https://github.com/ion-elgreco/trestle?branch=feat%2Fclient-credential-provider#d8677e4dcd08d0acc0917686185659598c671d27"
 dependencies = [
  "convert_case 0.7.1",
  "glob",
@@ -4737,9 +4736,8 @@ dependencies = [
 
 [[package]]
 name = "olai-http"
-version = "0.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd980d3d2daf89f23730dd0f44316351dceb334911759800b7c6a83b0f7a1548"
+version = "0.0.10"
+source = "git+https://github.com/ion-elgreco/trestle?branch=feat%2Fclient-credential-provider#d8677e4dcd08d0acc0917686185659598c671d27"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -4762,6 +4760,20 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "olai-http-wasm"
+version = "0.0.6"
+source = "git+https://github.com/ion-elgreco/trestle?branch=feat%2Fclient-credential-provider#d8677e4dcd08d0acc0917686185659598c671d27"
+dependencies = [
+ "futures",
+ "http",
+ "reqwest 0.13.5",
+ "serde",
+ "url",
+ "web-sys",
+ "web-time",
 ]
 
 [[package]]
@@ -6108,7 +6120,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams 0.4.2",
  "web-sys",
- "webpki-roots",
 ]
 
 [[package]]
@@ -8363,7 +8374,7 @@ dependencies = [
  "jsonwebtoken",
  "moka",
  "p521 0.13.3",
- "reqwest 0.12.28",
+ "reqwest 0.13.5",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -8391,9 +8402,10 @@ dependencies = [
  "hex",
  "jsonwebtoken",
  "libc",
+ "olai-http",
  "rand 0.8.6",
  "ratatui",
- "reqwest 0.12.28",
+ "reqwest 0.13.5",
  "rsa",
  "serde",
  "serde_json",
@@ -8418,14 +8430,14 @@ dependencies = [
  "base64 0.22.1",
  "buffa",
  "buffa-types",
- "chrono",
  "futures",
  "hex",
  "hmac 0.12.1",
  "jsonwebtoken",
  "olai-http",
+ "olai-http-wasm",
  "pyo3",
- "reqwest 0.12.28",
+ "reqwest 0.13.5",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -8513,6 +8525,7 @@ name = "uc-py"
 version = "0.0.0-dev"
 dependencies = [
  "futures",
+ "olai-http",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-build-config",
@@ -8553,7 +8566,7 @@ dependencies = [
  "p521 0.13.3",
  "percent-encoding",
  "rand 0.8.6",
- "reqwest 0.12.28",
+ "reqwest 0.13.5",
  "rsa",
  "rstest",
  "serde",
@@ -9075,15 +9088,6 @@ name = "webpki-root-certs"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b96554aa2acc8ccdb7e1c9a58a7a68dd5d13bccc69cd124cb09406db612a1c9b"
-dependencies = [
- "rustls-pki-types",
-]
-
-[[package]]
-name = "webpki-roots"
-version = "1.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52f5ee44c96cf55f1b349600768e3ece3a8f26010c05265ab73f945bb1a2eb9d"
 dependencies = [
  "rustls-pki-types",
 ]

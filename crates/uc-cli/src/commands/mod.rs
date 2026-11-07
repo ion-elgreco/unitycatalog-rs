@@ -184,6 +184,7 @@ pub fn call_error(e: &ClientError) -> uc_common::Error {
         },
         ClientError::Url(e) => Error::internal(format!("url join: {e}")),
         ClientError::Http(e) => Error::internal(format!("http: {}", with_cause(e))),
+        ClientError::Transport(e) => Error::internal(format!("http: {}", with_cause(e))),
         ClientError::Json(e) => Error::internal(format!("decode: {e}")),
         e => Error::internal(e.to_string()),
     }
@@ -191,7 +192,7 @@ pub fn call_error(e: &ClientError) -> uc_common::Error {
 
 /// `e` and its deepest cause, which reqwest's text leaves out: "error
 /// sending request for url (…): Connection refused (os error 61)".
-fn with_cause(e: &reqwest::Error) -> String {
+fn with_cause(e: &(dyn std::error::Error + 'static)) -> String {
     let mut deepest = None;
     let mut next = std::error::Error::source(e);
     while let Some(cause) = next {
@@ -219,6 +220,7 @@ impl std::error::Error for CallError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match &self.0 {
             ClientError::Http(e) => Some(e),
+            ClientError::Transport(e) => Some(e),
             ClientError::Url(e) => Some(e),
             ClientError::Json(e) => Some(e),
             _ => None,

@@ -559,7 +559,7 @@ def test_personal_access_tokens(admin: Calls, uc: Calls, server) -> None:
     assert created.id not in [p.id for p in admin.list_tokens()]
 
 
-def test_token_sources(server, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_token_providers(server, monkeypatch: pytest.MonkeyPatch) -> None:
     # A callable: the token, or the token with its expiry.
     calls: list[int] = []
 
@@ -574,19 +574,19 @@ def test_token_sources(server, monkeypatch: pytest.MonkeyPatch) -> None:
     )
     kept.list_tokens()
     kept.list_tokens()
-    # A source made in Rust: the token of a variable, read at each refresh.
+    # A provider made in Rust: the token of a variable, read at each refresh.
     monkeypatch.setenv("UC_TEST_TOKEN", server.token)
-    source = identity.token_env("UC_TEST_TOKEN")
-    Client(server.address, token_provider=source).list_tokens()
+    from_env = identity.token_env("UC_TEST_TOKEN")
+    Client(server.address, token_provider=from_env).list_tokens()
     # A provider that returns something else fails the call, before the request.
     with pytest.raises(UnityCatalogError, match="token_provider"):
         Client(server.address, token_provider=lambda: 7).list_tokens()
     with pytest.raises(ValueError, match="both"):
         Client(server.address, token="t", token_provider=provider)
-    # An AWS identity: a source made in Rust, which signs requests for STS.
+    # An AWS identity: a provider made in Rust, which signs requests for STS.
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "secret")
-    assert isinstance(identity.aws("https://uc.example.com"), identity.TokenSource)
+    assert isinstance(identity.aws("https://uc.example.com"), identity.TokenProvider)
     # A provider may call the client's methods.
     nested = Client(
         server.address,

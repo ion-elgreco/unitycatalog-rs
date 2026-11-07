@@ -1,22 +1,26 @@
 // @generated — do not edit by hand.
 #![allow(unused_imports)]
 
+#[cfg(not(target_arch = "wasm32"))]
+use ::olai_http::CloudClient as Transport;
+
 use super::super::encode_path_value;
 use crate::codegen::error::Result;
-use crate::codegen::transport::HttpClient;
+#[cfg(target_arch = "wasm32")]
+use ::olai_http_wasm::WasmClient as Transport;
 use uc_client::models::scim::v1::*;
 use url::Url;
 
 /// HTTP client for service operations
 #[derive(Clone)]
 pub struct ScimClient {
-    pub(crate) client: HttpClient,
+    pub(crate) client: Transport,
     pub(crate) base_url: Url,
 }
 
 impl ScimClient {
     /// Create a new client instance
-    pub fn new(client: HttpClient, mut base_url: Url) -> Self {
+    pub fn new(client: Transport, mut base_url: Url) -> Self {
         if !base_url.path().ends_with('/') {
             base_url.set_path(&format!("{}/", base_url.path()));
         }
@@ -38,7 +42,7 @@ impl ScimClient {
             url.query_pairs_mut()
                 .append_pair("count", &value.to_string());
         }
-        let response = self.client.get(url).send().await?;
+        let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -52,7 +56,7 @@ impl ScimClient {
     /// Create a user, named by its primary email. Only the metastore admin can.
     pub async fn create_user(&self, request: &ScimUser) -> Result<ScimUser> {
         let url = self.base_url.join("api/1.0/unity-control/scim2/Users")?;
-        let response = self.client.post(url).json(request).send().await?;
+        let response = self.client.post(url).json(request).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -70,7 +74,7 @@ impl ScimClient {
             encode_path_value(&request.id, false)
         );
         let url = self.base_url.join(&formatted_path)?;
-        let response = self.client.get(url).send().await?;
+        let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -89,7 +93,7 @@ impl ScimClient {
             encode_path_value(&request.id, false)
         );
         let url = self.base_url.join(&formatted_path)?;
-        let response = self.client.put(url).json(request).send().await?;
+        let response = self.client.put(url).json(request).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -111,7 +115,7 @@ impl ScimClient {
         let url = self.base_url.join(&formatted_path)?;
         let mut body = request.clone();
         body.id = Default::default();
-        let response = self.client.patch(url).json(&body).send().await?;
+        let response = self.client.patch(url).json(&body).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -125,7 +129,7 @@ impl ScimClient {
             encode_path_value(&request.id, false)
         );
         let url = self.base_url.join(&formatted_path)?;
-        let response = self.client.delete(url).send().await?;
+        let response = self.client.delete(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -136,7 +140,7 @@ impl ScimClient {
     /// does.
     pub async fn get_me(&self, _request: &GetMeRequest) -> Result<ScimUser> {
         let url = self.base_url.join("api/1.0/unity-control/scim2/Me")?;
-        let response = self.client.get(url).send().await?;
+        let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -162,7 +166,7 @@ impl ScimClient {
             url.query_pairs_mut()
                 .append_pair("count", &value.to_string());
         }
-        let response = self.client.get(url).send().await?;
+        let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -176,7 +180,7 @@ impl ScimClient {
     /// Create a group. Only the metastore admin can.
     pub async fn create_group(&self, request: &ScimGroup) -> Result<ScimGroup> {
         let url = self.base_url.join("api/1.0/unity-control/scim2/Groups")?;
-        let response = self.client.post(url).json(request).send().await?;
+        let response = self.client.post(url).json(request).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -194,7 +198,7 @@ impl ScimClient {
             encode_path_value(&request.id, false)
         );
         let url = self.base_url.join(&formatted_path)?;
-        let response = self.client.get(url).send().await?;
+        let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -212,7 +216,7 @@ impl ScimClient {
             encode_path_value(&request.id, false)
         );
         let url = self.base_url.join(&formatted_path)?;
-        let response = self.client.put(url).json(request).send().await?;
+        let response = self.client.put(url).json(request).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -234,7 +238,7 @@ impl ScimClient {
         let url = self.base_url.join(&formatted_path)?;
         let mut body = request.clone();
         body.id = Default::default();
-        let response = self.client.patch(url).json(&body).send().await?;
+        let response = self.client.patch(url).json(&body).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -252,7 +256,7 @@ impl ScimClient {
             encode_path_value(&request.id, false)
         );
         let url = self.base_url.join(&formatted_path)?;
-        let response = self.client.delete(url).send().await?;
+        let response = self.client.delete(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -263,7 +267,7 @@ impl ScimClient {
     /// the metastore admin can.
     pub async fn scim_bulk(&self, request: &ScimBulkRequest) -> Result<ScimBulkResponse> {
         let url = self.base_url.join("api/1.0/unity-control/scim2/Bulk")?;
-        let response = self.client.post(url).json(request).send().await?;
+        let response = self.client.post(url).json(request).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -280,7 +284,7 @@ impl ScimClient {
         _request: &ListScimSchemasRequest,
     ) -> Result<ListScimSchemasResponse> {
         let url = self.base_url.join("api/1.0/unity-control/scim2/Schemas")?;
-        let response = self.client.get(url).send().await?;
+        let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -299,7 +303,7 @@ impl ScimClient {
         let url = self
             .base_url
             .join("api/1.0/unity-control/scim2/ResourceTypes")?;
-        let response = self.client.get(url).send().await?;
+        let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
@@ -318,7 +322,7 @@ impl ScimClient {
         let url = self
             .base_url
             .join("api/1.0/unity-control/scim2/ServiceProviderConfig")?;
-        let response = self.client.get(url).send().await?;
+        let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }

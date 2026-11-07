@@ -6,7 +6,10 @@
 //! identity of the environment ([`uc_client::identity`]).
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use olai_http::bearer::{BearerAuth, BearerProviderSigner};
+use olai_http::{ClientConfigKey, CloudClient, RequestSigner, RetryConfig};
 use uc_client::Client;
 use uc_common::API_BASE;
 use uc_common::settings::Settings;
@@ -72,12 +75,26 @@ pub fn token(
 /// server's root, such as `http://localhost:8080`, or the root with the
 /// API's path, as the TUI shows the server.
 pub fn client(url: &str, token: Option<&str>) -> anyhow::Result<Client> {
-    let root = root(url)?;
-    let client = match token {
-        Some(token) => Client::new_with_token(root, token),
-        None => Client::new_unauthenticated(root),
-    };
-    Ok(client.with_user_agent(concat!("uc/", env!("CARGO_PKG_VERSION"))))
+    let signer = token.map(|token| -> Arc<dyn RequestSigner> {
+        Arc::new(BearerProviderSigner(BearerAuth::static_token(token)))
+    });
+    client_with(root(url)?, signer)
+}
+
+/// The API client of the server at `root`, signed by `signer` when it has one, with the
+/// `User-Agent` of uc.
+fn client_with(root: Url, signer: Option<Arc<dyn RequestSigner>>) -> anyhow::Result<Client> {
+    let options = Client::client_options().with_config(
+        ClientConfigKey::UserAgent,
+        concat!("uc/", env!("CARGO_PKG_VERSION")),
+    );
+    let retry = RetryConfig::default();
+    let transport = match signer {
+        Some(signer) => CloudClient::new_with_request_signer(signer, &options, retry, None),
+        None => CloudClient::new_unauthenticated_with_options(&options, retry, None),
+    }
+    .map_err(|e| anyhow::anyhow!("cannot make the HTTP client: {e}"))?;
+    Ok(Client::new(transport, root))
 }
 
 /// The API client of the server at `url`: with `token`, as [`client`];
@@ -89,14 +106,10 @@ pub async fn client_of_environment(url: &str, token: Option<&str>) -> anyhow::Re
         return client(url, token);
     }
     let root = root(url)?;
-    let source = uc_client::identity::detect(&root)
+    let signer = uc_client::identity::detect(&root)
         .await
         .map_err(|e| anyhow::anyhow!("cannot sign in with the identity of the environment: {e}"))?;
-    let client = match source {
-        Some(source) => Client::new_with_token_source(root, source),
-        None => Client::new_unauthenticated(root),
-    };
-    Ok(client.with_user_agent(concat!("uc/", env!("CARGO_PKG_VERSION"))))
+    client_with(root, signer)
 }
 
 /// The root of the server at `url`, which the API's paths start from.

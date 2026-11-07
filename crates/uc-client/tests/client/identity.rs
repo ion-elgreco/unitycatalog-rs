@@ -78,10 +78,10 @@ async fn user_names(url: &Url) -> Vec<String> {
 async fn an_oauth_client_signs_in_with_its_credentials() {
     let idp = Idp::start().await;
     let url = server_with_direct_idp(&idp).await;
-    let source =
+    let provider =
         identity::client_credentials(&idp.token_url(), IDP_CLIENT, IDP_SECRET, None, Some("uc"))
             .unwrap();
-    let client = Client::new_with_token_source(url.clone(), source);
+    let client = Client::new_with_bearer(url.clone(), provider).unwrap();
     client.list_catalogs().await.unwrap();
     // The server made the user of the client, named by the issuer and the
     // client.
@@ -91,15 +91,13 @@ async fn an_oauth_client_signs_in_with_its_credentials() {
     let wrong =
         identity::client_credentials(&idp.token_url(), IDP_CLIENT, "nope", None, Some("uc"))
             .unwrap();
-    let error = Client::new_with_token_source(url.clone(), wrong)
+    let error = Client::new_with_bearer(url.clone(), wrong)
+        .unwrap()
         .list_catalogs()
         .await
         .unwrap_err();
-    assert!(matches!(error, Error::Token(_)), "{error:?}");
-    assert!(
-        error.to_string().starts_with("no bearer token: "),
-        "{error}"
-    );
+    assert!(matches!(error, Error::Transport(_)), "{error:?}");
+    assert!(error.to_string().starts_with("request failed: "), "{error}");
 }
 
 #[tokio::test]
@@ -132,7 +130,7 @@ async fn the_environment_signs_in_at_what_the_server_takes() {
     let below = Url::parse(&format!("{}uc", serve(nested).await)).unwrap();
     assert!(identity::metadata(&below).await.unwrap().is_some());
 
-    // Nothing in the environment: no source.
+    // Nothing in the environment: no signer.
     let none = identity::detect_in(&HashMap::new(), &url, false, false)
         .await
         .unwrap();
@@ -145,11 +143,12 @@ async fn the_environment_signs_in_at_what_the_server_takes() {
         ("UC_OAUTH_CLIENT_ID", IDP_CLIENT),
         ("UC_OAUTH_CLIENT_SECRET", IDP_SECRET),
     ]);
-    let source = identity::detect_in(&oauth, &url, false, false)
+    let signer = identity::detect_in(&oauth, &url, false, false)
         .await
         .unwrap()
         .unwrap();
-    Client::new_with_token_source(url.clone(), source)
+    Client::new_with_signer(url.clone(), signer)
+        .unwrap()
         .list_catalogs()
         .await
         .unwrap();
@@ -157,11 +156,12 @@ async fn the_environment_signs_in_at_what_the_server_takes() {
 
     // A fixed token, and a token file.
     let fixed = env(&[("UC_TOKEN", &token(ADMIN))]);
-    let source = identity::detect_in(&fixed, &url, false, false)
+    let signer = identity::detect_in(&fixed, &url, false, false)
         .await
         .unwrap()
         .unwrap();
-    Client::new_with_token_source(url.clone(), source)
+    Client::new_with_signer(url.clone(), signer)
+        .unwrap()
         .list_catalogs()
         .await
         .unwrap();
@@ -169,11 +169,12 @@ async fn the_environment_signs_in_at_what_the_server_takes() {
     let file = dir.path().join("token");
     std::fs::write(&file, token(ADMIN)).unwrap();
     let from_file = env(&[("UC_TOKEN_FILE", file.to_str().unwrap())]);
-    let source = identity::detect_in(&from_file, &url, false, false)
+    let signer = identity::detect_in(&from_file, &url, false, false)
         .await
         .unwrap()
         .unwrap();
-    Client::new_with_token_source(url, source)
+    Client::new_with_signer(url, signer)
+        .unwrap()
         .list_catalogs()
         .await
         .unwrap();
@@ -216,11 +217,11 @@ async fn a_client_made_while_the_server_is_away_signs_in_when_it_is_back() {
         ("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE"),
         ("AWS_SECRET_ACCESS_KEY", "secret"),
     ]);
-    let source = identity::detect_in(&keys, &url, false, false)
+    let signer = identity::detect_in(&keys, &url, false, false)
         .await
         .unwrap()
         .unwrap();
-    let client = Client::new_with_token_source(url, source);
+    let client = Client::new_with_signer(url, signer).unwrap();
     let name =
         |page: uc_client::models::catalogs::v1::ListCatalogsResponse| page.catalogs[0].name.clone();
     // Until the server says what it takes, the requests go without a token.
@@ -274,11 +275,12 @@ async fn an_aws_role_signs_in_with_a_signed_request() {
     // The environment's keys at the server's AWS block: its STS endpoint
     // comes from the server, and the server id is the server's URL. STS takes
     // the signature of the request that the server forwards.
-    let source = identity::detect_in(&keys, &url, false, false)
+    let signer = identity::detect_in(&keys, &url, false, false)
         .await
         .unwrap()
         .unwrap();
-    Client::new_with_token_source(url.clone(), source)
+    Client::new_with_signer(url.clone(), signer)
+        .unwrap()
         .list_catalogs()
         .await
         .unwrap();
@@ -293,8 +295,9 @@ async fn an_aws_role_signs_in_with_a_signed_request() {
         ("AWS_ACCESS_KEY_ID", key_id),
         ("AWS_SECRET_ACCESS_KEY", "nope"),
     ]);
-    let source = identity::aws_in(&wrong, SERVER_ID, Some(&sts.endpoint)).unwrap();
-    let error = Client::new_with_token_source(url.clone(), source)
+    let provider = identity::aws_in(&wrong, SERVER_ID, Some(&sts.endpoint)).unwrap();
+    let error = Client::new_with_bearer(url.clone(), provider)
+        .unwrap()
         .list_catalogs()
         .await
         .unwrap_err();
@@ -303,9 +306,11 @@ async fn an_aws_role_signs_in_with_a_signed_request() {
         "{error}"
     );
     // Signed for another server: refused before STS is asked.
-    let source = identity::aws_in(&keys, "https://other.example.com", Some(&sts.endpoint)).unwrap();
+    let provider =
+        identity::aws_in(&keys, "https://other.example.com", Some(&sts.endpoint)).unwrap();
     assert!(
-        Client::new_with_token_source(url, source)
+        Client::new_with_bearer(url, provider)
+            .unwrap()
             .list_catalogs()
             .await
             .is_err()
