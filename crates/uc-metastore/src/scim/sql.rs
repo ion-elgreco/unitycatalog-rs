@@ -289,6 +289,23 @@ impl ScimOps for SqlMetastore {
         self.get_user_by_name(email).await
     }
 
+    async fn find_user_by_email_any_case(&self, email: &str) -> Result<Option<ScimUser>> {
+        if let Some(user) = self.find_user_by_email(email).await? {
+            return Ok(Some(user));
+        }
+        let mut rows: Vec<ScimUserRow> = select(
+            self.db.as_ref(),
+            &SCIM_USER,
+            "WHERE lower(user_name) = lower($1) LIMIT 2",
+            &[email.into()],
+        )
+        .await?;
+        Ok(match rows.len() {
+            1 => rows.pop().map(Into::into),
+            _ => None,
+        })
+    }
+
     async fn find_user_by_external_id(&self, external_id: &str) -> Result<Option<ScimUser>> {
         let row: Option<ScimUserRow> = select_one(
             self.db.as_ref(),

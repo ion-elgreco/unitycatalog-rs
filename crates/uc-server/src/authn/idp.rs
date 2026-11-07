@@ -453,7 +453,7 @@ pub(crate) enum TokenKind {
 /// issuer's claims: the active user the token names.
 ///
 /// 1. The first of `principal_claims` present. A value that is an email
-///    names the user with that email, unless the provider says
+///    names the user with that email, in any case, unless the provider says
 ///    `email_verified: false`; any other value names the user
 ///    `<issuer name>:<value>`.
 /// 2. Nobody found, and the token is an application's own
@@ -487,13 +487,15 @@ pub(crate) async fn resolve(
             true => value.to_string(),
             false => format!("{}:{value}", issuer.name),
         };
-        match scim.find_user_by_email(&principal).await? {
-            Some(user) => return assumable(user).ok_or_else(not_allowed),
-            None => {
-                candidate = Some((principal, is_email));
-                break;
-            }
+        let found = match is_email {
+            true => scim.find_user_by_email_any_case(&principal).await?,
+            false => scim.find_user_by_email(&principal).await?,
+        };
+        if let Some(user) = found {
+            return assumable(user).ok_or_else(not_allowed);
         }
+        candidate = Some((principal, is_email));
+        break;
     }
     let external_id = application(issuer, claims, kind);
     if let Some(external_id) = &external_id
