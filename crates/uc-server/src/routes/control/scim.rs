@@ -11,7 +11,7 @@ use std::convert::Infallible;
 use axum::{
     body::Bytes,
     extract::{FromRequest, FromRequestParts, Request, State},
-    http::{HeaderMap, HeaderValue, StatusCode, header, request::Parts},
+    http::{HeaderValue, StatusCode, header, request::Parts},
     middleware::Next,
     response::{IntoResponse, Response},
     routing::any,
@@ -26,10 +26,11 @@ use uc_api::{
     ListScimGroupsResponse, ListScimUsersResponse, ScimGroup, ScimPatchOp, ScimPatchOperation,
     ScimRole, ScimUser,
 };
-use uc_common::{CONTROL_BASE, Error, ErrorResponse};
+use uc_common::{CONTROL_BASE, Error, ErrorCode, ErrorResponse};
+use uc_metastore::ScimKey;
 
 use crate::{
-    authn::principal::Principal,
+    authn::{principal::Principal, security::ADMIN},
     authz,
     http::extract::{Path, Query},
     routes::control::scim_filter::{self, Filter},
@@ -85,7 +86,7 @@ impl From<Error> for ScimError {
     fn from(e: Error) -> Self {
         let status = e.code().status();
         let scim_type = match status {
-            StatusCode::CONFLICT => Some("uniqueness"),
+            StatusCode::CONFLICT if e.code().is_already_exists() => Some("uniqueness"),
             StatusCode::BAD_REQUEST => Some("invalidValue"),
             _ => None,
         };
@@ -128,6 +129,7 @@ fn scim_json(status: StatusCode, body: Value) -> Response {
 pub struct Scim {
     status: StatusCode,
     body: Value,
+    location: Option<String>,
 }
 
 impl Scim {
@@ -135,24 +137,26 @@ impl Scim {
         Self {
             status: StatusCode::OK,
             body,
+            location: None,
         }
     }
 
-    fn created(body: Value) -> Self {
+    /// 201 with `resource`, as [`located`] makes it, and its URL as
+    /// `Location`, whatever attributes `selection` picks.
+    fn created(resource_type: &ResourceType, resource: Value, selection: &Selection) -> Self {
         Self {
             status: StatusCode::CREATED,
-            body,
+            location: resource["meta"]["location"].as_str().map(str::to_string),
+            body: selection.apply(resource_type, resource),
         }
     }
 }
 
 impl IntoResponse for Scim {
     fn into_response(self) -> Response {
-        let location = (self.status == StatusCode::CREATED)
-            .then(|| self.body["meta"]["location"].as_str().map(str::to_string))
-            .flatten();
+        let location = (self.location).and_then(|l| HeaderValue::from_str(&l).ok());
         let mut response = scim_json(self.status, self.body);
-        if let Some(location) = location.and_then(|l| HeaderValue::from_str(&l).ok()) {
+        if let Some(location) = location {
             response.headers_mut().insert(header::LOCATION, location);
         }
         response
@@ -212,33 +216,20 @@ async fn unknown_endpoint() -> ScimError {
     ScimError::new(StatusCode::NOT_FOUND, "No SCIM endpoint has this path")
 }
 
-/// The URL of the SCIM endpoints as the client called them:
-/// `X-Forwarded-Proto` and `X-Forwarded-Host` behind a proxy, else `Host`.
+/// The URL of the SCIM endpoints, under the server's public URL
+/// ([`crate::http::public_url`]).
 pub struct BaseUrl(String);
 
-impl<S: Send + Sync> FromRequestParts<S> for BaseUrl {
+impl FromRequestParts<AppState> for BaseUrl {
     type Rejection = Infallible;
 
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
-        Ok(Self(base_url(&parts.headers)))
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let base = crate::http::public_url(state.auth.public_url.as_deref(), &parts.headers);
+        Ok(Self(format!("{base}{CONTROL_BASE}/scim2")))
     }
-}
-
-fn base_url(headers: &HeaderMap) -> String {
-    let first = |name: &str| {
-        headers
-            .get(name)
-            .and_then(|h| h.to_str().ok())
-            .and_then(|h| h.split(',').next())
-            .map(str::trim)
-            .filter(|h| !h.is_empty())
-            .map(str::to_string)
-    };
-    let host = first("x-forwarded-host")
-        .or_else(|| first(header::HOST.as_str()))
-        .unwrap_or_else(|| "localhost".to_string());
-    let scheme = first("x-forwarded-proto").unwrap_or_else(|| "http".to_string());
-    format!("{scheme}://{host}{CONTROL_BASE}/scim2")
 }
 
 /// A JSON request body in any content type; malformed JSON is SCIM
@@ -560,28 +551,83 @@ fn new_user(mut user: ScimUser) -> ScimUser {
     user
 }
 
-async fn create_user_from(state: &AppState, body: Value) -> ScimResult<ScimUser> {
-    let user: ScimUser = decode(&USERS, body)?;
-    Ok(state.metastore.scim().create_user(new_user(user)).await?)
+/// `resource` as a JSON object.
+fn object<T: Serialize>(resource: &T) -> ScimResult<Map<String, Value>> {
+    match serde_json::to_value(resource) {
+        Ok(Value::Object(object)) => Ok(object),
+        _ => Err(Error::internal("a stored resource is not an object").into()),
+    }
 }
 
-/// Replace the user `id` with `user`. When its principal changes, the
-/// server logs what still names the old one.
-async fn update_user(
+/// The server's own user, which `uc-server token` signs in, is `admin`:
+/// no other user takes that name in any case, and the user keeps it.
+fn check_admin_name(user: &ScimUser, current: Option<&ScimUser>) -> ScimResult<()> {
+    let own = current.is_some_and(|c| c.principal() == ADMIN);
+    let names_admin = [user.user_name.trim(), user.principal().trim()]
+        .iter()
+        .any(|name| name.eq_ignore_ascii_case(ADMIN));
+    if own && user.principal().trim() != ADMIN {
+        return Err(ScimError::bad_request(
+            "mutability",
+            format!("The server's own user keeps the name {ADMIN}"),
+        ));
+    }
+    if !own && names_admin {
+        return Err(ScimError {
+            scim_type: Some("uniqueness"),
+            ..ScimError::new(
+                StatusCode::CONFLICT,
+                format!("The name {ADMIN} belongs to the server's own user"),
+            )
+        });
+    }
+    Ok(())
+}
+
+async fn create_user_from(state: &AppState, body: Value) -> ScimResult<ScimUser> {
+    let user = new_user(decode(&USERS, body)?);
+    check_admin_name(&user, None)?;
+    Ok(state.metastore.scim().create_user(user).await?)
+}
+
+/// How many times a change runs while other requests change the same
+/// resource first.
+const ATTEMPTS: usize = 5;
+
+/// Other requests changed the resource at each attempt.
+fn busy() -> ScimError {
+    ScimError::new(
+        StatusCode::CONFLICT,
+        "Other requests changed the resource during each attempt; try again",
+    )
+}
+
+/// Change the user `id` with `change`, which makes the new user from the
+/// stored one. When another request changes the user first, `change` runs
+/// again on its result. When the principal changes, the server logs what
+/// still names the old one.
+async fn modify_user(
     state: &AppState,
     id: &str,
-    current: &ScimUser,
-    user: ScimUser,
+    change: impl Fn(&ScimUser) -> ScimResult<ScimUser>,
 ) -> ScimResult<ScimUser> {
-    let updated = state
-        .metastore
-        .scim()
-        .update_user(id, new_user(user))
-        .await?;
-    if updated.principal() != current.principal() {
-        principal_changed(state, current.principal(), updated.principal());
+    let scim = state.metastore.scim();
+    for _ in 0..ATTEMPTS {
+        let current = scim.get_user(id).await?;
+        let user = new_user(change(&current)?);
+        check_admin_name(&user, Some(&current))?;
+        match scim.update_user(id, user, Some(&current)).await {
+            Ok(updated) => {
+                if updated.principal() != current.principal() {
+                    principal_changed(state, current.principal(), updated.principal());
+                }
+                return Ok(updated);
+            }
+            Err(e) if e.code() == ErrorCode::Aborted => {}
+            Err(e) => return Err(e.into()),
+        }
     }
-    Ok(updated)
+    Err(busy())
 }
 
 /// The grants, owned objects and tokens of `old` moved to `new`. Settings
@@ -593,8 +639,8 @@ fn principal_changed(state: &AppState, old: &str, new: &str) {
         tracing::warn!(%old, %new, "auth.admin_principals names the old principal of a user");
     }
     let quoted = format!("\"{old}\"");
-    for file in state.cedar_files.iter() {
-        if std::fs::read_to_string(file).is_ok_and(|text| text.contains(&quoted)) {
+    for (file, text) in state.cedar_files.iter() {
+        if text.contains(&quoted) {
             tracing::warn!(
                 file = %file.display(), %old, %new,
                 "a Cedar policy file names the old principal of a user"
@@ -604,27 +650,22 @@ fn principal_changed(state: &AppState, old: &str, new: &str) {
 }
 
 async fn put_user_from(state: &AppState, id: &str, body: Value) -> ScimResult<ScimUser> {
-    let current = state.metastore.scim().get_user(id).await?;
-    let merged = replaced(
-        &USERS,
-        serde_json::to_value(&current).unwrap_or_default(),
-        body,
-        id,
-    )?;
-    let user: ScimUser = decode(&USERS, merged)?;
-    update_user(state, id, &current, user).await
+    modify_user(state, id, |current| {
+        let merged = replaced(&USERS, Value::Object(object(current)?), body.clone(), id)?;
+        decode(&USERS, merged)
+    })
+    .await
 }
 
 async fn patch_user_from(state: &AppState, id: &str, body: Value) -> ScimResult<ScimUser> {
     let operations = patch_operations(body)?;
-    let current = state.metastore.scim().get_user(id).await?;
-    let Value::Object(mut resource) = serde_json::to_value(&current).unwrap_or_default() else {
-        return Err(Error::internal("a stored user is not an object").into());
-    };
-    scim_patch::apply(&mut resource, &USERS, &operations)?;
-    still_has_required(&USERS, &resource)?;
-    let user: ScimUser = decode(&USERS, Value::Object(resource))?;
-    update_user(state, id, &current, user).await
+    modify_user(state, id, |current| {
+        let mut resource = object(current)?;
+        scim_patch::apply(&mut resource, &USERS, &operations)?;
+        still_has_required(&USERS, &resource)?;
+        decode(&USERS, Value::Object(resource))
+    })
+    .await
 }
 
 #[utoipa::path(
@@ -648,7 +689,9 @@ pub async fn create_user(
     authz::require_admin(&state, &principal.username).await?;
     let user = create_user_from(&state, body).await?;
     Ok(Scim::created(
-        selection.apply(&USERS, located(&USERS, &user, &base)),
+        &USERS,
+        located(&USERS, &user, &base),
+        &selection,
     ))
 }
 
@@ -675,9 +718,33 @@ pub async fn list_users(
     list_users_by(&state, &base, ListQuery::from_params(&params)?).await
 }
 
-/// Every user, as JSON with its URL under `base`.
-async fn users(state: &AppState, base: &str) -> ScimResult<Vec<(&'static ResourceType, Value)>> {
-    let users = state.metastore.scim().list_users().await?;
+/// The term of `filter` that finds its matches by index: `id`, `name` (the
+/// name attribute of the resource type) or `externalId` equal to a text.
+fn key_term<'f>(filter: Option<&'f Filter>, name: &str) -> Option<(ScimKey, &'f str)> {
+    let terms = filter?.required_texts();
+    terms.into_iter().find_map(|(attribute, text)| {
+        let key = match attribute {
+            a if a.eq_ignore_ascii_case("id") => ScimKey::Id,
+            a if a.eq_ignore_ascii_case(name) => ScimKey::Name,
+            a if a.eq_ignore_ascii_case("externalId") => ScimKey::ExternalId,
+            _ => return None,
+        };
+        Some((key, text))
+    })
+}
+
+/// The users that can match `filter`, as JSON with their URL under
+/// `base`: those of its [`key_term`], else every user.
+async fn users(
+    state: &AppState,
+    base: &str,
+    filter: Option<&Filter>,
+) -> ScimResult<Vec<(&'static ResourceType, Value)>> {
+    let scim = state.metastore.scim();
+    let users = match key_term(filter, "userName") {
+        Some((key, text)) => scim.users_with(key, text).await?,
+        None => scim.list_users().await?,
+    };
     Ok(users
         .iter()
         .map(|u| (&USERS, located(&USERS, u, base)))
@@ -685,7 +752,8 @@ async fn users(state: &AppState, base: &str) -> ScimResult<Vec<(&'static Resourc
 }
 
 async fn list_users_by(state: &AppState, base: &str, query: ListQuery) -> ScimResult<Scim> {
-    Ok(Scim::ok(query.answer(users(state, base).await?)))
+    let users = users(state, base, query.filter.as_ref()).await?;
+    Ok(Scim::ok(query.answer(users)))
 }
 
 #[utoipa::path(
@@ -861,8 +929,8 @@ pub async fn search(
 ) -> ScimResult<Scim> {
     authz::require_admin(&state, &principal.username).await?;
     let query = ListQuery::from_search(body)?;
-    let mut resources = users(&state, &base).await?;
-    resources.extend(groups(&state, &base).await?);
+    let mut resources = users(&state, &base, query.filter.as_ref()).await?;
+    resources.extend(groups(&state, &base, query.filter.as_ref()).await?);
     Ok(Scim::ok(query.answer(resources)))
 }
 
@@ -882,36 +950,42 @@ async fn create_group_from(state: &AppState, body: Value) -> ScimResult<ScimGrou
         .await?)
 }
 
+/// Change the group `id` with `change`, as [`modify_user`] does a user.
+async fn modify_group(
+    state: &AppState,
+    id: &str,
+    change: impl Fn(&ScimGroup) -> ScimResult<ScimGroup>,
+) -> ScimResult<ScimGroup> {
+    let scim = state.metastore.scim();
+    for _ in 0..ATTEMPTS {
+        let current = scim.get_group(id).await?;
+        let group = new_group(change(&current)?);
+        match scim.update_group(id, group, Some(&current)).await {
+            Ok(updated) => return Ok(updated),
+            Err(e) if e.code() == ErrorCode::Aborted => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err(busy())
+}
+
 async fn put_group_from(state: &AppState, id: &str, body: Value) -> ScimResult<ScimGroup> {
-    let current = state.metastore.scim().get_group(id).await?;
-    let merged = replaced(
-        &GROUPS,
-        serde_json::to_value(&current).unwrap_or_default(),
-        body,
-        id,
-    )?;
-    let group: ScimGroup = decode(&GROUPS, merged)?;
-    Ok(state
-        .metastore
-        .scim()
-        .update_group(id, new_group(group))
-        .await?)
+    modify_group(state, id, |current| {
+        let merged = replaced(&GROUPS, Value::Object(object(current)?), body.clone(), id)?;
+        decode(&GROUPS, merged)
+    })
+    .await
 }
 
 async fn patch_group_from(state: &AppState, id: &str, body: Value) -> ScimResult<ScimGroup> {
     let operations = patch_operations(body)?;
-    let current = state.metastore.scim().get_group(id).await?;
-    let Value::Object(mut resource) = serde_json::to_value(&current).unwrap_or_default() else {
-        return Err(Error::internal("a stored group is not an object").into());
-    };
-    scim_patch::apply(&mut resource, &GROUPS, &operations)?;
-    still_has_required(&GROUPS, &resource)?;
-    let group: ScimGroup = decode(&GROUPS, Value::Object(resource))?;
-    Ok(state
-        .metastore
-        .scim()
-        .update_group(id, new_group(group))
-        .await?)
+    modify_group(state, id, |current| {
+        let mut resource = object(current)?;
+        scim_patch::apply(&mut resource, &GROUPS, &operations)?;
+        still_has_required(&GROUPS, &resource)?;
+        decode(&GROUPS, Value::Object(resource))
+    })
+    .await
 }
 
 #[utoipa::path(
@@ -935,7 +1009,9 @@ pub async fn create_group(
     authz::require_admin(&state, &principal.username).await?;
     let group = create_group_from(&state, body).await?;
     Ok(Scim::created(
-        selection.apply(&GROUPS, located(&GROUPS, &group, &base)),
+        &GROUPS,
+        located(&GROUPS, &group, &base),
+        &selection,
     ))
 }
 
@@ -962,9 +1038,17 @@ pub async fn list_groups(
     list_groups_by(&state, &base, ListQuery::from_params(&params)?).await
 }
 
-/// Every group, as JSON with its URL under `base`.
-async fn groups(state: &AppState, base: &str) -> ScimResult<Vec<(&'static ResourceType, Value)>> {
-    let groups = state.metastore.scim().list_groups().await?;
+/// The groups that can match `filter`, as [`users`] finds users.
+async fn groups(
+    state: &AppState,
+    base: &str,
+    filter: Option<&Filter>,
+) -> ScimResult<Vec<(&'static ResourceType, Value)>> {
+    let scim = state.metastore.scim();
+    let groups = match key_term(filter, "displayName") {
+        Some((key, text)) => scim.groups_with(key, text).await?,
+        None => scim.list_groups().await?,
+    };
     Ok(groups
         .iter()
         .map(|g| (&GROUPS, located(&GROUPS, g, base)))
@@ -972,7 +1056,8 @@ async fn groups(state: &AppState, base: &str) -> ScimResult<Vec<(&'static Resour
 }
 
 async fn list_groups_by(state: &AppState, base: &str, query: ListQuery) -> ScimResult<Scim> {
-    Ok(Scim::ok(query.answer(groups(state, base).await?)))
+    let groups = groups(state, base, query.filter.as_ref()).await?;
+    Ok(Scim::ok(query.answer(groups)))
 }
 
 #[utoipa::path(

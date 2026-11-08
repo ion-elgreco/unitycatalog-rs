@@ -114,6 +114,23 @@ async fn text_columns_sort_by_byte_on_postgres() {
     assert!(rows.is_empty(), "not by byte: {rows:?}");
 }
 
+/// User names are unique in any case in the database too, so users that
+/// two servers make at once cannot differ only in case.
+#[tokio::test]
+async fn user_names_are_unique_in_any_case() {
+    let db = new_storage().await;
+    run_migrations(db.as_ref()).await.unwrap();
+    let insert = "INSERT INTO scim_user (id_string, user_name, principal) VALUES ($1, $2, $3)";
+    db.execute(insert, &["u1".into(), "Alice".into(), "a@x.com".into()])
+        .await
+        .unwrap();
+    let err = db
+        .execute(insert, &["u2".into(), "alice".into(), "b@x.com".into()])
+        .await
+        .unwrap_err();
+    assert!(matches!(err, storage::StorageError::Unique(_)), "{err}");
+}
+
 /// An applied migration whose file has changed since stops the start.
 #[tokio::test]
 async fn a_changed_migration_is_refused() {

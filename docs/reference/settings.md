@@ -111,7 +111,7 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 | **Web UI sign-in** |  |  | How users sign in to the web UI. The settings of each mode follow. |
 | `mode` | `UC_AUTH_MODE` | `none` | The web UI's sign-in: `none`, `oidc` or `forward`. |
 | **OpenID Connect** |  |  | `mode = "oidc"`: the server signs users in with an OpenID Connect provider. |
-| `public_url` | `UC_AUTH_PUBLIC_URL` | none | The server's external URL. The provider returns the browser to `<public_url>/auth/callback`, and with `oidc_end_session` to `<public_url>/` after "Log out". |
+| `public_url` | `UC_AUTH_PUBLIC_URL` | none | The server's external URL. The provider returns the browser to `<public_url>/auth/callback`, and with `oidc_end_session` to `<public_url>/` after "Log out". The URLs in SCIM answers and Delta Sharing profiles start with it, in every `mode`; without it, they start with the URL that the client called. |
 | `oidc_issuer` | `UC_AUTH_OIDC_ISSUER` | none | The OpenID Connect provider's issuer. |
 | `oidc_client_id` | `UC_AUTH_OIDC_CLIENT_ID` | none | The OAuth client. |
 | `oidc_client_secret` | `UC_AUTH_OIDC_CLIENT_SECRET` | none | Its secret; none for a public client. |

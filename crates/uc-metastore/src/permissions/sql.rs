@@ -7,7 +7,7 @@ use uuid::Uuid;
 use uc_api::{PermissionsList, Privilege, PrivilegeAssignment, UpdatePermissions};
 use uc_common::{Error, ErrorCode, NormalizedUrl, Result, SecurableType};
 
-use crate::sql::rows::{METASTORE, PERMISSION, STAGING_TABLE};
+use crate::sql::rows::{METASTORE, PAT, PERMISSION, STAGING_TABLE};
 use crate::sql::{
     SqlMetastore, by_id, char_len, create_err, db_err, insert, placeholders, select, select_one,
     starts_with, update,
@@ -495,20 +495,46 @@ pub(crate) async fn clear_principal<E: Exec + ?Sized>(ex: &E, principal: &str) -
     Ok(())
 }
 
+/// The owner columns: `owner`, and `created_by` of staging tables, whose
+/// creator owns them.
+fn owner_columns() -> impl Iterator<Item = (&'static str, &'static str)> {
+    crate::sql::rows::ALL
+        .iter()
+        .filter(|t| t.has_column("owner"))
+        .map(|t| (t.name, "owner"))
+        .chain([(STAGING_TABLE.name, "created_by")])
+}
+
 /// Give the grants and the owned objects and tokens of `from` to `to`, in
 /// `tx`: a renamed group, or a user whose email changed, keeps them.
 pub(crate) async fn rename_principal<E: Exec + ?Sized>(tx: &E, from: &str, to: &str) -> Result<()> {
     rename_grants(tx, from, to).await?;
-    for table in crate::sql::rows::ALL
-        .iter()
-        .filter(|t| t.has_column("owner"))
-    {
+    for (table, column) in owner_columns() {
         tx.execute(
-            &format!("UPDATE {} SET owner = $1 WHERE owner = $2", table.name),
+            &format!("UPDATE {table} SET {column} = $1 WHERE {column} = $2"),
             &[to.into(), from.into()],
         )
         .await
         .map_err(db_err("rename owner"))?;
+    }
+    Ok(())
+}
+
+/// Remove `principal`, a deleted user or group, from the metastore, in
+/// `tx`: its grants and tokens go, and its objects lose their owner, so
+/// that a later user or group of that name gets none of them.
+pub(crate) async fn forget_principal<E: Exec + ?Sized>(tx: &E, principal: &str) -> Result<()> {
+    clear_principal(tx, principal).await?;
+    tx.execute("DELETE FROM pat WHERE owner = $1", &[principal.into()])
+        .await
+        .map_err(db_err("delete tokens"))?;
+    for (table, column) in owner_columns().filter(|(table, _)| *table != PAT.name) {
+        tx.execute(
+            &format!("UPDATE {table} SET {column} = NULL WHERE {column} = $1"),
+            &[principal.into()],
+        )
+        .await
+        .map_err(db_err("clear owner"))?;
     }
     Ok(())
 }
@@ -609,23 +635,24 @@ impl SqlMetastore {
         })
     }
 
-    /// Upstream `getUserByEmail`: grants go to users that exist, named by
-    /// principal or user name. They are kept under the user's principal,
-    /// the name a signed-in caller has. A group's name is its principal.
+    /// Upstream `getUserByEmail`: grants go to users and groups that exist.
+    /// A name is a user's principal, else a group's name, else a user's
+    /// user name in any case. A user's grants are kept under its
+    /// principal, the name a signed-in caller has.
     async fn require_principal(&self, principal: &str) -> Result<String> {
         use crate::scim::ScimOps;
         if let Some(user) = self.find_user_by_principal(principal).await? {
             return Ok(user.principal().to_string());
         }
-        if let Some(user) = self.get_user_by_name(principal).await? {
-            return Ok(user.principal().to_string());
-        }
-        match self
+        if self
             .exists_where("scim_group", "display_name", principal)
             .await?
         {
-            true => Ok(principal.to_string()),
-            false => Err(Error::not_found(format!("User not found: {principal}"))),
+            return Ok(principal.to_string());
+        }
+        match self.get_user_by_name(principal).await? {
+            Some(user) => Ok(user.principal().to_string()),
+            None => Err(Error::not_found(format!("User not found: {principal}"))),
         }
     }
 

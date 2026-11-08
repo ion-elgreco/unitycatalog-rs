@@ -1341,6 +1341,61 @@ async fn users_of_the_settings() {
     );
 }
 
+/// An identity provider can change the email of a user of the settings:
+/// the next start finds the user by its user name, and grants to its new
+/// email.
+#[tokio::test]
+async fn a_user_of_the_settings_is_found_by_its_user_name_after_an_email_change() {
+    use uc_api::{PermissionsChange, Privilege, ScimEmail, UpdatePermissions};
+    use uc_common::SecurableType;
+    use uc_server::authn::bootstrap;
+
+    let (_app, metastore) = common::signed_in_app().await;
+    let text = "[[auth.users]]\nemail = \"alice@example.com\"\nprivileges = [\"CREATE CATALOG\"]";
+    let auth = uc_common::settings::Settings::from_toml(text).unwrap().auth;
+    let seeds = bootstrap::seed_users(&auth).unwrap();
+    bootstrap::seed(&metastore, &seeds).await.unwrap();
+    let scim = metastore.scim();
+    let alice = scim
+        .find_user_by_principal("alice@example.com")
+        .await
+        .unwrap()
+        .unwrap();
+    let id = alice.id.clone().unwrap();
+    let moved = uc_api::ScimUser {
+        emails: Some(vec![ScimEmail {
+            value: "alice.smith@example.com".into(),
+            primary: Some(true),
+            r#type: Some("work".into()),
+            display: None,
+        }]),
+        ..alice
+    };
+    scim.update_user(&id, moved, None).await.unwrap();
+    let revoke = UpdatePermissions {
+        changes: vec![PermissionsChange {
+            principal: "alice.smith@example.com".into(),
+            add: Vec::new(),
+            remove: vec![Privilege::CreateCatalog],
+        }],
+    };
+    let permissions = metastore.permissions();
+    permissions
+        .update(SecurableType::Metastore, "metastore", revoke)
+        .await
+        .unwrap();
+
+    let report = bootstrap::seed(&metastore, &seeds).await.unwrap();
+    assert_eq!((report.created, report.granted), (0, 1));
+    assert!(
+        !permissions
+            .grants_of("alice.smith@example.com", &[])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
 /// A deleted user's grants go and its tokens stop working.
 #[tokio::test]
 async fn deleted_users_lose_grants_and_sign_in() {

@@ -84,6 +84,28 @@ fn primary_email(value: String) -> ScimEmail {
     }
 }
 
+/// `emails` with `email` as the primary one: it takes the place of the
+/// primary email, else of the first, with its type. The other emails stay,
+/// but for one that was `email` already.
+fn with_primary(emails: Vec<ScimEmail>, email: String) -> Vec<ScimEmail> {
+    let main =
+        (emails.iter().position(|e| e.primary == Some(true))).or((!emails.is_empty()).then_some(0));
+    let mut out = Vec::with_capacity(emails.len() + 1);
+    for (index, mut item) in emails.into_iter().enumerate() {
+        if Some(index) == main {
+            item.value = email.clone();
+            item.primary = Some(true);
+            out.push(item);
+        } else if !item.value.eq_ignore_ascii_case(&email) {
+            out.push(item);
+        }
+    }
+    if main.is_none() {
+        out.push(primary_email(email));
+    }
+    out
+}
+
 pub async fn run(c: &Context<'_>, op: UserOp) -> Result<String> {
     match op {
         UserOp::Create {
@@ -110,13 +132,14 @@ pub async fn run(c: &Context<'_>, op: UserOp) -> Result<String> {
             // A replace keeps what it does not name, and needs the user
             // name.
             let current = c.client.get_user(&id).await.map_err(upstream("getUser"))?;
+            let emails = email.map(|email| with_primary(current.emails, email));
             let mut replace = c
                 .client
                 .replace_user(id, current.user_name)
                 .with_display_name(name)
                 .with_external_id(external_id);
-            if let Some(email) = email {
-                replace = replace.with_emails([primary_email(email)]);
+            if let Some(emails) = emails {
+                replace = replace.with_emails(emails);
             }
             let user = replace.await.map_err(upstream("updateUser"))?;
             Ok(c.json(&user_from_scim(&user)))
@@ -146,5 +169,46 @@ pub async fn run(c: &Context<'_>, op: UserOp) -> Result<String> {
                 .map_err(upstream("deleteUser"))?;
             Ok(String::new())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn email(value: &str, kind: &str, primary: Option<bool>) -> ScimEmail {
+        ScimEmail {
+            value: value.into(),
+            email_type: Some(kind.into()),
+            primary,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_new_email_takes_the_place_of_the_primary_one() {
+        let emails = vec![
+            email("a@corp.com", "work", Some(true)),
+            email("a@home.org", "home", None),
+        ];
+        assert_eq!(
+            with_primary(emails.clone(), "b@corp.com".into()),
+            [
+                email("b@corp.com", "work", Some(true)),
+                email("a@home.org", "home", None)
+            ]
+        );
+        assert_eq!(
+            with_primary(emails, "A@home.org".into()),
+            [email("A@home.org", "work", Some(true))]
+        );
+        assert_eq!(
+            with_primary(vec![email("a@corp.com", "work", None)], "b@corp.com".into()),
+            [email("b@corp.com", "work", Some(true))]
+        );
+        assert_eq!(
+            with_primary(Vec::new(), "b@corp.com".into()),
+            [primary_email("b@corp.com".into())]
+        );
     }
 }
