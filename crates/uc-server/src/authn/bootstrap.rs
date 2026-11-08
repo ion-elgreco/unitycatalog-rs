@@ -26,7 +26,7 @@ pub fn seed_users(auth: &settings::Auth) -> std::result::Result<Vec<SeedUser>, S
         if email.is_empty() {
             return Err(invalid("email", email, "Expected an email."));
         }
-        if email == ADMIN {
+        if email.eq_ignore_ascii_case(ADMIN) {
             return Err(invalid(
                 "email",
                 email,
@@ -66,7 +66,7 @@ pub fn seed_users(auth: &settings::Auth) -> std::result::Result<Vec<SeedUser>, S
     }
     // The bootstrap admin exists already when authorization is on.
     for email in auth.admin_principals.iter().map(|e| e.trim()) {
-        if !email.is_empty() && email != ADMIN && emails.insert(email) {
+        if !email.is_empty() && !email.eq_ignore_ascii_case(ADMIN) && emails.insert(email) {
             users.push(SeedUser {
                 email: email.to_string(),
                 ..Default::default()

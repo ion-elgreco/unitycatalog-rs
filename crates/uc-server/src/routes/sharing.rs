@@ -265,18 +265,8 @@ pub async fn recipient_profile(
         .rotate_recipient_token(&name)
         .await?;
     let token = rec.bearer_token.clone().unwrap_or_default();
-    // The endpoint is the URL the client called: `X-Forwarded-Host` behind a
-    // proxy, else `Host`, else a placeholder.
-    let host = headers
-        .get("x-forwarded-host")
-        .or_else(|| headers.get(axum::http::header::HOST))
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("localhost:8080");
-    let scheme = headers
-        .get("x-forwarded-proto")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("http");
-    let endpoint = format!("{scheme}://{host}{API_BASE}/delta-sharing");
+    let base = crate::http::public_url(state.auth.public_url.as_deref(), &headers);
+    let endpoint = format!("{base}{API_BASE}/delta-sharing");
     let profile = serde_json::json!({
         "shareCredentialsVersion": 1,
         "endpoint": endpoint,

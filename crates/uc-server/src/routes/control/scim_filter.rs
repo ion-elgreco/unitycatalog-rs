@@ -281,6 +281,25 @@ impl Filter {
             _ => None,
         }
     }
+
+    /// The `attr eq "text"` terms that every match has: the filter's, or
+    /// those of either side of an `and`. Only ASCII text that is no date,
+    /// so that a lookup of the text in any case finds every match.
+    pub fn required_texts(&self) -> Vec<(&str, &str)> {
+        match self {
+            Filter::Compare(AttrPath { attr, sub: None }, Op::Eq, Value::String(text))
+                if text.is_ascii() && instant(text).is_none() =>
+            {
+                vec![(attr.as_str(), text.as_str())]
+            }
+            Filter::And(a, b) => {
+                let mut terms = a.required_texts();
+                terms.extend(b.required_texts());
+                terms
+            }
+            _ => Vec::new(),
+        }
+    }
 }
 
 /// Parse `input`; the error is the SCIM `invalidFilter` detail.
@@ -516,6 +535,35 @@ mod tests {
         );
         assert_eq!(terms(r#"type co "work""#), None);
         assert_eq!(terms(r#"type eq "a" or type eq "b""#), None);
+    }
+
+    #[test]
+    fn required_texts_are_the_eq_terms_every_match_has() {
+        let filters = [
+            r#"userName eq "bjensen""#,
+            r#"id eq "g1" and members eq "u1""#,
+            r#"userName eq "a" and (active eq true or title pr)"#,
+            r#"userName eq "a" or userName eq "b""#,
+            r#"not (userName eq "a")"#,
+            r#"userName eq "Jürgen""#,
+            r#"title eq "2024-01-01T00:00:00Z""#,
+            r#"active eq true"#,
+        ];
+        let parsed: Vec<Filter> = filters.iter().map(|f| parse(f).unwrap()).collect();
+        let texts: Vec<Vec<(&str, &str)>> = parsed.iter().map(Filter::required_texts).collect();
+        assert_eq!(
+            texts,
+            [
+                vec![("userName", "bjensen")],
+                vec![("id", "g1"), ("members", "u1")],
+                vec![("userName", "a")],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+                vec![],
+            ]
+        );
     }
 
     #[test]

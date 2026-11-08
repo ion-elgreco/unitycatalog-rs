@@ -307,6 +307,7 @@ async fn a_missing_user_is_refused_unless_made_or_known_by_its_client_id() {
             active: Some(false),
             ..old.clone()
         },
+        None,
     )
     .await
     .unwrap();
@@ -388,6 +389,38 @@ async fn a_person_is_named_by_email_and_never_by_the_tools_client_id() {
         owner_of_a_new_catalog(&app, &shouting, "shouted").await,
         "alice@example.com"
     );
+}
+
+/// SCIM keeps the provider's user name, such as an Entra UPN, which can
+/// differ from the email: a token that names it names the user, and the
+/// server makes no second one.
+#[tokio::test]
+async fn a_person_is_named_by_the_user_name_that_scim_keeps() {
+    let idp = Idp::start().await;
+    let (app, metastore) = app(vec![entra(&idp)], None).await;
+    metastore
+        .scim()
+        .create_user(ScimUser {
+            user_name: "alice@corp.example.com".into(),
+            emails: Some(vec![uc_api::ScimEmail {
+                value: "alice.smith@corp.example.com".into(),
+                primary: Some(true),
+                r#type: Some("work".into()),
+                display: None,
+            }]),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    may_create_catalogs(&metastore, "alice.smith@corp.example.com").await;
+    let alice = idp.token(json!({
+        "aud": "api://uc", "preferred_username": "Alice@corp.example.com", "oid": "a1",
+    }));
+    assert_eq!(
+        owner_of_a_new_catalog(&app, &alice, "alices").await,
+        "alice.smith@corp.example.com"
+    );
+    assert_eq!(metastore.scim().list_users().await.unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -678,6 +711,7 @@ async fn accepted_tokens_are_kept_until_the_cap() {
             active: Some(false),
             ..made.clone()
         },
+        None,
     )
     .await
     .unwrap();

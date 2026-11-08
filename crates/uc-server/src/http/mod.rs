@@ -18,6 +18,30 @@ impl axum::response::IntoResponse for EmptyObject {
     }
 }
 
+/// The server's URL for links in answers, without a trailing `/`:
+/// `auth.public_url` when set, else the URL that the client called
+/// (`X-Forwarded-Proto` and `X-Forwarded-Host` behind a proxy, else
+/// `Host`).
+pub fn public_url(public_url: Option<&str>, headers: &axum::http::HeaderMap) -> String {
+    if let Some(url) = public_url {
+        return url.to_string();
+    }
+    let first = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|h| h.to_str().ok())
+            .and_then(|h| h.split(',').next())
+            .map(str::trim)
+            .filter(|h| !h.is_empty())
+            .map(str::to_string)
+    };
+    let host = first("x-forwarded-host")
+        .or_else(|| first(axum::http::header::HOST.as_str()))
+        .unwrap_or_else(|| "localhost".to_string());
+    let scheme = first("x-forwarded-proto").unwrap_or_else(|| "http".to_string());
+    format!("{scheme}://{host}")
+}
+
 /// `application/x-www-form-urlencoded` for one value, as Java's
 /// `URLEncoder.encode`: letters, digits and `.-*_` stay, a space is `+`.
 pub fn form_encode(value: &str) -> String {
@@ -30,6 +54,25 @@ pub fn form_encode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_public_url_is_the_setting_else_the_called_url() {
+        use axum::http::{HeaderMap, HeaderValue};
+        let mut headers = HeaderMap::new();
+        assert_eq!(public_url(None, &headers), "http://localhost");
+        headers.insert("host", HeaderValue::from_static("uc:8080"));
+        assert_eq!(public_url(None, &headers), "http://uc:8080");
+        headers.insert(
+            "x-forwarded-host",
+            HeaderValue::from_static("uc.example.com, proxy"),
+        );
+        headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+        assert_eq!(public_url(None, &headers), "https://uc.example.com");
+        assert_eq!(
+            public_url(Some("https://data.example.com/uc"), &headers),
+            "https://data.example.com/uc"
+        );
+    }
 
     #[test]
     fn form_encodes_as_java() {

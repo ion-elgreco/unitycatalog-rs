@@ -237,7 +237,7 @@ CREATE INDEX pat_by_owner ON pat (owner);
 -- else its first email, else its `user_name`.
 CREATE TABLE scim_user (
     id_string    TEXT PRIMARY KEY,
-    user_name    TEXT NOT NULL UNIQUE,
+    user_name    TEXT NOT NULL,
     principal    TEXT NOT NULL UNIQUE,
     name         TEXT,
     display_name TEXT,
@@ -249,7 +249,11 @@ CREATE TABLE scim_user (
     created_at   BIGINT,
     updated_at   BIGINT
 );
-CREATE INDEX scim_user_by_external_id ON scim_user (external_id);
+-- User names are unique in any case. Lookups and SCIM filters compare
+-- names, principals and external ids without case.
+CREATE UNIQUE INDEX scim_user_by_user_name ON scim_user (lower(user_name));
+CREATE INDEX scim_user_by_principal ON scim_user (lower(principal));
+CREATE INDEX scim_user_by_external_id ON scim_user (lower(external_id));
 
 CREATE TABLE scim_group (
     id_string    TEXT PRIMARY KEY,
@@ -259,6 +263,8 @@ CREATE TABLE scim_group (
     created_at   BIGINT,
     updated_at   BIGINT
 );
+CREATE INDEX scim_group_by_display_name ON scim_group (lower(display_name));
+CREATE INDEX scim_group_by_external_id ON scim_group (lower(external_id));
 -- The user ids of each group's members, written with `scim_group.members`:
 -- the groups whose grants a user gets.
 CREATE TABLE scim_group_member (

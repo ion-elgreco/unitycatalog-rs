@@ -538,19 +538,43 @@ async fn authentik_provisions_users_and_groups(#[future(awt)] app: Router) {
     assert!(group.get("members").is_none());
 }
 
+/// Make the catalog `c1` with the schema `s1` and a staging table as the
+/// user of `token`: the user owns them. The id of the staging table.
+async fn owned_objects(app: &Router, token: &str) -> String {
+    let as_user = |path: &str, body: Value| common::signed(Method::POST, path, Some(body), token);
+    let body = json!({ "name": "c1", "storage_root": common::temp_storage_root() });
+    send(app, as_user("/catalogs", body))
+        .await
+        .ok(StatusCode::OK);
+    let body = json!({ "name": "s1", "catalog_name": "c1" });
+    send(app, as_user("/schemas", body))
+        .await
+        .ok(StatusCode::OK);
+    let body = json!({ "name": "t1", "catalog_name": "c1", "schema_name": "s1" });
+    let staging = send(app, as_user("/staging-tables", body))
+        .await
+        .ok(StatusCode::OK);
+    staging["id"].as_str().unwrap().to_string()
+}
+
+/// The owner of the staging table `id`: its creator.
+async fn staging_owner(metastore: &uc_metastore::DynMetastore, id: &str) -> Option<String> {
+    let lineage = metastore
+        .permissions()
+        .lineage_by_id(uc_common::SecurableType::Table, id)
+        .await
+        .unwrap();
+    lineage.object.unwrap().owner
+}
+
 /// Grants and owners name a user by its principal: when its email changes,
 /// they move to the new one.
 #[tokio::test]
 async fn a_new_email_moves_the_grants_and_owned_objects() {
     let (app, metastore) = common::app_with_metastore().await;
     let token = common::active_user(&metastore, "old@example.com").await;
-    // The catalog of the user's request is the user's.
-    let body = json!({ "name": "c1", "storage_root": common::temp_storage_root() });
-    let catalog = send(
-        &app,
-        common::signed(Method::POST, "/catalogs", Some(body), &token),
-    )
-    .await;
+    let staging = owned_objects(&app, &token).await;
+    let catalog = send(&app, common::req(Method::GET, "/catalogs/c1")).await;
     assert_eq!(catalog.ok(StatusCode::OK)["owner"], "old@example.com");
     let grant = json!({ "changes": [{ "principal": "old@example.com", "add": ["USE CATALOG"] }] });
     send(
@@ -581,6 +605,38 @@ async fn a_new_email_moves_the_grants_and_owned_objects() {
         grants.ok(StatusCode::OK)["privilege_assignments"],
         json!([{ "principal": "new@example.com", "privileges": ["USE CATALOG"] }])
     );
+    assert_eq!(
+        staging_owner(&metastore, &staging).await.as_deref(),
+        Some("new@example.com")
+    );
+}
+
+/// A deleted user's objects lose their owner: a later user with the same
+/// email gets none of them.
+#[tokio::test]
+async fn a_deleted_user_leaves_no_objects_to_a_new_user_of_its_email() {
+    let (app, metastore) = common::app_with_metastore().await;
+    let token = common::active_user(&metastore, "gone@example.com").await;
+    let staging = owned_objects(&app, &token).await;
+    let user = metastore
+        .scim()
+        .find_user_by_principal("gone@example.com")
+        .await
+        .unwrap()
+        .unwrap();
+    let path = format!("/scim2/Users/{}", user.id.unwrap());
+    send(&app, control(Method::DELETE, &path))
+        .await
+        .ok(StatusCode::NO_CONTENT);
+    create(&app, "gone@example.com").await;
+
+    for path in ["/catalogs/c1", "/schemas/c1.s1"] {
+        let object = send(&app, common::req(Method::GET, path))
+            .await
+            .ok(StatusCode::OK);
+        assert!(object["owner"].is_null(), "{path}: {object}");
+    }
+    assert_eq!(staging_owner(&metastore, &staging).await, None);
 }
 
 #[rstest]
@@ -697,6 +753,25 @@ async fn answers_pick_attributes(#[future(awt)] app: Router) {
     let user = &list["Resources"][0];
     assert!(user.get("emails").is_none() && user.get("meta").is_none());
     assert_eq!(user["userName"], "pick@example.com");
+
+    // A created resource has its Location without its `meta`.
+    let created = call(
+        &app,
+        Method::POST,
+        "/scim2/Users?excludedAttributes=meta",
+        json!({ "userName": "located" }),
+    )
+    .await;
+    assert_eq!(created.status, StatusCode::CREATED);
+    assert!(created.body.get("meta").is_none(), "{}", created.body);
+    let id = created.body["id"].as_str().unwrap();
+    assert_eq!(
+        created.headers["location"],
+        format!(
+            "http://localhost{}/scim2/Users/{id}",
+            uc_common::CONTROL_BASE
+        )
+    );
 }
 
 #[rstest]
@@ -738,6 +813,13 @@ async fn list_users_takes_scim_filters(#[future(awt)] app: Router) {
         (
             r#"meta.created gt "2000-01-01T00:00:00Z" and externalId pr"#,
             vec![],
+        ),
+        // Found by index, then checked against the whole filter.
+        (r#"userName eq "ALPHA@X""#, vec!["alpha@x"]),
+        (r#"userName eq "beta@x" and active eq false"#, vec![]),
+        (
+            r#"userName eq "beta@x" or userName eq "gamma@y""#,
+            vec!["beta@x", "gamma@y"],
         ),
     ] {
         assert_eq!(user_names(&app, &filter(f)).await, expected, "{f}");
@@ -960,4 +1042,158 @@ async fn bulk_runs_each_operation(#[future(awt)] app: Router) {
     );
     assert_eq!(ops[1]["status"], "404");
     assert_eq!(ops[1]["response"]["schemas"], json!([ERROR_SCHEMA]));
+}
+
+/// Changes of one group at the same time each stay: a change that another
+/// request beat runs again on the newer group.
+#[tokio::test]
+async fn changes_at_the_same_time_each_stay() {
+    let (app, metastore) = common::app_with_metastore().await;
+    let mut users = Vec::new();
+    for email in ["c1@x.com", "c2@x.com", "c3@x.com"] {
+        users.push(create(&app, email).await);
+    }
+    let group = call(
+        &app,
+        Method::POST,
+        "/scim2/Groups",
+        json!({ "displayName": "g" }),
+    )
+    .await
+    .ok(StatusCode::CREATED);
+    let id = group["id"].as_str().unwrap();
+    let path = format!("/scim2/Groups/{id}");
+    let add = |user: &str| {
+        patch(
+            &app,
+            &path,
+            json!([{ "op": "add", "path": "members", "value": [{ "value": user }] }]),
+        )
+    };
+    let (a, b, c) = tokio::join!(add(&users[0]), add(&users[1]), add(&users[2]));
+    for answer in [a, b, c] {
+        answer.ok(StatusCode::OK);
+    }
+    let group = get(&app, &path).await.ok(StatusCode::OK);
+    let mut members = member_ids(&group);
+    members.sort_unstable();
+    let mut expected: Vec<&str> = users.iter().map(String::as_str).collect();
+    expected.sort_unstable();
+    assert_eq!(members, expected);
+
+    // A write from a group that another request changed since changes
+    // nothing.
+    let scim = metastore.scim();
+    let read = scim.get_group(id).await.unwrap();
+    let renamed = uc_api::ScimGroup {
+        display_name: "h".into(),
+        ..read.clone()
+    };
+    scim.update_group(id, renamed, None).await.unwrap();
+    let stale = scim.update_group(id, read.clone(), Some(&read)).await;
+    assert_eq!(stale.unwrap_err().code(), uc_common::ErrorCode::Aborted);
+    assert_eq!(scim.get_group(id).await.unwrap().display_name, "h");
+}
+
+/// User names and emails are kept without spaces around them, and so is
+/// the principal.
+#[tokio::test]
+async fn user_names_and_emails_are_trimmed() {
+    let (app, metastore) = common::app_with_metastore().await;
+    let scim = metastore.scim();
+    let user = call(
+        &app,
+        Method::POST,
+        "/scim2/Users",
+        json!({ "userName": " svc " }),
+    )
+    .await
+    .ok(StatusCode::CREATED);
+    assert_eq!(user["userName"], "svc");
+    assert!(scim.find_user_by_principal("svc").await.unwrap().is_some());
+    let body = json!({ "userName": "m", "emails": [{ "value": " m@x.com ", "primary": true }] });
+    let user = call(&app, Method::POST, "/scim2/Users", body)
+        .await
+        .ok(StatusCode::CREATED);
+    assert_eq!(user["emails"][0]["value"], "m@x.com");
+    assert!(
+        scim.find_user_by_principal("m@x.com")
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+/// `admin` is the server's own user, which `uc-server token` signs in: no
+/// other user takes the name in any case, and the user keeps it.
+#[tokio::test]
+async fn the_name_admin_belongs_to_the_servers_own_user() {
+    let (app, metastore) = common::app_with_metastore().await;
+    for body in [
+        json!({ "userName": "Admin" }),
+        json!({ "userName": "ops", "emails": [{ "value": "ADMIN" }] }),
+    ] {
+        call(&app, Method::POST, "/scim2/Users", body)
+            .await
+            .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
+    }
+    let other = create(&app, "ops@example.com").await;
+    let rename = |name: &str| json!([{ "op": "replace", "path": "userName", "value": name }]);
+    patch(&app, &format!("/scim2/Users/{other}"), rename("admin"))
+        .await
+        .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
+
+    uc_server::authn::security::initialize_admin(&metastore)
+        .await
+        .unwrap();
+    let admin = metastore
+        .scim()
+        .find_user_by_principal("admin")
+        .await
+        .unwrap()
+        .unwrap();
+    let path = format!("/scim2/Users/{}", admin.id.unwrap());
+    patch(&app, &path, rename("root"))
+        .await
+        .scim_error(StatusCode::BAD_REQUEST, Some("mutability"));
+    let display = json!([{ "op": "replace", "path": "displayName", "value": "Root" }]);
+    patch(&app, &path, display).await.ok(StatusCode::OK);
+}
+
+/// A grant names a user by principal, else a group by name, else a user by
+/// user name in any case.
+#[rstest]
+#[tokio::test]
+async fn a_grant_to_the_name_of_a_group_goes_to_the_group(#[future(awt)] app: Router) {
+    call(
+        &app,
+        Method::POST,
+        "/scim2/Groups",
+        json!({ "displayName": "ops" }),
+    )
+    .await
+    .ok(StatusCode::CREATED);
+    let bot =
+        json!({ "userName": "Ops", "emails": [{ "value": "bot@example.com", "primary": true }] });
+    call(&app, Method::POST, "/scim2/Users", bot)
+        .await
+        .ok(StatusCode::CREATED);
+    let body = json!({ "name": "c1", "storage_root": common::temp_storage_root() });
+    send(&app, req_json(Method::POST, "/catalogs", body))
+        .await
+        .ok(StatusCode::OK);
+    for (name, principal) in [("ops", "ops"), ("OPS", "bot@example.com")] {
+        let grant = json!({ "changes": [{ "principal": name, "add": ["USE CATALOG"] }] });
+        let grants = send(
+            &app,
+            req_json(Method::PATCH, "/permissions/catalog/c1", grant),
+        )
+        .await
+        .ok(StatusCode::OK);
+        assert_eq!(
+            grants["privilege_assignments"],
+            json!([{ "principal": principal, "privileges": ["USE CATALOG"] }]),
+            "{name}"
+        );
+    }
 }

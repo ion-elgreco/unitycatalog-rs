@@ -95,6 +95,16 @@ impl ServerConfig {
         let workers = server.workers.unwrap_or_else(|| {
             std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
         });
+        if let Some(url) = auth.public_url.as_deref().map(str::trim)
+            && !url.is_empty()
+            && !(url.starts_with("https://") || url.starts_with("http://"))
+        {
+            return Err(invalid(
+                "auth.public_url",
+                url,
+                "Expected an http or https URL.",
+            ));
+        }
         let database = database_config(db, &data_dir)?;
         let http = crate::server::app::HttpSettings {
             ui_dir: match ui.enabled {

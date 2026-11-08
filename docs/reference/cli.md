@@ -147,10 +147,11 @@ The list commands take `--max_results` (default 100) and `--page_token`. After a
 | `list` | `--filter` (SCIM, such as `'userName eq "alice@example.com"'`), `--start_index` (from 1), `--count` (default 100) |
 | `get` | **`--id`** |
 | `update` | **`--id`**, `--name`, `--external_id`, `--email` |
-| `delete` | **`--id`**: deletes the user with its grants, tokens and group memberships |
+| `delete` | **`--id`**: deletes the user with its grants, tokens and group memberships; its objects have no owner then |
 
-A user's email is its name in grants and owners. `update --email` moves its grants, owned objects
-and tokens to the new email.
+A user's email is its name in grants and owners. `update --email` replaces the user's primary
+email and keeps its other emails. It moves the user's grants, owned objects and tokens to the new
+email.
 
 ## group
 

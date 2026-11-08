@@ -322,6 +322,9 @@ pub struct AuthSettings {
     pub keys: Arc<JwtKeys>,
     /// The web UI's sign-in (`UC_AUTH_MODE`); none without it.
     pub sign_in: Option<crate::authn::sign_in::SignIn>,
+    /// `auth.public_url` without a trailing `/`: the base of the URLs in
+    /// answers ([`crate::http::public_url`]).
+    pub public_url: Option<String>,
     /// Who sent a request (`crate::authn::chain`).
     pub authenticator: Authenticator<AppState>,
     /// How long the authenticator keeps a caller by its token.
@@ -346,6 +349,10 @@ impl AuthSettings {
             cookie_timeout: auth.cookie_timeout,
             keys,
             sign_in: None,
+            public_url: (auth.public_url.as_deref())
+                .map(|url| url.trim().trim_end_matches('/'))
+                .filter(|url| !url.is_empty())
+                .map(str::to_string),
             keep: ACCEPTED_TTL,
         }
     }
@@ -459,7 +466,8 @@ pub(crate) enum TokenKind {
 ///
 /// 1. The first of `principal_claims` present. A value that is an email
 ///    names the user with that email, in any case, as [`email_trusted`]
-///    allows; any other value names the user `<issuer name>:<value>`.
+///    allows, else the user with it as user name (such as an Entra UPN);
+///    any other value names the user `<issuer name>:<value>`.
 /// 2. Nobody found, and the token is an application's own
 ///    ([`application`]): the user whose `externalId` is
 ///    `<issuer name>:<client id>`.
@@ -492,7 +500,7 @@ pub(crate) async fn resolve(
             false => format!("{}:{value}", issuer.name),
         };
         let found = match is_email {
-            true => scim.find_user_by_principal_any_case(&principal).await?,
+            true => user_of_email(state, &principal).await?,
             false => scim.find_user_by_principal(&principal).await?,
         };
         if let Some(user) = found {
@@ -512,6 +520,17 @@ pub(crate) async fn resolve(
             create(state, issuer, claims, principal, is_email, external_id).await
         }
         _ => Err(not_allowed()),
+    }
+}
+
+/// The user with the principal `email` in any case, else the user with
+/// the user name `email`: SCIM keeps an identity provider's user name,
+/// which can differ from the user's email.
+async fn user_of_email(state: &AppState, email: &str) -> Result<Option<ScimUser>> {
+    let scim = state.metastore.scim();
+    match scim.find_user_by_principal_any_case(email).await? {
+        Some(user) => Ok(Some(user)),
+        None => scim.get_user_by_name(email).await,
     }
 }
 
@@ -592,11 +611,14 @@ async fn create(
             Ok(user.principal().to_string())
         }
         // Another request, or another replica, made it first.
-        Err(e) if e.code().is_already_exists() => scim
-            .find_user_by_principal(&principal)
-            .await?
-            .and_then(assumable)
-            .ok_or_else(|| Error::invalid_argument("User not allowed")),
+        Err(e) if e.code().is_already_exists() => {
+            let user = match is_email {
+                true => user_of_email(state, &principal).await?,
+                false => scim.find_user_by_principal(&principal).await?,
+            };
+            user.and_then(assumable)
+                .ok_or_else(|| Error::invalid_argument("User not allowed"))
+        }
         Err(e) => Err(e),
     }
 }

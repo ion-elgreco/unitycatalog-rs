@@ -210,7 +210,9 @@ pub struct Auth {
     pub mode: SignInMode,
     /// The server's external URL: the provider returns the browser to
     /// `<public_url>/auth/callback`, and with `oidc_end_session` to
-    /// `<public_url>/` after "Log out".
+    /// `<public_url>/` after "Log out". The URLs in SCIM answers and Delta
+    /// Sharing profiles start with it; without it, with the URL that the
+    /// client called.
     pub public_url: Option<String>,
     pub oidc_issuer: Option<String>,
     pub oidc_client_id: Option<String>,

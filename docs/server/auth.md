@@ -95,9 +95,13 @@ uc user create --name Bob --email bob@example.com
   `admin_principals` and Cedar policies still name the old one: the server logs a warning for
   each of them.
 - A privilege granted to a group applies to each member. A group's name is its name in grants,
-  and it cannot be the email of a user.
+  and it cannot be the email of a user. A grant to a name goes to the user with that email, else
+  to the group with that name, else to the user with that `userName`.
 - To stop a user from signing in, disable it. When you delete a user, the server deletes it with
-  its grants, tokens and group memberships.
+  its grants, tokens and group memberships. The objects that it owned have no owner then, so a
+  later user with the same email does not get them. An admin can give them a new owner. A deleted
+  group also leaves its objects without an owner.
+- `admin` is the name of the server's own user. No other user can have it as `userName` or email.
 - Only admins can add, change or delete users and groups.
 
 ### Manage users by hand
@@ -126,7 +130,11 @@ provider's provisioning settings, enter:
 
 The server keeps each user's `userName`, name, display name, emails, pictures, state and external
 id as the provider sends them, and leaves out the other attributes, such as `title`. A provider
-finds its users again by `userName`, so the server never changes it.
+finds its users again by `userName`, so the server never changes it. A token can name a user by
+its `userName` too, such as an Entra UPN that differs from the user's email.
+
+The URLs in SCIM answers start with `auth.public_url` when it is set. Without it, they start with
+the URL that the provider called.
 
 Use one way to get groups from a provider: SCIM or `groups_claim` ([Groups](#groups)). A group
 that SCIM makes has the provider's name, such as `Writers`, while `groups_claim` reads the groups
@@ -207,6 +215,7 @@ The examples use the Entra block above: `name = "entra"`,
 | The token has | User | Why |
 | --- | --- | --- |
 | `"preferred_username": "alice@example.com"` | `alice@example.com` | An email names the user with that email, in any case: `Alice@Example.com` is the same user. |
+| `"preferred_username": "alice@example.com"`, and SCIM made the user with that `userName` and the email `alice.smith@example.com` | `alice.smith@example.com` | No user has the email, so the user with it as `userName`. |
 | `"oid": "7f3e…"`, and no `preferred_username` | `entra:7f3e…` | Any other value gets the block's `name` as a prefix. |
 | `"preferred_username": "alice@example.com"`, `"email_verified": false` | nobody | The provider has not verified the email. |
 | `"preferred_username": "alice@example.com"`, at an `issuer` with `*` | nobody | At an `issuer` with `*`, an email needs `"email_verified": true`. |

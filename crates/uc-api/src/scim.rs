@@ -110,7 +110,7 @@ pub struct ScimName {
 
 /// A SCIM user. In requests every field but `userName` may be absent;
 /// responses have `schemas`, `id`, `meta`, `userName` and `active`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ScimUser {
     /// `["urn:ietf:params:scim:schemas:core:2.0:User"]`.
     #[serde(default)]
@@ -209,7 +209,7 @@ pub struct ScimGroupMember {
     pub r#type: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ScimGroup {
     #[serde(default)]
     pub schemas: Vec<String>,
