@@ -5,7 +5,10 @@
 //!
 //! As Entra ID needs: a `remove` of a list with a `value` removes only
 //! those values, and an `add` or `replace` of `attr[filter].sub` that
-//! matches nothing adds a value made of the filter's `eq` terms.
+//! matches nothing adds a value made of the filter's `eq` terms, such as
+//! `emails[type eq "work"].value`. A filter on `value`, such as
+//! `members[value eq "<id>"].display`, names an existing value only: one
+//! that matches nothing is `noTarget` (RFC 7644, section 3.5.2.3).
 
 use serde_json::{Map, Value};
 
@@ -71,7 +74,10 @@ fn writable(resource_type: &ResourceType, name: &str) -> Option<&'static Attribu
 fn parse_path(path: &str, resource_type: &ResourceType) -> Result<Option<Target>, PatchError> {
     let invalid = || error("invalidPath", format!("Invalid path: {path}"));
     let path = scim_schema::strip_schema(path.trim(), resource_type.schema);
-    if path.len() >= 4 && path[..4].eq_ignore_ascii_case("urn:") {
+    if path
+        .get(..4)
+        .is_some_and(|start| start.eq_ignore_ascii_case("urn:"))
+    {
         return Ok(None);
     }
     let end = path.find(['[', '.']).unwrap_or(path.len());
@@ -158,7 +164,8 @@ pub fn apply(
     Ok(())
 }
 
-/// An `add` or `replace` whose value holds the attributes.
+/// An `add` or `replace` whose value holds the attributes. A key may be a
+/// path, such as `name.familyName` or `emails[type eq "work"].value`.
 fn apply_without_path(
     resource: &mut Map<String, Value>,
     resource_type: &ResourceType,
@@ -175,12 +182,7 @@ fn apply_without_path(
         ));
     };
     for (name, value) in attributes {
-        if let Some(attribute) = writable(resource_type, &name) {
-            let target = Target {
-                attribute,
-                filter: None,
-                sub: None,
-            };
+        if let Some(target) = parse_path(&name, resource_type)? {
             apply_to(resource, &target, op, Some(value))?;
         }
     }
@@ -273,9 +275,15 @@ fn apply_to(
                     let value = value.ok_or_else(needs_value)?;
                     let chosen = match matching.is_empty() {
                         true => {
-                            let made = filter.equalities().ok_or_else(|| {
-                                error("noTarget", format!("No value of {name} matches"))
-                            })?;
+                            let made = (filter.equalities())
+                                .filter(|terms| {
+                                    terms
+                                        .iter()
+                                        .all(|(attr, _)| !attr.eq_ignore_ascii_case("value"))
+                                })
+                                .ok_or_else(|| {
+                                    error("noTarget", format!("No value of {name} matches"))
+                                })?;
                             items.push(Value::Object(made.into_iter().collect()));
                             vec![items.len() - 1]
                         }
@@ -526,14 +534,20 @@ mod tests {
             patched["emails"][1],
             json!({ "type": "home", "value": "a@home" })
         );
-        let err = patch(
-            &USERS,
-            user(),
-            json!([
-                { "op": "replace", "path": "emails[value co \"z\"].value", "value": "z" },
-            ]),
-        )
-        .unwrap_err();
+        for path in [
+            "emails[value co \"z\"].value",
+            "emails[value eq \"z@x\"].type",
+        ] {
+            let ops = json!([{ "op": "replace", "path": path, "value": "z" }]);
+            let err = patch(&USERS, user(), ops).unwrap_err();
+            assert_eq!(err.scim_type, "noTarget", "{path}");
+        }
+        // A member is never made from a filter.
+        let group = json!({ "id": "g", "displayName": "G" });
+        let ops = json!([
+            { "op": "replace", "path": "members[value eq \"u1\"].display", "value": "Bob" },
+        ]);
+        let err = patch(&GROUPS, group, ops).unwrap_err();
         assert_eq!(err.scim_type, "noTarget");
     }
 
@@ -552,6 +566,19 @@ mod tests {
             patched["name"],
             json!({ "givenName": "Al", "familyName": "Doe" })
         );
+        let patched = patch(
+            &USERS,
+            user(),
+            json!([
+                { "op": "replace", "value": {
+                    "emails[type eq \"work\"].value": "new@x",
+                    "name.familyName": "Smith",
+                } },
+            ]),
+        )
+        .unwrap();
+        assert_eq!(patched["emails"][0]["value"], "new@x");
+        assert_eq!(patched["name"]["familyName"], "Smith");
     }
 
     #[test]
@@ -611,6 +638,11 @@ mod tests {
                 "invalidPath",
             ),
             (json!([{ "op": "replace", "value": "x" }]), "invalidValue"),
+            // Byte 4 is inside a character.
+            (
+                json!([{ "op": "add", "path": "ab\u{65e5}[", "value": "x" }]),
+                "invalidPath",
+            ),
         ] {
             assert_eq!(
                 patch(&USERS, user(), ops.clone()).unwrap_err().scim_type,

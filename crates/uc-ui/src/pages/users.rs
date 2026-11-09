@@ -1,7 +1,8 @@
 //! The users, from "Manage" in the sidebar, for admins: each one's name,
-//! email, state and creation; "Create user"; and "Delete", which
-//! deactivates a user and removes their grants, as the server does. Users
-//! also come from the identity provider, at their first sign-in.
+//! email (the principal of their grants), state and creation; "Create
+//! user"; and "Delete", which deletes a user with their grants, tokens and
+//! group memberships, as the server does. Users also come from the
+//! identity provider, at their first sign-in or by SCIM.
 
 use js_sys::Date;
 use leptos::prelude::*;
@@ -62,9 +63,9 @@ fn UserList() -> impl IntoView {
             title: "Email",
             width: "30%",
             render: Box::new(|u: &ScimUser| {
-                view! { <span>{u.user_name.clone()}</span> }.into_any()
+                view! { <span>{u.principal().to_string()}</span> }.into_any()
             }),
-            search_key: Some(Box::new(|u: &ScimUser| u.user_name.clone())),
+            search_key: Some(Box::new(|u: &ScimUser| u.principal().to_string())),
         },
         Column {
             title: "State",
@@ -90,9 +91,6 @@ fn UserList() -> impl IntoView {
             title: "",
             width: "12%",
             render: Box::new(move |u: &ScimUser| {
-                if !is_active(u) {
-                    return ().into_any();
-                }
                 let user = u.clone();
                 view! {
                     <div class="uc-right" style="display:flex;justify-content:flex-end">
@@ -210,11 +208,8 @@ fn DeleteUser(deleting: RwSignal<Option<ScimUser>>) -> impl IntoView {
         let Some(user) = deleting.get_untracked() else {
             return;
         };
-        let ScimUser {
-            id,
-            user_name: email,
-            ..
-        } = user;
+        let email = user.principal().to_string();
+        let id = user.id;
         busy.set(true);
         spawn_local(async move {
             match api::client().delete_user(id).await {
@@ -233,7 +228,7 @@ fn DeleteUser(deleting: RwSignal<Option<ScimUser>>) -> impl IntoView {
     };
     let email = move || {
         deleting
-            .try_with(|u| u.as_ref().map(|u| u.user_name.clone()))
+            .try_with(|u| u.as_ref().map(|u| u.principal().to_string()))
             .flatten()
             .unwrap_or_default()
     };
@@ -249,9 +244,9 @@ fn DeleteUser(deleting: RwSignal<Option<ScimUser>>) -> impl IntoView {
             on_ok
         >
             <p>
-                "This deactivates "
+                "This deletes "
                 <span class="uc-strong">{email}</span>
-                " and removes all their grants. They can no longer sign in, and their access tokens stop working."
+                " with their grants, access tokens and group memberships. The objects they own lose their owner."
             </p>
         </Modal>
     }

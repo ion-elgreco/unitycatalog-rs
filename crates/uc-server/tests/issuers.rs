@@ -301,14 +301,12 @@ async fn a_missing_user_is_refused_unless_made_or_known_by_its_client_id() {
         .await
         .unwrap()
         .unwrap();
-    scim.update_user(
-        old.id.as_deref().unwrap(),
-        ScimUser {
+    scim.update_user(old.id.as_deref().unwrap(), &mut |current| {
+        Ok(ScimUser {
             active: Some(false),
-            ..old.clone()
-        },
-        None,
-    )
+            ..current.clone()
+        })
+    })
     .await
     .unwrap();
     let old_token = app_token(
@@ -420,7 +418,7 @@ async fn a_person_is_named_by_the_user_name_that_scim_keeps() {
         owner_of_a_new_catalog(&app, &alice, "alices").await,
         "alice.smith@corp.example.com"
     );
-    assert_eq!(metastore.scim().list_users().await.unwrap().len(), 1);
+    assert_eq!(metastore.scim().list_users(None).await.unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -705,14 +703,12 @@ async fn accepted_tokens_are_kept_until_the_cap() {
     // The user is disabled: the token passes until the cap, then not.
     let scim = metastore.scim();
     let made = scim.get_user_by_name("entra:7f3e").await.unwrap().unwrap();
-    scim.update_user(
-        made.id.as_deref().unwrap(),
-        ScimUser {
+    scim.update_user(made.id.as_deref().unwrap(), &mut |current| {
+        Ok(ScimUser {
             active: Some(false),
-            ..made.clone()
-        },
-        None,
-    )
+            ..current.clone()
+        })
+    })
     .await
     .unwrap();
     assert_eq!(

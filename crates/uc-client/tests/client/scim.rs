@@ -152,8 +152,10 @@ async fn user_patches() {
     );
     assert_eq!(
         (error.status, error.code.as_deref()),
-        (400, Some("noTarget"))
+        (400, Some("INVALID_ARGUMENT"))
     );
+    let body: serde_json::Value = serde_json::from_str(&error.body).unwrap();
+    assert_eq!(body["scimType"], "noTarget");
 }
 
 #[tokio::test]

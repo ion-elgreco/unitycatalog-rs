@@ -242,12 +242,52 @@ async fn the_same_user_name_principal_or_external_id_is_a_conflict(#[future(awt)
             json!({ "userName": "dave", "externalId": "ext-bob" }),
             "User already exists with external id: ext-bob",
         ),
+        (
+            json!({ "userName": "dave", "externalId": "EXT-BOB" }),
+            "User already exists with external id: EXT-BOB",
+        ),
     ] {
         let err = call(&app, Method::POST, "/scim2/Users", body)
             .await
             .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
         assert_eq!(err["detail"], detail);
+        assert_eq!(err["error_code"], "ALREADY_EXISTS");
     }
+    call(
+        &app,
+        Method::POST,
+        "/scim2/Groups",
+        json!({ "displayName": "Writers" }),
+    )
+    .await
+    .ok(StatusCode::CREATED);
+    let err = call(
+        &app,
+        Method::POST,
+        "/scim2/Groups",
+        json!({ "displayName": "writers" }),
+    )
+    .await
+    .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
+    assert_eq!(err["detail"], "Group already exists: writers");
+}
+
+/// The server ignores the attributes that a client may not write, however
+/// they look.
+#[rstest]
+#[tokio::test]
+async fn a_new_resource_may_have_any_read_only_attributes(#[future(awt)] app: Router) {
+    let body = json!({ "userName": "ro@x", "id": 7, "meta": { "created": "x" },
+        "roles": ["admin"] });
+    let user = call(&app, Method::POST, "/scim2/Users", body)
+        .await
+        .ok(StatusCode::CREATED);
+    assert!(user["id"].is_string());
+    assert!(user.get("roles").is_none());
+    let body = json!({ "displayName": "ro", "meta": { "created": "x" } });
+    call(&app, Method::POST, "/scim2/Groups", body)
+        .await
+        .ok(StatusCode::CREATED);
 }
 
 /// With authorization off, the checks let every caller do what the
@@ -956,6 +996,12 @@ async fn errors_are_scim_errors(#[future(awt)] app: Router) {
     )
     .await
     .scim_error(StatusCode::BAD_REQUEST, Some("noTarget"));
+    // The UC clients read the UC code and message.
+    let err = get(&app, "/scim2/Users/gone")
+        .await
+        .scim_error(StatusCode::NOT_FOUND, None);
+    assert_eq!(err["error_code"], "NOT_FOUND");
+    assert_eq!(err["message"], "User not found: gone");
 }
 
 #[rstest]
@@ -1044,6 +1090,50 @@ async fn bulk_runs_each_operation(#[future(awt)] app: Router) {
     assert_eq!(ops[1]["response"]["schemas"], json!([ERROR_SCHEMA]));
 }
 
+/// `bulkId:<id>` names the resource of an earlier operation.
+#[rstest]
+#[tokio::test]
+async fn bulk_resolves_bulk_ids(#[future(awt)] app: Router) {
+    let body = json!({
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:BulkRequest"],
+        "Operations": [
+            { "method": "POST", "path": "/Users", "bulkId": "u1", "data": { "userName": "b1@x" } },
+            { "method": "POST", "path": "/Groups", "bulkId": "g1",
+              "data": { "displayName": "bulk", "members": [{ "value": "bulkId:u1" }] } },
+            { "method": "PATCH", "path": "/Users/bulkId:u1", "data": { "Operations": [
+                { "op": "replace", "path": "displayName", "value": "B1" } ] } },
+            { "method": "POST", "path": "/Groups",
+              "data": { "displayName": "other", "members": [{ "value": "bulkId:nope" }] } },
+        ]
+    });
+    let resp = call(&app, Method::POST, "/scim2/Bulk", body)
+        .await
+        .ok(StatusCode::OK);
+    let ops = resp["Operations"].as_array().unwrap();
+    let statuses: Vec<&str> = ops.iter().map(|o| o["status"].as_str().unwrap()).collect();
+    assert_eq!(statuses, ["201", "201", "200", "409"], "{resp}");
+    let user = ops[0]["location"]
+        .as_str()
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap();
+    let group = ops[1]["location"]
+        .as_str()
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap();
+    let group = get(&app, &format!("/scim2/Groups/{group}"))
+        .await
+        .ok(StatusCode::OK);
+    assert_eq!(member_ids(&group), [user]);
+    let user = get(&app, &format!("/scim2/Users/{user}"))
+        .await
+        .ok(StatusCode::OK);
+    assert_eq!(user["displayName"], "B1");
+}
+
 /// Changes of one group at the same time each stay: a change that another
 /// request beat runs again on the newer group.
 #[tokio::test]
@@ -1081,18 +1171,23 @@ async fn changes_at_the_same_time_each_stay() {
     expected.sort_unstable();
     assert_eq!(members, expected);
 
-    // A write from a group that another request changed since changes
-    // nothing.
+    // A change runs on the stored group, and its error changes nothing.
     let scim = metastore.scim();
-    let read = scim.get_group(id).await.unwrap();
-    let renamed = uc_api::ScimGroup {
-        display_name: "h".into(),
-        ..read.clone()
-    };
-    scim.update_group(id, renamed, None).await.unwrap();
-    let stale = scim.update_group(id, read.clone(), Some(&read)).await;
-    assert_eq!(stale.unwrap_err().code(), uc_common::ErrorCode::Aborted);
-    assert_eq!(scim.get_group(id).await.unwrap().display_name, "h");
+    scim.update_group(id, &mut |current| {
+        Ok(uc_api::ScimGroup {
+            display_name: "h".into(),
+            ..current.clone()
+        })
+    })
+    .await
+    .unwrap();
+    let failed = scim
+        .update_group(id, &mut |_| Err(uc_common::Error::invalid_argument("no")))
+        .await;
+    assert_eq!(failed.unwrap_err().message(), "no");
+    let group = scim.get_group(id).await.unwrap();
+    assert_eq!(group.display_name, "h");
+    assert_eq!(group.members.unwrap().len(), 3);
 }
 
 /// User names and emails are kept without spaces around them, and so is
@@ -1156,6 +1251,13 @@ async fn the_name_admin_belongs_to_the_servers_own_user() {
     patch(&app, &path, rename("root"))
         .await
         .scim_error(StatusCode::BAD_REQUEST, Some("mutability"));
+    let disable = json!([{ "op": "replace", "path": "active", "value": false }]);
+    patch(&app, &path, disable)
+        .await
+        .scim_error(StatusCode::BAD_REQUEST, Some("mutability"));
+    send(&app, control(Method::DELETE, &path))
+        .await
+        .scim_error(StatusCode::FORBIDDEN, None);
     let display = json!([{ "op": "replace", "path": "displayName", "value": "Root" }]);
     patch(&app, &path, display).await.ok(StatusCode::OK);
 }

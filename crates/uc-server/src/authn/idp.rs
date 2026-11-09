@@ -466,8 +466,9 @@ pub(crate) enum TokenKind {
 ///
 /// 1. The first of `principal_claims` present. A value that is an email
 ///    names the user with that email, in any case, as [`email_trusted`]
-///    allows, else the user with it as user name (such as an Entra UPN);
-///    any other value names the user `<issuer name>:<value>`.
+///    allows, else, for an issuer without `*`, the user with it as user
+///    name (such as an Entra UPN); any other value names the user
+///    `<issuer name>:<value>`.
 /// 2. Nobody found, and the token is an application's own
 ///    ([`application`]): the user whose `externalId` is
 ///    `<issuer name>:<client id>`.
@@ -500,7 +501,7 @@ pub(crate) async fn resolve(
             false => format!("{}:{value}", issuer.name),
         };
         let found = match is_email {
-            true => user_of_email(state, &principal).await?,
+            true => user_of_email(state, issuer, &principal).await?,
             false => scim.find_user_by_principal(&principal).await?,
         };
         if let Some(user) = found {
@@ -525,12 +526,20 @@ pub(crate) async fn resolve(
 
 /// The user with the principal `email` in any case, else the user with
 /// the user name `email`: SCIM keeps an identity provider's user name,
-/// which can differ from the user's email.
-async fn user_of_email(state: &AppState, email: &str) -> Result<Option<ScimUser>> {
+/// which can differ from the user's email. Only an issuer without `*`
+/// names users by user name: that is the provider that the admin trusts
+/// with its users' names, while anyone can make an issuer that `*`
+/// matches.
+async fn user_of_email(
+    state: &AppState,
+    issuer: &IssuerSettings,
+    email: &str,
+) -> Result<Option<ScimUser>> {
     let scim = state.metastore.scim();
     match scim.find_user_by_principal_any_case(email).await? {
         Some(user) => Ok(Some(user)),
-        None => scim.get_user_by_name(email).await,
+        None if !issuer.issuer.contains('*') => scim.get_user_by_name(email).await,
+        None => Ok(None),
     }
 }
 
@@ -613,7 +622,7 @@ async fn create(
         // Another request, or another replica, made it first.
         Err(e) if e.code().is_already_exists() => {
             let user = match is_email {
-                true => user_of_email(state, &principal).await?,
+                true => user_of_email(state, issuer, &principal).await?,
                 false => scim.find_user_by_principal(&principal).await?,
             };
             user.and_then(assumable)
