@@ -119,7 +119,7 @@ async fn a_role_signs_in_with_a_signed_request() {
     // Another session of the role is the same user.
     let other = sts.token("ASIAETL2", SERVER_ID);
     assert_eq!(get(&app, &other).await.status(), StatusCode::OK);
-    assert_eq!(metastore.scim().list_users().await.unwrap().len(), 1);
+    assert_eq!(metastore.scim().list_users(None).await.unwrap().len(), 1);
     // An IAM user is named by its own ARN.
     let alice = sts.token("AKIAALICE", SERVER_ID);
     assert_eq!(get(&app, &alice).await.status(), StatusCode::OK);

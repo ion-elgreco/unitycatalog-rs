@@ -1,6 +1,7 @@
 -- The catalog's tables. Every row is keyed by its UUID (`id_string`) and
 -- links to its parent by id, so renames are field updates. Names are unique
--- within the parent. The table and column names are those of the backup
+-- within the parent. Owners are indexed: a deleted or renamed user or
+-- group changes the owner of its objects. The table and column names are those of the backup
 -- format (`Snapshot` in src/admin.rs).
 
 CREATE TABLE catalog (
@@ -16,6 +17,7 @@ CREATE TABLE catalog (
     storage_root     TEXT,
     storage_location TEXT
 );
+CREATE INDEX catalog_by_owner ON catalog (owner);
 
 CREATE TABLE schema (
     id_string        TEXT PRIMARY KEY,
@@ -32,6 +34,7 @@ CREATE TABLE schema (
     storage_location TEXT,
     UNIQUE (catalog_id, name)
 );
+CREATE INDEX schema_by_owner ON schema (owner);
 
 -- `table` is a reserved word.
 CREATE TABLE tbl (
@@ -56,6 +59,7 @@ CREATE TABLE tbl (
     uniform_iceberg_converted_delta_timestamp BIGINT,
     UNIQUE (schema_id, name)
 );
+CREATE INDEX tbl_by_owner ON tbl (owner);
 
 -- Upstream `uc_staging_tables`: a managed location reserved for a table a
 -- client is about to create; creating the MANAGED table commits it.
@@ -74,6 +78,7 @@ CREATE TABLE staging_table (
     last_cleanup_at     BIGINT
 );
 CREATE INDEX staging_table_by_schema ON staging_table (schema_id);
+CREATE INDEX staging_table_by_created_by ON staging_table (created_by);
 
 -- Upstream `uc_delta_commits`.
 CREATE TABLE delta_commit (
@@ -101,6 +106,7 @@ CREATE TABLE volume (
     storage_location TEXT,
     UNIQUE (schema_id, name)
 );
+CREATE INDEX volume_by_owner ON volume (owner);
 
 -- `function` is a reserved word.
 CREATE TABLE func (
@@ -130,6 +136,7 @@ CREATE TABLE func (
     updated_by           TEXT,
     UNIQUE (schema_id, name)
 );
+CREATE INDEX func_by_owner ON func (owner);
 
 CREATE TABLE registered_model (
     id_string          TEXT PRIMARY KEY,
@@ -145,6 +152,7 @@ CREATE TABLE registered_model (
     max_version_number BIGINT,
     UNIQUE (schema_id, name)
 );
+CREATE INDEX registered_model_by_owner ON registered_model (owner);
 
 CREATE TABLE model_version (
     id_string           TEXT PRIMARY KEY,
@@ -187,6 +195,7 @@ CREATE TABLE credential (
     updated_at                BIGINT NOT NULL,
     updated_by                TEXT
 );
+CREATE INDEX credential_by_owner ON credential (owner);
 
 CREATE TABLE external_location (
     id_string     TEXT PRIMARY KEY,
@@ -202,6 +211,7 @@ CREATE TABLE external_location (
 );
 CREATE INDEX external_location_by_url ON external_location (url);
 CREATE INDEX external_location_by_credential ON external_location (credential_id);
+CREATE INDEX external_location_by_owner ON external_location (owner);
 
 -- The grants of one principal on one securable, named by id.
 CREATE TABLE permission (
@@ -249,21 +259,21 @@ CREATE TABLE scim_user (
     created_at   BIGINT,
     updated_at   BIGINT
 );
--- User names are unique in any case. Lookups and SCIM filters compare
--- names, principals and external ids without case.
+-- User names and external ids are unique in any case, as lookups and
+-- SCIM filters compare them without case. So are group names.
 CREATE UNIQUE INDEX scim_user_by_user_name ON scim_user (lower(user_name));
 CREATE INDEX scim_user_by_principal ON scim_user (lower(principal));
-CREATE INDEX scim_user_by_external_id ON scim_user (lower(external_id));
+CREATE UNIQUE INDEX scim_user_by_external_id ON scim_user (lower(external_id));
 
 CREATE TABLE scim_group (
     id_string    TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
     external_id  TEXT,
     members      TEXT,
     created_at   BIGINT,
     updated_at   BIGINT
 );
-CREATE INDEX scim_group_by_display_name ON scim_group (lower(display_name));
+CREATE UNIQUE INDEX scim_group_by_display_name ON scim_group (lower(display_name));
 CREATE INDEX scim_group_by_external_id ON scim_group (lower(external_id));
 -- The user ids of each group's members, written with `scim_group.members`:
 -- the groups whose grants a user gets.
@@ -286,6 +296,7 @@ CREATE TABLE share (
     updated_by TEXT,
     objects    TEXT
 );
+CREATE INDEX share_by_owner ON share (owner);
 
 CREATE TABLE recipient (
     id_string           TEXT PRIMARY KEY,
@@ -301,6 +312,7 @@ CREATE TABLE recipient (
     token_prefix        TEXT,
     shares              TEXT
 );
+CREATE INDEX recipient_by_owner ON recipient (owner);
 
 -- Upstream `uc_storage_cleanup_tasks`: the files of a dropped managed
 -- table, volume, model or model version, still to delete. Times are epoch

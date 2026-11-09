@@ -8,15 +8,15 @@ use uc_api::{
     PermissionsChange, ScimEmail, ScimGroup, ScimGroupMember, ScimMeta, ScimName, ScimPhoto,
     ScimUser,
 };
-use uc_common::{Error, Result, SecurableType, now_epoch_millis, require_non_empty};
+use uc_common::{Error, ErrorCode, Result, SecurableType, now_epoch_millis, require_non_empty};
 use uc_storage::{Exec, Value};
 
 use crate::ScimOps;
 use crate::permissions::sql::{apply_permission_change, forget_principal, rename_principal};
-use crate::scim::{ScimKey, SeedReport, SeedUser};
+use crate::scim::{Change, Page, ScimKey, SeedReport, SeedUser};
 use crate::sql::rows::{SCIM_GROUP, SCIM_GROUP_MEMBER, SCIM_USER};
 use crate::sql::{
-    SqlMetastore, by_id, create_err, db_err, insert, insert_all, placeholders, select, update,
+    SqlMetastore, by_id, create_err_as, db_err, insert, insert_all, placeholders, select, update,
 };
 
 use uc_api::scim::schema_uri;
@@ -176,28 +176,28 @@ struct GroupMemberRow {
 /// The most values in one `IN (…)` list.
 const IN_LIST: usize = 500;
 
-/// Make `scim_group_member` hold the members of `group`, in `tx`: the rows
-/// of members that left go, and new members get one. Each new member must
-/// be a user, which stays locked until `tx` ends: a delete of the user
-/// waits, then removes it from the group.
-async fn write_members<E: Exec + ?Sized>(tx: &E, group: &ScimGroupRow) -> Result<()> {
+/// The member ids of `group`.
+fn member_ids(group: &ScimGroupRow) -> BTreeSet<&str> {
+    (group.members.iter().flatten())
+        .map(|m| m.value.as_str())
+        .collect()
+}
+
+/// Make `scim_group_member` hold the members of `group`, in `tx`, which
+/// held those of `was`, the stored group: the rows of members that left
+/// go, and new members get one. Each new member must be a user, which
+/// stays locked until `tx` ends: a delete of the user waits, then removes
+/// it from the group.
+async fn write_members<E: Exec + ?Sized>(
+    tx: &E,
+    group: &ScimGroupRow,
+    was: Option<&ScimGroupRow>,
+) -> Result<()> {
     let failed = db_err("write group members");
     let group_id = group.id_string.as_str();
-    let mut old = BTreeSet::new();
-    let rows = tx
-        .query(
-            "SELECT user_id FROM scim_group_member WHERE group_id = $1",
-            &[group_id.into()],
-        )
-        .await
-        .map_err(&failed)?;
-    for row in rows {
-        old.insert(row.text(0).map_err(&failed)?);
-    }
-    let new: BTreeSet<&str> = (group.members.iter().flatten())
-        .map(|m| m.value.as_str())
-        .collect();
-    let gone: Vec<&str> = (old.iter().map(String::as_str))
+    let old = was.map(member_ids).unwrap_or_default();
+    let new = member_ids(group);
+    let gone: Vec<&str> = (old.iter().copied())
         .filter(|id| !new.contains(id))
         .collect();
     let added: Vec<&str> = (new.iter().copied())
@@ -250,6 +250,18 @@ async fn write_members<E: Exec + ?Sized>(tx: &E, group: &ScimGroupRow) -> Result
         .map_err(&failed)
 }
 
+/// Lock the names in grants for the rest of `tx`, before a principal is
+/// checked against the group names or a group name against the
+/// principals: requests that do so at once wait for each other. The lock
+/// is the metastore row, which [`SqlMetastore::metastore_row`] makes.
+async fn lock_names<E: Exec + ?Sized>(tx: &E) -> Result<()> {
+    if !tx.for_update().is_empty() {
+        let sql = format!("SELECT singleton FROM metastore{}", tx.for_update());
+        tx.query(&sql, &[]).await.map_err(db_err("lock names"))?;
+    }
+    Ok(())
+}
+
 /// Grants name users by principal and groups by name, so no user has a
 /// group's name as principal and no group a user's principal.
 fn name_taken(name: &str) -> Error {
@@ -275,11 +287,11 @@ async fn require_no_user<E: Exec + ?Sized>(ex: &E, name: &str) -> Result<()> {
 }
 
 /// Conditions on a user, with `$1` the value: the same user name, in any
-/// case; the same principal; the same external id. The indexes of user
-/// names and external ids are on their lower case.
+/// case; the same principal; the same external id, in any case. The
+/// indexes of user names and external ids are on their lower case.
 const SAME_USER_NAME: &str = "lower(user_name) = lower($1)";
 const SAME_PRINCIPAL: &str = "principal = $1";
-const SAME_EXTERNAL_ID: &str = "lower(external_id) = lower($1) AND external_id = $1";
+const SAME_EXTERNAL_ID: &str = "lower(external_id) = lower($1)";
 
 /// The order of users in lists.
 const USER_ORDER: &str = "ORDER BY COALESCE(display_name, ''), user_name, id_string";
@@ -303,7 +315,8 @@ async fn others<E: Exec + ?Sized>(
 
 /// Check `row` against the other users and the groups: its user name,
 /// principal and external id belong to no other user (`was` is the row
-/// before an update), and no group has the principal as name.
+/// before an update), and no group has the principal as name. A new
+/// principal locks the names ([`lock_names`]).
 async fn check_user<E: Exec + ?Sized>(
     ex: &E,
     row: &ScimUserRow,
@@ -332,10 +345,13 @@ async fn check_user<E: Exec + ?Sized>(
                 row.principal
             )));
         }
+        lock_names(ex).await?;
         require_no_group(ex, &row.principal).await?;
     }
     if let Some(external_id) = row.external_id.as_deref()
-        && was.is_none_or(|w| w.external_id.as_deref() != Some(external_id))
+        && was.is_none_or(|w| {
+            (w.external_id.as_deref()).is_none_or(|w| !w.eq_ignore_ascii_case(external_id))
+        })
         && !others(ex, SAME_EXTERNAL_ID, external_id, id)
             .await?
             .is_empty()
@@ -363,17 +379,29 @@ where
     Ok(rows.into_iter().next())
 }
 
+/// The error of a write that another request's user name, principal or
+/// external id stopped, after the checks of [`check_user`].
+fn user_exists(row: &ScimUserRow) -> impl FnOnce(uc_storage::StorageError) -> Error {
+    create_err_as(
+        ErrorCode::AlreadyExists,
+        format!("User already exists: {}", row.user_name),
+    )
+}
+
+/// The error of a write that another group's name stopped.
+fn group_exists(row: &ScimGroupRow) -> impl FnOnce(uc_storage::StorageError) -> Error {
+    create_err_as(
+        ErrorCode::AlreadyExists,
+        format!("Group already exists: {}", row.display_name),
+    )
+}
+
 fn user_not_found(id: &str) -> Error {
     Error::not_found(format!("User not found: {id}"))
 }
 
 fn group_not_found(id: &str) -> Error {
     Error::not_found(format!("Group not found: {id}"))
-}
-
-/// Another request changed `what` between its read and this write.
-fn changed(what: &str) -> Error {
-    Error::aborted(format!("{what} changed during the request"))
 }
 
 /// The condition of `key` with `$1` the value, in any case. Ids are
@@ -386,11 +414,31 @@ fn key_filter(key: ScimKey, name_column: &str) -> String {
     }
 }
 
+/// `LIMIT … OFFSET …` for `page`; nothing for every row.
+fn page_sql(page: Option<Page>) -> String {
+    match page {
+        Some(Page { offset, limit }) => format!(" LIMIT {limit} OFFSET {offset}"),
+        None => String::new(),
+    }
+}
+
 impl SqlMetastore {
     /// The users that `filter` picks, with `params`.
     async fn users_where(&self, filter: &str, params: &[Value]) -> Result<Vec<ScimUser>> {
         let rows: Vec<ScimUserRow> = select(self.db.as_ref(), &SCIM_USER, filter, params).await?;
         Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    /// The number of rows of `table`.
+    async fn count(&self, table: &str) -> Result<usize> {
+        let failed = db_err("count");
+        let sql = format!("SELECT COUNT(*) FROM {table}");
+        let rows = self.db.query(&sql, &[]).await.map_err(&failed)?;
+        let count = match rows.first() {
+            Some(row) => row.int(0).map_err(&failed)?,
+            None => 0,
+        };
+        Ok(usize::try_from(count).unwrap_or_default())
     }
 }
 
@@ -404,12 +452,13 @@ impl ScimOps for SqlMetastore {
             Some(now_epoch_millis()),
             None,
         );
+        self.metastore_row().await?;
         let failed = db_err("create user");
         let tx = self.db.begin().await.map_err(&failed)?;
         check_user(tx.as_ref(), &row, None).await?;
         insert(tx.as_ref(), &SCIM_USER, &row)
             .await
-            .map_err(create_err)?;
+            .map_err(user_exists(&row))?;
         tx.commit().await.map_err(&failed)?;
         Ok(row.into())
     }
@@ -419,9 +468,14 @@ impl ScimOps for SqlMetastore {
         row.map(Into::into).ok_or_else(|| user_not_found(id))
     }
 
-    async fn list_users(&self) -> Result<Vec<ScimUser>> {
+    async fn list_users(&self, page: Option<Page>) -> Result<Vec<ScimUser>> {
         // Users without a display name first.
-        self.users_where(USER_ORDER, &[]).await
+        self.users_where(&format!("{USER_ORDER}{}", page_sql(page)), &[])
+            .await
+    }
+
+    async fn count_users(&self) -> Result<usize> {
+        self.count(SCIM_USER.name).await
     }
 
     async fn users_with(&self, key: ScimKey, value: &str) -> Result<Vec<ScimUser>> {
@@ -501,20 +555,14 @@ impl ScimOps for SqlMetastore {
         Ok(users.into_iter().next())
     }
 
-    async fn update_user(
-        &self,
-        id: &str,
-        user: ScimUser,
-        was: Option<&ScimUser>,
-    ) -> Result<ScimUser> {
+    async fn update_user(&self, id: &str, change: Change<'_, ScimUser>) -> Result<ScimUser> {
+        self.metastore_row().await?;
         let failed = db_err("update user");
         let tx = self.db.begin().await.map_err(&failed)?;
         let stored: ScimUserRow = lock(tx.as_ref(), &SCIM_USER, id)
             .await?
             .ok_or_else(|| user_not_found(id))?;
-        if was.is_some_and(|was| *was != ScimUser::from(stored.clone())) {
-            return Err(changed(&format!("User {id}")));
-        }
+        let user = change(&ScimUser::from(stored.clone()))?;
         let row = user_to_row(
             user,
             id.to_string(),
@@ -524,7 +572,7 @@ impl ScimOps for SqlMetastore {
         check_user(tx.as_ref(), &row, Some(&stored)).await?;
         update(tx.as_ref(), &SCIM_USER, &row)
             .await
-            .map_err(create_err)?;
+            .map_err(user_exists(&row))?;
         if row.principal != stored.principal {
             rename_principal(tx.as_ref(), &stored.principal, &row.principal).await?;
         }
@@ -603,7 +651,7 @@ impl ScimOps for SqlMetastore {
                     check_user(tx.as_ref(), &row, None).await?;
                     insert(tx.as_ref(), &SCIM_USER, &row)
                         .await
-                        .map_err(create_err)?;
+                        .map_err(user_exists(&row))?;
                     report.created += 1;
                     Some(row.principal)
                 }
@@ -637,13 +685,15 @@ impl ScimOps for SqlMetastore {
             Some(now_epoch_millis()),
             None,
         );
+        self.metastore_row().await?;
         let failed = db_err("create group");
         let tx = self.db.begin().await.map_err(&failed)?;
-        require_no_user(tx.as_ref(), &row.display_name).await?;
         insert(tx.as_ref(), &SCIM_GROUP, &row)
             .await
-            .map_err(create_err)?;
-        write_members(tx.as_ref(), &row).await?;
+            .map_err(group_exists(&row))?;
+        write_members(tx.as_ref(), &row, None).await?;
+        lock_names(tx.as_ref()).await?;
+        require_no_user(tx.as_ref(), &row.display_name).await?;
         tx.commit().await.map_err(&failed)?;
         Ok(row.into())
     }
@@ -653,10 +703,14 @@ impl ScimOps for SqlMetastore {
         row.map(Into::into).ok_or_else(|| group_not_found(id))
     }
 
-    async fn list_groups(&self) -> Result<Vec<ScimGroup>> {
-        let rows: Vec<ScimGroupRow> =
-            select(self.db.as_ref(), &SCIM_GROUP, GROUP_ORDER, &[]).await?;
+    async fn list_groups(&self, page: Option<Page>) -> Result<Vec<ScimGroup>> {
+        let tail = format!("{GROUP_ORDER}{}", page_sql(page));
+        let rows: Vec<ScimGroupRow> = select(self.db.as_ref(), &SCIM_GROUP, &tail, &[]).await?;
         Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    async fn count_groups(&self) -> Result<usize> {
+        self.count(SCIM_GROUP.name).await
     }
 
     async fn groups_with(&self, key: ScimKey, value: &str) -> Result<Vec<ScimGroup>> {
@@ -671,21 +725,15 @@ impl ScimOps for SqlMetastore {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
-    async fn update_group(
-        &self,
-        id: &str,
-        group: ScimGroup,
-        was: Option<&ScimGroup>,
-    ) -> Result<ScimGroup> {
-        require_non_empty("displayName", &group.display_name)?;
+    async fn update_group(&self, id: &str, change: Change<'_, ScimGroup>) -> Result<ScimGroup> {
+        self.metastore_row().await?;
         let failed = db_err("update group");
         let tx = self.db.begin().await.map_err(&failed)?;
         let stored: ScimGroupRow = lock(tx.as_ref(), &SCIM_GROUP, id)
             .await?
             .ok_or_else(|| group_not_found(id))?;
-        if was.is_some_and(|was| *was != ScimGroup::from(stored.clone())) {
-            return Err(changed(&format!("Group {id}")));
-        }
+        let group = change(&ScimGroup::from(stored.clone()))?;
+        require_non_empty("displayName", &group.display_name)?;
         let row = group_to_row(
             group,
             id.to_string(),
@@ -693,14 +741,13 @@ impl ScimOps for SqlMetastore {
             Some(now_epoch_millis()),
         );
         let renamed = stored.display_name != row.display_name;
-        if renamed {
-            require_no_user(tx.as_ref(), &row.display_name).await?;
-        }
         update(tx.as_ref(), &SCIM_GROUP, &row)
             .await
-            .map_err(create_err)?;
-        write_members(tx.as_ref(), &row).await?;
+            .map_err(group_exists(&row))?;
+        write_members(tx.as_ref(), &row, Some(&stored)).await?;
         if renamed {
+            lock_names(tx.as_ref()).await?;
+            require_no_user(tx.as_ref(), &row.display_name).await?;
             rename_principal(tx.as_ref(), &stored.display_name, &row.display_name).await?;
         }
         tx.commit().await.map_err(&failed)?;

@@ -102,6 +102,8 @@ uc user create --name Bob --email bob@example.com
   later user with the same email does not get them. An admin can give them a new owner. A deleted
   group also leaves its objects without an owner.
 - `admin` is the name of the server's own user. No other user can have it as `userName` or email.
+  The server's own user cannot be renamed, disabled or deleted.
+- Group names, and the external ids of users, are unique in any case.
 - Only admins can add, change or delete users and groups.
 
 ### Manage users by hand
@@ -130,8 +132,9 @@ provider's provisioning settings, enter:
 
 The server keeps each user's `userName`, name, display name, emails, pictures, state and external
 id as the provider sends them, and leaves out the other attributes, such as `title`. A provider
-finds its users again by `userName`, so the server never changes it. A token can name a user by
-its `userName` too, such as an Entra UPN that differs from the user's email.
+finds its users again by `userName`, so the server never changes it. A token of a provider whose
+`issuer` has no `*` can name a user by its `userName` too, such as an Entra UPN that differs from
+the user's email.
 
 The URLs in SCIM answers start with `auth.public_url` when it is set. Without it, they start with
 the URL that the provider called.

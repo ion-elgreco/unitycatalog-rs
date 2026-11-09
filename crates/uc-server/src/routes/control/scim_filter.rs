@@ -6,7 +6,7 @@
 //! "a@x"`), and a comparison of a list of complex values compares their
 //! `value` (`members eq "<id>"`).
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 /// A parsed filter.
 #[derive(Debug, Clone, PartialEq)]
@@ -316,12 +316,16 @@ pub fn parse(input: &str) -> Result<Filter, String> {
 }
 
 /// The member `name` of `object`, ignoring case.
-fn member<'a>(object: &'a Value, name: &str) -> Option<&'a Value> {
+pub fn member<'a>(object: &'a Map<String, Value>, name: &str) -> Option<&'a Value> {
     object
-        .as_object()?
         .iter()
         .find(|(key, _)| key.eq_ignore_ascii_case(name))
         .map(|(_, v)| v)
+}
+
+/// The member `name` of `value`, an object, ignoring case.
+fn member_of<'a>(value: &'a Value, name: &str) -> Option<&'a Value> {
+    member(value.as_object()?, name)
 }
 
 /// The values at `path`, arrays flattened. A complex value without a
@@ -333,20 +337,20 @@ fn values<'a>(resource: &'a Value, path: &AttrPath) -> Vec<&'a Value> {
             other => vec![other],
         }
     };
-    let Some(top) = member(resource, &path.attr) else {
+    let Some(top) = member_of(resource, &path.attr) else {
         return vec![];
     };
     match &path.sub {
         None => flatten(top)
             .into_iter()
             .map(|v| match v {
-                Value::Object(_) => member(v, "value").unwrap_or(v),
+                Value::Object(_) => member_of(v, "value").unwrap_or(v),
                 v => v,
             })
             .collect(),
         Some(sub) => flatten(top)
             .into_iter()
-            .filter_map(|v| member(v, sub))
+            .filter_map(|v| member_of(v, sub))
             .flat_map(flatten)
             .collect(),
     }
@@ -423,7 +427,7 @@ pub fn matches(filter: &Filter, resource: &Value) -> bool {
         Filter::Compare(path, op, expected) => values(resource, path)
             .into_iter()
             .any(|v| compare(v, *op, expected)),
-        Filter::ValuePath(path, inner) => match member(resource, &path.attr) {
+        Filter::ValuePath(path, inner) => match member_of(resource, &path.attr) {
             Some(Value::Array(items)) => items.iter().any(|item| matches(inner, item)),
             Some(item @ Value::Object(_)) => matches(inner, item),
             _ => false,

@@ -61,12 +61,7 @@ fn user_from_scim(user: &ScimUser) -> Value {
     let user = json!({
         "id": (!user.id.is_empty()).then_some(&user.id),
         "name": user.display_name,
-        "email": user
-            .emails
-            .iter()
-            .find(|e| e.primary == Some(true))
-            .or(user.emails.first())
-            .map(|e| &e.value),
+        "email": user.principal(),
         "external_id": user.external_id,
         "state": if user.active != Some(false) { "ENABLED" } else { "DISABLED" },
         "created_at": millis(meta.and_then(|m| m.created.as_ref())),
