@@ -439,11 +439,12 @@ keeps each provider to its own groups.
 ### How the server checks a token
 
 - It checks the signature with the provider's keys, and the issuer, audience and times, with
-  60 seconds of clock skew.
+  60 seconds of clock skew. A token without `exp` is refused.
 - It fetches a provider's keys once an hour, and never more than once a minute. When the provider
-  does not answer, it keeps the keys it has.
-- For an `issuer` with `*`, it fetches keys for at most 20 new issuers a minute. So tokens with
-  made-up issuers cannot make it call out for each one.
+  does not answer, or answers without keys, it keeps the keys it has.
+- For an `issuer` with `*`, it fetches keys for new issuers until 20 of them had none in a
+  minute. So tokens with made-up issuers cannot make it call out for each one. While such tokens
+  arrive, a new issuer can get HTTP 503 until the next minute.
 - It keeps a token from a `direct` block until the token expires, for at most five minutes. A busy
   client then costs one check per token, not one per request. A user disabled in the server can
   still make requests for that time.

@@ -70,10 +70,15 @@ impl<'a> RequestContext<'a> {
     }
 }
 
-/// The token of an `Authorization: Bearer` header.
+/// The token of an `Authorization: Bearer` header. The scheme is in any
+/// case (RFC 9110).
 pub fn bearer_token(headers: &HeaderMap) -> Option<String> {
     let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
-    let token = value.strip_prefix("Bearer ")?.trim();
+    let (scheme, token) = value.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("Bearer") {
+        return None;
+    }
+    let token = token.trim();
     (!token.is_empty()).then(|| token.to_string())
 }
 
@@ -106,6 +111,15 @@ mod tests {
             .unwrap()
             .into_parts();
         assert_eq!(bearer_token(&parts.headers).as_deref(), Some("t1"));
+        for (value, token) in [
+            ("bearer t3", Some("t3")),
+            ("Basic t3", None),
+            ("Bearer", None),
+        ] {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::AUTHORIZATION, value.parse().unwrap());
+            assert_eq!(bearer_token(&headers).as_deref(), token, "{value}");
+        }
         assert_eq!(cookie(&parts.headers, "session").as_deref(), Some("t2"));
         assert_eq!(cookie(&parts.headers, "y"), None);
 

@@ -35,16 +35,14 @@ const KEYS_TTL: Duration = Duration::from_secs(60 * 60);
 const MIN_REFRESH: Duration = Duration::from_secs(60);
 /// The most issuers whose keys are kept. A pattern with `*` matches many.
 const MAX_ISSUERS: u64 = 1_000;
-/// The most issuers without keys that are asked per [`MIN_REFRESH`], for
-/// each pattern with `*`, so tokens that name made-up issuers of a pattern
-/// do not make a call each. Issuers named exactly are not counted.
+/// The most issuers without keys that are asked per [`MIN_REFRESH`] and
+/// have none, for each pattern with `*`, so tokens that name made-up issuers
+/// of a pattern do not make a call each. An issuer that answers with keys is
+/// not counted, nor are issuers named exactly.
 const MAX_NEW_ISSUERS: u32 = 20;
 /// How long each call to an issuer may take: its discovery document and
 /// its keys fit in a request's time.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(4);
-/// How long the identity of a token without `exp` may be kept: as long as
-/// the [`Authenticator`](crate::Authenticator) keeps any.
-const NO_EXPIRY: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// The header and claims of a token, unverified.
 pub struct UnverifiedJwt {
@@ -265,7 +263,8 @@ impl JwtKeys {
     ///
     /// `pattern` is the pattern with `*` that `issuer` matched, `None` for an
     /// issuer named exactly: the issuers of a pattern that have no keys yet
-    /// are asked at most [`MAX_NEW_ISSUERS`] a minute, for each pattern.
+    /// are asked until [`MAX_NEW_ISSUERS`] of them had none in a minute, for
+    /// each pattern.
     ///
     /// # Errors
     ///
@@ -328,9 +327,22 @@ impl JwtKeys {
         key_id: Option<&str>,
         pattern: Option<&str>,
     ) -> Result<Jwk, VerifyError> {
-        let keys = (self.issuers)
-            .get_with(issuer.to_string(), async { Arc::default() })
-            .await;
+        let too_many = || {
+            tracing::warn!(%issuer, ?pattern, "too many new issuers; the token is refused for now");
+            VerifyError::Unavailable(format!("Too many new issuers, try again later: {issuer}"))
+        };
+        let keys = match self.issuers.get(issuer).await {
+            Some(keys) => keys,
+            // Nothing is kept for the issuers that are not asked.
+            None if pattern.is_some_and(|pattern| !self.new_issuers_left(pattern)) => {
+                return Err(too_many());
+            }
+            None => {
+                (self.issuers)
+                    .get_with(issuer.to_string(), async { Arc::default() })
+                    .await
+            }
+        };
         let stale = {
             let fetched = keys.fetched.read().await;
             if let Some(key) = fetched.fresh(key_id) {
@@ -348,7 +360,7 @@ impl JwtKeys {
             },
         };
         // What a recent fetch found, or why it failed, is reused.
-        {
+        let counted = {
             let fetched = keys.fetched.read().await;
             if let Some(key) = fetched.fresh(key_id) {
                 return Ok(key);
@@ -356,16 +368,12 @@ impl JwtKeys {
             if fetched.tried.is_some_and(|at| at.elapsed() < MIN_REFRESH) {
                 return fetched.answer(key_id, issuer);
             }
-            if fetched.keys.is_none()
-                && let Some(pattern) = pattern
-                && !self.may_ask_new_issuer(pattern)
-            {
-                tracing::warn!(%issuer, %pattern, "too many new issuers; the token is refused for now");
-                return Err(VerifyError::Unavailable(format!(
-                    "Too many new issuers, try again later: {issuer}"
-                )));
+            let new = pattern.filter(|_| fetched.keys.is_none());
+            if new.is_some_and(|pattern| !self.may_ask_new_issuer(pattern)) {
+                return Err(too_many());
             }
-        }
+            new
+        };
         {
             // Asked now, also when this request goes away before the answer:
             // the fetch runs on, and the requests until it ends get this.
@@ -386,19 +394,46 @@ impl JwtKeys {
         if let Err(e) = task.await {
             tracing::warn!(%issuer, error = %e, "the fetch of the issuer's keys failed");
         }
-        keys.fetched.read().await.answer(key_id, issuer)
+        let fetched = keys.fetched.read().await;
+        // An issuer that has keys is a real one, and is not counted.
+        if let Some(pattern) = counted
+            && fetched.keys.is_some()
+        {
+            self.uncount_new_issuer(pattern);
+        }
+        fetched.answer(key_id, issuer)
     }
 
-    /// Whether an issuer of `pattern` without keys may be asked now: at most
-    /// [`MAX_NEW_ISSUERS`] per [`MIN_REFRESH`] for each pattern.
+    /// Whether an issuer of `pattern` without keys may be asked now, and
+    /// counts it: at most [`MAX_NEW_ISSUERS`] per [`MIN_REFRESH`] for each
+    /// pattern.
     fn may_ask_new_issuer(&self, pattern: &str) -> bool {
         let mut windows = self.new_issuers.lock().unwrap_or_else(|e| e.into_inner());
         let window = (windows.entry(pattern.to_string())).or_insert((Instant::now(), 0));
         if window.0.elapsed() >= MIN_REFRESH {
             *window = (Instant::now(), 0);
         }
+        if window.1 >= MAX_NEW_ISSUERS {
+            return false;
+        }
         window.1 += 1;
-        window.1 <= MAX_NEW_ISSUERS
+        true
+    }
+
+    /// Whether [`may_ask_new_issuer`](Self::may_ask_new_issuer) would allow
+    /// one more issuer of `pattern`, without counting it.
+    fn new_issuers_left(&self, pattern: &str) -> bool {
+        let windows = self.new_issuers.lock().unwrap_or_else(|e| e.into_inner());
+        (windows.get(pattern))
+            .is_none_or(|(start, asked)| start.elapsed() >= MIN_REFRESH || *asked < MAX_NEW_ISSUERS)
+    }
+
+    /// Take back the count of an issuer of `pattern` that answered with keys.
+    fn uncount_new_issuer(&self, pattern: &str) {
+        let mut windows = self.new_issuers.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(window) = windows.get_mut(pattern) {
+            window.1 = window.1.saturating_sub(1);
+        }
     }
 }
 
@@ -483,14 +518,23 @@ impl Fetcher {
             .await
             .map_err(|e| unreachable(&e))?;
         // Keys of kinds that do not parse are skipped, not fatal.
-        Ok(set["keys"]
+        let keys: Vec<Jwk> = set["keys"]
             .as_array()
             .map(|keys| {
                 keys.iter()
                     .filter_map(|k| serde_json::from_value(k.clone()).ok())
                     .collect()
             })
-            .unwrap_or_default())
+            .unwrap_or_default();
+        // An answer without keys is an error page or a broken issuer: the
+        // keys it had are kept.
+        if keys.is_empty() {
+            tracing::warn!(%jwks_uri, "the issuer's key set has no usable keys");
+            return Err(VerifyError::Unavailable(format!(
+                "No usable keys in the key set of issuer {issuer}"
+            )));
+        }
+        Ok(keys)
     }
 }
 
@@ -521,14 +565,16 @@ fn now_secs() -> i64 {
         .map_or(0, |d| d.as_secs() as i64)
 }
 
-/// The issuer and time checks of a token whose signature checks out.
+/// The issuer and time checks of a token whose signature checks out. A
+/// token must have an `exp`.
 fn check_times(claims: &Map<String, Value>, issuer: &str, leeway: Duration) -> Result<(), String> {
     if claims.get("iss").and_then(Value::as_str) != Some(issuer) {
         return Err("InvalidIssuer".into());
     }
     let now = now_secs() as f64;
     let leeway = leeway.as_secs_f64();
-    if time_claim(claims, "exp")?.is_some_and(|exp| exp + leeway < now) {
+    let exp = time_claim(claims, "exp")?.ok_or("MissingRequiredClaim: exp")?;
+    if exp + leeway < now {
         return Err("ExpiredSignature".into());
     }
     if time_claim(claims, "nbf")?.is_some_and(|nbf| nbf - leeway > now) {
@@ -641,7 +687,9 @@ impl JwtProvider {
 /// A token that is not a JWT, or whose `iss` is no provider's, passes. A
 /// token is the first provider's that has its `iss` and takes its `aud`;
 /// one that does not check out is refused. The caller is the token's `sub`,
-/// with its claims; the identity is kept until the token's `exp`.
+/// with its claims; the identity is kept until the token's `exp`. A token
+/// without `sub` has an empty subject: a host that takes such tokens names
+/// the caller from the claims in its admission.
 pub struct JwtResolver {
     providers: Vec<JwtProvider>,
     keys: Arc<JwtKeys>,
@@ -693,10 +741,9 @@ impl<S: Send + Sync> Resolver<S> for JwtResolver {
             );
             return Resolution::Refused(AuthError::invalid("audience not allowed"));
         };
-        let left = match claims.get("exp").and_then(Value::as_f64) {
-            Some(exp) => Duration::from_secs_f64((exp - now_secs() as f64).clamp(0.0, 1e9)),
-            None => NO_EXPIRY,
-        };
+        // `verify` refuses a token without `exp`.
+        let exp = claims.get("exp").and_then(Value::as_f64).unwrap_or(0.0);
+        let left = Duration::from_secs_f64((exp - now_secs() as f64).clamp(0.0, 1e9));
         let mut identity = Identity::new(
             &provider.name,
             Identity::JWT,
@@ -833,6 +880,9 @@ mod tests {
             assert!(matches!(key, Err(VerifyError::Unavailable(_))));
         }
         assert_eq!(down.calls(), 1 + MAX_NEW_ISSUERS as usize);
+        // Nothing is kept for those that were not asked.
+        keys.issuers.run_pending_tasks().await;
+        assert_eq!(keys.issuers.entry_count(), 1 + u64::from(MAX_NEW_ISSUERS));
         // They take nothing from issuers named exactly, nor from another
         // pattern.
         assert!(keys.key("https://b", Some("k1"), None).await.is_err());
@@ -900,5 +950,12 @@ mod tests {
         assert!(check_times(&claims(past.into()), "i", leeway).is_err());
         assert!(check_times(&claims((past + 240.0).into()), "i", leeway).is_ok());
         assert!(check_times(&claims("soon".into()), "i", leeway).is_err());
+        // A token without `exp` would never expire.
+        let no_exp: Map<String, Value> =
+            serde_json::from_value(serde_json::json!({ "iss": "i" })).unwrap();
+        assert_eq!(
+            check_times(&no_exp, "i", leeway).unwrap_err(),
+            "MissingRequiredClaim: exp"
+        );
     }
 }

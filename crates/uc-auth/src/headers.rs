@@ -13,8 +13,11 @@ use crate::{Identity, RequestContext, Resolution, Resolver};
 /// The headers count only on a connection from one of the proxy's
 /// addresses, as anyone else could send them; the address is the
 /// connection's, never `X-Forwarded-For`. The first of the headers that the
-/// request has names the caller. Requests from elsewhere, or without the
-/// headers, pass to the next resolver.
+/// request has names the caller, so the proxy must set or remove each of
+/// them: a header that it lets through from the client names any user. A
+/// header that the request has more than once names nobody, as a proxy that
+/// adds its value to the client's would make it. Requests from elsewhere,
+/// or without the headers, pass to the next resolver.
 #[derive(Debug, Clone)]
 pub struct TrustedHeaders {
     provider: String,
@@ -49,8 +52,13 @@ impl TrustedHeaders {
             .any(|net| net.contains(&peer) || v4.is_some_and(|v4| net.contains(&v4)))
     }
 
-    /// The user the proxy names in `headers`, whatever their address.
+    /// The user the proxy names in `headers`, whatever their address:
+    /// `None` when one of the proxy's headers is there more than once.
     pub fn user<'a>(&self, headers: &'a HeaderMap) -> Option<&'a str> {
+        if (self.headers.iter()).any(|name| headers.get_all(name).iter().nth(1).is_some()) {
+            tracing::warn!("a header of the auth proxy is there more than once; it names nobody");
+            return None;
+        }
         self.headers.iter().find_map(|name| {
             (headers.get(name)?.to_str().ok())
                 .map(str::trim)
@@ -132,6 +140,9 @@ mod tests {
             Some("alice")
         );
         assert_eq!(resolve(Some("10.0.0.1:1"), &[]).await, None);
+        // The client's value, and the proxy's added to it.
+        let twice = [("Remote-User", "admin"), ("Remote-User", "alice")];
+        assert_eq!(resolve(Some("10.0.0.1:1"), &twice).await, None);
         assert_eq!(resolve(Some("192.0.2.8:1"), &both).await, None);
         assert_eq!(resolve(None, &both).await, None);
     }

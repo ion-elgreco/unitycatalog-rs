@@ -171,12 +171,16 @@ impl CedarAuthorizer {
             Err(e) => return Err(format!("loading entities: {e}")),
         };
         if let Some(entity) = &request.resource_entity {
-            let resource_uid = serde_json::to_value(&request.resource)
-                .map_err(|e| format!("encoding the resource: {e}"))?;
-            if entity.get("uid") != Some(&resource_uid) {
+            // A uid in either of Cedar's JSON forms.
+            let is_resource = |entity: &Value| {
+                (entity.get("uid"))
+                    .and_then(|uid| EntityUid::from_json(uid.clone()).ok())
+                    .is_some_and(|uid| uid == resource)
+            };
+            if !is_resource(entity) {
                 return Err("resource_entity is not the request's resource".into());
             }
-            entities.retain(|loaded| loaded.get("uid") != Some(&resource_uid));
+            entities.retain(|loaded| !is_resource(loaded));
             entities.push(entity.clone());
         }
         let schema = self.schema.as_ref();
@@ -329,6 +333,37 @@ mod tests {
         let other = request("read", AuthContext::new())
             .with_resource_entity(json!({ "uid": { "type": "Doc", "id": "d2" } }));
         assert!(!authorizer.authorize(&other).await.is_allowed());
+    }
+
+    /// Loads the request's resource with its uid in the `__entity` form.
+    struct ExplicitUid;
+
+    #[async_trait]
+    impl EntityLoader for ExplicitUid {
+        async fn load(&self, _request: &AuthorizeRequest) -> Result<Value, String> {
+            Ok(json!([{
+                "uid": { "__entity": { "type": "Doc", "id": "d1" } },
+                "attrs": {},
+                "parents": [],
+            }]))
+        }
+    }
+
+    #[tokio::test]
+    async fn the_resource_entity_replaces_the_loaded_one_in_either_uid_form() {
+        let policy =
+            "permit (principal, action, resource) when { resource.readers.contains(\"alice\") };";
+        let authorizer = CedarAuthorizer::new(policy, ExplicitUid).unwrap();
+        let implicit = request("read", AuthContext::new());
+        let answer = authorizer.authorize(&implicit).await;
+        assert!(answer.is_allowed(), "{answer:?}");
+        let explicit = request("read", AuthContext::new()).with_resource_entity(json!({
+            "uid": { "__entity": { "type": "Doc", "id": "d1" } },
+            "attrs": { "readers": ["alice"] },
+            "parents": [],
+        }));
+        let answer = authorizer.authorize(&explicit).await;
+        assert!(answer.is_allowed(), "{answer:?}");
     }
 
     #[tokio::test]

@@ -9,7 +9,7 @@
 //! when:
 //!
 //! - the request goes to one of its STS endpoints, so the resolver sends
-//!   nothing to any other host;
+//!   nothing to any other host, and follows no redirect;
 //! - it is `POST /` with the [`GET_CALLER_IDENTITY`] body;
 //! - it signs the host's server id header, whose value is one of the
 //!   provider's server ids: a request signed for another service does not
@@ -22,16 +22,20 @@
 //! The caller is named by the ARN, an assumed role by its role
 //! (`arn:aws:iam::<account>:role/<name>`, without the role's path), so each
 //! session is not a caller of its own. The identity is kept until the
-//! signed request expires.
+//! signed request expires. A value that STS refused is refused for
+//! [`REFUSED_TTL`] without a call.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use axum::http::{HeaderName, HeaderValue};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{NaiveDateTime, Utc};
+use moka::future::Cache;
 use serde::Deserialize;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::{
     Allowlist, AuthError, Direct, Identity, RequestContext, Resolution, Resolver, Transport,
@@ -44,8 +48,13 @@ pub const SIGNED_REQUEST_TTL: Duration = Duration::from_secs(15 * 60);
 /// The clock skew that a signed request may have.
 pub const LEEWAY: Duration = Duration::from_secs(60);
 /// The STS endpoints of a provider that names none: the global one and the
-/// regional ones.
+/// regional ones. The `*` is a region only: other AWS services have hosts of
+/// this shape (`sts.s3.amazonaws.com` is a bucket).
 pub const STS_ENDPOINTS: [&str; 2] = ["https://sts.amazonaws.com", "https://sts.*.amazonaws.com"];
+/// How long a value that STS refused is refused without a call.
+pub const REFUSED_TTL: Duration = Duration::from_secs(60);
+/// The most refused values that are remembered.
+const MAX_REFUSED: u64 = 10_000;
 
 /// The accounts whose identities an [`AwsResolver`] takes, the STS
 /// endpoints their requests may go to, and the server ids they must sign.
@@ -82,8 +91,29 @@ impl AwsProvider {
     }
 
     fn takes(&self, origin: &str, server_id: &str) -> bool {
-        self.endpoints.is_allowed(origin) && self.server_ids.iter().any(|id| id == server_id)
+        self.endpoints.is_allowed(origin)
+            && !other_aws_service(origin)
+            && self.server_ids.iter().any(|id| id == server_id)
     }
+}
+
+/// Whether `origin` is `https://sts.<label>.amazonaws.com` with a label
+/// that is not a region, so the host of another AWS service.
+fn other_aws_service(origin: &str) -> bool {
+    (origin.strip_prefix("https://sts."))
+        .and_then(|rest| rest.strip_suffix(".amazonaws.com"))
+        .is_some_and(|label| !label.contains('.') && !is_region(label))
+}
+
+/// Whether `label` has the shape of an AWS region: lowercase words and then
+/// a number, with `-` between (`eu-west-1`, `us-gov-west-1`).
+fn is_region(label: &str) -> bool {
+    let mut parts: Vec<&str> = label.split('-').collect();
+    let number = parts.pop().unwrap_or_default();
+    parts.len() >= 2
+        && !number.is_empty()
+        && number.bytes().all(|b| b.is_ascii_digit())
+        && (parts.iter()).all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_lowercase()))
 }
 
 /// Takes the signed requests of AWS identities: bearer values that start
@@ -94,6 +124,8 @@ pub struct AwsResolver {
     providers: Vec<AwsProvider>,
     http: reqwest::Client,
     transport: Box<dyn Transport>,
+    /// Why STS refused a value, by the hash of the value.
+    refused: Cache<[u8; 32], String>,
 }
 
 impl AwsResolver {
@@ -106,6 +138,7 @@ impl AwsResolver {
     ) -> Self {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap_or_default();
         Self {
@@ -114,6 +147,10 @@ impl AwsResolver {
             providers,
             http,
             transport: Box::new(Direct),
+            refused: Cache::builder()
+                .max_capacity(MAX_REFUSED)
+                .time_to_live(REFUSED_TTL)
+                .build(),
         }
     }
 
@@ -175,7 +212,7 @@ impl AwsResolver {
         }
         let left = (ttl - age).to_std().unwrap_or_default();
         // Only the headers of the signature go to STS.
-        let headers = headers
+        let headers: BTreeMap<String, String> = headers
             .into_iter()
             .filter(|(name, _)| {
                 name == "authorization"
@@ -184,6 +221,14 @@ impl AwsResolver {
                     || name.starts_with("x-amz-")
             })
             .collect();
+        for (name, value) in &headers {
+            if HeaderName::from_bytes(name.as_bytes()).is_err() {
+                return Err(format!("not a header name: {name:?}"));
+            }
+            if HeaderValue::from_str(value).is_err() {
+                return Err(format!("not a value of header {name}"));
+            }
+        }
         Ok(Checked {
             providers,
             url,
@@ -245,9 +290,18 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
             Ok(checked) => checked,
             Err(reason) => return refused(reason),
         };
+        let key: [u8; 32] = Sha256::digest(token.as_bytes()).into();
+        if let Some(reason) = self.refused.get(&key).await {
+            return Resolution::Refused(AuthError::Invalid(reason));
+        }
         let identity = match self.caller_identity(&checked).await {
             Ok(identity) => identity,
-            Err(e) => return Resolution::Refused(e),
+            Err(e) => {
+                if let AuthError::Invalid(reason) = &e {
+                    self.refused.insert(key, reason.clone()).await;
+                }
+                return Resolution::Refused(e);
+            }
         };
         // Of the providers of the endpoint and server id, the first that
         // takes the account.
@@ -483,6 +537,20 @@ mod tests {
         ));
         assert!(!provider.takes("https://sts.amazonaws.com", "https://other.example.com"));
         assert!(!provider.takes("http://169.254.169.254", "https://api.example.com"));
+        for other in ["s3", "s3-us-west-2", "s3-fips", "us-east", "1"] {
+            let origin = format!("https://sts.{other}.amazonaws.com");
+            assert!(
+                !provider.takes(&origin, "https://api.example.com"),
+                "{origin}"
+            );
+        }
+        for region in ["us-gov-west-1", "ap-southeast-2", "eusc-de-east-1"] {
+            let origin = format!("https://sts.{region}.amazonaws.com");
+            assert!(
+                provider.takes(&origin, "https://api.example.com"),
+                "{origin}"
+            );
+        }
         let local = provider.with_endpoints(&["http://127.0.0.1:9000"]);
         assert!(local.takes("http://127.0.0.1:9000", "https://api.example.com"));
         assert!(!local.takes("https://sts.amazonaws.com", "https://api.example.com"));
