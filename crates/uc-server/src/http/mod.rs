@@ -36,9 +36,10 @@ pub fn public_url(public_url: Option<&str>, headers: &axum::http::HeaderMap) -> 
             .map(str::trim)
             .filter(|h| !h.is_empty())
     };
+    // With `_`: container networks have such names.
     let is_host = |host: &&str| {
         host.chars()
-            .all(|c| c.is_ascii_alphanumeric() || ".-:[]".contains(c))
+            .all(|c| c.is_ascii_alphanumeric() || ".-_:[]".contains(c))
     };
     let host = first("x-forwarded-host")
         .filter(is_host)
@@ -68,6 +69,8 @@ mod tests {
         use axum::http::{HeaderMap, HeaderValue};
         let mut headers = HeaderMap::new();
         assert_eq!(public_url(None, &headers), "http://localhost");
+        headers.insert("host", HeaderValue::from_static("uc_server:8080"));
+        assert_eq!(public_url(None, &headers), "http://uc_server:8080");
         headers.insert("host", HeaderValue::from_static("uc:8080"));
         assert_eq!(public_url(None, &headers), "http://uc:8080");
         headers.insert(

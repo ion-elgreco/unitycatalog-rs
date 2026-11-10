@@ -33,7 +33,8 @@ pub fn seed_users(auth: &settings::Auth) -> std::result::Result<Vec<SeedUser>, S
                 "This is the server's own user; `uc-server token` signs it in.",
             ));
         }
-        if !emails.insert(email) {
+        // A name is one user in any case.
+        if !emails.insert(email.to_lowercase()) {
             return Err(invalid("email", email, "Another entry has it too."));
         }
         let external_id = match user.external_id.as_deref().map(str::trim) {
@@ -66,7 +67,10 @@ pub fn seed_users(auth: &settings::Auth) -> std::result::Result<Vec<SeedUser>, S
     }
     // The bootstrap admin exists already when authorization is on.
     for email in auth.admin_principals.iter().map(|e| e.trim()) {
-        if !email.is_empty() && !email.eq_ignore_ascii_case(ADMIN) && emails.insert(email) {
+        if !email.is_empty()
+            && !email.eq_ignore_ascii_case(ADMIN)
+            && emails.insert(email.to_lowercase())
+        {
             users.push(SeedUser {
                 email: email.to_string(),
                 ..Default::default()
@@ -105,7 +109,7 @@ mod tests {
         let users = seed_users(&auth(
             r#"
             [auth]
-            admin_principals = ["alice@example.com", "carol@example.com", "admin"]
+            admin_principals = ["Alice@example.com", "carol@example.com", "Admin"]
 
             [[auth.users]]
             email = "alice@example.com"
@@ -166,6 +170,7 @@ mod tests {
             error(vec![user("a@x"), user("a@x")]),
             "Invalid value for auth.users[1].email: 'a@x'. Another entry has it too."
         );
+        assert!(error(vec![user("a@x"), user("A@X")]).contains("Another entry has it too."));
         let with_id = |email: &str, id: &str| AuthUser {
             external_id: Some(id.into()),
             ..user(email)

@@ -265,16 +265,36 @@ async fn write_members<E: Exec + ?Sized>(
         .map_err(&failed)
 }
 
-/// Lock the names in grants for the rest of `tx`, before a principal is
-/// checked against the group names or a group name against the
-/// principals: requests that do so at once wait for each other. The lock
-/// is the metastore row, which [`SqlMetastore::metastore_row`] makes.
+/// Lock the names in grants for the rest of `tx`: requests that do so at
+/// once wait for each other. The lock is the metastore row, which
+/// [`SqlMetastore::metastore_row`] makes.
+///
+/// The lock order of users and groups: a transaction that writes a user
+/// or a group, or that locks more than one of them, locks the names
+/// first, before any user or group. So such transactions run one at a
+/// time, and the order of their other locks does not count. A transaction
+/// that locks one user or group and only writes its grants needs no lock
+/// on the names: it waits for no lock that a holder of the names waits
+/// for.
 async fn lock_names<E: Exec + ?Sized>(tx: &E) -> Result<()> {
     if !tx.for_update().is_empty() {
         let sql = format!("SELECT singleton FROM metastore{}", tx.for_update());
         tx.query(&sql, &[]).await.map_err(db_err("lock names"))?;
     }
     Ok(())
+}
+
+impl SqlMetastore {
+    /// A transaction with the names locked ([`lock_names`]).
+    pub(crate) async fn begin_with_names(
+        &self,
+        action: &'static str,
+    ) -> Result<Box<dyn Transaction>> {
+        self.metastore_row().await?;
+        let tx = self.db.begin().await.map_err(db_err(action))?;
+        lock_names(tx.as_ref()).await?;
+        Ok(tx)
+    }
 }
 
 /// Grants name users by principal and groups by name, and a name also
@@ -300,14 +320,10 @@ async fn require_no_group<E: Exec + ?Sized>(ex: &E, name: &str) -> Result<()> {
 }
 
 async fn require_no_user<E: Exec + ?Sized>(ex: &E, name: &str) -> Result<()> {
-    for same in [SAME_PRINCIPAL_ANY_CASE, SAME_USER_NAME] {
-        let tail = format!("WHERE {same}");
-        let user: Vec<ScimUserRow> = select(ex, &SCIM_USER, &tail, &[name.into()]).await?;
-        if !user.is_empty() {
-            return Err(name_taken(name));
-        }
+    match user_named(ex, name, false).await? {
+        Some(_) => Err(name_taken(name)),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// Conditions on a user, with `$1` the value: the same user name, in any
@@ -472,8 +488,8 @@ async fn others<E: Exec + ?Sized>(
 /// user by principal, then by user name ([`ScimOps::find_user_named`]), so
 /// no user has the principal of another as user name, or the user name of
 /// another as principal, in any case: the name would find the other user.
-/// Nor is its user name or principal the name of a group. A new user name
-/// or principal locks the names ([`lock_names`]).
+/// Nor is its user name or principal the name of a group. The names are
+/// locked ([`lock_names`]).
 async fn check_user<E: Exec + ?Sized>(
     ex: &E,
     row: &ScimUserRow,
@@ -485,9 +501,6 @@ async fn check_user<E: Exec + ?Sized>(
     let taken = |name: &str| Error::already_exists(format!("User already exists: {name}"));
     let new_user_name = was.is_none_or(|w| !w.user_name.eq_ignore_ascii_case(&row.user_name));
     let new_principal = was.is_none_or(|w| w.principal != row.principal);
-    if new_user_name || new_principal {
-        lock_names(ex).await?;
-    }
     if new_user_name {
         for same in [SAME_USER_NAME, SAME_PRINCIPAL_ANY_CASE] {
             if !others(ex, same, &row.user_name, id).await?.is_empty() {
@@ -634,10 +647,13 @@ impl Edit<ScimUser> for UserEdit {
         forget_deleted(tx.as_ref(), &row).await?;
         if row.principal != stored.principal {
             rename_principal(tx.as_ref(), &stored.principal, &row.principal).await?;
-            // The settings can still name the old principal: sign-in makes
-            // no user with it.
-            let [old, _] = sign_in_names(&stored);
-            if !sign_in_names(&row).contains(&old) {
+        }
+        // The settings can still name an old principal, which can stay the
+        // user name for some time: sign-in makes no user with a name that
+        // the user no longer has.
+        let names = sign_in_names(&row);
+        for old in sign_in_names(&stored) {
+            if !names.contains(&old) {
                 remember_name(tx.as_ref(), old).await?;
             }
         }
@@ -679,7 +695,6 @@ impl Edit<ScimGroup> for GroupEdit {
             .map_err(group_exists(&row))?;
         write_members(tx.as_ref(), &row, Some(&stored)).await?;
         if renamed {
-            lock_names(tx.as_ref()).await?;
             require_no_user(tx.as_ref(), &row.display_name).await?;
             rename_principal(tx.as_ref(), &stored.display_name, &row.display_name).await?;
         }
@@ -692,9 +707,8 @@ impl SqlMetastore {
     /// Write the new user `row`. At a sign-in, a user that had its names
     /// and was deleted is not made again: `None`.
     async fn insert_user(&self, row: ScimUserRow, at_sign_in: bool) -> Result<Option<ScimUser>> {
-        self.metastore_row().await?;
         let failed = db_err("create user");
-        let tx = self.db.begin().await.map_err(&failed)?;
+        let tx = self.begin_with_names("create user").await?;
         match at_sign_in {
             true if was_deleted(tx.as_ref(), &row).await? => return Ok(None),
             true => {}
@@ -791,7 +805,7 @@ impl ScimOps for SqlMetastore {
         let id = lower_id(id);
         let id = id.as_str();
         let failed = db_err("delete user");
-        let tx = self.db.begin().await.map_err(&failed)?;
+        let tx = self.begin_with_names("delete user").await?;
         let user: ScimUserRow = lock(tx.as_ref(), &SCIM_USER, id)
             .await?
             .ok_or_else(|| user_not_found(id))?;
@@ -801,7 +815,6 @@ impl ScimOps for SqlMetastore {
                 format!("The server's own user {ADMIN} cannot be deleted"),
             ));
         }
-        // By id: deletes that run at once lock the groups in one order.
         let groups: Vec<ScimGroupRow> = select(
             tx.as_ref(),
             &SCIM_GROUP,
@@ -867,8 +880,7 @@ impl ScimOps for SqlMetastore {
     async fn edit_user(&self, id: &str) -> Result<Box<dyn Edit<ScimUser>>> {
         let id = lower_id(id);
         let id = id.as_str();
-        self.metastore_row().await?;
-        let tx = self.db.begin().await.map_err(db_err("update user"))?;
+        let tx = self.begin_with_names("update user").await?;
         let stored: ScimUserRow = lock(tx.as_ref(), &SCIM_USER, id)
             .await?
             .ok_or_else(|| user_not_found(id))?;
@@ -886,24 +898,11 @@ impl ScimOps for SqlMetastore {
         }
         let metastore_id = self.metastore_row().await?.metastore_id;
         let failed = db_err("seed users");
-        let tx = self.db.begin().await.map_err(&failed)?;
-        // As an edit of a user, the users are locked first, then the
-        // names: the two do not wait for each other. With the names
-        // locked, no other request makes a user.
-        let mut stored = Vec::with_capacity(users.len());
+        // With the names locked, no other request makes a user.
+        let tx = self.begin_with_names("seed users").await?;
         for seed in users {
-            stored.push(user_named(tx.as_ref(), &seed.email, true).await?);
-        }
-        if stored.iter().any(Option::is_none) {
-            lock_names(tx.as_ref()).await?;
-        }
-        for (seed, found) in users.iter().zip(stored) {
             let email = seed.email.as_str();
-            // An earlier entry, or a request before the lock, made it.
-            let found = match found {
-                Some(user) => Some(user),
-                None => user_named(tx.as_ref(), email, false).await?,
-            };
+            let found = user_named(tx.as_ref(), email, true).await?;
             // The principal that gets the privileges, unless disabled.
             let principal = match found {
                 Some(user) => {
@@ -988,14 +987,12 @@ impl ScimOps for SqlMetastore {
             Some(now_epoch_millis()),
             None,
         );
-        self.metastore_row().await?;
         let failed = db_err("create group");
-        let tx = self.db.begin().await.map_err(&failed)?;
+        let tx = self.begin_with_names("create group").await?;
         insert(tx.as_ref(), &SCIM_GROUP, &row)
             .await
             .map_err(group_exists(&row))?;
         write_members(tx.as_ref(), &row, None).await?;
-        lock_names(tx.as_ref()).await?;
         require_no_user(tx.as_ref(), &row.display_name).await?;
         tx.commit().await.map_err(&failed)?;
         Ok(row.into())
@@ -1033,8 +1030,7 @@ impl ScimOps for SqlMetastore {
     async fn edit_group(&self, id: &str) -> Result<Box<dyn Edit<ScimGroup>>> {
         let id = lower_id(id);
         let id = id.as_str();
-        self.metastore_row().await?;
-        let tx = self.db.begin().await.map_err(db_err("update group"))?;
+        let tx = self.begin_with_names("update group").await?;
         let stored: ScimGroupRow = lock(tx.as_ref(), &SCIM_GROUP, id)
             .await?
             .ok_or_else(|| group_not_found(id))?;
@@ -1049,7 +1045,7 @@ impl ScimOps for SqlMetastore {
         let id = lower_id(id);
         let id = id.as_str();
         let failed = db_err("delete group");
-        let tx = self.db.begin().await.map_err(&failed)?;
+        let tx = self.begin_with_names("delete group").await?;
         let was: ScimGroupRow = lock(tx.as_ref(), &SCIM_GROUP, id)
             .await?
             .ok_or_else(|| group_not_found(id))?;

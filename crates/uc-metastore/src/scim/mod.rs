@@ -109,9 +109,9 @@ pub trait ScimOps: Send + Sync {
     /// The user at `id`, to change: [`Edit::save`] replaces it under the
     /// rules of [`ScimOps::create_user`]. When the principal changes, the
     /// grants, owned objects and tokens of the old one move to the new
-    /// one, in the same transaction, and sign-in makes no user with the old
-    /// one. The user [`ADMIN`] keeps its name and
-    /// stays active.
+    /// one, in the same transaction. Sign-in makes no user with a principal
+    /// or a user name that the user no longer has. The user [`ADMIN`] keeps
+    /// its name and stays active.
     async fn edit_user(&self, id: &str) -> Result<Box<dyn Edit<ScimUser>>>;
     /// Make the missing users of `users` and grant their missing metastore
     /// privileges, in one transaction. An entry names a user as
