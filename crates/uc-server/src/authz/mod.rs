@@ -299,7 +299,7 @@ impl Access {
 /// The metastore admin: one of `auth.admin_principals`, or the metastore
 /// owner `owner`.
 fn is_metastore_admin(state: &AppState, principal: &str, owner: Option<&str>) -> bool {
-    state.admin_principals.contains(principal) || owner == Some(principal)
+    state.names_admin(principal) || owner == Some(principal)
 }
 
 /// The lineage of `name` of `kind`, or the not-found error of the lookup:

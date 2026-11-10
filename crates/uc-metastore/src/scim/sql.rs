@@ -276,12 +276,15 @@ async fn write_members<E: Exec + ?Sized>(
 /// that locks one user or group and only writes its grants needs no lock
 /// on the names: it waits for no lock that a holder of the names waits
 /// for.
-async fn lock_names<E: Exec + ?Sized>(tx: &E) -> Result<()> {
-    if !tx.for_update().is_empty() {
-        let sql = format!("SELECT singleton FROM metastore{}", tx.for_update());
-        tx.query(&sql, &[]).await.map_err(db_err("lock names"))?;
+///
+/// False when there is no metastore row to lock yet.
+async fn lock_names<E: Exec + ?Sized>(tx: &E) -> Result<bool> {
+    if tx.for_update().is_empty() {
+        return Ok(true);
     }
-    Ok(())
+    let sql = format!("SELECT singleton FROM metastore{}", tx.for_update());
+    let rows = tx.query(&sql, &[]).await.map_err(db_err("lock names"))?;
+    Ok(!rows.is_empty())
 }
 
 impl SqlMetastore {
@@ -290,6 +293,12 @@ impl SqlMetastore {
         &self,
         action: &'static str,
     ) -> Result<Box<dyn Transaction>> {
+        let tx = self.db.begin().await.map_err(db_err(action))?;
+        if lock_names(tx.as_ref()).await? {
+            return Ok(tx);
+        }
+        // The first write of a new database: the row is made, then locked.
+        drop(tx);
         self.metastore_row().await?;
         let tx = self.db.begin().await.map_err(db_err(action))?;
         lock_names(tx.as_ref()).await?;
@@ -708,6 +717,12 @@ impl SqlMetastore {
     /// and was deleted is not made again: `None`.
     async fn insert_user(&self, row: ScimUserRow, at_sign_in: bool) -> Result<Option<ScimUser>> {
         let failed = db_err("create user");
+        // Each request of a deleted user with a valid token comes here: it
+        // is refused without a transaction. The check below is the one
+        // that counts.
+        if at_sign_in && was_deleted(self.db.as_ref(), &row).await? {
+            return Ok(None);
+        }
         let tx = self.begin_with_names("create user").await?;
         match at_sign_in {
             true if was_deleted(tx.as_ref(), &row).await? => return Ok(None),
