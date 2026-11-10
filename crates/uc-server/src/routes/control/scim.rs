@@ -541,7 +541,7 @@ fn replaced(
     for (name, value) in body {
         match name.as_str() {
             "id" => {
-                if value.as_str().is_some_and(|v| v != id) {
+                if value.as_str().is_some_and(|v| !v.eq_ignore_ascii_case(id)) {
                     return Err(ScimError::bad_request(
                         "mutability",
                         "The id of the body is not the id of the path",
@@ -1267,7 +1267,7 @@ pub async fn bulk(
     ScimBody(body): ScimBody,
 ) -> ScimResult<Scim> {
     authz::require_admin(&state, &principal.username).await?;
-    let req: ScimBulkRequest = serde_json::from_value(body).map_err(|e| {
+    let req: ScimBulkRequest = serde_json::from_value(bulk_names(body)).map_err(|e| {
         ScimError::bad_request("invalidSyntax", format!("Invalid BulkRequest: {e}"))
     })?;
     if req.operations.len() > MAX_BULK_OPERATIONS {
@@ -1317,6 +1317,33 @@ pub async fn bulk(
         "schemas": [schema_uri::BULK_RESPONSE],
         "Operations": results,
     })))
+}
+
+/// `body`, a BulkRequest, with its names as [`ScimBulkRequest`] and
+/// [`ScimBulkOp`] write them: a client writes them in any case.
+fn bulk_names(body: Value) -> Value {
+    fn named(object: Map<String, Value>, names: &[&str]) -> Map<String, Value> {
+        let name_of = |key: String| match names.iter().find(|n| n.eq_ignore_ascii_case(&key)) {
+            Some(name) => name.to_string(),
+            None => key,
+        };
+        (object.into_iter())
+            .map(|(key, value)| (name_of(key), value))
+            .collect()
+    }
+    let Value::Object(body) = body else {
+        return body;
+    };
+    let mut body = named(body, &["schemas", "failOnErrors", "Operations"]);
+    if let Some(Value::Array(operations)) = body.get_mut("Operations") {
+        for operation in operations.iter_mut().filter_map(Value::as_object_mut) {
+            *operation = named(
+                std::mem::take(operation),
+                &["method", "path", "bulkId", "data"],
+            );
+        }
+    }
+    Value::Object(body)
 }
 
 /// The prefix of a reference to the resource of an earlier operation.

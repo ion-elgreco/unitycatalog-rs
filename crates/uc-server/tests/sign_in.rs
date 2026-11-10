@@ -637,15 +637,17 @@ async fn behind_an_auth_proxy_its_headers_name_the_user_from_its_addresses_only(
     )
     .await;
     // Never the bootstrap admin, though it exists: a proxy user may have
-    // its name.
+    // its name, in any case.
     metastore.scim().create_admin().await.unwrap();
     for header in ["Remote-User", "Remote-Email"] {
-        let error = scim_error(
-            call(from("10.1.2.3:5000", me, &[(header, "admin")])).await,
-            StatusCode::FORBIDDEN,
-        )
-        .await;
-        assert_eq!(error["detail"], "User not allowed: admin");
+        for name in ["admin", "Admin", "ADMIN"] {
+            let error = scim_error(
+                call(from("10.1.2.3:5000", me, &[(header, name)])).await,
+                StatusCode::FORBIDDEN,
+            )
+            .await;
+            assert_eq!(error["detail"], "User not allowed: admin");
+        }
     }
 
     // From elsewhere the headers do not count; tokens still do.

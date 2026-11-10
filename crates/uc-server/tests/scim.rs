@@ -1371,6 +1371,26 @@ async fn bulk_runs_each_operation(#[future(awt)] app: Router) {
         .map(|op| op["status"].as_str().unwrap())
         .collect();
     assert_eq!(statuses, ["201", "404"]);
+
+    // The names of a bulk request are in any case too.
+    let body = json!({
+        "FailOnErrors": 1,
+        "operations": [
+            { "Method": "post", "Path": "/Users", "BulkId": "u3", "Data": new_user("bulk3@x") },
+            { "METHOD": "DELETE", "PATH": "/Users/does-not-exist" },
+            { "method": "POST", "path": "/Users", "data": new_user("skipped@x") },
+        ]
+    });
+    let resp = call(&app, Method::POST, "/scim2/Bulk", body)
+        .await
+        .ok(StatusCode::OK);
+    let ops = resp["Operations"].as_array().unwrap();
+    assert_eq!(ops.len(), 2, "{resp}");
+    assert_eq!(
+        (&ops[0]["status"], &ops[0]["bulkId"]),
+        (&json!("201"), &json!("u3"))
+    );
+    assert_eq!(ops[1]["status"], "404");
 }
 
 /// `bulkId:<id>` names the resource of an earlier operation.
@@ -1472,6 +1492,70 @@ async fn changes_at_the_same_time_each_stay() {
     let group = scim.get_group(id).await.unwrap();
     assert_eq!(group.display_name, "h");
     assert_eq!(group.members.unwrap().len(), 3);
+}
+
+/// Deletes, member changes and grants that name the same users and groups
+/// at the same time each get an answer: none stops another for good.
+#[tokio::test]
+async fn writes_of_the_same_users_and_groups_do_not_stop_each_other() {
+    let app = app().await;
+    send(
+        &app,
+        req_json(Method::POST, "/catalogs", json!({ "name": "c1" })),
+    )
+    .await
+    .ok(StatusCode::OK);
+    for round in 0..8 {
+        let a = create(&app, &format!("a{round}@x.com")).await;
+        let b = create(&app, &format!("b{round}@x.com")).await;
+        let name = format!("g{round}");
+        let group = call(
+            &app,
+            Method::POST,
+            "/scim2/Groups",
+            json!({ "displayName": name, "members": [{ "value": a }] }),
+        )
+        .await
+        .ok(StatusCode::CREATED);
+        let group = format!("/scim2/Groups/{}", group["id"].as_str().unwrap());
+        let grant = |first: String, second: String| {
+            let changes = json!({ "changes": [
+                { "principal": first, "add": ["USE CATALOG"] },
+                { "principal": second, "add": ["USE CATALOG"] },
+            ] });
+            send(
+                &app,
+                req_json(Method::PATCH, "/permissions/catalog/c1", changes),
+            )
+        };
+        let delete = |id: &str| send(&app, control(Method::DELETE, &format!("/scim2/Users/{id}")));
+        let add = patch(
+            &app,
+            &group,
+            json!([{ "op": "add", "path": "members", "value": [{ "value": b }] }]),
+        );
+        let answers = tokio::join!(
+            delete(&a),
+            add,
+            grant(name.clone(), format!("a{round}@x.com")),
+            grant(format!("B{round}@x.com"), name.clone()),
+            delete(&b),
+        );
+        let (deleted_a, added, grant_a, grant_b, deleted_b) = answers;
+        deleted_a.ok(StatusCode::NO_CONTENT);
+        deleted_b.ok(StatusCode::NO_CONTENT);
+        // A request after a delete finds no user.
+        for answer in [added, grant_a, grant_b] {
+            assert!(
+                !answer.status.is_server_error(),
+                "{}: {}",
+                answer.status,
+                answer.body
+            );
+        }
+        let group = get(&app, &group).await.ok(StatusCode::OK);
+        assert_eq!(group.get("members"), None);
+    }
 }
 
 /// User names and emails are kept without spaces around them, and so is
@@ -1725,6 +1809,16 @@ async fn sign_in_makes_no_user_with_an_old_principal() {
     assert!(made.unwrap().is_none());
     // An admin does.
     scim.create_user(old("old@example.com")).await.unwrap();
+
+    // The email first, the user name in a later request.
+    let id = create(&app, "first@example.com").await;
+    let user = format!("/scim2/Users/{id}");
+    let email = json!([{ "op": "replace", "path": "emails[primary eq true].value", "value": "second@example.com" }]);
+    patch(&app, &user, email).await.ok(StatusCode::OK);
+    let user_name = json!([{ "op": "replace", "path": "userName", "value": "second@example.com" }]);
+    patch(&app, &user, user_name).await.ok(StatusCode::OK);
+    let made = scim.create_user_at_sign_in(old("first@example.com")).await;
+    assert!(made.unwrap().is_none());
 }
 
 /// A resource is a JSON object, ids are in any case, and `active: null` in
@@ -1747,7 +1841,7 @@ async fn bodies_ids_and_active(#[future(awt)] app: Router) {
     let id = create(&app, "a@example.com").await;
     let upper = id.to_uppercase();
     let user = format!("/scim2/Users/{upper}");
-    let disabled = json!({ "userName": "a@example.com", "active": false });
+    let disabled = json!({ "id": id, "userName": "a@example.com", "active": false });
     call(&app, Method::PUT, &user, disabled)
         .await
         .ok(StatusCode::OK);

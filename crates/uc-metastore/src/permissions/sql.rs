@@ -103,10 +103,13 @@ impl PermissionOps for SqlMetastore {
         // must exist, or nothing changes.
         let resource_id = self.securable_id(securable_type, full_name).await?;
         let failed = db_err("update permissions");
-        let tx = self.db.begin().await.map_err(&failed)?;
-        // By name: requests that run at once lock the grantees in one
-        // order.
         let named: BTreeSet<&str> = req.changes.iter().map(|c| c.principal.as_str()).collect();
+        // More than one grantee: the names are locked first, as for a
+        // write of a user or a group. One grantee is one lock.
+        let tx = match named.len() {
+            0 | 1 => self.db.begin().await.map_err(&failed)?,
+            _ => self.begin_with_names("update permissions").await?,
+        };
         let mut grantees = HashMap::with_capacity(named.len());
         for name in named {
             grantees.insert(name.to_string(), require_grantee(tx.as_ref(), name).await?);

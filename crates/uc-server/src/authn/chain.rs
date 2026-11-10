@@ -212,12 +212,15 @@ impl Admission<AppState> for Users {
         match identity.method {
             SHARING_RECIPIENT => {}
             Identity::TRUSTED_HEADERS => {
-                if identity.subject == ADMIN {
-                    return Err(AuthError::Forbidden(format!("User not allowed: {ADMIN}")));
-                }
-                identity.subject = require_active_user(state, &identity.subject)
+                // The user is checked, not the header: a name finds its
+                // user in any case.
+                let named = require_active_user(state, &identity.subject)
                     .await
                     .map_err(refused)?;
+                if named == ADMIN {
+                    return Err(AuthError::Forbidden(format!("User not allowed: {ADMIN}")));
+                }
+                identity.subject = named;
             }
             SERVER_TOKEN | PERSONAL_ACCESS_TOKEN => {
                 if state.authorization_enabled && requires_sign_in(cx.path()) {
