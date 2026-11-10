@@ -180,6 +180,13 @@ async fn run(options: options::Options) -> Result<(), String> {
             granted = report.granted,
             "users of the settings checked"
         );
+        for principal in &report.deleted {
+            warn!(
+                %principal,
+                "a user of the settings was deleted and is not made again: \
+                 create it through SCIM, or remove it from the settings"
+            );
+        }
     }
 
     // The Cedar engine (`auth.cedar`), with `auth.cedar_policies` on top of

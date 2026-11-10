@@ -250,6 +250,16 @@ async fn the_same_user_name_principal_or_external_id_is_a_conflict(#[future(awt)
             json!({ "userName": "dave", "externalId": "ext-bob" }),
             "User already exists with external id: ext-bob",
         ),
+        // A name finds a user by principal, then by user name: no user has
+        // the user name of another as email, or its email as user name.
+        (
+            json!({ "userName": "robert", "emails": [{ "value": "Bob" }] }),
+            "User already exists: Bob",
+        ),
+        (
+            json!({ "userName": "Bob@Example.com" }),
+            "User already exists: Bob@Example.com",
+        ),
     ] {
         let err = call(&app, Method::POST, "/scim2/Users", body)
             .await
@@ -1488,6 +1498,36 @@ async fn user_names_and_emails_are_trimmed() {
             .unwrap()
             .is_some()
     );
+}
+
+/// A blank email and an empty external id are as none, and a group name
+/// is trimmed.
+#[rstest]
+#[tokio::test]
+async fn blank_values_do_not_count(#[future(awt)] app: Router) {
+    for user_name in ["carol", "dan"] {
+        let body = json!({ "userName": user_name, "externalId": "",
+            "emails": [{ "value": " ", "primary": true }] });
+        let user = call(&app, Method::POST, "/scim2/Users", body)
+            .await
+            .ok(StatusCode::CREATED);
+        assert_eq!(user["emails"], Value::Null);
+        assert_eq!(user["externalId"], Value::Null);
+        assert_eq!(user["active"], true);
+    }
+    let group = json!({ "displayName": " Writers " });
+    let made = call(&app, Method::POST, "/scim2/Groups", group.clone())
+        .await
+        .ok(StatusCode::CREATED);
+    assert_eq!(made["displayName"], "Writers");
+    call(
+        &app,
+        Method::POST,
+        "/scim2/Groups",
+        json!({ "displayName": "Writers" }),
+    )
+    .await
+    .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
 }
 
 /// `admin` is the server's own user, which `uc-server token` signs in: no

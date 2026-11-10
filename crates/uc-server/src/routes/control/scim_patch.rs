@@ -255,6 +255,11 @@ fn apply_to(
                             _ => merge(&mut items[i], &new),
                         }
                     }
+                    if let Some(&last) = matching.last()
+                        && new.get("primary") == Some(&Value::Bool(true))
+                    {
+                        keep_one_primary(items, last);
+                    }
                 }
                 (_, Some(sub)) => {
                     let value = value.unwrap_or_default();
@@ -630,6 +635,27 @@ mod tests {
                 { "type": "home", "value": "a@home.org" },
             ])
         );
+        // So does a value that an operation on `attr[filter]` makes primary.
+        let two = json!({ "userName": "a", "emails": [
+            { "value": "a@x", "type": "home", "primary": true },
+            { "value": "b@x", "type": "work" },
+        ] });
+        for op in ["add", "replace"] {
+            let patched = patch(
+                &USERS,
+                two.clone(),
+                json!([{ "op": op, "path": "emails[type eq \"work\"]",
+                    "value": { "value": "b@x", "type": "work", "primary": true } }]),
+            )
+            .unwrap();
+            assert_eq!(
+                patched["emails"],
+                json!([
+                    { "value": "a@x", "type": "home", "primary": false },
+                    { "value": "b@x", "type": "work", "primary": true },
+                ])
+            );
+        }
         // A new primary value takes the place of the old one.
         let patched = patch(
             &USERS,

@@ -1,7 +1,7 @@
 use axum::{
     Json,
     body::Body,
-    http::{StatusCode, header},
+    http::{HeaderName, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use tracing::error;
@@ -104,8 +104,9 @@ pub async fn format_errors(
         header::CONTENT_ENCODING,
         header::TRANSFER_ENCODING,
     ];
+    let own: Vec<HeaderName> = formatted.headers().keys().cloned().collect();
     for (name, value) in &parts.headers {
-        if !of_body.contains(name) && !formatted.headers().contains_key(name) {
+        if !of_body.contains(name) && !own.contains(name) {
             formatted.headers_mut().append(name, value.clone());
         }
     }
@@ -147,9 +148,14 @@ mod tests {
             .into_response();
         bare.headers_mut()
             .insert(header::RETRY_AFTER, "1".parse().unwrap());
+        for value in ["Origin", "Accept"] {
+            bare.headers_mut()
+                .append(header::VARY, value.parse().unwrap());
+        }
         let formatted = format_errors(bare, |_| false, format).await;
         assert_eq!(formatted.status(), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(formatted.headers()[header::RETRY_AFTER], "1");
+        assert_eq!(formatted.headers().get_all(header::VARY).iter().count(), 2);
         assert_eq!(text(formatted).await, "Too Many Requests! Wait for 1s|");
         // A bare status without a body.
         let formatted = format_errors(

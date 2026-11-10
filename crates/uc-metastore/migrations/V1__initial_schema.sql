@@ -281,6 +281,8 @@ CREATE TABLE scim_group (
     updated_at   BIGINT
 );
 CREATE UNIQUE INDEX scim_group_by_display_name ON scim_group (lower(display_name));
+-- Grants name a group by its exact name.
+CREATE INDEX scim_group_by_exact_display_name ON scim_group (display_name);
 CREATE INDEX scim_group_by_external_id ON scim_group (external_id);
 -- The user ids of each group's members, written with `scim_group.members`:
 -- the groups whose grants a user gets.
