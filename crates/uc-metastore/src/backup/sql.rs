@@ -8,8 +8,9 @@ use uc_common::{Error, Result};
 use crate::backup::{BACKUP_VERSION, BackupOps, RestoreReport, Snapshot};
 use crate::sql::rows::{
     CATALOG, CREDENTIAL, DELTA_COMMIT, EXTERNAL_LOCATION, FUNC, METASTORE, MODEL_VERSION, PAT,
-    PERMISSION, RECIPIENT, REGISTERED_MODEL, SCHEMA, SCIM_GROUP, SCIM_GROUP_MEMBER, SCIM_USER,
-    SHARE, STAGING_TABLE, STORAGE_CLEANUP_TASK, TBL, TableDef, VOLUME,
+    PERMISSION, RECIPIENT, REGISTERED_MODEL, SCHEMA, SCIM_DELETED_USER, SCIM_GROUP,
+    SCIM_GROUP_MEMBER, SCIM_USER, SHARE, STAGING_TABLE, STORAGE_CLEANUP_TASK, TBL, TableDef,
+    VOLUME,
 };
 use crate::sql::{SqlMetastore, db_err, placeholders};
 use uc_storage::{StorageError, Value};
@@ -35,6 +36,7 @@ const BACKUP_TABLES: &[&TableDef] = &[
     &SCIM_USER,
     &SCIM_GROUP,
     &SCIM_GROUP_MEMBER,
+    &SCIM_DELETED_USER,
     &SHARE,
     &RECIPIENT,
     &STORAGE_CLEANUP_TASK,

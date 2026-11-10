@@ -651,8 +651,8 @@ pub async fn callback(
         .or_else(|| state.auth.issuer(&oidc.issuer))
         .cloned()
         .unwrap_or_else(|| idp::IssuerSettings::implicit(&oidc.issuer));
-    let principal = match idp::resolve(&state, &block, claims, idp::TokenKind::IdToken).await {
-        Ok(principal) => principal,
+    let user = match idp::resolve(&state, &block, claims, idp::TokenKind::IdToken).await {
+        Ok(user) => user,
         Err(e) if e.code() == ErrorCode::InvalidArgument => {
             let email = claims
                 .get("email")
@@ -670,11 +670,15 @@ pub async fn callback(
         Err(e) => return failed(Failure::Server, format!("cannot find the user: {e}")),
     };
     let settings = &state.auth;
-    let token = match security.create_access_token(&principal, settings.access_token_timeout) {
+    let token = match security.create_user_token(
+        &user.id,
+        &user.principal,
+        settings.access_token_timeout,
+    ) {
         Ok(token) => token,
         Err(e) => return failed(Failure::Server, e.message().to_string()),
     };
-    tracing::info!(%principal, "signed in to the web UI");
+    tracing::info!(principal = %user.principal, "signed in to the web UI");
     let mut response = Redirect::to(&login.rd).into_response();
     let cookies = response.headers_mut();
     if let Ok(cookie) = token_cookie(

@@ -7,6 +7,7 @@ pub mod logo;
 pub mod name;
 pub mod page;
 pub mod pem;
+pub mod scim;
 pub mod securable;
 pub mod settings;
 pub mod time;

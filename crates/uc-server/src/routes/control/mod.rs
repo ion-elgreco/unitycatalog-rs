@@ -159,13 +159,13 @@ pub async fn grant_token(
         true => TokenKind::AccessToken,
         false => TokenKind::IdToken,
     };
-    let principal = idp::resolve(&state, issuer, &decoded.claims, kind).await?;
+    let user = idp::resolve(&state, issuer, &decoded.claims, kind).await?;
     let security = state
         .security
         .as_ref()
         .ok_or_else(|| Error::internal("The server has no signing key"))?;
     let ttl = settings.access_token_timeout;
-    let access_token = security.create_access_token(&principal, ttl)?;
+    let access_token = security.create_user_token(&user.id, &user.principal, ttl)?;
     let mut response = Json(OAuthTokenExchangeInfo {
         access_token: access_token.clone(),
         issued_token_type: ACCESS_TOKEN.into(),

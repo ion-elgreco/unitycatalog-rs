@@ -5,17 +5,21 @@
 //!
 //! As Entra ID needs: a `remove` of a list with a `value` removes only
 //! those values, and an `add` or `replace` of `attr[filter].sub` that
-//! matches nothing adds a value made of the filter's `eq` terms, such as
-//! `emails[type eq "work"].value`. A filter on `value`, such as
-//! `members[value eq "<id>"].display`, names an existing value only: one
-//! that matches nothing is `noTarget` (RFC 7644, section 3.5.2.3).
+//! matches nothing sets a value of the filter's `eq` terms, such as
+//! `emails[type eq "work"].value` ([`value_of_terms`]). A filter on
+//! `value`, such as `members[value eq "<id>"].display`, names an existing
+//! value only: one that matches nothing is `noTarget` (RFC 7644, section
+//! 3.5.2.3). A value of a list that loses its `value`, such as an email
+//! whose address is removed, leaves the list.
+
+use std::collections::{HashMap, HashSet};
 
 use serde_json::{Map, Value};
 
 use uc_api::ScimPatchOperation;
 
 use super::scim_filter::{self, Filter};
-use super::scim_schema::{self, Attribute, Mutability, ResourceType, Type};
+use super::scim_schema::{self, Attribute, ResourceType, Type};
 
 /// Why a patch failed: the SCIM `scimType` and the detail.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,32 +49,9 @@ struct Target {
     sub: Option<&'static Attribute>,
 }
 
-/// The common attribute `externalId`, which PATCH may change.
-const EXTERNAL_ID: Attribute = Attribute {
-    name: "externalId",
-    kind: Type::String,
-    description: "",
-    multi_valued: false,
-    required: false,
-    mutability: Mutability::ReadWrite,
-    unique: false,
-    canonical_values: &[],
-    reference_types: &[],
-    sub_attributes: &[],
-};
-
-/// The attribute `name` of `resource_type`, or `externalId`; `None` for an
-/// attribute it does not have or may not change.
-fn writable(resource_type: &ResourceType, name: &str) -> Option<&'static Attribute> {
-    if name.eq_ignore_ascii_case(EXTERNAL_ID.name) {
-        return Some(&EXTERNAL_ID);
-    }
-    scim_schema::find(resource_type.attributes, name)
-        .filter(|a| a.mutability != Mutability::ReadOnly)
-}
-
-/// Parse `path`; `None` when it names an attribute that [`writable`]
-/// leaves out, such as one of an extension schema.
+/// Parse `path`; `None` when it names an attribute that
+/// [`ResourceType::writable`] leaves out, such as one of an extension
+/// schema.
 fn parse_path(path: &str, resource_type: &ResourceType) -> Result<Option<Target>, PatchError> {
     let invalid = || error("invalidPath", format!("Invalid path: {path}"));
     let path = scim_schema::strip_schema(path.trim(), resource_type.schema);
@@ -94,7 +75,7 @@ fn parse_path(path: &str, resource_type: &ResourceType) -> Result<Option<Target>
         "" => None,
         _ => Some(rest.strip_prefix('.').ok_or_else(invalid)?),
     };
-    let Some(attribute) = writable(resource_type, name) else {
+    let Some(attribute) = resource_type.writable(name) else {
         return Ok(None);
     };
     if filter.is_some() && !attribute.multi_valued {
@@ -201,17 +182,21 @@ fn apply_to(
         Some(sub) => value.map(|v| scim_schema::read_value(v, sub)),
         None => value.map(|v| scim_schema::read_value(v, attribute)),
     };
-    let needs_value = || {
-        error(
-            "invalidValue",
-            format!("The operation on {name} needs a value"),
-        )
+    let value = match (op, value) {
+        (Op::Remove, value) => value,
+        (_, Some(value)) => Some(value),
+        (_, None) => {
+            return Err(error(
+                "invalidValue",
+                format!("The operation on {name} needs a value"),
+            ));
+        }
     };
     match (&target.filter, target.sub) {
         (None, None) => match op {
             Op::Remove => remove_whole(resource, attribute, value),
-            Op::Add => add_whole(resource, attribute, value.ok_or_else(needs_value)?),
-            Op::Replace => set_whole(resource, attribute, value.ok_or_else(needs_value)?),
+            Op::Add => add_whole(resource, attribute, value.unwrap_or_default()),
+            Op::Replace => set_whole(resource, attribute, value.unwrap_or_default()),
         },
         (None, Some(sub)) if !attribute.multi_valued => {
             let object = resource
@@ -224,15 +209,19 @@ fn apply_to(
         }
         (None, Some(sub)) => {
             let items = list(resource, name);
-            if items.is_empty() && op != Op::Remove {
-                items.push(Value::Object(Map::new()));
-            }
-            for item in items.iter_mut() {
-                set_sub(item, sub, op, value.clone());
-            }
-            if sub.name == "primary" && value == Some(Value::Bool(true)) {
-                let last = items.len().saturating_sub(1);
-                keep_one_primary(items, last);
+            if clears_value(sub, op, value.as_ref()) {
+                items.clear();
+            } else {
+                if items.is_empty() && op != Op::Remove {
+                    items.push(Value::Object(Map::new()));
+                }
+                for item in items.iter_mut() {
+                    set_sub(item, sub, op, value.clone());
+                }
+                if sub.name == "primary" && value == Some(Value::Bool(true)) {
+                    let last = items.len().saturating_sub(1);
+                    keep_one_primary(items, last);
+                }
             }
         }
         (Some(filter), sub) => {
@@ -241,13 +230,9 @@ fn apply_to(
                 .filter(|&i| scim_filter::matches(filter, &items[i]))
                 .collect();
             match (op, sub) {
-                (Op::Remove, None) => {
-                    let mut i = 0;
-                    items.retain(|_| {
-                        let keep = !matching.contains(&i);
-                        i += 1;
-                        keep
-                    });
+                (Op::Remove, None) => remove_at(items, &matching),
+                (_, Some(sub)) if clears_value(sub, op, value.as_ref()) => {
+                    remove_at(items, &matching);
                 }
                 (Op::Remove, Some(sub)) => {
                     for &i in &matching {
@@ -272,29 +257,16 @@ fn apply_to(
                     }
                 }
                 (_, Some(sub)) => {
-                    let value = value.ok_or_else(needs_value)?;
+                    let value = value.unwrap_or_default();
                     let chosen = match matching.is_empty() {
-                        true => {
-                            let made = (filter.equalities())
-                                .filter(|terms| {
-                                    terms
-                                        .iter()
-                                        .all(|(attr, _)| !attr.eq_ignore_ascii_case("value"))
-                                })
-                                .ok_or_else(|| {
-                                    error("noTarget", format!("No value of {name} matches"))
-                                })?;
-                            items.push(Value::Object(made.into_iter().collect()));
-                            vec![items.len() - 1]
-                        }
+                        true => vec![value_of_terms(items, attribute, filter)?],
                         false => matching,
                     };
                     for &i in &chosen {
                         set_sub(&mut items[i], sub, op, Some(value.clone()));
                     }
-                    if sub.name == "primary"
-                        && value == Value::Bool(true)
-                        && let Some(&last) = chosen.last()
+                    if let Some(&last) = chosen.last()
+                        && items[last].get("primary") == Some(&Value::Bool(true))
                     {
                         keep_one_primary(items, last);
                     }
@@ -304,6 +276,80 @@ fn apply_to(
     }
     tidy(resource, name);
     Ok(())
+}
+
+/// Whether the operation takes the `value` of a value of a list away: a
+/// `remove` of the sub-attribute `value`, or an `add` or `replace` of it
+/// with nothing or blank text. The value then leaves the list.
+fn clears_value(sub: &Attribute, op: Op, value: Option<&Value>) -> bool {
+    sub.name == "value"
+        && match (op, value) {
+            (Op::Remove, _) | (_, None | Some(Value::Null)) => true,
+            (_, Some(Value::String(text))) => text.trim().is_empty(),
+            _ => false,
+        }
+}
+
+/// `items` without those at `gone`, indexes in order.
+fn remove_at(items: &mut Vec<Value>, gone: &[usize]) {
+    let mut gone = gone.iter().copied().peekable();
+    let mut i = 0;
+    items.retain(|_| {
+        let keep = gone.next_if_eq(&i).is_none();
+        i += 1;
+        keep
+    });
+}
+
+/// The index of the value of the list `items` of `attribute` that an `add`
+/// or `replace` of `attr[filter].sub` sets when no value matches `filter`,
+/// a filter of `eq` terms. A value that has none of the terms' attributes
+/// (the primary one, else the first) takes the terms: for
+/// `emails[type eq "work"].value`, an email without a type is the work
+/// email from then on. Without such a value, a new value has the terms.
+fn value_of_terms(
+    items: &mut Vec<Value>,
+    attribute: &Attribute,
+    filter: &Filter,
+) -> Result<usize, PatchError> {
+    let terms: Map<String, Value> = (filter.equalities())
+        .filter(|terms| {
+            terms
+                .iter()
+                .all(|(attr, _)| !attr.eq_ignore_ascii_case("value"))
+        })
+        .ok_or_else(|| {
+            error(
+                "noTarget",
+                format!("No value of {} matches", attribute.name),
+            )
+        })?
+        .into_iter()
+        .map(|(attr, value)| match attribute.sub(&attr) {
+            Some(sub) => (sub.name.to_string(), scim_schema::read_value(value, sub)),
+            None => (attr, value),
+        })
+        .collect();
+    let open = |item: &Value| {
+        item.as_object().is_some_and(|object| {
+            terms
+                .keys()
+                .all(|attr| scim_filter::member(object, attr).is_none_or(Value::is_null))
+        })
+    };
+    let primary = |item: &Value| item.get("primary") == Some(&Value::Bool(true));
+    let taken = (items.iter().position(|item| open(item) && primary(item)))
+        .or_else(|| items.iter().position(open));
+    Ok(match taken {
+        Some(at) => {
+            merge(&mut items[at], &terms);
+            at
+        }
+        None => {
+            items.push(Value::Object(terms));
+            items.len() - 1
+        }
+    })
 }
 
 /// The list `name` of `resource`, made when missing.
@@ -333,12 +379,12 @@ fn values(value: Value) -> Vec<Value> {
     }
 }
 
-/// Whether two values of a list are the same value: complex values by
-/// their `value`, others as they are.
-fn same(a: &Value, b: &Value) -> bool {
-    match (a.get("value"), b.get("value")) {
-        (Some(a), Some(b)) => a == b,
-        _ => a == b,
+/// What makes two values of a list the same value: complex values their
+/// `value`, others all of them.
+fn identity(item: &Value) -> (bool, String) {
+    match item.get("value") {
+        Some(value) => (true, value.to_string()),
+        None => (false, item.to_string()),
     }
 }
 
@@ -346,23 +392,32 @@ fn add_whole(resource: &mut Map<String, Value>, attribute: &Attribute, value: Va
     let name = attribute.name;
     if attribute.multi_valued {
         let items = list(resource, name);
+        let mut places: HashMap<(bool, String), usize> = HashMap::with_capacity(items.len());
+        for (at, item) in items.iter().enumerate() {
+            places.entry(identity(item)).or_insert(at);
+        }
+        let mut primary = None;
         for new in values(value) {
-            let primary = new.get("primary") == Some(&Value::Bool(true));
-            let at = match items.iter().position(|item| same(item, &new)) {
-                Some(i) => {
+            let is_primary = new.get("primary") == Some(&Value::Bool(true));
+            let at = match places.get(&identity(&new)) {
+                Some(&at) => {
                     if let Value::Object(fields) = &new {
-                        merge(&mut items[i], fields);
+                        merge(&mut items[at], fields);
                     }
-                    i
+                    at
                 }
                 None => {
+                    places.insert(identity(&new), items.len());
                     items.push(new);
                     items.len() - 1
                 }
             };
-            if primary {
-                keep_one_primary(items, at);
+            if is_primary {
+                primary = Some(at);
             }
+        }
+        if let Some(at) = primary {
+            keep_one_primary(items, at);
         }
     } else if attribute.kind == Type::Complex {
         match (resource.get_mut(name), value) {
@@ -402,8 +457,8 @@ fn remove_whole(resource: &mut Map<String, Value>, attribute: &Attribute, value:
     let name = attribute.name;
     match value.filter(|v| attribute.multi_valued && !v.is_null()) {
         Some(value) => {
-            let gone = values(value);
-            list(resource, name).retain(|item| !gone.iter().any(|g| same(item, g)));
+            let gone: HashSet<(bool, String)> = values(value).iter().map(identity).collect();
+            list(resource, name).retain(|item| !gone.contains(&identity(item)));
         }
         None => {
             resource.remove(name);
@@ -552,6 +607,123 @@ mod tests {
     }
 
     #[test]
+    fn an_email_without_a_type_takes_the_type_of_the_filter() {
+        // As `uc user create`, `[[auth.users]]` and the first sign-in make
+        // a user.
+        let user = json!({
+            "id": "1", "userName": "a@corp.com",
+            "emails": [{ "value": "a@corp.com", "primary": true }],
+        });
+        let patched = patch(
+            &USERS,
+            user.clone(),
+            json!([
+                { "op": "Replace", "path": "emails[Type eq \"work\"].value", "value": "a.new@corp.com" },
+                { "op": "Add", "path": "emails[type eq \"home\"].value", "value": "a@home.org" },
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            patched["emails"],
+            json!([
+                { "value": "a.new@corp.com", "primary": true, "type": "work" },
+                { "type": "home", "value": "a@home.org" },
+            ])
+        );
+        // A new primary value takes the place of the old one.
+        let patched = patch(
+            &USERS,
+            json!({ "userName": "a", "emails": [{ "value": "a@x", "type": "home", "primary": true }] }),
+            json!([
+                { "op": "add", "path": "emails[type eq \"work\" and primary eq true].value", "value": "b@x" },
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            patched["emails"],
+            json!([
+                { "value": "a@x", "type": "home", "primary": false },
+                { "type": "work", "primary": true, "value": "b@x" },
+            ])
+        );
+    }
+
+    #[test]
+    fn a_value_without_its_value_leaves_the_list() {
+        let user = json!({
+            "id": "1", "userName": "alice",
+            "emails": [
+                { "value": "alice@x", "type": "work", "primary": true },
+                { "value": "alice@home", "type": "home" },
+            ],
+            "photos": [{ "value": "https://x/p.png", "type": "photo" }],
+        });
+        // As Entra ID clears a `mail`.
+        for op in [
+            json!({ "op": "Remove", "path": "emails[type eq \"work\"].value" }),
+            json!({ "op": "Replace", "path": "emails[type eq \"work\"].value", "value": "" }),
+        ] {
+            let patched = patch(&USERS, user.clone(), json!([op])).unwrap();
+            assert_eq!(
+                patched["emails"],
+                json!([{ "value": "alice@home", "type": "home" }]),
+                "{op}"
+            );
+        }
+        // A `null` value, which a request can give, clears too.
+        let null = ScimPatchOperation {
+            op: "replace".into(),
+            path: Some("emails[type eq \"work\"].value".into()),
+            value: Some(Value::Null),
+        };
+        let Value::Object(mut resource) = user.clone() else {
+            unreachable!();
+        };
+        apply(&mut resource, &USERS, &[null]).unwrap();
+        assert_eq!(
+            resource["emails"],
+            json!([{ "value": "alice@home", "type": "home" }])
+        );
+        let patched = patch(
+            &USERS,
+            user.clone(),
+            json!([
+                { "op": "remove", "path": "photos[type eq \"photo\"].value" },
+                { "op": "remove", "path": "emails.value" },
+                // Nothing to clear.
+                { "op": "replace", "path": "emails[type eq \"other\"].value", "value": "" },
+            ]),
+        )
+        .unwrap();
+        assert!(patched.get("photos").is_none() && patched.get("emails").is_none());
+        // Another sub-attribute goes alone.
+        let patched = patch(
+            &USERS,
+            user,
+            json!([{ "op": "remove", "path": "emails[type eq \"home\"].type" }]),
+        )
+        .unwrap();
+        assert_eq!(patched["emails"][1], json!({ "value": "alice@home" }));
+    }
+
+    #[test]
+    fn adds_and_removes_many_values_by_their_value() {
+        let member = |i: usize| json!({ "value": format!("u{i}") });
+        let members = |range: std::ops::Range<usize>| Value::Array(range.map(member).collect());
+        let group = json!({ "id": "g", "displayName": "G", "members": members(0..20_000) });
+        let patched = patch(
+            &GROUPS,
+            group,
+            json!([
+                { "op": "add", "path": "members", "value": members(10_000..30_000) },
+                { "op": "remove", "path": "members", "value": members(0..29_998) },
+            ]),
+        )
+        .unwrap();
+        assert_eq!(patched["members"], members(29_998..30_000));
+    }
+
+    #[test]
     fn replaces_without_a_path_like_okta() {
         let patched = patch(
             &USERS,
@@ -638,6 +810,18 @@ mod tests {
                 "invalidPath",
             ),
             (json!([{ "op": "replace", "value": "x" }]), "invalidValue"),
+            (
+                json!([{ "op": "replace", "path": "name.familyName" }]),
+                "invalidValue",
+            ),
+            (
+                json!([{ "op": "add", "path": "emails.type" }]),
+                "invalidValue",
+            ),
+            (
+                json!([{ "op": "add", "path": "emails[type eq \"work\"].value" }]),
+                "invalidValue",
+            ),
             // Byte 4 is inside a character.
             (
                 json!([{ "op": "add", "path": "ab\u{65e5}[", "value": "x" }]),

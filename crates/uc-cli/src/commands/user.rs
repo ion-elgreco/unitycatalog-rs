@@ -101,6 +101,17 @@ fn with_primary(emails: Vec<ScimEmail>, email: String) -> Vec<ScimEmail> {
     out
 }
 
+/// The user name of `user` after a change of its email to `email`. A user
+/// that `uc user create` made has its email as user name, which follows
+/// the email: the old address then names no user and is free for another.
+/// A user name from an identity provider stays.
+fn user_name_after(user: &ScimUser, email: Option<&str>) -> String {
+    match email {
+        Some(email) if user.user_name.eq_ignore_ascii_case(user.principal()) => email.to_string(),
+        _ => user.user_name.clone(),
+    }
+}
+
 pub async fn run(c: &Context<'_>, op: UserOp) -> Result<String> {
     match op {
         UserOp::Create {
@@ -124,13 +135,13 @@ pub async fn run(c: &Context<'_>, op: UserOp) -> Result<String> {
             external_id,
             email,
         } => {
-            // A replace keeps what it does not name, and needs the user
-            // name.
+            // A replace keeps what it does not name.
             let current = c.client.get_user(&id).await.map_err(upstream("getUser"))?;
+            let user_name = user_name_after(&current, email.as_deref());
             let emails = email.map(|email| with_primary(current.emails, email));
             let mut replace = c
                 .client
-                .replace_user(id, current.user_name)
+                .replace_user(id, user_name)
                 .with_display_name(name)
                 .with_external_id(external_id);
             if let Some(emails) = emails {
@@ -149,7 +160,7 @@ pub async fn run(c: &Context<'_>, op: UserOp) -> Result<String> {
                 .with_count(count)
                 .await
                 .map_err(upstream("listUsers"))?;
-            c.start_index(start, count, list.resources.len());
+            c.start_index(start, count, list.resources.len(), list.total_results);
             let users: Vec<Value> = list.resources.iter().map(user_from_scim).collect();
             Ok(c.json(&Value::Array(users)))
         }
@@ -204,6 +215,34 @@ mod tests {
         assert_eq!(
             with_primary(Vec::new(), "b@corp.com".into()),
             [primary_email("b@corp.com".into())]
+        );
+    }
+
+    #[test]
+    fn the_user_name_follows_the_email_it_was() {
+        let user = |user_name: &str, emails: Vec<ScimEmail>| ScimUser {
+            user_name: user_name.into(),
+            emails,
+            ..Default::default()
+        };
+        let made_here = user("A@corp.com", vec![primary_email("a@corp.com".into())]);
+        assert_eq!(
+            user_name_after(&made_here, Some("b@corp.com")),
+            "b@corp.com"
+        );
+        assert_eq!(user_name_after(&made_here, None), "A@corp.com");
+        assert_eq!(
+            user_name_after(&user("a", Vec::new()), Some("a@corp.com")),
+            "a@corp.com"
+        );
+        // A user name of an identity provider.
+        let provisioned = user(
+            "a.upn@corp.com",
+            vec![email("a@corp.com", "work", Some(true))],
+        );
+        assert_eq!(
+            user_name_after(&provisioned, Some("b@corp.com")),
+            "a.upn@corp.com"
         );
     }
 }

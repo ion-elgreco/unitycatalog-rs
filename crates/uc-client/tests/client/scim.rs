@@ -150,12 +150,12 @@ async fn user_patches() {
         uc.patch_user(&id, vec![operation("remove", None, None)])
             .await,
     );
+    // The code of a SCIM error is its `scimType`, the message its detail.
     assert_eq!(
         (error.status, error.code.as_deref()),
-        (400, Some("INVALID_ARGUMENT"))
+        (400, Some("noTarget"))
     );
-    let body: serde_json::Value = serde_json::from_str(&error.body).unwrap();
-    assert_eq!(body["scimType"], "noTarget");
+    assert!(!error.message.is_empty() && error.message != error.body);
 }
 
 #[tokio::test]

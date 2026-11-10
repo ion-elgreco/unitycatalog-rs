@@ -57,7 +57,7 @@ pub async fn run(c: &Context<'_>, op: GroupOp) -> Result<String> {
                 .with_count(count)
                 .await
                 .map_err(upstream("listGroups"))?;
-            c.start_index(start, count, list.resources.len());
+            c.start_index(start, count, list.resources.len(), list.total_results);
             Ok(c.json(&serde_json::to_value(&list.resources)?))
         }
         GroupOp::Get { id } => {

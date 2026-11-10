@@ -331,6 +331,12 @@ pub(crate) const SCIM_GROUP_MEMBER: TableDef = TableDef {
     columns: &[("group_id", Text), ("user_id", Text)],
 };
 
+pub(crate) const SCIM_DELETED_USER: TableDef = TableDef {
+    name: "scim_deleted_user",
+    key: &["name"],
+    columns: &[("name", Text), ("deleted_at", Int)],
+};
+
 pub(crate) const SHARE: TableDef = TableDef {
     name: "share",
     key: &["id_string"],
@@ -414,6 +420,7 @@ pub(crate) const ALL: &[&TableDef] = &[
     &SCIM_USER,
     &SCIM_GROUP,
     &SCIM_GROUP_MEMBER,
+    &SCIM_DELETED_USER,
     &SHARE,
     &RECIPIENT,
     &STORAGE_CLEANUP_TASK,

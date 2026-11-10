@@ -91,9 +91,9 @@ uc user create --name Bob --email bob@example.com
 - A user's email is its name in grants and as an owner: its primary email, else its first. A user
   without an email, such as an application ([Who a token names](#who-a-token-names)), uses its
   `userName`.
-- When a user's email changes, its grants, owned objects and tokens move to the new email.
-  `admin_principals` and Cedar policies still name the old one: the server logs a warning for
-  each of them.
+- When a user's email changes, its grants, owned objects and tokens move to the new email. A
+  server token that the user got before the change stays valid. `admin_principals` and Cedar
+  policies still name the old email: the server logs a warning for each of them.
 - A privilege granted to a group applies to each member. A group's name is its name in grants,
   and it cannot be the email of a user. A grant to a name goes to the user with that email, else
   to the group with that name, else to the user with that `userName`.
@@ -101,9 +101,12 @@ uc user create --name Bob --email bob@example.com
   its grants, tokens and group memberships. The objects that it owned have no owner then, so a
   later user with the same email does not get them. An admin can give them a new owner. A deleted
   group also leaves its objects without an owner.
-- `admin` is the name of the server's own user. No other user can have it as `userName` or email.
-  The server's own user cannot be renamed, disabled or deleted.
-- Group names, and the external ids of users, are unique in any case.
+- `create_users` does not make a deleted user again at sign-in. To let the user in again, make it
+  by hand or from your identity provider.
+- `admin` is the name of the server's own user. No other user can have it as `userName` or email,
+  and no group can have it as name. The server's own user cannot be renamed, disabled or deleted.
+- Group names are unique in any case. The external ids of users are unique as they are written:
+  `Ab1` and `ab1` are two ids.
 - Only admins can add, change or delete users and groups.
 
 ### Manage users by hand
@@ -135,6 +138,11 @@ id as the provider sends them, and leaves out the other attributes, such as `tit
 finds its users again by `userName`, so the server never changes it. A token of a provider whose
 `issuer` has no `*` can name a user by its `userName` too, such as an Entra UPN that differs from
 the user's email.
+
+A `PUT` needs the `userName` of the user or the `displayName` of the group. It keeps each other
+attribute that its body leaves out, so a provider that sends only a part of a user or group does
+not clear the rest. To clear an attribute, send it as `null` or as an empty list. Each error of
+the SCIM API has the SCIM error format and only its attributes, also a timeout and a rate limit.
 
 The URLs in SCIM answers start with `auth.public_url` when it is set. Without it, they start with
 the URL that the provider called.
@@ -255,7 +263,8 @@ token never matches here: it holds the client id of a tool that many people shar
 - The ETL token makes `entra:9a1b…`, with the `externalId` `entra:c0ffee…` and the display name
   `ETL` (from `display_name = "{app_displayname}"`).
 
-Without `create_users`, the server refuses the request with "User not allowed".
+Without `create_users`, the server refuses the request with "User not allowed". It also refuses
+a user that an admin deleted ([Users and groups](#users-and-groups)).
 
 A disabled user names nobody. No token can name the server's own `admin` user.
 

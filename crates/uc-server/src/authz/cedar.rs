@@ -26,6 +26,7 @@
 //! `source_ip` (an `ipaddr`, when known) and `request_time` (a
 //! `datetime`), so policies can also say where and when.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use uc_auth::authz::{CedarAuthorizer, NoEntities};
@@ -52,33 +53,29 @@ pub fn authorizer(policies: &[String]) -> Result<CedarAuthorizer> {
         .map_err(|e| Error::invalid_argument(format!("invalid Cedar policy: {e}")))
 }
 
-/// The `.cedar` files `paths`, each with its text.
-pub fn read_policy_files(paths: &[PathBuf]) -> Result<Vec<(PathBuf, String)>> {
-    paths
-        .iter()
-        .map(|path| {
-            let text = std::fs::read_to_string(path).map_err(|e| {
-                Error::invalid_argument(format!("read Cedar policy file '{}': {e}", path.display()))
-            })?;
-            Ok((path.clone(), text))
-        })
-        .collect()
-}
+/// Policy files, each with the names that its policies hold
+/// ([`CedarAuthorizer::names`]).
+pub type PolicyNames = Vec<(PathBuf, BTreeSet<String>)>;
 
-/// The authorizer of [`DEFAULT_POLICY`] and the `.cedar` files `files`,
-/// each a path and its text.
-pub fn with_policy_files(files: &[(PathBuf, String)]) -> Result<CedarAuthorizer> {
-    let mut sources = Vec::with_capacity(files.len());
-    for (path, source) in files {
+/// The authorizer of [`DEFAULT_POLICY`] and the `.cedar` files `paths`,
+/// and the names of each file.
+pub fn with_policy_files(paths: &[PathBuf]) -> Result<(CedarAuthorizer, PolicyNames)> {
+    let mut sources = Vec::with_capacity(paths.len());
+    let mut names = Vec::with_capacity(paths.len());
+    for path in paths {
+        let source = std::fs::read_to_string(path).map_err(|e| {
+            Error::invalid_argument(format!("read Cedar policy file '{}': {e}", path.display()))
+        })?;
         // Each file on its own, then with the ones before it, so an error
         // names the file: an `@id` that the default policy or an earlier
         // file has too names this one.
         let in_file = |e: &dyn std::fmt::Display| {
             Error::invalid_argument(format!("policy file '{}': {e}", path.display()))
         };
-        CedarAuthorizer::new(source, NoEntities).map_err(|e| in_file(&e))?;
-        sources.push(source.clone());
+        let alone = CedarAuthorizer::new(&source, NoEntities).map_err(|e| in_file(&e))?;
+        names.push((path.clone(), alone.names()));
+        sources.push(source);
         authorizer(&sources).map_err(|e| in_file(&e.message()))?;
     }
-    authorizer(&sources)
+    Ok((authorizer(&sources)?, names))
 }

@@ -45,10 +45,12 @@ pub struct AppStateInner {
     /// ([`Self::with_authorizer`]); with none, the grants of the
     /// `permission` table.
     pub authorizer: Option<Arc<dyn uc_auth::authz::Authorizer>>,
-    /// The `.cedar` files of [`Self::with_cedar`], each with the text that
-    /// the server read at start. They name users by principal, which a
-    /// user whose email changes no longer has.
-    pub cedar_files: Arc<Vec<(PathBuf, String)>>,
+    /// The `.cedar` files of [`Self::with_cedar`], each with the names
+    /// that its policies hold
+    /// ([`CedarAuthorizer::names`](uc_auth::authz::CedarAuthorizer::names)).
+    /// They name users by principal, which a user whose email changes no
+    /// longer has.
+    pub cedar_names: Arc<crate::authz::cedar::PolicyNames>,
     /// Mints temporary cloud credentials for the `/temporary-*-credentials`
     /// endpoints: [`PlaceholderVendor`] by default, `CloudVendor` (AWS STS,
     /// Azure SAS, GCP OAuth) in the server.
@@ -92,7 +94,7 @@ impl AppState {
             auth: Arc::new(AuthSettings::default()),
             authorization_enabled: false,
             authorizer: None,
-            cedar_files: Arc::new(Vec::new()),
+            cedar_names: Arc::new(Vec::new()),
             vendor: Arc::new(PlaceholderVendor),
             admin_principals: Arc::new(HashSet::new()),
             aws_identity_arn: None,
@@ -201,9 +203,8 @@ impl AppState {
     /// Cedar policies decide, those of the `.cedar` files `paths` on top of
     /// the default ([`crate::authz::cedar`]).
     pub fn with_cedar(mut self, paths: &[PathBuf]) -> Result<Self, uc_common::Error> {
-        let files = crate::authz::cedar::read_policy_files(paths)?;
-        let authorizer = crate::authz::cedar::with_policy_files(&files)?;
-        self.inner().cedar_files = Arc::new(files);
+        let (authorizer, names) = crate::authz::cedar::with_policy_files(paths)?;
+        self.inner().cedar_names = Arc::new(names);
         Ok(self.with_authorizer(authorizer))
     }
 

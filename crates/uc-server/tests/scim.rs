@@ -81,6 +81,14 @@ impl Answer {
             "scimType in {}",
             self.body
         );
+        // A strict client refuses an attribute that the RFC does not have.
+        let known = ["schemas", "status", "scimType", "detail"];
+        let attributes = self.body.as_object().unwrap();
+        assert!(
+            attributes.keys().all(|name| known.contains(&name.as_str())),
+            "{}",
+            self.body
+        );
         self.body
     }
 }
@@ -242,16 +250,22 @@ async fn the_same_user_name_principal_or_external_id_is_a_conflict(#[future(awt)
             json!({ "userName": "dave", "externalId": "ext-bob" }),
             "User already exists with external id: ext-bob",
         ),
-        (
-            json!({ "userName": "dave", "externalId": "EXT-BOB" }),
-            "User already exists with external id: EXT-BOB",
-        ),
     ] {
         let err = call(&app, Method::POST, "/scim2/Users", body)
             .await
             .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
         assert_eq!(err["detail"], detail);
-        assert_eq!(err["error_code"], "ALREADY_EXISTS");
+    }
+    // External ids compare with case (RFC 7643, section 3.1).
+    let other = json!({ "userName": "dave", "externalId": "EXT-BOB" });
+    call(&app, Method::POST, "/scim2/Users", other)
+        .await
+        .ok(StatusCode::CREATED);
+    for (external_id, user_name) in [("ext-bob", "bob"), ("EXT-BOB", "dave")] {
+        let found = user_names(&app, &filter(&format!(r#"externalId eq "{external_id}""#))).await;
+        assert_eq!(found, [user_name]);
+        let either = format!(r#"externalId eq "{external_id}" or userName eq "nobody""#);
+        assert_eq!(user_names(&app, &filter(&either)).await, [user_name]);
     }
     call(
         &app,
@@ -694,9 +708,15 @@ async fn put_replaces_what_the_body_has(#[future(awt)] app: Router) {
     .await
     .scim_error(StatusCode::BAD_REQUEST, Some("mutability"));
     // The body has the required attributes; a patch keeps them.
-    call(&app, Method::PUT, &path, json!({ "displayName": "X" }))
-        .await
-        .scim_error(StatusCode::BAD_REQUEST, Some("invalidValue"));
+    for body in [
+        json!({ "displayName": "X" }),
+        json!({ "userName": null }),
+        json!({ "userName": " " }),
+    ] {
+        call(&app, Method::PUT, &path, body)
+            .await
+            .scim_error(StatusCode::BAD_REQUEST, Some("invalidValue"));
+    }
     patch(&app, &path, json!([{ "op": "remove", "path": "userName" }]))
         .await
         .scim_error(StatusCode::BAD_REQUEST, Some("mutability"));
@@ -740,6 +760,78 @@ async fn put_replaces_what_the_body_has(#[future(awt)] app: Router) {
     )
     .await
     .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
+
+    // A group keeps the members that the body does not name; an empty
+    // list removes them. The body needs the name.
+    let group = json!({ "displayName": "put-group", "members": [{ "value": id }] });
+    let group = call(&app, Method::POST, "/scim2/Groups", group)
+        .await
+        .ok(StatusCode::CREATED);
+    let path = format!("/scim2/Groups/{}", group["id"].as_str().unwrap());
+    call(&app, Method::PUT, &path, json!({ "externalId": "g1" }))
+        .await
+        .scim_error(StatusCode::BAD_REQUEST, Some("invalidValue"));
+    let body = json!({ "displayName": "put-group", "externalId": "g1" });
+    let kept = call(&app, Method::PUT, &path, body)
+        .await
+        .ok(StatusCode::OK);
+    assert_eq!(member_ids(&kept), [id.as_str()]);
+    let body = json!({ "displayName": "put-group", "members": [] });
+    let emptied = call(&app, Method::PUT, &path, body)
+        .await
+        .ok(StatusCode::OK);
+    assert!(emptied.get("members").is_none());
+    assert_eq!(emptied["externalId"], "g1");
+}
+
+/// A user that the CLI, the settings or a first sign-in made has one email
+/// without a type. Entra ID names the email by its type `work`.
+#[rstest]
+#[tokio::test]
+async fn entra_id_changes_and_clears_the_email_of_a_user_made_here(#[future(awt)] app: Router) {
+    let id = create(&app, "local@example.com").await;
+    let path = format!("/scim2/Users/{id}");
+    let work = r#"emails[type eq "work"].value"#;
+    let user = patch(
+        &app,
+        &path,
+        json!([{ "op": "Replace", "path": work, "value": "local.new@example.com" }]),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(
+        user["emails"],
+        json!([{ "value": "local.new@example.com", "primary": true, "type": "work" }])
+    );
+    // The grants are under the new email, which finds the user.
+    assert_eq!(
+        user_names(&app, &filter(r#"emails.value eq "local.new@example.com""#)).await,
+        ["local@example.com"]
+    );
+    // A cleared `mail`.
+    let user = patch(&app, &path, json!([{ "op": "Remove", "path": work }]))
+        .await
+        .ok(StatusCode::OK);
+    assert!(user.get("emails").is_none());
+    let user = patch(
+        &app,
+        &path,
+        json!([{ "op": "Add", "path": work, "value": "local@example.com" }]),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(
+        user["emails"],
+        json!([{ "type": "work", "value": "local@example.com" }])
+    );
+    // An operation that forgets its value changes nothing.
+    patch(
+        &app,
+        &path,
+        json!([{ "op": "replace", "path": "name.familyName" }]),
+    )
+    .await
+    .scim_error(StatusCode::BAD_REQUEST, Some("invalidValue"));
 }
 
 #[rstest]
@@ -944,6 +1036,40 @@ async fn a_group_member_must_be_a_user(#[future(awt)] app: Router) {
 }
 
 /// A deleted user leaves its groups.
+/// A filter on a member's URL sees the URLs that only answers have.
+#[rstest]
+#[tokio::test]
+async fn a_filter_can_name_the_url_of_a_member(#[future(awt)] app: Router) {
+    let user = create(&app, "member@example.com").await;
+    let group = json!({ "displayName": "with-member", "members": [{ "value": user }] });
+    call(&app, Method::POST, "/scim2/Groups", group)
+        .await
+        .ok(StatusCode::CREATED);
+    call(
+        &app,
+        Method::POST,
+        "/scim2/Groups",
+        json!({ "displayName": "empty" }),
+    )
+    .await
+    .ok(StatusCode::CREATED);
+    for f in [
+        format!(r#"members[$ref ew "/Users/{user}"]"#),
+        format!(r#"members eq "{user}""#),
+        r#"meta.location co "/scim2/Groups/" and displayName sw "with""#.to_string(),
+    ] {
+        let list = get(&app, &format!("/scim2/Groups{}", filter(&f)))
+            .await
+            .ok(StatusCode::OK);
+        assert_eq!(list["totalResults"], 1, "{f}");
+        let found = &list["Resources"][0];
+        assert_eq!(found["displayName"], "with-member", "{f}");
+        let url = found["members"][0]["$ref"].as_str().unwrap();
+        assert!(url.ends_with(&format!("/scim2/Users/{user}")), "{url}");
+        assert!(found["meta"]["location"].as_str().is_some());
+    }
+}
+
 #[rstest]
 #[tokio::test]
 async fn a_deleted_user_leaves_its_groups(#[future(awt)] app: Router) {
@@ -996,12 +1122,137 @@ async fn errors_are_scim_errors(#[future(awt)] app: Router) {
     )
     .await
     .scim_error(StatusCode::BAD_REQUEST, Some("noTarget"));
-    // The UC clients read the UC code and message.
+    // The UC clients show the detail.
     let err = get(&app, "/scim2/Users/gone")
         .await
         .scim_error(StatusCode::NOT_FOUND, None);
-    assert_eq!(err["error_code"], "NOT_FOUND");
-    assert_eq!(err["message"], "User not found: gone");
+    assert_eq!(err["detail"], "User not found: gone");
+    // A filter over the limits, here of levels.
+    let deep = format!(r#"{}userName eq "a""#, "not (".repeat(100_000));
+    let search = json!({ "filter": deep });
+    call(&app, Method::POST, "/scim2/Users/.search", search)
+        .await
+        .scim_error(StatusCode::BAD_REQUEST, Some("invalidFilter"));
+    let deep = format!("members[{}", "(".repeat(1000));
+    patch(
+        &app,
+        &format!("/scim2/Users/{id}"),
+        json!([{ "op": "remove", "path": deep }]),
+    )
+    .await
+    .scim_error(StatusCode::BAD_REQUEST, Some("invalidPath"));
+}
+
+/// The request timeout and the rate limit are outside the handlers; their
+/// answers under `/scim2` are SCIM errors too.
+#[tokio::test]
+async fn the_timeout_and_the_rate_limit_answer_scim_errors() {
+    use std::net::SocketAddr;
+    use uc_server::server::app::HttpSettings;
+
+    let metastore = uc_metastore::SqlMetastore::connect(uc_metastore::MetastoreConfig::for_tests())
+        .await
+        .unwrap();
+    let http = HttpSettings {
+        request_timeout: Some(std::time::Duration::from_millis(100)),
+        rate_limit_per_sec: 1,
+        ..Default::default()
+    };
+    let state = uc_server::AppState::new(metastore)
+        .with_security(common::security())
+        .with_http(http);
+    let app = uc_server::build_app(state);
+    // The rate limit is per client address.
+    let from_a_client = |mut request: Request<Body>| {
+        let address = SocketAddr::from(([192, 0, 2, 1], 4000));
+        request
+            .extensions_mut()
+            .insert(axum::extract::ConnectInfo(address));
+        request
+    };
+    // A body that never ends.
+    let endless = futures::stream::pending::<Result<bytes::Bytes, std::io::Error>>();
+    let slow = Request::builder()
+        .method(Method::POST)
+        .uri(format!("{}/scim2/Users", common::CONTROL))
+        .body(Body::from_stream(endless))
+        .unwrap();
+    send(&app, from_a_client(slow))
+        .await
+        .scim_error(StatusCode::SERVICE_UNAVAILABLE, None);
+    // Two requests at once pass; the slow one was the first.
+    let list = || from_a_client(control(Method::GET, "/scim2/Users"));
+    send(&app, list()).await.ok(StatusCode::OK);
+    let limited = send(&app, list()).await;
+    assert!(limited.headers.contains_key("retry-after"));
+    limited.scim_error(StatusCode::TOO_MANY_REQUESTS, None);
+}
+
+/// A filter reads only the rows that can match: the users and groups of an
+/// `eq` term on an attribute that the database finds them by, and none of
+/// a type that a term rules out.
+#[rstest]
+#[tokio::test]
+async fn filters_find_resources_by_their_eq_terms(#[future(awt)] app: Router) {
+    for (user_name, display_name) in [("ann", "Ann Lee"), ("bo", "Bo Diaz"), ("cy", "ANN LEE")] {
+        let body = json!({ "userName": user_name, "displayName": display_name });
+        call(&app, Method::POST, "/scim2/Users", body)
+            .await
+            .ok(StatusCode::CREATED);
+    }
+    let ann = user_names(&app, &filter(r#"userName eq "ann""#)).await;
+    assert_eq!(ann, ["ann"]);
+    let group = json!({ "displayName": "Ann Team", "members": [] });
+    call(&app, Method::POST, "/scim2/Groups", group)
+        .await
+        .ok(StatusCode::CREATED);
+    let both = user_names(
+        &app,
+        &filter(r#"displayName eq "ann lee" and active eq true"#),
+    )
+    .await;
+    // By display name, as the database orders text.
+    assert_eq!(both, ["cy", "ann"]);
+
+    // Users and groups at once.
+    let search = |filter: &str| {
+        let app = app.clone();
+        let body = json!({ "filter": filter });
+        async move {
+            let list = call(&app, Method::POST, "/scim2/.search", body)
+                .await
+                .ok(StatusCode::OK);
+            let mut found: Vec<(String, String)> = (list["Resources"].as_array().unwrap().iter())
+                .map(|r| {
+                    let name = r.get("userName").unwrap_or(&r["displayName"]);
+                    let kind = r["meta"]["resourceType"].as_str().unwrap();
+                    (kind.to_string(), name.as_str().unwrap().to_string())
+                })
+                .collect();
+            found.sort();
+            assert_eq!(list["totalResults"], found.len());
+            found
+        }
+    };
+    let named = |kind: &str, name: &str| (kind.to_string(), name.to_string());
+    assert_eq!(search(r#"userName eq "ANN""#).await, [named("User", "ann")]);
+    assert_eq!(
+        search(r#"displayName sw "ann""#).await,
+        [
+            named("Group", "Ann Team"),
+            named("User", "ann"),
+            named("User", "cy")
+        ]
+    );
+    assert_eq!(
+        search(r#"meta.resourceType eq "group" and displayName sw "ann""#).await,
+        [named("Group", "Ann Team")]
+    );
+    assert_eq!(
+        search(r#"meta.resourceType eq "User" and userName ew "o""#).await,
+        [named("User", "bo")]
+    );
+    assert!(search(r#"members eq "nobody""#).await.is_empty());
 }
 
 #[rstest]
@@ -1058,6 +1309,11 @@ async fn discovery_documents(#[future(awt)] app: Router) {
         ),
         (json!(true), json!(true))
     );
+    // The limits that the server keeps: `server.max_request_length`.
+    assert_eq!(
+        config["bulk"],
+        json!({ "supported": true, "maxOperations": 100, "maxPayloadSize": 10 * 1024 * 1024 })
+    );
 }
 
 #[rstest]
@@ -1088,6 +1344,23 @@ async fn bulk_runs_each_operation(#[future(awt)] app: Router) {
     );
     assert_eq!(ops[1]["status"], "404");
     assert_eq!(ops[1]["response"]["schemas"], json!([ERROR_SCHEMA]));
+
+    // `failOnErrors` 0 stops at the first failure, as 1.
+    let body = json!({
+        "failOnErrors": 0,
+        "Operations": [
+            { "method": "POST", "path": "/Users", "data": new_user("bulk2@x") },
+            { "method": "DELETE", "path": "/Users/does-not-exist" },
+            { "method": "POST", "path": "/Users", "data": new_user("skipped@x") },
+        ]
+    });
+    let resp = call(&app, Method::POST, "/scim2/Bulk", body)
+        .await
+        .ok(StatusCode::OK);
+    let statuses: Vec<&str> = (resp["Operations"].as_array().unwrap().iter())
+        .map(|op| op["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(statuses, ["201", "404"]);
 }
 
 /// `bulkId:<id>` names the resource of an earlier operation.
@@ -1171,20 +1444,18 @@ async fn changes_at_the_same_time_each_stay() {
     expected.sort_unstable();
     assert_eq!(members, expected);
 
-    // A change runs on the stored group, and its error changes nothing.
+    // A change runs on the stored group, and one that is not saved changes
+    // nothing.
     let scim = metastore.scim();
-    scim.update_group(id, &mut |current| {
-        Ok(uc_api::ScimGroup {
-            display_name: "h".into(),
-            ..current.clone()
-        })
-    })
-    .await
-    .unwrap();
-    let failed = scim
-        .update_group(id, &mut |_| Err(uc_common::Error::invalid_argument("no")))
-        .await;
-    assert_eq!(failed.unwrap_err().message(), "no");
+    let edit = scim.edit_group(id).await.unwrap();
+    let renamed = uc_api::ScimGroup {
+        display_name: "h".into(),
+        ..edit.current().clone()
+    };
+    edit.save(renamed).await.unwrap();
+    let edit = scim.edit_group(id).await.unwrap();
+    assert_eq!(edit.current().display_name, "h");
+    drop(edit);
     let group = scim.get_group(id).await.unwrap();
     assert_eq!(group.display_name, "h");
     assert_eq!(group.members.unwrap().len(), 3);
@@ -1237,6 +1508,24 @@ async fn the_name_admin_belongs_to_the_servers_own_user() {
     patch(&app, &format!("/scim2/Users/{other}"), rename("admin"))
         .await
         .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
+    // Nor does a group take the name, with or without the user.
+    call(
+        &app,
+        Method::POST,
+        "/scim2/Groups",
+        json!({ "displayName": "Admin" }),
+    )
+    .await
+    .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
+    let group = json!({ "displayName": "admins" });
+    let group = call(&app, Method::POST, "/scim2/Groups", group)
+        .await
+        .ok(StatusCode::CREATED);
+    let to_admin = json!([{ "op": "replace", "path": "displayName", "value": "ADMIN" }]);
+    let group_path = format!("/scim2/Groups/{}", group["id"].as_str().unwrap());
+    patch(&app, &group_path, to_admin)
+        .await
+        .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
 
     uc_server::authn::security::initialize_admin(&metastore)
         .await
@@ -1250,11 +1539,38 @@ async fn the_name_admin_belongs_to_the_servers_own_user() {
     let path = format!("/scim2/Users/{}", admin.id.unwrap());
     patch(&app, &path, rename("root"))
         .await
-        .scim_error(StatusCode::BAD_REQUEST, Some("mutability"));
+        .scim_error(StatusCode::BAD_REQUEST, Some("invalidValue"));
+    // An email `admin` keeps the principal, not the user name.
+    let body = json!({ "userName": "root", "emails": [{ "value": "admin", "primary": true }] });
+    call(&app, Method::PUT, &path, body)
+        .await
+        .scim_error(StatusCode::BAD_REQUEST, Some("invalidValue"));
     let disable = json!([{ "op": "replace", "path": "active", "value": false }]);
     patch(&app, &path, disable)
         .await
-        .scim_error(StatusCode::BAD_REQUEST, Some("mutability"));
+        .scim_error(StatusCode::BAD_REQUEST, Some("invalidValue"));
+    // The metastore keeps the rules, for every caller.
+    let scim = metastore.scim();
+    let id = path.rsplit('/').next().unwrap();
+    assert_eq!(
+        scim.delete_user(id).await.unwrap_err().code(),
+        uc_common::ErrorCode::PermissionDenied
+    );
+    let edit = scim.edit_user(id).await.unwrap();
+    let renamed = uc_api::ScimUser {
+        user_name: "root".into(),
+        ..edit.current().clone()
+    };
+    assert_eq!(
+        edit.save(renamed).await.unwrap_err().code(),
+        uc_common::ErrorCode::InvalidArgument
+    );
+    // It is made once.
+    scim.create_admin().await.unwrap();
+    assert_eq!(
+        user_names(&app, &filter(r#"userName eq "admin""#)).await,
+        ["admin"]
+    );
     send(&app, control(Method::DELETE, &path))
         .await
         .scim_error(StatusCode::FORBIDDEN, None);

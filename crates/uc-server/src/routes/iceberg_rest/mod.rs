@@ -11,9 +11,9 @@ use std::future::Future;
 
 use axum::{
     Json,
-    body::{Body, Bytes},
+    body::Bytes,
     extract::{FromRequest, Request, State},
-    http::{StatusCode, header},
+    http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -29,13 +29,13 @@ use uc_api::{
     },
 };
 use uc_common::{
-    API_BASE, DEFAULT_PAGE_SIZE, ErrorCode, ErrorResponse, Pagination, SecurableType,
-    schema_full_name,
+    API_BASE, DEFAULT_PAGE_SIZE, ErrorCode, Pagination, SecurableType, schema_full_name,
 };
 
 use crate::{
     authn::principal::Principal,
     authz::{self, Access, rules, schema_lineage},
+    http::error::{Stray, format_errors, mounted},
     http::extract::{Path, Query, parse_json_body},
     server::state::AppState,
 };
@@ -136,49 +136,30 @@ impl<T: DeserializeOwned, S: Send + Sync> FromRequest<S> for IcebergJson<T> {
 /// parsing) and the bare statuses of sign-in and unrouted requests
 /// (upstream `UnroutedIcebergRequestHandler`).
 pub async fn error_layer(req: Request, next: Next) -> Response {
-    let iceberg = req
-        .uri()
-        .path()
-        .strip_prefix(API_BASE)
-        .and_then(|rest| rest.strip_prefix("/iceberg"))
-        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'));
+    let iceberg = mounted(req.uri().path(), API_BASE, "/iceberg");
     let resp = next.run(req).await;
-    if !iceberg || !(resp.status().is_client_error() || resp.status().is_server_error()) {
+    if !iceberg {
         return resp;
     }
-    let allow = resp.headers().get(header::ALLOW).cloned();
-    let error = match resp.extensions().get::<ErrorResponse>() {
-        Some(uc) => IcebergError::of_code(uc.error_code, uc.message.clone()),
-        None => {
-            let status = resp.status();
-            let (parts, body) = resp.into_parts();
-            let Ok(bytes) = axum::body::to_bytes(body, 1 << 20).await else {
-                return Response::from_parts(parts, Body::empty());
-            };
-            // Already an Iceberg body.
-            if serde_json::from_slice::<serde_json::Value>(&bytes).is_ok() {
-                return Response::from_parts(parts, Body::from(bytes));
+    // A body of JSON without a UC error is an Iceberg body already.
+    let own = |body: &[u8]| serde_json::from_slice::<serde_json::Value>(body).is_ok();
+    format_errors(resp, own, |stray: Stray| {
+        let error = match stray.code {
+            Some(code) => IcebergError::of_code(code, stray.message),
+            None => {
+                let error_type = match stray.status {
+                    StatusCode::BAD_REQUEST => "BadRequestException",
+                    StatusCode::UNAUTHORIZED => "NotAuthorizedException",
+                    StatusCode::FORBIDDEN => "ForbiddenException",
+                    StatusCode::NOT_FOUND => "NotFoundException",
+                    _ => "RESTException",
+                };
+                IcebergError::new(stray.status, error_type, stray.message)
             }
-            let text = String::from_utf8_lossy(&bytes).trim().to_string();
-            let message = match text.is_empty() {
-                true => status.canonical_reason().unwrap_or("Error").to_string(),
-                false => text,
-            };
-            let error_type = match status {
-                StatusCode::BAD_REQUEST => "BadRequestException",
-                StatusCode::UNAUTHORIZED => "NotAuthorizedException",
-                StatusCode::FORBIDDEN => "ForbiddenException",
-                StatusCode::NOT_FOUND => "NotFoundException",
-                _ => "RESTException",
-            };
-            IcebergError::new(status, error_type, message)
-        }
-    };
-    let mut resp = error.into_response();
-    if let Some(allow) = allow {
-        resp.headers_mut().insert(header::ALLOW, allow);
-    }
-    resp
+        };
+        error.into_response()
+    })
+    .await
 }
 
 /// The `catalogs/<catalog>` prefix of every catalog route.

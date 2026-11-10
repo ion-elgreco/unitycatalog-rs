@@ -1,9 +1,10 @@
 //! A group's page, for admins: its members, with a × that removes each, a
 //! form that adds a user, and "Delete".
 
+use buffa_types::google::protobuf::{ListValue, Struct, Value};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use uc_client::models::scim::v1::{ScimGroupMember, ScimUser};
+use uc_client::models::scim::v1::{ScimPatchOperation, ScimUser};
 
 use crate::api;
 use crate::auth::use_auth;
@@ -13,6 +14,8 @@ use crate::components::{
 };
 use crate::load::{Key, Load, use_cache, use_load};
 use crate::util::{Section, or_dash, route_params};
+
+const PATCH_OP: &str = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
 
 #[component]
 pub fn GroupDetails() -> impl IntoView {
@@ -47,19 +50,19 @@ fn GroupPage(name: String) -> impl IntoView {
         info.with(|g| g.ready().map(|g| g.members.clone()).unwrap_or_default())
     });
     let reload = vec![Key::Group(name.clone()), Key::Users];
-    // Save the group with `members`; the page shows the server's answer.
-    let set_members = move |members: Vec<ScimGroupMember>| {
-        let Some(group) = info.with_untracked(|g| g.ready().cloned()) else {
+    // Add or remove one member; the page shows the server's answer. One
+    // operation leaves the changes of other admins in place.
+    let change_members = move |operation: ScimPatchOperation| {
+        let Some(id) = info.with_untracked(|g| g.ready().map(|g| g.id.clone())) else {
             return;
         };
         let name = key.get_value();
-        let replace = api::client()
-            .replace_group(group.id, group.display_name)
-            .with_schemas(group.schemas)
-            .with_members(members);
+        let patch = api::client()
+            .patch_group(id, vec![operation])
+            .with_schemas([PATCH_OP.to_string()]);
         busy.set(true);
         spawn_local(async move {
-            match replace.await {
+            match patch.await {
                 Ok(updated) => {
                     cache.set(Key::Group(name), updated);
                     cache.changed(Key::Groups);
@@ -71,12 +74,11 @@ fn GroupPage(name: String) -> impl IntoView {
         });
     };
     let remove = move |id: String| {
-        let rest = members
-            .get_untracked()
-            .into_iter()
-            .filter(|m| m.value != id)
-            .collect();
-        set_members(rest);
+        change_members(ScimPatchOperation {
+            op: "remove".into(),
+            path: Some(format!(r#"members[value eq "{id}"]"#)),
+            ..Default::default()
+        });
     };
     let add = move |e: leptos::ev::SubmitEvent| {
         e.prevent_default();
@@ -84,17 +86,17 @@ fn GroupPage(name: String) -> impl IntoView {
         if id.is_empty() {
             return;
         }
-        let mut all = members.get_untracked();
-        if all.iter().any(|m| m.value == id) {
+        if members.with_untracked(|all| all.iter().any(|m| m.value == id)) {
             return;
         }
-        all.push(ScimGroupMember {
-            value: id,
-            member_type: Some("User".into()),
+        let member = Struct::from_fields([("value", id.as_str())]);
+        adding.set(String::new());
+        change_members(ScimPatchOperation {
+            op: "add".into(),
+            path: Some("members".into()),
+            value: Some(Value::from(ListValue::from_values([member]))).into(),
             ..Default::default()
         });
-        adding.set(String::new());
-        set_members(all);
     };
     // The user with `id`, from the list of users.
     let user_of = move |id: &str| {

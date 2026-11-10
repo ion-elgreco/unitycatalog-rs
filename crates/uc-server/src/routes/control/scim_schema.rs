@@ -239,8 +239,14 @@ pub const GROUP: &[Attribute] = &[
     complex("members", "The users in the group.", MEMBER).multi_valued(),
 ];
 
+/// The common attribute that a client writes (RFC 7643, section 3.1).
+pub const EXTERNAL_ID: Attribute = string(
+    "externalId",
+    "The identity the resource has at an identity provider.",
+);
+
 /// The attributes that every resource has (RFC 7643, section 3.1).
-pub const COMMON: &[&str] = &["schemas", "id", "externalId", "meta"];
+pub const COMMON: &[&str] = &["schemas", "id", EXTERNAL_ID.name, "meta"];
 
 /// A resource type: its schema URI, name, endpoint and attributes.
 pub struct ResourceType {
@@ -300,6 +306,21 @@ impl ResourceType {
                 "location": format!("{base}/ResourceTypes/{}", self.id),
             },
         })
+    }
+
+    /// The attribute `name` that a client may write, in any case: one of
+    /// the schema that is not read-only, or `externalId`.
+    pub fn writable(&self, name: &str) -> Option<&'static Attribute> {
+        if name.eq_ignore_ascii_case(EXTERNAL_ID.name) {
+            return Some(&EXTERNAL_ID);
+        }
+        find(self.attributes, name).filter(|a| a.mutability != Mutability::ReadOnly)
+    }
+
+    /// Whether resources of the type have the attribute `name`, in any
+    /// case.
+    pub fn has(&self, name: &str) -> bool {
+        COMMON.iter().any(|c| c.eq_ignore_ascii_case(name)) || find(self.attributes, name).is_some()
     }
 
     /// The first required attribute that `resource` (as [`Self::read`] gives
@@ -485,13 +506,14 @@ fn read_single(value: Value, attribute: &'static Attribute) -> Value {
 }
 
 /// The ServiceProviderConfig document (RFC 7643, section 5), with its URL
-/// under `base`.
-pub fn service_provider_config(base: &str) -> Value {
+/// under `base`. `max_payload_size` is the most bytes of a request body.
+pub fn service_provider_config(base: &str, max_payload_size: usize) -> Value {
     json!({
         "schemas": [schema_uri::SERVICE_PROVIDER_CONFIG],
         "documentationUri": "https://datatracker.ietf.org/doc/html/rfc7644",
         "patch":          { "supported": true },
-        "bulk":           { "supported": true, "maxOperations": 100, "maxPayloadSize": 1_048_576 },
+        "bulk":           { "supported": true, "maxOperations": MAX_BULK_OPERATIONS,
+                            "maxPayloadSize": max_payload_size },
         "filter":         { "supported": true, "maxResults": MAX_RESULTS },
         "changePassword": { "supported": false },
         "sort":           { "supported": false },
@@ -511,6 +533,9 @@ pub fn service_provider_config(base: &str) -> Value {
 
 /// The most resources in one list.
 pub const MAX_RESULTS: usize = 1000;
+
+/// The most operations in a bulk request.
+pub const MAX_BULK_OPERATIONS: usize = 100;
 
 #[cfg(test)]
 mod tests {
