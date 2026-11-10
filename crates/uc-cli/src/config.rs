@@ -78,17 +78,31 @@ pub fn client(url: &str, token: Option<&str>) -> anyhow::Result<Client> {
     let signer = token.map(|token| -> Arc<dyn RequestSigner> {
         Arc::new(BearerProviderSigner(BearerAuth::static_token(token)))
     });
-    client_with(root(url)?, signer)
+    client_with(root(url)?, signer, RetryConfig::default())
+}
+
+/// A client of the server at `url` that tries each request once: a test of
+/// a server that does not answer gets its error at once.
+#[cfg(test)]
+pub fn client_without_retries(url: &str) -> anyhow::Result<Client> {
+    let retry = RetryConfig {
+        max_retries: 0,
+        ..Default::default()
+    };
+    client_with(root(url)?, None, retry)
 }
 
 /// The API client of the server at `root`, signed by `signer` when it has one, with the
 /// `User-Agent` of uc.
-fn client_with(root: Url, signer: Option<Arc<dyn RequestSigner>>) -> anyhow::Result<Client> {
+fn client_with(
+    root: Url,
+    signer: Option<Arc<dyn RequestSigner>>,
+    retry: RetryConfig,
+) -> anyhow::Result<Client> {
     let options = Client::client_options().with_config(
         ClientConfigKey::UserAgent,
         concat!("uc/", env!("CARGO_PKG_VERSION")),
     );
-    let retry = RetryConfig::default();
     let transport = match signer {
         Some(signer) => CloudClient::new_with_request_signer(signer, &options, retry, None),
         None => CloudClient::new_unauthenticated_with_options(&options, retry, None),
@@ -109,7 +123,7 @@ pub async fn client_of_environment(url: &str, token: Option<&str>) -> anyhow::Re
     let signer = uc_client::identity::detect(&root)
         .await
         .map_err(|e| anyhow::anyhow!("cannot sign in with the identity of the environment: {e}"))?;
-    client_with(root, signer)
+    client_with(root, signer, RetryConfig::default())
 }
 
 /// The root of the server at `url`, which the API's paths start from.
