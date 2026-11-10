@@ -85,9 +85,9 @@ fn non_empty<T>(items: Option<Vec<T>>) -> Option<Vec<T>> {
     items.filter(|items| !items.is_empty())
 }
 
-/// `id`, or none when empty: the unique index would let one user have it.
+/// `id`, or none when blank: the unique index would let one user have it.
 fn external_id(id: Option<String>) -> Option<String> {
-    id.filter(|id| !id.is_empty())
+    id.filter(|id| !id.trim().is_empty())
 }
 
 /// The row of `user`, with its user name and emails trimmed, and without
@@ -152,7 +152,8 @@ impl From<ScimGroupRow> for ScimGroup {
     }
 }
 
-/// The row of `group`, with its name trimmed and one entry per member.
+/// The row of `group`, with its name trimmed and one entry per member,
+/// whose id is in lower case as the ids of users are.
 fn group_to_row(
     group: ScimGroup,
     id: String,
@@ -164,6 +165,10 @@ fn group_to_row(
         .members
         .into_iter()
         .flatten()
+        .map(|mut m| {
+            m.value = lower_id(&m.value);
+            m
+        })
         .filter(|m| seen.insert(m.value.clone()))
         .collect();
     ScimGroupRow {
@@ -272,15 +277,22 @@ async fn lock_names<E: Exec + ?Sized>(tx: &E) -> Result<()> {
     Ok(())
 }
 
-/// Grants name users by principal and groups by name, so no user has a
-/// group's name as principal and no group a user's principal.
+/// Grants name users by principal and groups by name, and a name also
+/// finds a user by user name ([`ScimOps::find_user_named`]). So no user has
+/// a group's name as principal or user name, and no group has a user's
+/// principal or user name, in any case.
 fn name_taken(name: &str) -> Error {
     Error::already_exists(format!("Principal already exists: {name}"))
 }
 
 async fn require_no_group<E: Exec + ?Sized>(ex: &E, name: &str) -> Result<()> {
-    let group: Vec<ScimGroupRow> =
-        select(ex, &SCIM_GROUP, "WHERE display_name = $1", &[name.into()]).await?;
+    let group: Vec<ScimGroupRow> = select(
+        ex,
+        &SCIM_GROUP,
+        "WHERE lower(display_name) = lower($1)",
+        &[name.into()],
+    )
+    .await?;
     match group.is_empty() {
         true => Ok(()),
         false => Err(name_taken(name)),
@@ -288,18 +300,20 @@ async fn require_no_group<E: Exec + ?Sized>(ex: &E, name: &str) -> Result<()> {
 }
 
 async fn require_no_user<E: Exec + ?Sized>(ex: &E, name: &str) -> Result<()> {
-    let user: Vec<ScimUserRow> =
-        select(ex, &SCIM_USER, "WHERE principal = $1", &[name.into()]).await?;
-    match user.is_empty() {
-        true => Ok(()),
-        false => Err(name_taken(name)),
+    for same in [SAME_PRINCIPAL_ANY_CASE, SAME_USER_NAME] {
+        let tail = format!("WHERE {same}");
+        let user: Vec<ScimUserRow> = select(ex, &SCIM_USER, &tail, &[name.into()]).await?;
+        if !user.is_empty() {
+            return Err(name_taken(name));
+        }
     }
+    Ok(())
 }
 
 /// Conditions on a user, with `$1` the value: the same user name, in any
 /// case; the same principal; the same principal, in any case; the same
-/// external id. The indexes of user names and of principals in any case
-/// are on their lower case.
+/// external id. User names and principals are unique in any case: their
+/// indexes are on their lower case.
 const SAME_USER_NAME: &str = "lower(user_name) = lower($1)";
 const SAME_PRINCIPAL: &str = "principal = $1";
 const SAME_PRINCIPAL_ANY_CASE: &str = "lower(principal) = lower($1)";
@@ -346,19 +360,26 @@ fn sign_in_names(row: &ScimUserRow) -> [Value; 2] {
     ]
 }
 
+/// Keep `name`, in lower case, as a name that sign-in makes no user with,
+/// in `tx`.
+async fn remember_name<E: Exec + ?Sized>(tx: &E, name: Value) -> Result<()> {
+    tx.execute(
+        "INSERT INTO scim_deleted_user (name, deleted_at) VALUES ($1, $2) \
+         ON CONFLICT DO NOTHING",
+        &[name, now_epoch_millis().into()],
+    )
+    .await
+    .map_err(db_err("keep the names of a deleted user"))?;
+    Ok(())
+}
+
 /// Keep the names of the deleted user `row`, in `tx`: sign-in does not make
 /// a user with one of them again.
 async fn remember_deleted<E: Exec + ?Sized>(tx: &E, row: &ScimUserRow) -> Result<()> {
     forget_deleted(tx, row).await?;
+    // The principal can be the user name.
     for name in sign_in_names(row) {
-        // The principal can be the user name.
-        tx.execute(
-            "INSERT INTO scim_deleted_user (name, deleted_at) VALUES ($1, $2) \
-             ON CONFLICT DO NOTHING",
-            &[name, now_epoch_millis().into()],
-        )
-        .await
-        .map_err(db_err("keep the names of a deleted user"))?;
+        remember_name(tx, name).await?;
     }
     Ok(())
 }
@@ -395,39 +416,23 @@ async fn user_named<E: Exec + ?Sized>(
     lock: bool,
 ) -> Result<Option<ScimUserRow>> {
     let lock = if lock { ex.for_update() } else { "" };
-    let find = |same: &str, limit: &str| {
-        let tail = format!("WHERE {same}{limit}{lock}");
-        async move { select::<ScimUserRow, E>(ex, &SCIM_USER, &tail, &[name.into()]).await }
-    };
-    if let Some(user) = find(SAME_PRINCIPAL, "").await?.pop() {
-        return Ok(Some(user));
+    for same in [SAME_PRINCIPAL_ANY_CASE, SAME_USER_NAME] {
+        let tail = format!("WHERE {same}{lock}");
+        let user: Option<ScimUserRow> = select_one(ex, &SCIM_USER, &tail, &[name.into()]).await?;
+        if user.is_some() {
+            return Ok(user);
+        }
     }
-    let mut any_case = find(SAME_PRINCIPAL_ANY_CASE, " LIMIT 2").await?;
-    match any_case.len() {
-        0 => Ok(find(SAME_USER_NAME, "").await?.pop()),
-        1 => Ok(any_case.pop()),
-        // Two users have the principal in other cases: it names neither.
-        _ => Ok(None),
-    }
+    Ok(None)
 }
 
-/// The name in grants that `name` stands for, in `tx`: a user's principal,
-/// else a group's name, else the principal of the user that `name` names
-/// in another case or by user name ([`ScimOps::find_user_named`]). The user
-/// or group stays locked until `tx` ends: a delete or a rename of it waits,
-/// then finds the grants that `tx` wrote.
+/// The name in grants that `name` stands for, in `tx`: a group's name,
+/// else the principal of the user that `name` names
+/// ([`ScimOps::find_user_named`]). No group has the name of a user. The
+/// user or group stays locked until `tx` ends: a delete or a rename of it
+/// waits, then finds the grants that `tx` wrote.
 pub(crate) async fn lock_grantee<E: Exec + ?Sized>(tx: &E, name: &str) -> Result<Option<String>> {
     let lock = tx.for_update();
-    let user: Option<ScimUserRow> = select_one(
-        tx,
-        &SCIM_USER,
-        &format!("WHERE {SAME_PRINCIPAL}{lock}"),
-        &[name.into()],
-    )
-    .await?;
-    if let Some(user) = user {
-        return Ok(Some(user.principal));
-    }
     let group: Option<ScimGroupRow> = select_one(
         tx,
         &SCIM_GROUP,
@@ -463,11 +468,12 @@ async fn others<E: Exec + ?Sized>(
 
 /// Check `row` against the other users and the groups (`was` is the row
 /// before an update): its user name and external id belong to no other
-/// user, and its principal to no other user or group. A name finds a user
-/// by principal, then by user name ([`ScimOps::find_user_named`]), so no
-/// user has the principal of another as user name, or the user name of
+/// user, and its principal to no other user, in any case. A name finds a
+/// user by principal, then by user name ([`ScimOps::find_user_named`]), so
+/// no user has the principal of another as user name, or the user name of
 /// another as principal, in any case: the name would find the other user.
-/// A new user name or principal locks the names ([`lock_names`]).
+/// Nor is its user name or principal the name of a group. A new user name
+/// or principal locks the names ([`lock_names`]).
 async fn check_user<E: Exec + ?Sized>(
     ex: &E,
     row: &ScimUserRow,
@@ -488,9 +494,10 @@ async fn check_user<E: Exec + ?Sized>(
                 return Err(taken(&row.user_name));
             }
         }
+        require_no_group(ex, &row.user_name).await?;
     }
     if new_principal {
-        for same in [SAME_PRINCIPAL, SAME_USER_NAME] {
+        for same in [SAME_PRINCIPAL_ANY_CASE, SAME_USER_NAME] {
             if !others(ex, same, &row.principal, id).await?.is_empty() {
                 return Err(taken(&row.principal));
             }
@@ -508,6 +515,12 @@ async fn check_user<E: Exec + ?Sized>(
         )));
     }
     Ok(())
+}
+
+/// `id` as ids are stored: UUIDs in lower case. A request can write the
+/// id in any case, as a filter can.
+fn lower_id(id: &str) -> String {
+    id.to_ascii_lowercase()
 }
 
 /// The row `id` of `table`, locked for the rest of `tx`.
@@ -618,10 +631,16 @@ impl Edit<ScimUser> for UserEdit {
         update(tx.as_ref(), &SCIM_USER, &row)
             .await
             .map_err(user_exists(&row))?;
+        forget_deleted(tx.as_ref(), &row).await?;
         if row.principal != stored.principal {
             rename_principal(tx.as_ref(), &stored.principal, &row.principal).await?;
+            // The settings can still name the old principal: sign-in makes
+            // no user with it.
+            let [old, _] = sign_in_names(&stored);
+            if !sign_in_names(&row).contains(&old) {
+                remember_name(tx.as_ref(), old).await?;
+            }
         }
-        forget_deleted(tx.as_ref(), &row).await?;
         tx.commit().await.map_err(&failed)?;
         Ok(row.into())
     }
@@ -746,6 +765,8 @@ impl ScimOps for SqlMetastore {
     }
 
     async fn get_user(&self, id: &str) -> Result<ScimUser> {
+        let id = lower_id(id);
+        let id = id.as_str();
         let row: Option<ScimUserRow> = by_id(self.db.as_ref(), &SCIM_USER, id).await?;
         row.map(Into::into).ok_or_else(|| user_not_found(id))
     }
@@ -767,6 +788,8 @@ impl ScimOps for SqlMetastore {
     }
 
     async fn delete_user(&self, id: &str) -> Result<()> {
+        let id = lower_id(id);
+        let id = id.as_str();
         let failed = db_err("delete user");
         let tx = self.db.begin().await.map_err(&failed)?;
         let user: ScimUserRow = lock(tx.as_ref(), &SCIM_USER, id)
@@ -825,15 +848,9 @@ impl ScimOps for SqlMetastore {
     }
 
     async fn find_user_by_principal_any_case(&self, principal: &str) -> Result<Option<ScimUser>> {
-        if let Some(user) = self.find_user_by_principal(principal).await? {
-            return Ok(Some(user));
-        }
-        let filter = format!("WHERE {SAME_PRINCIPAL_ANY_CASE} LIMIT 2");
-        let mut any = self.users_where(&filter, &[principal.into()]).await?;
-        Ok(match any.len() {
-            1 => any.pop(),
-            _ => None,
-        })
+        let filter = format!("WHERE {SAME_PRINCIPAL_ANY_CASE}");
+        let users = self.users_where(&filter, &[principal.into()]).await?;
+        Ok(users.into_iter().next())
     }
 
     async fn find_user_named(&self, name: &str) -> Result<Option<ScimUser>> {
@@ -848,6 +865,8 @@ impl ScimOps for SqlMetastore {
     }
 
     async fn edit_user(&self, id: &str) -> Result<Box<dyn Edit<ScimUser>>> {
+        let id = lower_id(id);
+        let id = id.as_str();
         self.metastore_row().await?;
         let tx = self.db.begin().await.map_err(db_err("update user"))?;
         let stored: ScimUserRow = lock(tx.as_ref(), &SCIM_USER, id)
@@ -868,9 +887,23 @@ impl ScimOps for SqlMetastore {
         let metastore_id = self.metastore_row().await?.metastore_id;
         let failed = db_err("seed users");
         let tx = self.db.begin().await.map_err(&failed)?;
+        // As an edit of a user, the users are locked first, then the
+        // names: the two do not wait for each other. With the names
+        // locked, no other request makes a user.
+        let mut stored = Vec::with_capacity(users.len());
         for seed in users {
+            stored.push(user_named(tx.as_ref(), &seed.email, true).await?);
+        }
+        if stored.iter().any(Option::is_none) {
+            lock_names(tx.as_ref()).await?;
+        }
+        for (seed, found) in users.iter().zip(stored) {
             let email = seed.email.as_str();
-            let found = user_named(tx.as_ref(), email, true).await?;
+            // An earlier entry, or a request before the lock, made it.
+            let found = match found {
+                Some(user) => Some(user),
+                None => user_named(tx.as_ref(), email, false).await?,
+            };
             // The principal that gets the privileges, unless disabled.
             let principal = match found {
                 Some(user) => {
@@ -969,6 +1002,8 @@ impl ScimOps for SqlMetastore {
     }
 
     async fn get_group(&self, id: &str) -> Result<ScimGroup> {
+        let id = lower_id(id);
+        let id = id.as_str();
         let row: Option<ScimGroupRow> = by_id(self.db.as_ref(), &SCIM_GROUP, id).await?;
         row.map(Into::into).ok_or_else(|| group_not_found(id))
     }
@@ -996,6 +1031,8 @@ impl ScimOps for SqlMetastore {
     }
 
     async fn edit_group(&self, id: &str) -> Result<Box<dyn Edit<ScimGroup>>> {
+        let id = lower_id(id);
+        let id = id.as_str();
         self.metastore_row().await?;
         let tx = self.db.begin().await.map_err(db_err("update group"))?;
         let stored: ScimGroupRow = lock(tx.as_ref(), &SCIM_GROUP, id)
@@ -1009,6 +1046,8 @@ impl ScimOps for SqlMetastore {
     }
 
     async fn delete_group(&self, id: &str) -> Result<()> {
+        let id = lower_id(id);
+        let id = id.as_str();
         let failed = db_err("delete group");
         let tx = self.db.begin().await.map_err(&failed)?;
         let was: ScimGroupRow = lock(tx.as_ref(), &SCIM_GROUP, id)

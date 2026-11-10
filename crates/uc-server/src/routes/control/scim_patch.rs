@@ -385,10 +385,10 @@ fn values(value: Value) -> Vec<Value> {
 }
 
 /// What makes two values of a list the same value: complex values their
-/// `value`, others all of them.
+/// `value`, in any case as filters compare it, others all of them.
 fn identity(item: &Value) -> (bool, String) {
     match item.get("value") {
-        Some(value) => (true, value.to_string()),
+        Some(value) => (true, value.to_string().to_lowercase()),
         None => (false, item.to_string()),
     }
 }

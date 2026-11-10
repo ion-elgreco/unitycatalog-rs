@@ -236,8 +236,15 @@ impl<S: Send + Sync> FromRequest<S> for ScimBody {
     }
 }
 
-/// `value`, read by `resource_type`, as a `T`.
+/// `value`, a JSON object, read by `resource_type`, as a `T`.
 fn decode<T: DeserializeOwned>(resource_type: &ResourceType, value: Value) -> ScimResult<T> {
+    // serde would read a list as the fields of `T` in their order.
+    if !value.is_object() {
+        return Err(ScimError::bad_request(
+            "invalidSyntax",
+            format!("A {} is a JSON object", resource_type.id),
+        ));
+    }
     serde_json::from_value(resource_type.read(value)).map_err(|e| {
         ScimError::bad_request("invalidValue", format!("Invalid {}: {e}", resource_type.id))
     })
@@ -508,7 +515,9 @@ fn located<T: Serialize>(resource_type: &ResourceType, resource: &T, base: &str)
 
 /// `resource` with the attributes of `body` that a client may write: a
 /// value replaces, `null` removes, an absent attribute stays (RFC 7644,
-/// section 3.5.1, lets a server keep it). The body needs the required
+/// section 3.5.1, lets a server keep it). An `active` of `null` stays too:
+/// without it a user is enabled, and a client that writes each attribute
+/// that it has no value for as `null` would enable a disabled user. The body needs the required
 /// attributes, `userName` or `displayName` (RFC 7643, section 2.2). An
 /// `id` other than `id` is an error.
 fn replaced(
@@ -541,7 +550,9 @@ fn replaced(
             }
             "schemas" | "meta" => {}
             _ => {
-                if let Some(attribute) = resource_type.writable(&name) {
+                if let Some(attribute) = resource_type.writable(&name)
+                    && !(attribute.name == "active" && value.is_null())
+                {
                     set(&mut resource, attribute.name.to_string(), value);
                 }
             }
@@ -949,6 +960,25 @@ pub async fn search(
 ) -> ScimResult<Scim> {
     authz::require_admin(&state, &principal.username).await?;
     let query = ListQuery::from_search(body)?;
+    if query.filter.is_none() {
+        // The users, then the groups: the metastore reads only the page.
+        let scim = state.metastore.scim();
+        let (users, groups) = (scim.count_users().await?, scim.count_groups().await?);
+        let Page { offset, limit } = query.page();
+        let mut page: Vec<(&ResourceType, Value)> = (scim.list_users(Some(query.page())).await?)
+            .iter()
+            .map(|u| (&USERS, located(&USERS, u, &base)))
+            .collect();
+        let rest = Page {
+            offset: offset.saturating_sub(users),
+            limit: limit - page.len(),
+        };
+        if rest.limit > 0 {
+            let groups = scim.list_groups(Some(rest)).await?;
+            page.extend(groups.iter().map(|g| (&GROUPS, located(&GROUPS, g, &base))));
+        }
+        return Ok(Scim::ok(query.list_response(users + groups, page)));
+    }
     let mut resources = users(&state, query.filter.as_ref()).await?;
     resources.extend(groups(&state, query.filter.as_ref()).await?);
     Ok(Scim::ok(query.answer(resources, &base)))
@@ -1292,8 +1322,10 @@ pub async fn bulk(
 /// The prefix of a reference to the resource of an earlier operation.
 const BULK_ID: &str = "bulkId:";
 
-/// `op` with each `bulkId:<id>` in its path and data replaced by the id of
-/// the resource that the operation `<id>` made, of `made`.
+/// `op` with each `bulkId:<id>` replaced by the id of the resource that
+/// the operation `<id>` made, of `made`: in its path, and in its data where
+/// it is a `value`, as that of a group member (RFC 7644, section 3.7.2).
+/// Any other text of the data stays as it is.
 fn resolve_bulk_ids(op: &mut ScimBulkOp, made: &HashMap<String, String>) -> ScimResult<()> {
     let resolve = |reference: &str| {
         made.get(reference).cloned().ok_or_else(|| {
@@ -1309,19 +1341,21 @@ fn resolve_bulk_ids(op: &mut ScimBulkOp, made: &HashMap<String, String>) -> Scim
     }
     fn walk(value: &mut Value, resolve: &dyn Fn(&str) -> ScimResult<String>) -> ScimResult<()> {
         match value {
-            Value::String(text) => {
-                if let Some(reference) = text.strip_prefix(BULK_ID) {
-                    *text = resolve(reference)?;
-                }
-            }
             Value::Array(items) => {
                 for item in items {
                     walk(item, resolve)?;
                 }
             }
             Value::Object(object) => {
-                for item in object.values_mut() {
-                    walk(item, resolve)?;
+                for (name, item) in object.iter_mut() {
+                    match item {
+                        Value::String(text) if name.eq_ignore_ascii_case("value") => {
+                            if let Some(reference) = text.strip_prefix(BULK_ID) {
+                                *text = resolve(reference)?;
+                            }
+                        }
+                        item => walk(item, resolve)?,
+                    }
                 }
             }
             _ => {}

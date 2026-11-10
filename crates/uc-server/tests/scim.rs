@@ -1380,7 +1380,8 @@ async fn bulk_resolves_bulk_ids(#[future(awt)] app: Router) {
     let body = json!({
         "schemas": ["urn:ietf:params:scim:api:messages:2.0:BulkRequest"],
         "Operations": [
-            { "method": "POST", "path": "/Users", "bulkId": "u1", "data": { "userName": "b1@x" } },
+            { "method": "POST", "path": "/Users", "bulkId": "u1",
+              "data": { "userName": "b1@x", "name": { "givenName": "bulkId:nobody" } } },
             { "method": "POST", "path": "/Groups", "bulkId": "g1",
               "data": { "displayName": "bulk", "members": [{ "value": "bulkId:u1" }] } },
             { "method": "PATCH", "path": "/Users/bulkId:u1", "data": { "Operations": [
@@ -1415,6 +1416,8 @@ async fn bulk_resolves_bulk_ids(#[future(awt)] app: Router) {
         .await
         .ok(StatusCode::OK);
     assert_eq!(user["displayName"], "B1");
+    // Only a `value` is a reference.
+    assert_eq!(user["name"]["givenName"], "bulkId:nobody");
 }
 
 /// Changes of one group at the same time each stay: a change that another
@@ -1618,11 +1621,12 @@ async fn the_name_admin_belongs_to_the_servers_own_user() {
     patch(&app, &path, display).await.ok(StatusCode::OK);
 }
 
-/// A grant names a user by principal, else a group by name, else a user by
-/// user name in any case.
+/// Grants name users and groups, and a name finds a user by principal or
+/// by user name, in any case: no group has the name of a user, and no user
+/// that of a group or the principal of another user.
 #[rstest]
 #[tokio::test]
-async fn a_grant_to_the_name_of_a_group_goes_to_the_group(#[future(awt)] app: Router) {
+async fn users_and_groups_share_their_names(#[future(awt)] app: Router) {
     call(
         &app,
         Method::POST,
@@ -1631,16 +1635,56 @@ async fn a_grant_to_the_name_of_a_group_goes_to_the_group(#[future(awt)] app: Ro
     )
     .await
     .ok(StatusCode::CREATED);
-    let bot =
-        json!({ "userName": "Ops", "emails": [{ "value": "bot@example.com", "primary": true }] });
-    call(&app, Method::POST, "/scim2/Users", bot)
+    let bot = |user_name: &str, email: &str| json!({ "userName": user_name, "emails": [{ "value": email, "primary": true }] });
+    for taken in [bot("Ops", "bot@example.com"), bot("bot", "OPS")] {
+        call(&app, Method::POST, "/scim2/Users", taken)
+            .await
+            .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
+    }
+    let id = call(
+        &app,
+        Method::POST,
+        "/scim2/Users",
+        bot("Bot", "bot@example.com"),
+    )
+    .await
+    .ok(StatusCode::CREATED)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for taken in ["bot", "BOT@example.com"] {
+        call(
+            &app,
+            Method::POST,
+            "/scim2/Groups",
+            json!({ "displayName": taken }),
+        )
         .await
-        .ok(StatusCode::CREATED);
+        .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
+    }
+    // A principal in another case is the same principal.
+    call(
+        &app,
+        Method::POST,
+        "/scim2/Users",
+        bot("bot2", "BOT@example.com"),
+    )
+    .await
+    .scim_error(StatusCode::CONFLICT, Some("uniqueness"));
+    // The user can write its own principal in another case.
+    patch(
+        &app,
+        &format!("/scim2/Users/{id}"),
+        json!([{ "op": "replace", "path": "emails[primary eq true].value", "value": "Bot@example.com" }]),
+    )
+    .await
+    .ok(StatusCode::OK);
+
     let body = json!({ "name": "c1", "storage_root": common::temp_storage_root() });
     send(&app, req_json(Method::POST, "/catalogs", body))
         .await
         .ok(StatusCode::OK);
-    for (name, principal) in [("ops", "ops"), ("OPS", "bot@example.com")] {
+    for (name, principal) in [("ops", "ops"), ("BOT", "Bot@example.com")] {
         let grant = json!({ "changes": [{ "principal": name, "add": ["USE CATALOG"] }] });
         let grants = send(
             &app,
@@ -1648,10 +1692,117 @@ async fn a_grant_to_the_name_of_a_group_goes_to_the_group(#[future(awt)] app: Ro
         )
         .await
         .ok(StatusCode::OK);
-        assert_eq!(
-            grants["privilege_assignments"],
-            json!([{ "principal": principal, "privileges": ["USE CATALOG"] }]),
-            "{name}"
+        let assignments = grants["privilege_assignments"].as_array().unwrap();
+        assert!(
+            assignments.contains(&json!({ "principal": principal, "privileges": ["USE CATALOG"] })),
+            "{name}: {grants}"
         );
     }
+}
+
+/// Sign-in makes no user with the principal that a user had before a
+/// change: the settings can still name it.
+#[tokio::test]
+async fn sign_in_makes_no_user_with_an_old_principal() {
+    let (app, metastore) = common::app_with_metastore().await;
+    let id = create(&app, "old@example.com").await;
+    patch(
+        &app,
+        &format!("/scim2/Users/{id}"),
+        json!([
+            { "op": "replace", "path": "userName", "value": "new@example.com" },
+            { "op": "replace", "path": "emails[primary eq true].value", "value": "new@example.com" },
+        ]),
+    )
+    .await
+    .ok(StatusCode::OK);
+    let old = |user_name: &str| uc_api::ScimUser {
+        user_name: user_name.to_string(),
+        ..Default::default()
+    };
+    let scim = metastore.scim();
+    let made = scim.create_user_at_sign_in(old("Old@example.com")).await;
+    assert!(made.unwrap().is_none());
+    // An admin does.
+    scim.create_user(old("old@example.com")).await.unwrap();
+}
+
+/// A resource is a JSON object, ids are in any case, and `active: null` in
+/// a replace keeps a disabled user disabled.
+#[rstest]
+#[tokio::test]
+async fn bodies_ids_and_active(#[future(awt)] app: Router) {
+    for path in ["/scim2/Users", "/scim2/Groups"] {
+        call(
+            &app,
+            Method::POST,
+            path,
+            json!([["x"], "id", "ext", null, "name"]),
+        )
+        .await
+        .scim_error(StatusCode::BAD_REQUEST, Some("invalidSyntax"));
+    }
+    assert!(user_names(&app, "").await.is_empty());
+
+    let id = create(&app, "a@example.com").await;
+    let upper = id.to_uppercase();
+    let user = format!("/scim2/Users/{upper}");
+    let disabled = json!({ "userName": "a@example.com", "active": false });
+    call(&app, Method::PUT, &user, disabled)
+        .await
+        .ok(StatusCode::OK);
+    let still = json!({ "userName": "a@example.com", "active": null });
+    let put = call(&app, Method::PUT, &user, still)
+        .await
+        .ok(StatusCode::OK);
+    assert_eq!((&put["id"], &put["active"]), (&json!(id), &json!(false)));
+
+    // A member's id in upper case is the same member.
+    let group = json!({ "displayName": "g", "members": [{ "value": upper }] });
+    let group = call(&app, Method::POST, "/scim2/Groups", group)
+        .await
+        .ok(StatusCode::CREATED);
+    assert_eq!(member_ids(&group), [id.as_str()]);
+    let group = patch(
+        &app,
+        &format!("/scim2/Groups/{}", group["id"].as_str().unwrap()),
+        json!([{ "op": "remove", "path": "members", "value": [{ "value": upper }] }]),
+    )
+    .await
+    .ok(StatusCode::OK);
+    assert_eq!(group.get("members"), None);
+
+    // A blank external id is none: two users can have it.
+    for name in ["b", "c"] {
+        let blank = json!({ "userName": name, "externalId": "  " });
+        let made = call(&app, Method::POST, "/scim2/Users", blank)
+            .await
+            .ok(StatusCode::CREATED);
+        assert_eq!(made.get("externalId"), None);
+    }
+
+    // A search of all resources without a filter pages the users, then
+    // the groups.
+    let search = |start: usize| {
+        let app = app.clone();
+        async move {
+            let body = json!({ "startIndex": start, "count": 2 });
+            let found = call(&app, Method::POST, "/scim2/.search", body)
+                .await
+                .ok(StatusCode::OK);
+            let kinds: Vec<String> = (found["Resources"].as_array().unwrap().iter())
+                .map(|r| r["meta"]["resourceType"].as_str().unwrap().to_string())
+                .collect();
+            (found["totalResults"].clone(), kinds)
+        }
+    };
+    assert_eq!(
+        search(1).await,
+        (json!(4), vec!["User".into(), "User".into()])
+    );
+    assert_eq!(
+        search(3).await,
+        (json!(4), vec!["User".into(), "Group".into()])
+    );
+    assert_eq!(search(5).await, (json!(4), Vec::<String>::new()));
 }

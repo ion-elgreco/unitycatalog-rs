@@ -259,14 +259,16 @@ CREATE TABLE scim_user (
     created_at   BIGINT,
     updated_at   BIGINT
 );
--- User names are unique in any case, as lookups and SCIM filters compare
--- them without case. So are group names. External ids compare with case.
+-- User names and principals are unique in any case, as lookups and SCIM
+-- filters compare them without case. So are group names. External ids
+-- compare with case.
 CREATE UNIQUE INDEX scim_user_by_user_name ON scim_user (lower(user_name));
-CREATE INDEX scim_user_by_principal ON scim_user (lower(principal));
+CREATE UNIQUE INDEX scim_user_by_principal ON scim_user (lower(principal));
 CREATE UNIQUE INDEX scim_user_by_external_id ON scim_user (external_id);
 
--- The principals and user names, in lower case, of deleted users. Sign-in
--- does not make a user with one of them again; an admin does.
+-- The principals and user names, in lower case, of deleted users, and the
+-- principals that users had before a change. Sign-in does not make a user
+-- with one of them; an admin does.
 CREATE TABLE scim_deleted_user (
     name       TEXT PRIMARY KEY,
     deleted_at BIGINT NOT NULL

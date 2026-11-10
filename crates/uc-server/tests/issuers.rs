@@ -203,8 +203,10 @@ async fn may_create_catalogs(metastore: &DynMetastore, principal: &str) {
 /// The owner of the catalog that `token` makes.
 async fn owner_of_a_new_catalog(app: &Router, token: &str, name: &str) -> Value {
     let resp = post(app, "/catalogs", token, json!({ "name": name })).await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    json_body(resp).await["owner"].clone()
+    let status = resp.status();
+    let body = json_body(resp).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    body["owner"].clone()
 }
 
 #[tokio::test]
@@ -250,6 +252,42 @@ async fn an_application_signs_in_with_its_own_token() {
     );
     // The provider was asked for its keys once.
     assert_eq!(idp.fetches(), 1);
+}
+
+/// A user that its subject names keeps its sign-in when it gets an email:
+/// the subject stays its user name.
+#[tokio::test]
+async fn a_user_named_by_its_subject_stays_that_user_with_an_email() {
+    let idp = Idp::start().await;
+    // No accepted token is kept: each request names its caller again.
+    let (app, metastore) = app(vec![entra(&idp)], Some(Duration::ZERO)).await;
+    let token = app_token(&idp, json!({ "idtyp": "user" }));
+    assert_eq!(
+        get(&app, "/catalogs", &token).await.status(),
+        StatusCode::OK
+    );
+    let scim = metastore.scim();
+    let made = scim.get_user_by_name("entra:7f3e").await.unwrap().unwrap();
+    assert_eq!(
+        (made.principal(), made.external_id.as_deref()),
+        ("entra:7f3e", None)
+    );
+    let edit = scim.edit_user(made.id.as_deref().unwrap()).await.unwrap();
+    let with_email = ScimUser {
+        emails: Some(vec![uc_api::ScimEmail {
+            value: "etl@example.com".to_string(),
+            primary: Some(true),
+            r#type: None,
+            display: None,
+        }]),
+        ..edit.current().clone()
+    };
+    edit.save(with_email).await.unwrap();
+    may_create_catalogs(&metastore, "etl@example.com").await;
+    assert_eq!(
+        owner_of_a_new_catalog(&app, &token, "etl").await,
+        "etl@example.com"
+    );
 }
 
 #[tokio::test]

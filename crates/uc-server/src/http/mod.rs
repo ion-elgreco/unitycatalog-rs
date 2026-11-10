@@ -21,7 +21,9 @@ impl axum::response::IntoResponse for EmptyObject {
 /// The server's URL for links in answers, without a trailing `/`:
 /// `auth.public_url` when set, else the URL that the client called
 /// (`X-Forwarded-Proto` and `X-Forwarded-Host` behind a proxy, else
-/// `Host`).
+/// `Host`). A client can send these headers itself, so only a scheme of
+/// `http` or `https` and a host of a name or address with a port count:
+/// no other text gets into the links.
 pub fn public_url(public_url: Option<&str>, headers: &axum::http::HeaderMap) -> String {
     if let Some(url) = public_url {
         return url.to_string();
@@ -33,12 +35,18 @@ pub fn public_url(public_url: Option<&str>, headers: &axum::http::HeaderMap) -> 
             .and_then(|h| h.split(',').next())
             .map(str::trim)
             .filter(|h| !h.is_empty())
-            .map(str::to_string)
+    };
+    let is_host = |host: &&str| {
+        host.chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".-:[]".contains(c))
     };
     let host = first("x-forwarded-host")
-        .or_else(|| first(axum::http::header::HOST.as_str()))
-        .unwrap_or_else(|| "localhost".to_string());
-    let scheme = first("x-forwarded-proto").unwrap_or_else(|| "http".to_string());
+        .filter(is_host)
+        .or_else(|| first(axum::http::header::HOST.as_str()).filter(is_host))
+        .unwrap_or("localhost");
+    let scheme = first("x-forwarded-proto")
+        .filter(|scheme| ["http", "https"].contains(scheme))
+        .unwrap_or("http");
     format!("{scheme}://{host}")
 }
 
@@ -68,6 +76,13 @@ mod tests {
         );
         headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
         assert_eq!(public_url(None, &headers), "https://uc.example.com");
+        for (name, value) in [
+            ("x-forwarded-host", "evil.example/path?x=\"y"),
+            ("x-forwarded-proto", "javascript"),
+        ] {
+            headers.insert(name, HeaderValue::from_static(value));
+        }
+        assert_eq!(public_url(None, &headers), "http://uc:8080");
         assert_eq!(
             public_url(Some("https://data.example.com/uc"), &headers),
             "https://data.example.com/uc"
