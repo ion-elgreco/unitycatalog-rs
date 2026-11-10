@@ -77,10 +77,6 @@ pub trait PermissionOps: Send + Sync {
         groups: &[String],
     ) -> Result<HashMap<String, Vec<Privilege>>>;
 
-    /// Remove every grant of `principal` (upstream
-    /// `clearAuthorizationsForPrincipal`).
-    async fn clear_principal(&self, principal: &str) -> Result<()>;
-
     /// The metastore's owner (upstream grants the bootstrap admin OWNER).
     async fn metastore_owner(&self) -> Result<Option<String>>;
 

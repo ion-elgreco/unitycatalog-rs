@@ -95,10 +95,12 @@ uc user create --name Bob --email bob@example.com
   `userName`.
 - When a user's email changes, its grants, owned objects and tokens move to the new email. A
   server token that the user got before the change stays valid. `admin_principals` and Cedar
-  policies still name the old email: the server logs a warning for each of them.
-- A privilege granted to a group applies to each member. A group's name is its name in grants,
-  and it cannot be the email of a user. A grant to a name goes to the user with that email, else
-  to the group with that name, else to the user with that `userName`.
+  policies still name the old email: the server logs a warning for each of them. `create_users`
+  makes no user with the old email at sign-in.
+- A privilege granted to a group applies to each member. A group's name is its name in grants.
+  It cannot be the email or the `userName` of a user, in any case, and a user cannot take the name
+  of a group. A grant to a name goes to the group with that name, else to the user with that
+  email, else to the user with that `userName`.
 - To stop a user from signing in, disable it. When you delete a user, the server deletes it with
   its grants, tokens and group memberships. The objects that it owned have no owner then, so a
   later user with the same email does not get them. An admin can give them a new owner. A deleted
@@ -107,8 +109,8 @@ uc user create --name Bob --email bob@example.com
   by hand or from your identity provider.
 - `admin` is the name of the server's own user. No other user can have it as `userName` or email,
   and no group can have it as name. The server's own user cannot be renamed, disabled or deleted.
-- Group names are unique in any case. The external ids of users are unique as they are written:
-  `Ab1` and `ab1` are two ids.
+- Emails, `userName` values and group names are unique in any case. The external ids of users
+  are unique as they are written: `Ab1` and `ab1` are two ids.
 - Only admins can add, change or delete users and groups.
 
 ### Manage users by hand
@@ -143,7 +145,8 @@ the user's email.
 
 A `PUT` needs the `userName` of the user or the `displayName` of the group. It keeps each other
 attribute that its body leaves out, so a provider that sends only a part of a user or group does
-not clear the rest. To clear an attribute, send it as `null` or as an empty list. Each error of
+not clear the rest. To clear an attribute, send it as `null` or as an empty list. A PUT with
+`"active": null` does not change `active`. Each error of
 the SCIM API has the SCIM error format and only its attributes, also a timeout and a rate limit.
 
 The URLs in SCIM answers start with `auth.public_url` when it is set. Without it, they start with
@@ -230,6 +233,7 @@ The examples use the Entra block above: `name = "entra"`,
 | `"preferred_username": "alice@example.com"` | `alice@example.com` | An email names the user with that email, in any case: `Alice@Example.com` is the same user. |
 | `"preferred_username": "alice@example.com"`, and SCIM made the user with that `userName` and the email `alice.smith@example.com` | `alice.smith@example.com` | No user has the email, so the user with it as `userName`. |
 | `"oid": "7f3e…"`, and no `preferred_username` | `entra:7f3e…` | Any other value gets the block's `name` as a prefix. |
+| `"oid": "7f3e…"`, and the user `entra:7f3e…` got the email `etl@example.com` later | `etl@example.com` | `entra:7f3e…` is still the `userName` of the user. |
 | `"preferred_username": "alice@example.com"`, `"email_verified": false` | nobody | The provider has not verified the email. |
 | `"preferred_username": "alice@example.com"`, at an `issuer` with `*` | nobody | At an `issuer` with `*`, an email needs `"email_verified": true`. |
 

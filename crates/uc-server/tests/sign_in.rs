@@ -614,6 +614,17 @@ async fn behind_an_auth_proxy_its_headers_name_the_user_from_its_addresses_only(
         "alice@example.com",
     )
     .await;
+    // The proxy can write the email in another case.
+    signed_in_as(
+        call(from(
+            "10.1.2.3:5000",
+            me,
+            &[("Remote-Email", "Alice@Example.com")],
+        ))
+        .await,
+        "alice@example.com",
+    )
+    .await;
     // A user the server does not have.
     scim_error(
         call(from(

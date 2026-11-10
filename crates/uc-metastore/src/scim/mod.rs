@@ -73,7 +73,8 @@ pub trait Edit<T>: Send {
 pub trait ScimOps: Send + Sync {
     /// Make a user, enabled unless `active` is false. Its user name (the
     /// principal when empty), its principal and its external id belong to
-    /// no other user, and no group has the principal as name. The name
+    /// no other user, and no group has the user name or the principal as
+    /// name. The name
     /// [`ADMIN`] is `ALREADY_EXISTS`.
     async fn create_user(&self, user: ScimUser) -> Result<ScimUser>;
     /// Make the user [`ADMIN`], unless it exists.
@@ -97,8 +98,7 @@ pub trait ScimOps: Send + Sync {
     async fn get_user_by_name(&self, user_name: &str) -> Result<Option<ScimUser>>;
     /// The user whose principal is `principal`.
     async fn find_user_by_principal(&self, principal: &str) -> Result<Option<ScimUser>>;
-    /// The user whose principal is `principal` in any case: the one with it
-    /// as it is written, else the only one with it in another case.
+    /// The user whose principal is `principal`, in any case.
     async fn find_user_by_principal_any_case(&self, principal: &str) -> Result<Option<ScimUser>>;
     /// The user that `name` names, for sign-in, grants and the users of
     /// the settings: the one of [`ScimOps::find_user_by_principal_any_case`],
@@ -109,7 +109,8 @@ pub trait ScimOps: Send + Sync {
     /// The user at `id`, to change: [`Edit::save`] replaces it under the
     /// rules of [`ScimOps::create_user`]. When the principal changes, the
     /// grants, owned objects and tokens of the old one move to the new
-    /// one, in the same transaction. The user [`ADMIN`] keeps its name and
+    /// one, in the same transaction, and sign-in makes no user with the old
+    /// one. The user [`ADMIN`] keeps its name and
     /// stays active.
     async fn edit_user(&self, id: &str) -> Result<Box<dyn Edit<ScimUser>>>;
     /// Make the missing users of `users` and grant their missing metastore
@@ -120,7 +121,7 @@ pub trait ScimOps: Send + Sync {
     async fn seed_users(&self, users: &[SeedUser]) -> Result<SeedReport>;
 
     /// A group's name is its name in grants, which its members get. No
-    /// user can have it as principal, and it is not [`ADMIN`]. Members are
+    /// user can have it as principal or user name, and it is not [`ADMIN`]. Members are
     /// users.
     async fn create_group(&self, group: ScimGroup) -> Result<ScimGroup>;
     async fn get_group(&self, id: &str) -> Result<ScimGroup>;

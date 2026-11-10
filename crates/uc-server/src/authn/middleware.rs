@@ -92,15 +92,11 @@ pub(crate) fn token_cookie(value: &str, max_age: Duration, secure: bool) -> Resu
     .map_err(|e| Error::internal(format!("cookie: {e}")))
 }
 
-/// Upstream: `User not allowed` unless the user exists and is enabled. The
-/// caller is then named by the user's principal, as grants and owners are.
+/// Upstream: `User not allowed` unless the user that `principal` names
+/// (`ScimOps::find_user_named`) exists and is enabled. The caller is then
+/// named by the user's principal, as grants and owners are.
 pub async fn require_active_user(state: &AppState, principal: &str) -> Result<String> {
-    match state
-        .metastore
-        .scim()
-        .find_user_by_principal(principal)
-        .await?
-    {
+    match state.metastore.scim().find_user_named(principal).await? {
         Some(user) if user.is_active() => Ok(user.principal().to_string()),
         _ => Err(not_allowed(principal)),
     }

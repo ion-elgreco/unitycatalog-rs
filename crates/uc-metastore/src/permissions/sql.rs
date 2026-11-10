@@ -317,10 +317,6 @@ impl PermissionOps for SqlMetastore {
         Ok(grants)
     }
 
-    async fn clear_principal(&self, principal: &str) -> Result<()> {
-        clear_principal(self.db.as_ref(), principal).await
-    }
-
     async fn metastore_owner(&self) -> Result<Option<String>> {
         Ok(self.metastore_row().await?.owner)
     }

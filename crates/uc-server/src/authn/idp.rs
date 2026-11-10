@@ -476,8 +476,9 @@ pub(crate) enum TokenKind {
 /// 1. The first of `principal_claims` present. A value that is an email
 ///    names the user with that email, in any case, as [`email_trusted`]
 ///    allows, else, for an issuer without `*`, the user with it as user
-///    name (such as an Entra UPN); any other value names the user
-///    `<issuer name>:<value>`.
+///    name (such as an Entra UPN); any other value names the user with
+///    the principal `<issuer name>:<value>`, else with it as user name,
+///    which the user keeps when it gets an email.
 /// 2. Nobody found, and the token is an application's own
 ///    ([`application`]): the user whose `externalId` is
 ///    `<issuer name>:<client id>`.
@@ -512,7 +513,7 @@ pub(crate) async fn resolve(
         };
         let found = match is_email {
             true => user_of_email(state, issuer, &principal).await?,
-            false => scim.find_user_by_principal(&principal).await?,
+            false => scim.find_user_named(&principal).await?,
         };
         if let Some(user) = found {
             return assumable(user).ok_or_else(not_allowed);
@@ -641,7 +642,7 @@ async fn create(
         Err(e) if e.code().is_already_exists() => {
             let user = match is_email {
                 true => user_of_email(state, issuer, &principal).await?,
-                false => scim.find_user_by_principal(&principal).await?,
+                false => scim.find_user_named(&principal).await?,
             };
             user.and_then(assumable).ok_or_else(not_allowed)
         }
