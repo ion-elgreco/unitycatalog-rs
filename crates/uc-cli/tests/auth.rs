@@ -134,12 +134,7 @@ async fn server(idp: &Idp) -> String {
         .scim()
         .create_user(uc_api::ScimUser {
             user_name: "ada@example.com".into(),
-            emails: Some(vec![uc_api::ScimEmail {
-                value: "ada@example.com".into(),
-                primary: Some(true),
-                r#type: None,
-                display: None,
-            }]),
+            emails: Some(vec![uc_api::ScimEmail::primary("ada@example.com")]),
             active: Some(true),
             ..Default::default()
         })

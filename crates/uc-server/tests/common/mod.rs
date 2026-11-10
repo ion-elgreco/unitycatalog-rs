@@ -76,12 +76,7 @@ pub async fn active_user(metastore: &uc_metastore::DynMetastore, email: &str) ->
         .scim()
         .create_user(uc_api::ScimUser {
             user_name: email.to_string(),
-            emails: Some(vec![uc_api::ScimEmail {
-                value: email.to_string(),
-                primary: Some(true),
-                r#type: None,
-                display: None,
-            }]),
+            emails: Some(vec![uc_api::ScimEmail::primary(email)]),
             active: Some(true),
             ..Default::default()
         })

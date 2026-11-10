@@ -178,20 +178,13 @@ fn apply_to(
 ) -> Result<(), PatchError> {
     let attribute = target.attribute;
     let name = attribute.name;
-    let value = match target.sub {
-        Some(sub) => value.map(|v| scim_schema::read_value(v, sub)),
-        None => value.map(|v| scim_schema::read_value(v, attribute)),
-    };
-    let value = match (op, value) {
-        (Op::Remove, value) => value,
-        (_, Some(value)) => Some(value),
-        (_, None) => {
-            return Err(error(
-                "invalidValue",
-                format!("The operation on {name} needs a value"),
-            ));
-        }
-    };
+    let value = value.map(|v| scim_schema::read_value(v, target.sub.unwrap_or(attribute)));
+    if op != Op::Remove && value.is_none() {
+        return Err(error(
+            "invalidValue",
+            format!("The operation on {name} needs a value"),
+        ));
+    }
     match (&target.filter, target.sub) {
         (None, None) => match op {
             Op::Remove => remove_whole(resource, attribute, value),
@@ -271,7 +264,7 @@ fn apply_to(
                         set_sub(&mut items[i], sub, op, Some(value.clone()));
                     }
                     if let Some(&last) = chosen.last()
-                        && items[last].get("primary") == Some(&Value::Bool(true))
+                        && is_primary(&items[last])
                     {
                         keep_one_primary(items, last);
                     }
@@ -342,8 +335,7 @@ fn value_of_terms(
                 .all(|attr| scim_filter::member(object, attr).is_none_or(Value::is_null))
         })
     };
-    let primary = |item: &Value| item.get("primary") == Some(&Value::Bool(true));
-    let taken = (items.iter().position(|item| open(item) && primary(item)))
+    let taken = (items.iter().position(|item| open(item) && is_primary(item)))
         .or_else(|| items.iter().position(open));
     Ok(match taken {
         Some(at) => {
@@ -363,11 +355,7 @@ fn list<'a>(resource: &'a mut Map<String, Value>, name: &str) -> &'a mut Vec<Val
         .entry(name)
         .or_insert_with(|| Value::Array(Vec::new()));
     if !value.is_array() {
-        let single = std::mem::take(value);
-        *value = Value::Array(match single {
-            Value::Null => Vec::new(),
-            other => vec![other],
-        });
+        *value = Value::Array(values(std::mem::take(value)));
     }
     match value {
         Value::Array(items) => items,
@@ -403,7 +391,7 @@ fn add_whole(resource: &mut Map<String, Value>, attribute: &Attribute, value: Va
         }
         let mut primary = None;
         for new in values(value) {
-            let is_primary = new.get("primary") == Some(&Value::Bool(true));
+            let is_primary = is_primary(&new);
             let at = match places.get(&identity(&new)) {
                 Some(&at) => {
                     if let Value::Object(fields) = &new {
@@ -498,14 +486,16 @@ fn merge(item: &mut Value, new: &Map<String, Value>) {
     }
 }
 
+/// Whether `item`, a value of a list, is the primary one.
+fn is_primary(item: &Value) -> bool {
+    item.get("primary") == Some(&Value::Bool(true))
+}
+
 /// Only the value at `keep` of `items` stays primary.
 fn keep_one_primary(items: &mut [Value], keep: usize) {
     for (i, item) in items.iter_mut().enumerate() {
-        if i != keep
-            && let Some(object) = item.as_object_mut()
-            && object.get("primary") == Some(&Value::Bool(true))
-        {
-            object.insert("primary".to_string(), Value::Bool(false));
+        if i != keep && is_primary(item) {
+            item["primary"] = Value::Bool(false);
         }
     }
 }

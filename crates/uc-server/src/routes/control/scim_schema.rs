@@ -308,6 +308,11 @@ impl ResourceType {
         })
     }
 
+    /// The URL of the resource `id` of the type, under `base`.
+    pub fn url(&self, base: &str, id: &str) -> String {
+        format!("{base}{}/{id}", self.endpoint)
+    }
+
     /// The attribute `name` that a client may write, in any case: one of
     /// the schema that is not read-only, or `externalId`.
     pub fn writable(&self, name: &str) -> Option<&'static Attribute> {
@@ -383,7 +388,9 @@ impl ResourceType {
                     return false;
                 }
                 if !subs.contains(&"") {
-                    keep_subs(value, &subs);
+                    retain_subs(value, |key| {
+                        subs.iter().any(|s| key.eq_ignore_ascii_case(s))
+                    });
                 }
                 true
             });
@@ -403,7 +410,7 @@ impl ResourceType {
                 }
                 Some(sub) => {
                     if let Some(value) = object.get_mut(&key) {
-                        drop_sub(value, &sub);
+                        retain_subs(value, |key| !key.eq_ignore_ascii_case(&sub));
                     }
                 }
             }
@@ -422,33 +429,16 @@ pub fn strip_schema<'a>(name: &'a str, schema: &str) -> &'a str {
     }
 }
 
-/// Keep only the sub-attributes `subs` of `value`, an object or a list of
-/// objects.
-fn keep_subs(value: &mut Value, subs: &[&str]) {
-    let keep = |object: &mut Map<String, Value>| {
-        object.retain(|key, _| subs.iter().any(|s| key.eq_ignore_ascii_case(s)));
-    };
+/// Keep only the sub-attributes of `value`, an object or a list of
+/// objects, that `keep` takes.
+fn retain_subs(value: &mut Value, keep: impl Fn(&str) -> bool) {
+    let retain = |object: &mut Map<String, Value>| object.retain(|key, _| keep(key));
     match value {
-        Value::Object(object) => keep(object),
+        Value::Object(object) => retain(object),
         Value::Array(items) => items
             .iter_mut()
             .filter_map(Value::as_object_mut)
-            .for_each(keep),
-        _ => {}
-    }
-}
-
-/// Drop the sub-attribute `sub` of `value`, an object or a list of objects.
-fn drop_sub(value: &mut Value, sub: &str) {
-    let drop = |object: &mut Map<String, Value>| {
-        object.retain(|key, _| !key.eq_ignore_ascii_case(sub));
-    };
-    match value {
-        Value::Object(object) => drop(object),
-        Value::Array(items) => items
-            .iter_mut()
-            .filter_map(Value::as_object_mut)
-            .for_each(drop),
+            .for_each(retain),
         _ => {}
     }
 }
