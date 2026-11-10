@@ -56,6 +56,19 @@ async fn app(idp: &Idp, issuer: &str, audience: &str) -> (Router, DynMetastore) 
     (build_app(state), dyn_metastore)
 }
 
+/// The server's own user, with the external id `external_id`.
+async fn admin(metastore: &DynMetastore, external_id: Option<&str>) {
+    let scim = metastore.scim();
+    scim.create_admin().await.unwrap();
+    let admin = scim.find_user_by_principal("admin").await.unwrap().unwrap();
+    let edit = scim.edit_user(admin.id.as_deref().unwrap()).await.unwrap();
+    let with_id = uc_api::ScimUser {
+        external_id: external_id.map(str::to_string),
+        ..edit.current().clone()
+    };
+    edit.save(with_id).await.unwrap();
+}
+
 async fn user(metastore: &DynMetastore, email: &str, external_id: Option<&str>, active: bool) {
     metastore
         .scim()
@@ -315,7 +328,7 @@ async fn token_exchange_requests_are_checked() {
 
     // Only known, active users, and never the bootstrap admin.
     user(&metastore, "bob@example.com", None, false).await;
-    user(&metastore, "admin", None, true).await;
+    admin(&metastore, None).await;
     for email in ["nobody@example.com", "bob@example.com", "admin"] {
         let err = assert_error(
             exchange(&app, &idp.token(json!({ "email": email })), ID_TOKEN).await,
@@ -404,7 +417,7 @@ async fn oauth_clients_resolve_by_external_id() {
     let (app, metastore) = app(&idp, "$IDP", "uc").await;
     // The external id is the block's name and the client id.
     user(&metastore, "svc@example.com", Some("idp:client-123"), true).await;
-    user(&metastore, "admin", Some("idp:admin-client"), true).await;
+    admin(&metastore, Some("idp:admin-client")).await;
     // The access token of a client of its own, whose `sub` is its client id
     // (RFC 9068), names its user.
     let resp = exchange(

@@ -59,9 +59,11 @@ pub fn server_message(e: &Error) -> Option<String> {
     let Error::Api(answer) = e else {
         return None;
     };
-    // The server's errors name their code. The client takes the text of
-    // other answers, such as a proxy's error page, as their message.
-    if answer.code.is_none() || answer.message.is_empty() {
+    // The server's errors name their code, or their message as a SCIM
+    // error does. The client takes the text of other answers, such as a
+    // proxy's error page, as their message.
+    let named = answer.code.is_some() || answer.message != answer.body.trim();
+    if !named || answer.message.is_empty() {
         return None;
     }
     Some(answer.message.clone())

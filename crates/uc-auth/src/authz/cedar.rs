@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::str::FromStr;
 
 use async_trait::async_trait;
@@ -92,6 +93,37 @@ impl CedarAuthorizer {
             loader: Box::new(loader),
             engine: cedar_policy::Authorizer::new(),
         })
+    }
+
+    /// The names that the policies hold: the id of each entity and each
+    /// text, such as the `alice` of `User::"alice"` and of
+    /// `resource.owner == "alice"`. A host uses them to tell what its
+    /// policies still name after a rename.
+    pub fn names(&self) -> BTreeSet<String> {
+        fn collect(value: &Value, names: &mut BTreeSet<String>) {
+            match value {
+                Value::Object(object) => {
+                    if let (Some(Value::String(_)), Some(Value::String(id))) =
+                        (object.get("type"), object.get("id"))
+                    {
+                        names.insert(id.clone());
+                    }
+                    if let Some(Value::String(text)) = object.get("Value") {
+                        names.insert(text.clone());
+                    }
+                    object.values().for_each(|value| collect(value, names));
+                }
+                Value::Array(items) => items.iter().for_each(|value| collect(value, names)),
+                _ => {}
+            }
+        }
+        let mut names = BTreeSet::new();
+        for policy in self.policies.policies() {
+            if let Ok(json) = policy.to_json() {
+                collect(&json, &mut names);
+            }
+        }
+        names
     }
 
     /// As [`new`](Self::new), validating everything against `schema`

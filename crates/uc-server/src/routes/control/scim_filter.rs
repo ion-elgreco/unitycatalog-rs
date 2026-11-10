@@ -4,7 +4,9 @@
 //! dates compare as instants. As Entra ID sends them, a value path may end
 //! in a comparison of a sub-attribute (`emails[type eq "work"].value eq
 //! "a@x"`), and a comparison of a list of complex values compares their
-//! `value` (`members eq "<id>"`).
+//! `value` (`members eq "<id>"`). `externalId` compares with case (RFC 7643,
+//! section 3.1). A filter has at most [`MAX_LENGTH`] bytes, [`MAX_TOKENS`]
+//! words and [`MAX_DEPTH`] levels.
 
 use serde_json::{Map, Value};
 
@@ -49,6 +51,15 @@ enum Token {
     Word(String),
     Literal(Value),
 }
+
+/// The most bytes of a filter.
+pub const MAX_LENGTH: usize = 16 * 1024;
+/// The most words, brackets and values of a filter. The matcher recurses
+/// once per `and` and `or`.
+pub const MAX_TOKENS: usize = 1024;
+/// The most levels of `(…)`, `not (…)` and `[…]` in a filter. The parser
+/// recurses once per level.
+pub const MAX_DEPTH: usize = 32;
 
 fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     let chars: Vec<char> = input.chars().collect();
@@ -112,6 +123,8 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
 struct Parser {
     tokens: Vec<Token>,
     at: usize,
+    /// The levels around the token at `at`.
+    depth: usize,
 }
 
 impl Parser {
@@ -137,6 +150,17 @@ impl Parser {
         }
     }
 
+    /// The filter inside `(…)` or `[…]`, one level down.
+    fn nested(&mut self) -> Result<Filter, String> {
+        if self.depth == MAX_DEPTH {
+            return Err(format!("The filter has more than {MAX_DEPTH} levels"));
+        }
+        self.depth += 1;
+        let inner = self.or();
+        self.depth -= 1;
+        inner
+    }
+
     fn or(&mut self) -> Result<Filter, String> {
         let mut filter = self.and()?;
         while self.keyword("or") {
@@ -158,13 +182,13 @@ impl Parser {
     fn unary(&mut self) -> Result<Filter, String> {
         if self.keyword("not") && self.tokens.get(self.at + 1) == Some(&Token::Open) {
             self.at += 2;
-            let inner = self.or()?;
+            let inner = self.nested()?;
             self.expect(Token::Close, "')'")?;
             return Ok(Filter::Not(Box::new(inner)));
         }
         if self.peek() == Some(&Token::Open) {
             self.at += 1;
-            let inner = self.or()?;
+            let inner = self.nested()?;
             self.expect(Token::Close, "')'")?;
             return Ok(inner);
         }
@@ -180,7 +204,7 @@ impl Parser {
         };
         if self.peek() == Some(&Token::OpenBracket) {
             self.at += 1;
-            let inner = self.or()?;
+            let inner = self.nested()?;
             self.expect(Token::CloseBracket, "']'")?;
             // `attr[filter].sub op value`: a value that matches both.
             if let Some(Token::Word(word)) = self.peek()
@@ -282,15 +306,16 @@ impl Filter {
         }
     }
 
-    /// The `attr eq "text"` terms that every match has: the filter's, or
-    /// those of either side of an `and`. Only ASCII text that is no date,
-    /// so that a lookup of the text in any case finds every match.
-    pub fn required_texts(&self) -> Vec<(&str, &str)> {
+    /// The `attr eq "text"` and `attr.sub eq "text"` terms that every
+    /// match has, each as (attribute, sub-attribute, text): the filter's,
+    /// or those of either side of an `and`. Only ASCII text that is no
+    /// date, so that a lookup of the text in any case finds every match.
+    pub fn required_texts(&self) -> Vec<(&str, Option<&str>, &str)> {
         match self {
-            Filter::Compare(AttrPath { attr, sub: None }, Op::Eq, Value::String(text))
+            Filter::Compare(AttrPath { attr, sub }, Op::Eq, Value::String(text))
                 if text.is_ascii() && instant(text).is_none() =>
             {
-                vec![(attr.as_str(), text.as_str())]
+                vec![(attr.as_str(), sub.as_deref(), text.as_str())]
             }
             Filter::And(a, b) => {
                 let mut terms = a.required_texts();
@@ -300,13 +325,46 @@ impl Filter {
             _ => Vec::new(),
         }
     }
+
+    /// Whether the filter names the attribute or sub-attribute `name`, in
+    /// any case.
+    pub fn names(&self, name: &str) -> bool {
+        let named = |path: &AttrPath| {
+            path.attr.eq_ignore_ascii_case(name)
+                || (path.sub.as_deref()).is_some_and(|sub| sub.eq_ignore_ascii_case(name))
+        };
+        match self {
+            Filter::And(a, b) | Filter::Or(a, b) => a.names(name) || b.names(name),
+            Filter::Not(inner) => inner.names(name),
+            Filter::Present(path) | Filter::Compare(path, _, _) => named(path),
+            Filter::ValuePath(path, inner) => named(path) || inner.names(name),
+        }
+    }
+}
+
+impl AttrPath {
+    /// Whether text at the path compares with case: only `externalId`
+    /// (RFC 7643, section 3.1).
+    fn case_exact(&self) -> bool {
+        self.sub.is_none() && self.attr.eq_ignore_ascii_case("externalId")
+    }
 }
 
 /// Parse `input`; the error is the SCIM `invalidFilter` detail.
 pub fn parse(input: &str) -> Result<Filter, String> {
+    if input.len() > MAX_LENGTH {
+        return Err(format!("The filter has more than {MAX_LENGTH} bytes"));
+    }
+    let tokens = tokenize(input)?;
+    if tokens.len() > MAX_TOKENS {
+        return Err(format!(
+            "The filter has more than {MAX_TOKENS} words and values"
+        ));
+    }
     let mut parser = Parser {
-        tokens: tokenize(input)?,
+        tokens,
         at: 0,
+        depth: 0,
     };
     let filter = parser.or()?;
     match parser.next() {
@@ -370,9 +428,9 @@ fn instant(s: &str) -> Option<chrono::DateTime<chrono::FixedOffset>> {
     chrono::DateTime::parse_from_rfc3339(s).ok()
 }
 
-/// One value against the filter's: strings ignore case, dates compare as
-/// instants; other kinds only to their own kind.
-fn compare(actual: &Value, op: Op, expected: &Value) -> bool {
+/// One value against the filter's: strings ignore case unless `exact`,
+/// dates compare as instants; other kinds only to their own kind.
+fn compare(actual: &Value, op: Op, expected: &Value, exact: bool) -> bool {
     use std::cmp::Ordering;
     let ordered = |ord: Ordering| match op {
         Op::Eq => ord == Ordering::Equal,
@@ -388,7 +446,10 @@ fn compare(actual: &Value, op: Op, expected: &Value) -> bool {
             if let (Some(a), Some(e)) = (instant(a), instant(e)) {
                 return ordered(a.cmp(&e));
             }
-            let (a, e) = (a.to_lowercase(), e.to_lowercase());
+            let (a, e) = match exact {
+                true => (a.clone(), e.clone()),
+                false => (a.to_lowercase(), e.to_lowercase()),
+            };
             match op {
                 Op::Co => a.contains(&e),
                 Op::Sw => a.starts_with(&e),
@@ -423,10 +484,10 @@ pub fn matches(filter: &Filter, resource: &Value) -> bool {
         // Not equal: no value is equal.
         Filter::Compare(path, Op::Ne, expected) => !values(resource, path)
             .into_iter()
-            .any(|v| compare(v, Op::Eq, expected)),
+            .any(|v| compare(v, Op::Eq, expected, path.case_exact())),
         Filter::Compare(path, op, expected) => values(resource, path)
             .into_iter()
-            .any(|v| compare(v, *op, expected)),
+            .any(|v| compare(v, *op, expected, path.case_exact())),
         Filter::ValuePath(path, inner) => match member_of(resource, &path.attr) {
             Some(Value::Array(items)) => items.iter().any(|item| matches(inner, item)),
             Some(item @ Value::Object(_)) => matches(inner, item),
@@ -552,22 +613,71 @@ mod tests {
             r#"userName eq "Jürgen""#,
             r#"title eq "2024-01-01T00:00:00Z""#,
             r#"active eq true"#,
+            r#"meta.resourceType eq "User" and displayName co "a""#,
         ];
         let parsed: Vec<Filter> = filters.iter().map(|f| parse(f).unwrap()).collect();
-        let texts: Vec<Vec<(&str, &str)>> = parsed.iter().map(Filter::required_texts).collect();
+        let texts: Vec<Vec<(&str, Option<&str>, &str)>> =
+            parsed.iter().map(Filter::required_texts).collect();
         assert_eq!(
             texts,
             [
-                vec![("userName", "bjensen")],
-                vec![("id", "g1"), ("members", "u1")],
-                vec![("userName", "a")],
+                vec![("userName", None, "bjensen")],
+                vec![("id", None, "g1"), ("members", None, "u1")],
+                vec![("userName", None, "a")],
                 vec![],
                 vec![],
                 vec![],
                 vec![],
                 vec![],
+                vec![("meta", Some("resourceType"), "User")],
             ]
         );
+    }
+
+    #[test]
+    fn names_the_attributes_of_a_filter() {
+        let filter = parse(r#"displayName eq "a" and members[$ref ew "/u1"]"#).unwrap();
+        assert!(filter.names("$REF") && filter.names("members") && filter.names("displayname"));
+        assert!(!filter.names("value"));
+        assert!(parse(r#"meta.location pr"#).unwrap().names("location"));
+    }
+
+    #[test]
+    fn external_ids_compare_with_case() {
+        let resource = json!({ "externalId": "Abc", "userName": "Abc" });
+        let check = |filter: &str| matches(&parse(filter).unwrap(), &resource);
+        assert!(check(r#"externalId eq "Abc""#));
+        assert!(!check(r#"externalId eq "abc""#));
+        assert!(check(r#"externalId sw "Ab""#) && !check(r#"externalId sw "ab""#));
+        assert!(check(r#"userName eq "abc""#));
+    }
+
+    #[test]
+    fn refuses_filters_over_the_limits() {
+        let nested = |levels: usize| {
+            format!(
+                r#"{}userName eq "a"{}"#,
+                "(".repeat(levels),
+                ")".repeat(levels)
+            )
+        };
+        assert!(parse(&nested(MAX_DEPTH)).is_ok());
+        let error = parse(&nested(MAX_DEPTH + 1)).unwrap_err();
+        assert!(error.contains("levels"), "{error}");
+        let error = parse(&format!("emails[{}", "not (".repeat(MAX_DEPTH + 1))).unwrap_err();
+        assert!(error.contains("levels"), "{error}");
+        // Deep enough to overflow the stack of a parser without a limit.
+        assert!(parse(&"(".repeat(MAX_LENGTH)).is_err());
+        assert!(
+            parse(&"(".repeat(MAX_LENGTH + 1))
+                .unwrap_err()
+                .contains("bytes")
+        );
+
+        let terms = |count: usize| vec![r#"userName eq "a""#; count].join(" or ");
+        assert!(parse(&terms(MAX_TOKENS / 4)).is_ok());
+        let error = parse(&terms(MAX_TOKENS / 4 + 1)).unwrap_err();
+        assert!(error.contains("words"), "{error}");
     }
 
     #[test]

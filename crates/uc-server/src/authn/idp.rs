@@ -433,6 +433,15 @@ pub(crate) fn verify_error(e: VerifyError) -> Error {
     }
 }
 
+/// The user that a token names ([`resolve`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Named {
+    /// The id of the user.
+    pub id: String,
+    /// The user's name in grants and owners.
+    pub principal: String,
+}
+
 /// The token type of the server's access tokens, and of OAuth access
 /// tokens as subject tokens; any other subject token type is an ID token.
 pub(crate) const ACCESS_TOKEN: &str = "urn:ietf:params:oauth:token-type:access_token";
@@ -476,13 +485,14 @@ pub(crate) enum TokenKind {
 ///    "User not allowed".
 ///
 /// A user that exists but is disabled names nobody, and the bootstrap
-/// `admin` can never be assumed.
+/// `admin` can never be assumed. Nor is a deleted user made again: an
+/// admin makes it (SCIM, `uc user create`).
 pub(crate) async fn resolve(
     state: &AppState,
     issuer: &IssuerSettings,
     claims: &Map<String, Value>,
     kind: TokenKind,
-) -> Result<String> {
+) -> Result<Named> {
     let scim = state.metastore.scim();
     let not_allowed = || Error::invalid_argument("User not allowed");
     // The principal of a user that is missing: (name, whether an email).
@@ -525,21 +535,20 @@ pub(crate) async fn resolve(
 }
 
 /// The user with the principal `email` in any case, else the user with
-/// the user name `email`: SCIM keeps an identity provider's user name,
-/// which can differ from the user's email. Only an issuer without `*`
-/// names users by user name: that is the provider that the admin trusts
-/// with its users' names, while anyone can make an issuer that `*`
-/// matches.
+/// the user name `email` (`ScimOps::find_user_named`): SCIM keeps an
+/// identity provider's user name, which can differ from the user's email.
+/// Only an issuer without `*` names users by user name: that is the
+/// provider that the admin trusts with its users' names, while anyone can
+/// make an issuer that `*` matches.
 async fn user_of_email(
     state: &AppState,
     issuer: &IssuerSettings,
     email: &str,
 ) -> Result<Option<ScimUser>> {
     let scim = state.metastore.scim();
-    match scim.find_user_by_principal_any_case(email).await? {
-        Some(user) => Ok(Some(user)),
-        None if !issuer.issuer.contains('*') => scim.get_user_by_name(email).await,
-        None => Ok(None),
+    match issuer.issuer.contains('*') {
+        true => scim.find_user_by_principal_any_case(email).await,
+        false => scim.find_user_named(email).await,
     }
 }
 
@@ -582,7 +591,8 @@ fn application(
 
 /// Make the user `principal` at its first request: its email when the
 /// principal is one, `external_id` for an application ([`application`]),
-/// and `displayName` from the issuer's template.
+/// and `displayName` from the issuer's template. A user that was deleted
+/// is not made again.
 async fn create(
     state: &AppState,
     issuer: &IssuerSettings,
@@ -590,7 +600,7 @@ async fn create(
     principal: String,
     is_email: bool,
     external_id: Option<String>,
-) -> Result<String> {
+) -> Result<Named> {
     let scim = state.metastore.scim();
     let display_name = issuer
         .display_name
@@ -614,10 +624,18 @@ async fn create(
         active: Some(true),
         ..Default::default()
     };
-    match scim.create_user(user).await {
-        Ok(user) => {
+    let not_allowed = || Error::invalid_argument("User not allowed");
+    match scim.create_user_at_sign_in(user).await {
+        Ok(Some(user)) => {
             tracing::info!(%principal, issuer = %issuer.name, "made the user at its first request");
-            Ok(user.principal().to_string())
+            assumable(user).ok_or_else(not_allowed)
+        }
+        Ok(None) => {
+            tracing::info!(
+                %principal, issuer = %issuer.name,
+                "user refused: it was deleted, and only an admin makes it again"
+            );
+            Err(not_allowed())
         }
         // Another request, or another replica, made it first.
         Err(e) if e.code().is_already_exists() => {
@@ -625,8 +643,7 @@ async fn create(
                 true => user_of_email(state, issuer, &principal).await?,
                 false => scim.find_user_by_principal(&principal).await?,
             };
-            user.and_then(assumable)
-                .ok_or_else(|| Error::invalid_argument("User not allowed"))
+            user.and_then(assumable).ok_or_else(not_allowed)
         }
         Err(e) => Err(e),
     }
@@ -658,11 +675,15 @@ fn template(text: &str, claims: &Map<String, Value>) -> String {
     out.trim().to_string()
 }
 
-/// The user's principal, if the user is active and not the bootstrap admin.
-fn assumable(user: ScimUser) -> Option<String> {
-    Some(user)
-        .filter(|u| u.is_active() && u.principal() != ADMIN && u.user_name != ADMIN)
-        .map(|u| u.principal().to_string())
+/// The user, if it is active and not the bootstrap admin.
+fn assumable(user: ScimUser) -> Option<Named> {
+    if !user.is_active() || user.principal() == ADMIN || user.user_name == ADMIN {
+        return None;
+    }
+    Some(Named {
+        principal: user.principal().to_string(),
+        id: user.id?,
+    })
 }
 
 /// The active user that a request's token names ([`resolve`]): "User not
@@ -674,6 +695,7 @@ pub(crate) async fn name_caller(
 ) -> Result<String> {
     resolve(state, issuer, claims, TokenKind::AccessToken)
         .await
+        .map(|user| user.principal)
         .map_err(|e| match e.code() {
             ErrorCode::InvalidArgument => {
                 Error::new(ErrorCode::PermissionDenied, e.message().to_string())

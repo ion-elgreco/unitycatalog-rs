@@ -102,9 +102,26 @@ pub async fn require_active_user(state: &AppState, principal: &str) -> Result<St
         .await?
     {
         Some(user) if user.is_active() => Ok(user.principal().to_string()),
-        _ => Err(Error::new(
-            ErrorCode::PermissionDenied,
-            format!("User not allowed: {principal}"),
-        )),
+        _ => Err(not_allowed(principal)),
     }
+}
+
+/// As [`require_active_user`], for the user with the id `id` that a server
+/// token carries, issued for `principal`: the user keeps its sign-in when
+/// its email changes, and a later user with that principal does not get
+/// it.
+pub async fn require_active_user_at(state: &AppState, id: &str, principal: &str) -> Result<String> {
+    match state.metastore.scim().get_user(id).await {
+        Ok(user) if user.is_active() => Ok(user.principal().to_string()),
+        Ok(_) => Err(not_allowed(principal)),
+        Err(e) if e.code() == ErrorCode::NotFound => Err(not_allowed(principal)),
+        Err(e) => Err(e),
+    }
+}
+
+fn not_allowed(principal: &str) -> Error {
+    Error::new(
+        ErrorCode::PermissionDenied,
+        format!("User not allowed: {principal}"),
+    )
 }

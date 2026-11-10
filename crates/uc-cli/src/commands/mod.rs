@@ -159,10 +159,18 @@ pub fn error_body(api: &ApiError) -> String {
     }
 }
 
+/// The message that the body of the error answer `api` names, such as the
+/// `detail` of a SCIM error. Of a body that names none, such as a proxy's
+/// error page, the client gives the whole text: that is no message.
+fn named_message(api: &ApiError) -> Option<&str> {
+    let message = api.message.as_str();
+    (!message.is_empty() && message != api.body.trim()).then_some(message)
+}
+
 /// A failed call as the commands and the TUI show it: the server's code
-/// and message; for an answer without them, a code for its HTTP status and
-/// the message `http <status>`; for a call that got no answer, `INTERNAL`
-/// and what failed.
+/// and message; for an answer without a UC code, a code for its HTTP
+/// status, with the message that its body names, else `http <status>`;
+/// for a call that got no answer, `INTERNAL` and what failed.
 pub fn call_error(e: &ClientError) -> uc_common::Error {
     use uc_common::Error;
     match e {
@@ -171,7 +179,10 @@ pub fn call_error(e: &ClientError) -> uc_common::Error {
             None => {
                 let status =
                     StatusCode::from_u16(api.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                let message = format!("http {status}");
+                let message = match named_message(api) {
+                    Some(message) => message.to_string(),
+                    None => format!("http {status}"),
+                };
                 match status {
                     StatusCode::NOT_FOUND => Error::not_found(message),
                     StatusCode::CONFLICT => Error::already_exists(message),
@@ -278,13 +289,20 @@ impl Context<'_> {
         }
     }
 
-    /// Note the `--start_index` of a SCIM list's next page, after a full
-    /// page: `items` from `start`, of the `count` asked for. As upstream's,
-    /// the server's `totalResults` is the size of the page.
-    pub fn start_index(&self, start: i32, count: i32, items: usize) {
-        if items > 0 && items as i64 >= i64::from(count) {
-            let next = i64::from(start.max(1)) + items as i64;
-            *self.next_page.borrow_mut() = Some(format!("--start_index {next}"));
+    /// Note the `--start_index` of a SCIM list's next page: the page has
+    /// `items` from `start`, of the `count` asked for, and the server's
+    /// `totalResults` is `total`. A server that counts every match has more
+    /// while the page ends before `total`, also when it gave fewer than
+    /// `count`. Upstream's `totalResults` is the size of the page: there a
+    /// full page can have a next one.
+    pub fn start_index(&self, start: i32, count: i32, items: usize, total: i32) {
+        let (start, items, total) = (i64::from(start.max(1)), items as i64, i64::from(total));
+        let more = match total > items {
+            true => start - 1 + items < total,
+            false => items >= i64::from(count),
+        };
+        if items > 0 && more {
+            *self.next_page.borrow_mut() = Some(format!("--start_index {}", start + items));
         }
     }
 }
@@ -618,5 +636,36 @@ mod tests {
         assert_eq!(super::shell_word("eyJ0IjoxfQ=="), "eyJ0IjoxfQ==");
         assert_eq!(super::shell_word("a&b"), "'a&b'");
         assert_eq!(super::shell_word("it's"), r"'it'\''s'");
+    }
+
+    /// A SCIM error has no UC code: its detail is the message. The page of
+    /// a proxy is no message.
+    #[test]
+    fn errors_without_a_code_keep_the_message_of_their_body() {
+        use uc_client::error::{ApiError, Error};
+        use uc_common::ErrorCode;
+
+        let shown = |status, body: &str| {
+            let error =
+                super::call_error(&Error::Api(ApiError::from_body(status, body.as_bytes())));
+            (error.code(), error.message().to_string())
+        };
+        let scim = r#"{"schemas":["urn:ietf:params:scim:api:messages:2.0:Error"],"status":"404","detail":"User not found: u1"}"#;
+        assert_eq!(
+            shown(404, scim),
+            (ErrorCode::NotFound, "User not found: u1".to_string())
+        );
+        assert_eq!(
+            shown(502, "<html>Bad Gateway</html>"),
+            (ErrorCode::Internal, "http 502 Bad Gateway".to_string())
+        );
+        let uc = r#"{"error_code":"ALREADY_EXISTS","message":"Catalog already exists: c"}"#;
+        assert_eq!(
+            shown(409, uc),
+            (
+                ErrorCode::AlreadyExists,
+                "Catalog already exists: c".to_string()
+            )
+        );
     }
 }

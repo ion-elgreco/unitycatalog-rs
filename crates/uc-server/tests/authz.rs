@@ -1371,9 +1371,8 @@ async fn a_user_of_the_settings_is_found_by_its_user_name_after_an_email_change(
         }]),
         ..alice
     };
-    scim.update_user(&id, &mut |_| Ok(moved.clone()))
-        .await
-        .unwrap();
+    let edit = scim.edit_user(&id).await.unwrap();
+    edit.save(moved).await.unwrap();
     let revoke = UpdatePermissions {
         changes: vec![PermissionsChange {
             principal: "alice.smith@example.com".into(),

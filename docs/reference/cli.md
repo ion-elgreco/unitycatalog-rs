@@ -15,7 +15,9 @@ Every command also takes the global options:
 
 The list commands take `--max_results` (default 100) and `--page_token`. After a full page,
 `uc` prints the option for the next page to standard error, such as
-`Next page: --page_token sales`. The lists of users and groups page with `--start_index`.
+`Next page: --page_token sales`. The lists of users and groups page with `--start_index`: the
+server gives at most 1000 of them in one page, and `uc` prints the option for the next page while
+there are more.
 
 ## catalog
 
@@ -151,7 +153,8 @@ The list commands take `--max_results` (default 100) and `--page_token`. After a
 
 A user's email is its name in grants and owners. `update --email` replaces the user's primary
 email and keeps its other emails. It moves the user's grants, owned objects and tokens to the new
-email.
+email. A `userName` that was the old email changes with it, so the old email is free for another
+user. A `userName` from an identity provider stays.
 
 ## group
 

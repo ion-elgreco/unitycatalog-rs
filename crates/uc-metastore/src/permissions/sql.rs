@@ -7,6 +7,7 @@ use uuid::Uuid;
 use uc_api::{PermissionsList, Privilege, PrivilegeAssignment, UpdatePermissions};
 use uc_common::{Error, ErrorCode, NormalizedUrl, Result, SecurableType};
 
+use crate::scim::sql::lock_grantee;
 use crate::sql::rows::{METASTORE, PAT, PERMISSION, STAGING_TABLE};
 use crate::sql::{
     SqlMetastore, by_id, char_len, create_err, db_err, insert, placeholders, select, select_one,
@@ -99,17 +100,23 @@ impl PermissionOps for SqlMetastore {
         req: UpdatePermissions,
     ) -> Result<PermissionsList> {
         // Upstream `updateAuthorization`: the securable and every principal
-        // must exist before anything changes.
+        // must exist, or nothing changes.
         let resource_id = self.securable_id(securable_type, full_name).await?;
-        let mut changes = Vec::with_capacity(req.changes.len());
-        for mut change in req.changes {
-            change.principal = self.require_principal(&change.principal).await?;
-            changes.push(change);
-        }
-        let principals: BTreeSet<String> = changes.iter().map(|c| c.principal.clone()).collect();
         let failed = db_err("update permissions");
         let tx = self.db.begin().await.map_err(&failed)?;
-        for change in changes {
+        // By name: requests that run at once lock the grantees in one
+        // order.
+        let named: BTreeSet<&str> = req.changes.iter().map(|c| c.principal.as_str()).collect();
+        let mut grantees = HashMap::with_capacity(named.len());
+        for name in named {
+            grantees.insert(name.to_string(), require_grantee(tx.as_ref(), name).await?);
+        }
+        let mut principals = BTreeSet::new();
+        for mut change in req.changes {
+            if let Some(grantee) = grantees.get(&change.principal) {
+                change.principal = grantee.clone();
+            }
+            principals.insert(change.principal.clone());
             apply_permission_change(tx.as_ref(), securable_type, &resource_id, change).await?;
         }
         tx.commit().await.map_err(&failed)?;
@@ -428,6 +435,17 @@ impl PermissionOps for SqlMetastore {
     }
 }
 
+/// Upstream `getUserByEmail`: grants go to users and groups that exist.
+/// The name in grants of `name` ([`lock_grantee`]): a user's grants are
+/// kept under its principal, the name a signed-in caller has. The user or
+/// group is locked until `tx` ends, so that a delete or a rename of it at
+/// the same time does not leave the grants of `tx` behind.
+async fn require_grantee<E: Exec + ?Sized>(tx: &E, name: &str) -> Result<String> {
+    lock_grantee(tx, name)
+        .await?
+        .ok_or_else(|| Error::not_found(format!("User not found: {name}")))
+}
+
 /// Add and remove privileges of one principal on one securable, in `tx`:
 /// the number of privileges that it added or removed.
 pub(crate) async fn apply_permission_change<E: Exec + ?Sized>(
@@ -633,27 +651,6 @@ impl SqlMetastore {
                     .id_string
             }
         })
-    }
-
-    /// Upstream `getUserByEmail`: grants go to users and groups that exist.
-    /// A name is a user's principal, else a group's name, else a user's
-    /// user name in any case. A user's grants are kept under its
-    /// principal, the name a signed-in caller has.
-    async fn require_principal(&self, principal: &str) -> Result<String> {
-        use crate::scim::ScimOps;
-        if let Some(user) = self.find_user_by_principal(principal).await? {
-            return Ok(user.principal().to_string());
-        }
-        if self
-            .exists_where("scim_group", "display_name", principal)
-            .await?
-        {
-            return Ok(principal.to_string());
-        }
-        match self.get_user_by_name(principal).await? {
-            Some(user) => Ok(user.principal().to_string()),
-            None => Err(Error::not_found(format!("User not found: {principal}"))),
-        }
     }
 
     /// The metastore row, made on first use. Replicas that make it at once

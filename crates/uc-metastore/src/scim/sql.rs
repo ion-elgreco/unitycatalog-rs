@@ -9,14 +9,15 @@ use uc_api::{
     ScimUser,
 };
 use uc_common::{Error, ErrorCode, Result, SecurableType, now_epoch_millis, require_non_empty};
-use uc_storage::{Exec, Value};
+use uc_storage::{Exec, Transaction, Value};
 
 use crate::ScimOps;
 use crate::permissions::sql::{apply_permission_change, forget_principal, rename_principal};
-use crate::scim::{Change, Page, ScimKey, SeedReport, SeedUser};
+use crate::scim::{ADMIN, Edit, Page, ScimKey, SeedReport, SeedUser};
 use crate::sql::rows::{SCIM_GROUP, SCIM_GROUP_MEMBER, SCIM_USER};
 use crate::sql::{
-    SqlMetastore, by_id, create_err_as, db_err, insert, insert_all, placeholders, select, update,
+    SqlMetastore, by_id, create_err_as, db_err, insert, insert_all, placeholders, select,
+    select_one, update,
 };
 
 use uc_api::scim::schema_uri;
@@ -221,7 +222,7 @@ async fn write_members<E: Exec + ?Sized>(
         let rows = tx
             .query(
                 &format!(
-                    "SELECT id_string FROM scim_user WHERE id_string IN ({}){}",
+                    "SELECT id_string FROM scim_user WHERE id_string IN ({}) ORDER BY id_string{}",
                     placeholders(1, chunk.len()),
                     tx.for_update()
                 ),
@@ -287,11 +288,147 @@ async fn require_no_user<E: Exec + ?Sized>(ex: &E, name: &str) -> Result<()> {
 }
 
 /// Conditions on a user, with `$1` the value: the same user name, in any
-/// case; the same principal; the same external id, in any case. The
-/// indexes of user names and external ids are on their lower case.
+/// case; the same principal; the same principal, in any case; the same
+/// external id. The indexes of user names and of principals in any case
+/// are on their lower case.
 const SAME_USER_NAME: &str = "lower(user_name) = lower($1)";
 const SAME_PRINCIPAL: &str = "principal = $1";
-const SAME_EXTERNAL_ID: &str = "lower(external_id) = lower($1)";
+const SAME_PRINCIPAL_ANY_CASE: &str = "lower(principal) = lower($1)";
+const SAME_EXTERNAL_ID: &str = "external_id = $1";
+
+/// Whether `name` is [`ADMIN`], in any case.
+fn is_admin(name: &str) -> bool {
+    name.trim().eq_ignore_ascii_case(ADMIN)
+}
+
+fn admin_name_taken() -> Error {
+    Error::already_exists(format!("The name {ADMIN} belongs to the server's own user"))
+}
+
+/// The rules of the user [`ADMIN`], for `row`: the row that replaces `was`,
+/// or a new one. The user keeps its name and stays active, and no other
+/// user takes the name.
+fn check_admin(row: &ScimUserRow, was: Option<&ScimUserRow>) -> Result<()> {
+    if was.is_some_and(|was| was.principal == ADMIN) {
+        if row.user_name != ADMIN || row.principal != ADMIN {
+            return Err(Error::invalid_argument(format!(
+                "The server's own user keeps the name {ADMIN}"
+            )));
+        }
+        if row.active == Some(false) {
+            return Err(Error::invalid_argument(format!(
+                "The server's own user {ADMIN} stays active"
+            )));
+        }
+        return Ok(());
+    }
+    match is_admin(&row.user_name) || is_admin(&row.principal) {
+        true => Err(admin_name_taken()),
+        false => Ok(()),
+    }
+}
+
+/// The names that find the user `row` at sign-in, in lower case: its
+/// principal and its user name.
+fn sign_in_names(row: &ScimUserRow) -> [Value; 2] {
+    [
+        row.principal.to_lowercase().into(),
+        row.user_name.to_lowercase().into(),
+    ]
+}
+
+/// Keep the names of the deleted user `row`, in `tx`: sign-in does not make
+/// a user with one of them again.
+async fn remember_deleted<E: Exec + ?Sized>(tx: &E, row: &ScimUserRow) -> Result<()> {
+    forget_deleted(tx, row).await?;
+    for name in sign_in_names(row) {
+        // The principal can be the user name.
+        tx.execute(
+            "INSERT INTO scim_deleted_user (name, deleted_at) VALUES ($1, $2) \
+             ON CONFLICT DO NOTHING",
+            &[name, now_epoch_millis().into()],
+        )
+        .await
+        .map_err(db_err("keep the names of a deleted user"))?;
+    }
+    Ok(())
+}
+
+/// Drop the names of `row` from those of deleted users, in `tx`: an admin
+/// made a user with them.
+async fn forget_deleted<E: Exec + ?Sized>(tx: &E, row: &ScimUserRow) -> Result<()> {
+    tx.execute(
+        "DELETE FROM scim_deleted_user WHERE name IN ($1, $2)",
+        &sign_in_names(row),
+    )
+    .await
+    .map_err(db_err("drop the names of a deleted user"))?;
+    Ok(())
+}
+
+/// Whether a deleted user had the principal or the user name of `row`.
+async fn was_deleted<E: Exec + ?Sized>(ex: &E, row: &ScimUserRow) -> Result<bool> {
+    let rows = ex
+        .query(
+            "SELECT 1 FROM scim_deleted_user WHERE name IN ($1, $2) LIMIT 1",
+            &sign_in_names(row),
+        )
+        .await
+        .map_err(db_err("names of deleted users"))?;
+    Ok(!rows.is_empty())
+}
+
+/// The row of the user that `name` names ([`ScimOps::find_user_named`]).
+/// With `lock`, in a transaction, the row stays locked until it ends.
+async fn user_named<E: Exec + ?Sized>(
+    ex: &E,
+    name: &str,
+    lock: bool,
+) -> Result<Option<ScimUserRow>> {
+    let lock = if lock { ex.for_update() } else { "" };
+    let find = |same: &str, limit: &str| {
+        let tail = format!("WHERE {same}{limit}{lock}");
+        async move { select::<ScimUserRow, E>(ex, &SCIM_USER, &tail, &[name.into()]).await }
+    };
+    if let Some(user) = find(SAME_PRINCIPAL, "").await?.pop() {
+        return Ok(Some(user));
+    }
+    let mut any_case = find(SAME_PRINCIPAL_ANY_CASE, " LIMIT 2").await?;
+    if any_case.len() == 1 {
+        return Ok(any_case.pop());
+    }
+    Ok(find(SAME_USER_NAME, "").await?.pop())
+}
+
+/// The name in grants that `name` stands for, in `tx`: a user's principal,
+/// else a group's name, else the principal of the user that `name` names
+/// in another case or by user name ([`ScimOps::find_user_named`]). The user
+/// or group stays locked until `tx` ends: a delete or a rename of it waits,
+/// then finds the grants that `tx` wrote.
+pub(crate) async fn lock_grantee<E: Exec + ?Sized>(tx: &E, name: &str) -> Result<Option<String>> {
+    let lock = tx.for_update();
+    let user: Option<ScimUserRow> = select_one(
+        tx,
+        &SCIM_USER,
+        &format!("WHERE {SAME_PRINCIPAL}{lock}"),
+        &[name.into()],
+    )
+    .await?;
+    if let Some(user) = user {
+        return Ok(Some(user.principal));
+    }
+    let group: Option<ScimGroupRow> = select_one(
+        tx,
+        &SCIM_GROUP,
+        &format!("WHERE display_name = $1{lock}"),
+        &[name.into()],
+    )
+    .await?;
+    if let Some(group) = group {
+        return Ok(Some(group.display_name));
+    }
+    Ok(user_named(tx, name, true).await?.map(|user| user.principal))
+}
 
 /// The order of users in lists.
 const USER_ORDER: &str = "ORDER BY COALESCE(display_name, ''), user_name, id_string";
@@ -349,9 +486,7 @@ async fn check_user<E: Exec + ?Sized>(
         require_no_group(ex, &row.principal).await?;
     }
     if let Some(external_id) = row.external_id.as_deref()
-        && was.is_none_or(|w| {
-            (w.external_id.as_deref()).is_none_or(|w| !w.eq_ignore_ascii_case(external_id))
-        })
+        && was.is_none_or(|w| w.external_id.as_deref() != Some(external_id))
         && !others(ex, SAME_EXTERNAL_ID, external_id, id)
             .await?
             .is_empty()
@@ -404,13 +539,14 @@ fn group_not_found(id: &str) -> Error {
     Error::not_found(format!("Group not found: {id}"))
 }
 
-/// The condition of `key` with `$1` the value, in any case. Ids are
-/// lower-case UUIDs.
+/// The condition of `key` with `$1` the value: in any case, but for the
+/// external id. Ids are lower-case UUIDs.
 fn key_filter(key: ScimKey, name_column: &str) -> String {
     match key {
         ScimKey::Id => "WHERE id_string = lower($1)".to_string(),
         ScimKey::Name => format!("WHERE lower({name_column}) = lower($1)"),
-        ScimKey::ExternalId => "WHERE lower(external_id) = lower($1)".to_string(),
+        ScimKey::DisplayName => "WHERE lower(display_name) = lower($1)".to_string(),
+        ScimKey::ExternalId => format!("WHERE {SAME_EXTERNAL_ID}"),
     }
 }
 
@@ -442,25 +578,153 @@ impl SqlMetastore {
     }
 }
 
+/// A user that a request changes ([`ScimOps::edit_user`]): its row is
+/// locked in `tx`.
+struct UserEdit {
+    tx: Box<dyn Transaction>,
+    stored: ScimUserRow,
+    current: ScimUser,
+}
+
 #[async_trait]
-impl ScimOps for SqlMetastore {
-    async fn create_user(&self, mut user: ScimUser) -> Result<ScimUser> {
-        user.active.get_or_insert(true);
+impl Edit<ScimUser> for UserEdit {
+    fn current(&self) -> &ScimUser {
+        &self.current
+    }
+
+    async fn save(self: Box<Self>, new: ScimUser) -> Result<ScimUser> {
+        let UserEdit { tx, stored, .. } = *self;
+        let failed = db_err("update user");
         let row = user_to_row(
-            user,
-            Uuid::new_v4().to_string(),
+            new,
+            stored.id_string.clone(),
+            stored.created_at,
             Some(now_epoch_millis()),
-            None,
         );
+        check_admin(&row, Some(&stored))?;
+        check_user(tx.as_ref(), &row, Some(&stored)).await?;
+        update(tx.as_ref(), &SCIM_USER, &row)
+            .await
+            .map_err(user_exists(&row))?;
+        if row.principal != stored.principal {
+            rename_principal(tx.as_ref(), &stored.principal, &row.principal).await?;
+        }
+        forget_deleted(tx.as_ref(), &row).await?;
+        tx.commit().await.map_err(&failed)?;
+        Ok(row.into())
+    }
+}
+
+/// A group that a request changes ([`ScimOps::edit_group`]): its row is
+/// locked in `tx`.
+struct GroupEdit {
+    tx: Box<dyn Transaction>,
+    stored: ScimGroupRow,
+    current: ScimGroup,
+}
+
+#[async_trait]
+impl Edit<ScimGroup> for GroupEdit {
+    fn current(&self) -> &ScimGroup {
+        &self.current
+    }
+
+    async fn save(self: Box<Self>, new: ScimGroup) -> Result<ScimGroup> {
+        let GroupEdit { tx, stored, .. } = *self;
+        let failed = db_err("update group");
+        require_non_empty("displayName", &new.display_name)?;
+        let row = group_to_row(
+            new,
+            stored.id_string.clone(),
+            stored.created_at,
+            Some(now_epoch_millis()),
+        );
+        let renamed = stored.display_name != row.display_name;
+        if renamed && is_admin(&row.display_name) {
+            return Err(admin_name_taken());
+        }
+        update(tx.as_ref(), &SCIM_GROUP, &row)
+            .await
+            .map_err(group_exists(&row))?;
+        write_members(tx.as_ref(), &row, Some(&stored)).await?;
+        if renamed {
+            lock_names(tx.as_ref()).await?;
+            require_no_user(tx.as_ref(), &row.display_name).await?;
+            rename_principal(tx.as_ref(), &stored.display_name, &row.display_name).await?;
+        }
+        tx.commit().await.map_err(&failed)?;
+        Ok(row.into())
+    }
+}
+
+impl SqlMetastore {
+    /// Write the new user `row`. At a sign-in, a user that had its names
+    /// and was deleted is not made again: `None`.
+    async fn insert_user(&self, row: ScimUserRow, at_sign_in: bool) -> Result<Option<ScimUser>> {
         self.metastore_row().await?;
         let failed = db_err("create user");
         let tx = self.db.begin().await.map_err(&failed)?;
+        match at_sign_in {
+            true if was_deleted(tx.as_ref(), &row).await? => return Ok(None),
+            true => {}
+            false => forget_deleted(tx.as_ref(), &row).await?,
+        }
         check_user(tx.as_ref(), &row, None).await?;
         insert(tx.as_ref(), &SCIM_USER, &row)
             .await
             .map_err(user_exists(&row))?;
         tx.commit().await.map_err(&failed)?;
-        Ok(row.into())
+        Ok(Some(row.into()))
+    }
+}
+
+/// The row of the new user `user`, enabled unless `active` is false.
+fn new_user_row(mut user: ScimUser) -> ScimUserRow {
+    user.active.get_or_insert(true);
+    user_to_row(
+        user,
+        Uuid::new_v4().to_string(),
+        Some(now_epoch_millis()),
+        None,
+    )
+}
+
+#[async_trait]
+impl ScimOps for SqlMetastore {
+    async fn create_user(&self, user: ScimUser) -> Result<ScimUser> {
+        let row = new_user_row(user);
+        check_admin(&row, None)?;
+        let made = self.insert_user(row, false).await?;
+        made.ok_or_else(|| Error::internal("no user made"))
+    }
+
+    async fn create_admin(&self) -> Result<()> {
+        if self.find_user_by_principal(ADMIN).await?.is_some() {
+            return Ok(());
+        }
+        // No email: the user name is the principal.
+        let row = new_user_row(ScimUser {
+            schemas: vec![schema_uri::USER.to_string()],
+            user_name: ADMIN.to_string(),
+            display_name: Some("Admin".to_string()),
+            ..Default::default()
+        });
+        match self.insert_user(row, false).await {
+            // Another replica made it at the same time.
+            Err(e)
+                if e.code().is_already_exists()
+                    && self.find_user_by_principal(ADMIN).await?.is_some() =>
+            {
+                Ok(())
+            }
+            made => made.map(drop),
+        }
+    }
+
+    async fn create_user_at_sign_in(&self, user: ScimUser) -> Result<Option<ScimUser>> {
+        let row = new_user_row(user);
+        check_admin(&row, None)?;
+        self.insert_user(row, true).await
     }
 
     async fn get_user(&self, id: &str) -> Result<ScimUser> {
@@ -490,11 +754,19 @@ impl ScimOps for SqlMetastore {
         let user: ScimUserRow = lock(tx.as_ref(), &SCIM_USER, id)
             .await?
             .ok_or_else(|| user_not_found(id))?;
+        if user.principal == ADMIN {
+            return Err(Error::new(
+                ErrorCode::PermissionDenied,
+                format!("The server's own user {ADMIN} cannot be deleted"),
+            ));
+        }
+        // By id: deletes that run at once lock the groups in one order.
         let groups: Vec<ScimGroupRow> = select(
             tx.as_ref(),
             &SCIM_GROUP,
             &format!(
-                "WHERE id_string IN (SELECT group_id FROM scim_group_member WHERE user_id = $1){}",
+                "WHERE id_string IN (SELECT group_id FROM scim_group_member WHERE user_id = $1) \
+                 ORDER BY id_string{}",
                 tx.for_update()
             ),
             &[id.into()],
@@ -517,6 +789,7 @@ impl ScimOps for SqlMetastore {
             tx.execute(sql, &[id.into()]).await.map_err(&failed)?;
         }
         forget_principal(tx.as_ref(), &user.principal).await?;
+        remember_deleted(tx.as_ref(), &user).await?;
         tx.commit().await.map_err(&failed)?;
         Ok(())
     }
@@ -537,16 +810,17 @@ impl ScimOps for SqlMetastore {
         if let Some(user) = self.find_user_by_principal(principal).await? {
             return Ok(Some(user));
         }
-        let mut any = self
-            .users_where(
-                "WHERE lower(principal) = lower($1) LIMIT 2",
-                &[principal.into()],
-            )
-            .await?;
+        let filter = format!("WHERE {SAME_PRINCIPAL_ANY_CASE} LIMIT 2");
+        let mut any = self.users_where(&filter, &[principal.into()]).await?;
         Ok(match any.len() {
             1 => any.pop(),
             _ => None,
         })
+    }
+
+    async fn find_user_named(&self, name: &str) -> Result<Option<ScimUser>> {
+        let user = user_named(self.db.as_ref(), name, false).await?;
+        Ok(user.map(Into::into))
     }
 
     async fn find_user_by_external_id(&self, external_id: &str) -> Result<Option<ScimUser>> {
@@ -555,29 +829,17 @@ impl ScimOps for SqlMetastore {
         Ok(users.into_iter().next())
     }
 
-    async fn update_user(&self, id: &str, change: Change<'_, ScimUser>) -> Result<ScimUser> {
+    async fn edit_user(&self, id: &str) -> Result<Box<dyn Edit<ScimUser>>> {
         self.metastore_row().await?;
-        let failed = db_err("update user");
-        let tx = self.db.begin().await.map_err(&failed)?;
+        let tx = self.db.begin().await.map_err(db_err("update user"))?;
         let stored: ScimUserRow = lock(tx.as_ref(), &SCIM_USER, id)
             .await?
             .ok_or_else(|| user_not_found(id))?;
-        let user = change(&ScimUser::from(stored.clone()))?;
-        let row = user_to_row(
-            user,
-            id.to_string(),
-            stored.created_at,
-            Some(now_epoch_millis()),
-        );
-        check_user(tx.as_ref(), &row, Some(&stored)).await?;
-        update(tx.as_ref(), &SCIM_USER, &row)
-            .await
-            .map_err(user_exists(&row))?;
-        if row.principal != stored.principal {
-            rename_principal(tx.as_ref(), &stored.principal, &row.principal).await?;
-        }
-        tx.commit().await.map_err(&failed)?;
-        Ok(row.into())
+        Ok(Box::new(UserEdit {
+            tx,
+            current: stored.clone().into(),
+            stored,
+        }))
     }
 
     async fn seed_users(&self, users: &[SeedUser]) -> Result<SeedReport> {
@@ -590,20 +852,7 @@ impl ScimOps for SqlMetastore {
         let tx = self.db.begin().await.map_err(&failed)?;
         for seed in users {
             let email = seed.email.as_str();
-            let mut found = None;
-            for same in [SAME_PRINCIPAL, SAME_USER_NAME] {
-                let users: Vec<ScimUserRow> = select(
-                    tx.as_ref(),
-                    &SCIM_USER,
-                    &format!("WHERE {same}"),
-                    &[email.into()],
-                )
-                .await?;
-                found = users.into_iter().next();
-                if found.is_some() {
-                    break;
-                }
-            }
+            let found = user_named(tx.as_ref(), email, true).await?;
             // The principal that gets the privileges, unless disabled.
             let principal = match found {
                 Some(user) => {
@@ -642,12 +891,9 @@ impl ScimOps for SqlMetastore {
                         active: Some(true),
                         ..Default::default()
                     };
-                    let row = user_to_row(
-                        user,
-                        Uuid::new_v4().to_string(),
-                        Some(now_epoch_millis()),
-                        None,
-                    );
+                    let row = new_user_row(user);
+                    check_admin(&row, None)?;
+                    forget_deleted(tx.as_ref(), &row).await?;
                     check_user(tx.as_ref(), &row, None).await?;
                     insert(tx.as_ref(), &SCIM_USER, &row)
                         .await
@@ -679,6 +925,9 @@ impl ScimOps for SqlMetastore {
 
     async fn create_group(&self, group: ScimGroup) -> Result<ScimGroup> {
         require_non_empty("displayName", &group.display_name)?;
+        if is_admin(&group.display_name) {
+            return Err(admin_name_taken());
+        }
         let row = group_to_row(
             group,
             Uuid::new_v4().to_string(),
@@ -725,33 +974,17 @@ impl ScimOps for SqlMetastore {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
-    async fn update_group(&self, id: &str, change: Change<'_, ScimGroup>) -> Result<ScimGroup> {
+    async fn edit_group(&self, id: &str) -> Result<Box<dyn Edit<ScimGroup>>> {
         self.metastore_row().await?;
-        let failed = db_err("update group");
-        let tx = self.db.begin().await.map_err(&failed)?;
+        let tx = self.db.begin().await.map_err(db_err("update group"))?;
         let stored: ScimGroupRow = lock(tx.as_ref(), &SCIM_GROUP, id)
             .await?
             .ok_or_else(|| group_not_found(id))?;
-        let group = change(&ScimGroup::from(stored.clone()))?;
-        require_non_empty("displayName", &group.display_name)?;
-        let row = group_to_row(
-            group,
-            id.to_string(),
-            stored.created_at,
-            Some(now_epoch_millis()),
-        );
-        let renamed = stored.display_name != row.display_name;
-        update(tx.as_ref(), &SCIM_GROUP, &row)
-            .await
-            .map_err(group_exists(&row))?;
-        write_members(tx.as_ref(), &row, Some(&stored)).await?;
-        if renamed {
-            lock_names(tx.as_ref()).await?;
-            require_no_user(tx.as_ref(), &row.display_name).await?;
-            rename_principal(tx.as_ref(), &stored.display_name, &row.display_name).await?;
-        }
-        tx.commit().await.map_err(&failed)?;
-        Ok(row.into())
+        Ok(Box::new(GroupEdit {
+            tx,
+            current: stored.clone().into(),
+            stored,
+        }))
     }
 
     async fn delete_group(&self, id: &str) -> Result<()> {

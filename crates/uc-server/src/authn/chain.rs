@@ -31,7 +31,9 @@ use crate::{
     authn::{
         aws, idp,
         idp::IssuerSettings,
-        middleware::{UC_TOKEN_COOKIE, require_active_user, requires_sign_in},
+        middleware::{
+            UC_TOKEN_COOKIE, require_active_user, require_active_user_at, requires_sign_in,
+        },
         security::{ADMIN, INTERNAL_ISSUER},
         sign_in::ForwardSignIn,
     },
@@ -45,6 +47,9 @@ pub const SERVER_TOKEN: &str = "server-token";
 pub const PERSONAL_ACCESS_TOKEN: &str = "personal-access-token";
 /// The method of Delta Sharing recipient tokens.
 pub const SHARING_RECIPIENT: &str = "sharing-recipient";
+/// The claim of a server token with the id of its user
+/// ([`TokenClaims::uid`](crate::authn::security::TokenClaims::uid)).
+const USER_ID: &str = "uid";
 
 /// The calls to identity providers, on the IO runtime
 /// (`crate::http::outbound`).
@@ -137,11 +142,13 @@ impl Resolver<AppState> for ServerTokens {
                     .ok_or("the server has no signing key".to_string())
                     .and_then(|security| (security.verify(token)).map_err(|e| e.to_string()));
                 match claims {
-                    Ok(claims) => Resolution::Resolved(Identity::new(
-                        INTERNAL_ISSUER,
-                        SERVER_TOKEN,
-                        claims.sub,
-                    )),
+                    Ok(claims) => {
+                        let mut identity = Identity::new(INTERNAL_ISSUER, SERVER_TOKEN, claims.sub);
+                        if let Some(uid) = claims.uid {
+                            identity.claims.insert(USER_ID.into(), uid.into());
+                        }
+                        Resolution::Resolved(identity)
+                    }
                     Err(reason) => Resolution::Refused(AuthError::Invalid(reason)),
                 }
             }
@@ -187,8 +194,9 @@ impl Resolver<AppState> for PersonalAccessTokens {
 /// - The auth proxy's user must be an active user, and never the bootstrap
 ///   admin, whom only the server's own tokens name.
 /// - The server's tokens and personal access tokens name an active user
-///   where a sign-in is required; with authorization off, they name the
-///   caller as they are.
+///   where a sign-in is required: a server token the user whose id it
+///   carries, by its principal of that moment. With authorization off,
+///   they name the caller as they are.
 /// - A provider's caller is named as its block says
 ///   ([`idp::resolve`]), made at its first request with `create_users`.
 pub struct Users;
@@ -213,9 +221,12 @@ impl Admission<AppState> for Users {
             }
             SERVER_TOKEN | PERSONAL_ACCESS_TOKEN => {
                 if state.authorization_enabled && requires_sign_in(cx.path()) {
-                    identity.subject = require_active_user(state, &identity.subject)
-                        .await
-                        .map_err(refused)?;
+                    let user_id = identity.claims.get(USER_ID).and_then(|id| id.as_str());
+                    let named = match user_id {
+                        Some(id) => require_active_user_at(state, id, &identity.subject).await,
+                        None => require_active_user(state, &identity.subject).await,
+                    };
+                    identity.subject = named.map_err(refused)?;
                 }
             }
             _ => {

@@ -5,6 +5,9 @@
 //! Requests are read by the schemas of [`scim_schema`]: attribute names in
 //! any case, unknown attributes left alone. Every error under `/scim2` is a
 //! SCIM error with its HTTP status ([`error_layer`]).
+//!
+//! The metastore keeps the rules of the server's own user `admin`
+//! ([`uc_metastore::ADMIN`]).
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -27,45 +30,30 @@ use uc_api::{
     ListScimGroupsResponse, ListScimUsersResponse, ScimGroup, ScimPatchOp, ScimPatchOperation,
     ScimRole, ScimUser,
 };
-use uc_common::{CONTROL_BASE, Error, ErrorCode, ErrorResponse};
+use uc_common::{CONTROL_BASE, Error};
 use uc_metastore::{Page, ScimKey};
 
 use crate::{
-    authn::{principal::Principal, security::ADMIN},
+    authn::principal::Principal,
     authz,
+    http::error::{Stray, format_errors, mounted},
     http::extract::{Path, Query},
     routes::control::scim_filter::{self, Filter},
     routes::control::scim_patch,
     routes::control::scim_schema::{
-        self, GROUPS, MAX_RESULTS, RESOURCE_TYPES, ResourceType, USERS,
+        self, GROUPS, MAX_BULK_OPERATIONS, MAX_RESULTS, RESOURCE_TYPES, ResourceType, USERS,
     },
     server::state::AppState,
 };
 
 /// A SCIM error (RFC 7644, section 3.12): its HTTP status, `scimType` and
-/// detail. The body also has the UC `error_code` and `message`, which the
-/// UC clients show.
+/// detail. The body has only the attributes of the RFC: a strict client
+/// refuses any other. The UC clients show `detail`.
 #[derive(Debug)]
 pub struct ScimError {
     status: StatusCode,
     scim_type: Option<&'static str>,
-    code: ErrorCode,
     detail: String,
-}
-
-/// The UC code of an error with `status` and no UC code of its own.
-fn code_of(status: StatusCode) -> ErrorCode {
-    match status {
-        StatusCode::BAD_REQUEST | StatusCode::PAYLOAD_TOO_LARGE => ErrorCode::InvalidArgument,
-        StatusCode::UNAUTHORIZED => ErrorCode::Unauthenticated,
-        StatusCode::FORBIDDEN => ErrorCode::PermissionDenied,
-        StatusCode::NOT_FOUND => ErrorCode::NotFound,
-        StatusCode::CONFLICT => ErrorCode::AlreadyExists,
-        StatusCode::METHOD_NOT_ALLOWED | StatusCode::NOT_IMPLEMENTED => ErrorCode::Unimplemented,
-        StatusCode::TOO_MANY_REQUESTS => ErrorCode::ResourceExhausted,
-        StatusCode::SERVICE_UNAVAILABLE => ErrorCode::Unavailable,
-        _ => ErrorCode::Internal,
-    }
 }
 
 impl ScimError {
@@ -73,7 +61,6 @@ impl ScimError {
         Self {
             status,
             scim_type: None,
-            code: code_of(status),
             detail: detail.into(),
         }
     }
@@ -91,8 +78,6 @@ impl ScimError {
             "schemas": [schema_uri::ERROR],
             "status": self.status.as_u16().to_string(),
             "detail": self.detail,
-            "error_code": self.code,
-            "message": self.detail,
         });
         if let Some(scim_type) = self.scim_type {
             body["scimType"] = json!(scim_type);
@@ -117,7 +102,6 @@ impl From<Error> for ScimError {
         Self {
             status,
             scim_type,
-            code: e.code(),
             detail: e.message().to_string(),
         }
     }
@@ -186,55 +170,31 @@ impl IntoResponse for Scim {
 }
 
 /// Every error under `/scim2` is a SCIM error: those of the handlers, and
-/// those of sign-in, request parsing and unknown paths and methods, which
-/// come as UC errors or bare statuses.
+/// those of sign-in, request parsing, unknown paths and methods, the
+/// request timeout and the rate limit, which come as UC errors or bare
+/// statuses.
 pub async fn error_layer(req: Request, next: Next) -> Response {
-    let scim = req
-        .uri()
-        .path()
-        .strip_prefix(CONTROL_BASE)
-        .and_then(|rest| rest.strip_prefix("/scim2"))
-        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'));
+    let scim = mounted(req.uri().path(), CONTROL_BASE, "/scim2");
     let resp = next.run(req).await;
-    let status = resp.status();
-    if !scim || !(status.is_client_error() || status.is_server_error()) {
-        return resp;
-    }
     let is_scim = resp
         .headers()
         .get(header::CONTENT_TYPE)
         .is_some_and(|t| t.as_bytes().starts_with(b"application/scim+json"));
-    if is_scim {
+    if !scim || is_scim {
         return resp;
     }
-    let allow = resp.headers().get(header::ALLOW).cloned();
-    let code = (resp.extensions().get::<ErrorResponse>()).map(|uc| uc.error_code);
-    let detail = match resp.extensions().get::<ErrorResponse>() {
-        Some(uc) => uc.message.clone(),
-        None => {
-            let (_, body) = resp.into_parts();
-            let bytes = axum::body::to_bytes(body, 1 << 20)
-                .await
-                .unwrap_or_default();
-            let text = String::from_utf8_lossy(&bytes).trim().to_string();
-            match text.is_empty() {
-                true => status.canonical_reason().unwrap_or("Error").to_string(),
-                false => text,
+    format_errors(
+        resp,
+        |_| false,
+        |stray: Stray| {
+            match stray.status {
+                StatusCode::BAD_REQUEST => ScimError::bad_request("invalidSyntax", stray.message),
+                status => ScimError::new(status, stray.message),
             }
-        }
-    };
-    let mut error = match status {
-        StatusCode::BAD_REQUEST => ScimError::bad_request("invalidSyntax", detail),
-        status => ScimError::new(status, detail),
-    };
-    if let Some(code) = code {
-        error.code = code;
-    }
-    let mut resp = error.into_response();
-    if let Some(allow) = allow {
-        resp.headers_mut().insert(header::ALLOW, allow);
-    }
-    resp
+            .into_response()
+        },
+    )
+    .await
 }
 
 /// A path under `/scim2` that names no endpoint.
@@ -465,10 +425,18 @@ impl ListQuery {
 
     /// The ListResponse of `resources`, each as JSON with its type:
     /// `totalResults` counts the matches, the page holds `count` of them
-    /// from `start`.
-    fn answer(&self, resources: Vec<(&ResourceType, Value)>) -> Value {
-        let matching: Vec<(&ResourceType, Value)> = resources
+    /// from `start`. Only the page gets its URLs under `base`
+    /// ([`locate`]), unless the filter names one.
+    fn answer(&self, resources: Vec<(&'static ResourceType, Value)>, base: &str) -> Value {
+        let locate_all =
+            (self.filter.as_ref()).is_some_and(|f| f.names("$ref") || f.names("location"));
+        let located = |(resource_type, mut resource): (&'static ResourceType, Value)| {
+            locate(resource_type, &mut resource, base);
+            (resource_type, resource)
+        };
+        let matching: Vec<(&'static ResourceType, Value)> = resources
             .into_iter()
+            .map(|r| if locate_all { located(r) } else { r })
             .filter(|(_, r)| {
                 self.filter
                     .as_ref()
@@ -480,6 +448,7 @@ impl ListQuery {
             .into_iter()
             .skip(self.start - 1)
             .take(self.count)
+            .map(|r| if locate_all { r } else { located(r) })
             .collect();
         self.list_response(total, page)
     }
@@ -500,11 +469,15 @@ impl ListQuery {
     }
 }
 
-/// `resource` as JSON, with its URL under `base`, and the URL of each
-/// member as its `$ref`.
-fn located<T: Serialize>(resource_type: &ResourceType, resource: &T, base: &str) -> Value {
-    let mut value = serde_json::to_value(resource).unwrap_or_default();
-    if let Some(members) = value.get_mut("members").and_then(Value::as_array_mut) {
+/// `resource` as JSON.
+fn json_of<T: Serialize>(resource: &T) -> Value {
+    serde_json::to_value(resource).unwrap_or_default()
+}
+
+/// Give `resource`, a resource of `resource_type` as JSON, its URL under
+/// `base`, and each member its URL as `$ref`.
+fn locate(resource_type: &ResourceType, resource: &mut Value, base: &str) {
+    if let Some(members) = resource.get_mut("members").and_then(Value::as_array_mut) {
         for member in members.iter_mut().filter_map(Value::as_object_mut) {
             if let Some(id) = member.get("value").and_then(Value::as_str) {
                 let url = format!("{base}{}/{id}", USERS.endpoint);
@@ -512,30 +485,38 @@ fn located<T: Serialize>(resource_type: &ResourceType, resource: &T, base: &str)
             }
         }
     }
-    if let Some(id) = value["id"].as_str().map(str::to_string) {
+    if let Some(id) = resource["id"].as_str().map(str::to_string) {
         let location = format!("{base}{}/{id}", resource_type.endpoint);
-        match value.get_mut("meta").and_then(Value::as_object_mut) {
+        match resource.get_mut("meta").and_then(Value::as_object_mut) {
             Some(meta) => {
                 meta.insert("location".into(), json!(location));
             }
             None => {
-                value["meta"] = json!({ "resourceType": resource_type.id, "location": location });
+                resource["meta"] =
+                    json!({ "resourceType": resource_type.id, "location": location });
             }
         }
     }
+}
+
+/// `resource` as JSON with its URLs under `base` ([`locate`]).
+fn located<T: Serialize>(resource_type: &ResourceType, resource: &T, base: &str) -> Value {
+    let mut value = json_of(resource);
+    locate(resource_type, &mut value, base);
     value
 }
 
-/// `current` with the attributes of `body` that a client may write: a
+/// `resource` with the attributes of `body` that a client may write: a
 /// value replaces, `null` removes, an absent attribute stays (RFC 7644,
-/// section 3.5.1, lets a server keep it). An `id` other than `id` is an
-/// error.
+/// section 3.5.1, lets a server keep it). The body needs the required
+/// attributes, `userName` or `displayName` (RFC 7643, section 2.2). An
+/// `id` other than `id` is an error.
 fn replaced(
     resource_type: &ResourceType,
-    current: Value,
+    mut resource: Map<String, Value>,
     body: Value,
     id: &str,
-) -> ScimResult<Value> {
+) -> ScimResult<Map<String, Value>> {
     let Value::Object(body) = resource_type.read(body) else {
         return Err(ScimError::bad_request(
             "invalidSyntax",
@@ -548,9 +529,6 @@ fn replaced(
             format!("A replace request needs {name}"),
         ));
     }
-    let Value::Object(mut resource) = current else {
-        return Err(Error::internal("a stored resource is not an object").into());
-    };
     for (name, value) in body {
         match name.as_str() {
             "id" => {
@@ -562,24 +540,19 @@ fn replaced(
                 }
             }
             "schemas" | "meta" => {}
-            "externalId" => set(&mut resource, name, value),
             _ => {
-                if let Some(attribute) = scim_schema::find(resource_type.attributes, &name)
-                    && attribute.mutability != scim_schema::Mutability::ReadOnly
-                {
+                if let Some(attribute) = resource_type.writable(&name) {
                     set(&mut resource, attribute.name.to_string(), value);
                 }
             }
         }
     }
-    Ok(Value::Object(resource))
+    Ok(resource)
 }
 
-/// A patch may not remove a required attribute.
-fn still_has_required(
-    resource_type: &ResourceType,
-    resource: &Map<String, Value>,
-) -> ScimResult<()> {
+/// A patch may not remove a required attribute (RFC 7644, section
+/// 3.5.2.2).
+fn has_required(resource_type: &ResourceType, resource: &Map<String, Value>) -> ScimResult<()> {
     match resource_type.missing_required(resource) {
         Some(name) => Err(ScimError::bad_request(
             "mutability",
@@ -617,57 +590,9 @@ fn object<T: Serialize>(resource: &T) -> ScimResult<Map<String, Value>> {
     }
 }
 
-/// The server's own user, which `uc-server token` signs in, is `admin`:
-/// no other user takes that name in any case, and the user keeps it and
-/// stays active.
-fn check_admin(user: &ScimUser, current: Option<&ScimUser>) -> ScimResult<()> {
-    let own = current.is_some_and(|c| c.principal() == ADMIN);
-    let names_admin = [user.user_name.trim(), user.principal().trim()]
-        .iter()
-        .any(|name| name.eq_ignore_ascii_case(ADMIN));
-    if own && user.principal().trim() != ADMIN {
-        return Err(ScimError::bad_request(
-            "mutability",
-            format!("The server's own user keeps the name {ADMIN}"),
-        ));
-    }
-    if own && !user.is_active() {
-        return Err(ScimError::bad_request(
-            "mutability",
-            format!("The server's own user {ADMIN} stays active"),
-        ));
-    }
-    if !own && names_admin {
-        return Err(ScimError {
-            scim_type: Some("uniqueness"),
-            ..ScimError::new(
-                StatusCode::CONFLICT,
-                format!("The name {ADMIN} belongs to the server's own user"),
-            )
-        });
-    }
-    Ok(())
-}
-
 async fn create_user_from(state: &AppState, body: Value) -> ScimResult<ScimUser> {
     let user = new_user(decode_new(&USERS, body)?);
-    check_admin(&user, None)?;
     Ok(state.metastore.scim().create_user(user).await?)
-}
-
-/// `change` as a change of the metastore ([`uc_metastore::Change`]): its
-/// SCIM error goes to `failure`.
-fn keeping_failure<'a, T>(
-    mut change: impl FnMut(&T) -> ScimResult<T> + Send + 'a,
-    failure: &'a mut Option<ScimError>,
-) -> impl FnMut(&T) -> uc_common::Result<T> + Send + 'a {
-    move |current| {
-        change(current).map_err(|e| {
-            let error = Error::new(e.code, e.detail.clone());
-            *failure = Some(e);
-            error
-        })
-    }
 }
 
 /// Change the user `id` with `change`, which makes the new user from the
@@ -676,25 +601,12 @@ fn keeping_failure<'a, T>(
 async fn modify_user(
     state: &AppState,
     id: &str,
-    mut change: impl FnMut(&ScimUser) -> ScimResult<ScimUser> + Send,
+    change: impl FnOnce(&ScimUser) -> ScimResult<ScimUser> + Send,
 ) -> ScimResult<ScimUser> {
-    let mut old = String::new();
-    let mut failure = None;
-    let mut checked = keeping_failure(
-        |current: &ScimUser| {
-            let user = new_user(change(current)?);
-            check_admin(&user, Some(current))?;
-            old = current.principal().to_string();
-            Ok(user)
-        },
-        &mut failure,
-    );
-    let updated = state.metastore.scim().update_user(id, &mut checked).await;
-    drop(checked);
-    let updated = match (updated, failure) {
-        (Err(_), Some(failure)) => return Err(failure),
-        (updated, _) => updated?,
-    };
+    let edit = state.metastore.scim().edit_user(id).await?;
+    let old = edit.current().principal().to_string();
+    let user = new_user(change(edit.current())?);
+    let updated = edit.save(user).await?;
     if updated.principal() != old {
         principal_changed(state, &old, updated.principal());
     }
@@ -709,9 +621,8 @@ fn principal_changed(state: &AppState, old: &str, new: &str) {
     if state.admin_principals.contains(old) {
         tracing::warn!(%old, %new, "auth.admin_principals names the old principal of a user");
     }
-    let quoted = format!("\"{old}\"");
-    for (file, text) in state.cedar_files.iter() {
-        if text.contains(&quoted) {
+    for (file, names) in state.cedar_names.iter() {
+        if names.contains(old) {
             tracing::warn!(
                 file = %file.display(), %old, %new,
                 "a Cedar policy file names the old principal of a user"
@@ -722,8 +633,8 @@ fn principal_changed(state: &AppState, old: &str, new: &str) {
 
 async fn put_user_from(state: &AppState, id: &str, body: Value) -> ScimResult<ScimUser> {
     modify_user(state, id, |current| {
-        let merged = replaced(&USERS, Value::Object(object(current)?), body.clone(), id)?;
-        decode(&USERS, merged)
+        let merged = replaced(&USERS, object(current)?, body, id)?;
+        decode(&USERS, Value::Object(merged))
     })
     .await
 }
@@ -733,7 +644,7 @@ async fn patch_user_from(state: &AppState, id: &str, body: Value) -> ScimResult<
     modify_user(state, id, |current| {
         let mut resource = object(current)?;
         scim_patch::apply(&mut resource, &USERS, &operations)?;
-        still_has_required(&USERS, &resource)?;
+        has_required(&USERS, &resource)?;
         decode(&USERS, Value::Object(resource))
     })
     .await
@@ -789,37 +700,65 @@ pub async fn list_users(
     list_users_by(&state, &base, ListQuery::from_params(&params)?).await
 }
 
-/// The term of `filter` that finds its matches by index: `id`, `name` (the
-/// name attribute of the resource type) or `externalId` equal to a text.
-fn key_term<'f>(filter: Option<&'f Filter>, name: &str) -> Option<(ScimKey, &'f str)> {
+/// The term of `filter` that the database finds its matches by: `id`, the
+/// name attribute of `resource_type`, `externalId` or a user's
+/// `displayName` equal to a text. Of several, the one that finds the
+/// fewest.
+fn key_term<'f>(
+    filter: Option<&'f Filter>,
+    resource_type: &ResourceType,
+) -> Option<(ScimKey, &'f str)> {
+    let name = match resource_type.id {
+        "User" => "userName",
+        _ => "displayName",
+    };
+    let keys = [
+        ("id", ScimKey::Id),
+        (name, ScimKey::Name),
+        ("externalId", ScimKey::ExternalId),
+        ("displayName", ScimKey::DisplayName),
+    ];
     let terms = filter?.required_texts();
-    terms.into_iter().find_map(|(attribute, text)| {
-        let key = match attribute {
-            a if a.eq_ignore_ascii_case("id") => ScimKey::Id,
-            a if a.eq_ignore_ascii_case(name) => ScimKey::Name,
-            a if a.eq_ignore_ascii_case("externalId") => ScimKey::ExternalId,
-            _ => return None,
-        };
-        Some((key, text))
+    keys.into_iter().find_map(|(attribute, key)| {
+        terms
+            .iter()
+            .find(|(a, sub, _)| sub.is_none() && a.eq_ignore_ascii_case(attribute))
+            .map(|(_, _, text)| (key, *text))
     })
 }
 
-/// The users that can match `filter`, as JSON with their URL under
-/// `base`: those of its [`key_term`], else every user.
+/// Whether no resource of `resource_type` matches `filter`: a term that
+/// every match has names an attribute that the type lacks, or another
+/// `meta.resourceType`.
+fn rules_out(filter: Option<&Filter>, resource_type: &ResourceType) -> bool {
+    let Some(filter) = filter else {
+        return false;
+    };
+    (filter.required_texts())
+        .into_iter()
+        .any(|(attribute, sub, text)| {
+            let other_type = attribute.eq_ignore_ascii_case("meta")
+                && sub.is_some_and(|sub| sub.eq_ignore_ascii_case("resourceType"))
+                && !text.eq_ignore_ascii_case(resource_type.id);
+            other_type || !resource_type.has(attribute)
+        })
+}
+
+/// The users that can match `filter`, as JSON: those of its [`key_term`],
+/// else every user.
 async fn users(
     state: &AppState,
-    base: &str,
     filter: Option<&Filter>,
 ) -> ScimResult<Vec<(&'static ResourceType, Value)>> {
+    if rules_out(filter, &USERS) {
+        return Ok(Vec::new());
+    }
     let scim = state.metastore.scim();
-    let users = match key_term(filter, "userName") {
+    let users = match key_term(filter, &USERS) {
         Some((key, text)) => scim.users_with(key, text).await?,
         None => scim.list_users(None).await?,
     };
-    Ok(users
-        .iter()
-        .map(|u| (&USERS, located(&USERS, u, base)))
-        .collect())
+    Ok(users.iter().map(|u| (&USERS, json_of(u))).collect())
 }
 
 /// A list of users. Without a filter, the metastore reads only the page.
@@ -833,8 +772,8 @@ async fn list_users_by(state: &AppState, base: &str, query: ListQuery) -> ScimRe
             .collect();
         return Ok(Scim::ok(query.list_response(total, page)));
     }
-    let users = users(state, base, query.filter.as_ref()).await?;
-    Ok(Scim::ok(query.answer(users)))
+    let users = users(state, query.filter.as_ref()).await?;
+    Ok(Scim::ok(query.answer(users, base)))
 }
 
 #[utoipa::path(
@@ -952,20 +891,8 @@ pub async fn delete_user(
     Path(id): Path<String>,
 ) -> ScimResult<StatusCode> {
     authz::require_admin(&state, &principal.username).await?;
-    delete_user_at(&state, &id).await?;
+    state.metastore.scim().delete_user(&id).await?;
     Ok(StatusCode::NO_CONTENT)
-}
-
-/// Delete the user `id`, unless it is the server's own user.
-async fn delete_user_at(state: &AppState, id: &str) -> ScimResult<()> {
-    let scim = state.metastore.scim();
-    if scim.get_user(id).await?.principal() == ADMIN {
-        return Err(ScimError::new(
-            StatusCode::FORBIDDEN,
-            format!("The server's own user {ADMIN} cannot be deleted"),
-        ));
-    }
-    Ok(scim.delete_user(id).await?)
 }
 
 /// `/scim2/Me` (RFC 7644, section 3.11): the signed-in caller's user.
@@ -1022,9 +949,9 @@ pub async fn search(
 ) -> ScimResult<Scim> {
     authz::require_admin(&state, &principal.username).await?;
     let query = ListQuery::from_search(body)?;
-    let mut resources = users(&state, &base, query.filter.as_ref()).await?;
-    resources.extend(groups(&state, &base, query.filter.as_ref()).await?);
-    Ok(Scim::ok(query.answer(resources)))
+    let mut resources = users(&state, query.filter.as_ref()).await?;
+    resources.extend(groups(&state, query.filter.as_ref()).await?);
+    Ok(Scim::ok(query.answer(resources, &base)))
 }
 
 /// The group that a client sent, as the server keeps it: no id or times.
@@ -1047,25 +974,17 @@ async fn create_group_from(state: &AppState, body: Value) -> ScimResult<ScimGrou
 async fn modify_group(
     state: &AppState,
     id: &str,
-    mut change: impl FnMut(&ScimGroup) -> ScimResult<ScimGroup> + Send,
+    change: impl FnOnce(&ScimGroup) -> ScimResult<ScimGroup> + Send,
 ) -> ScimResult<ScimGroup> {
-    let mut failure = None;
-    let mut checked = keeping_failure(
-        |current: &ScimGroup| Ok(new_group(change(current)?)),
-        &mut failure,
-    );
-    let updated = state.metastore.scim().update_group(id, &mut checked).await;
-    drop(checked);
-    match (updated, failure) {
-        (Err(_), Some(failure)) => Err(failure),
-        (updated, _) => Ok(updated?),
-    }
+    let edit = state.metastore.scim().edit_group(id).await?;
+    let group = new_group(change(edit.current())?);
+    Ok(edit.save(group).await?)
 }
 
 async fn put_group_from(state: &AppState, id: &str, body: Value) -> ScimResult<ScimGroup> {
     modify_group(state, id, |current| {
-        let merged = replaced(&GROUPS, Value::Object(object(current)?), body.clone(), id)?;
-        decode(&GROUPS, merged)
+        let merged = replaced(&GROUPS, object(current)?, body, id)?;
+        decode(&GROUPS, Value::Object(merged))
     })
     .await
 }
@@ -1075,7 +994,7 @@ async fn patch_group_from(state: &AppState, id: &str, body: Value) -> ScimResult
     modify_group(state, id, |current| {
         let mut resource = object(current)?;
         scim_patch::apply(&mut resource, &GROUPS, &operations)?;
-        still_has_required(&GROUPS, &resource)?;
+        has_required(&GROUPS, &resource)?;
         decode(&GROUPS, Value::Object(resource))
     })
     .await
@@ -1134,18 +1053,17 @@ pub async fn list_groups(
 /// The groups that can match `filter`, as [`users`] finds users.
 async fn groups(
     state: &AppState,
-    base: &str,
     filter: Option<&Filter>,
 ) -> ScimResult<Vec<(&'static ResourceType, Value)>> {
+    if rules_out(filter, &GROUPS) {
+        return Ok(Vec::new());
+    }
     let scim = state.metastore.scim();
-    let groups = match key_term(filter, "displayName") {
+    let groups = match key_term(filter, &GROUPS) {
         Some((key, text)) => scim.groups_with(key, text).await?,
         None => scim.list_groups(None).await?,
     };
-    Ok(groups
-        .iter()
-        .map(|g| (&GROUPS, located(&GROUPS, g, base)))
-        .collect())
+    Ok(groups.iter().map(|g| (&GROUPS, json_of(g))).collect())
 }
 
 /// A list of groups, as [`list_users_by`] lists users.
@@ -1159,8 +1077,8 @@ async fn list_groups_by(state: &AppState, base: &str, query: ListQuery) -> ScimR
             .collect();
         return Ok(Scim::ok(query.list_response(total, page)));
     }
-    let groups = groups(state, base, query.filter.as_ref()).await?;
-    Ok(Scim::ok(query.answer(groups)))
+    let groups = groups(state, query.filter.as_ref()).await?;
+    Ok(Scim::ok(query.answer(groups, base)))
 }
 
 #[utoipa::path(
@@ -1306,9 +1224,6 @@ pub struct ScimBulkOp {
     pub data: Option<Value>,
 }
 
-/// The most operations in a bulk request.
-const MAX_BULK_OPERATIONS: usize = 100;
-
 #[utoipa::path(
     post, path = "/scim2/Bulk",
     operation_id = "scim_bulk",
@@ -1334,8 +1249,10 @@ pub async fn bulk(
     let mut results = Vec::with_capacity(req.operations.len());
     let mut failures = 0usize;
     let mut made = HashMap::new();
+    // The batch stops at the first failure for `failOnErrors` 0 too.
+    let limit = req.fail_on_errors.map(|limit| limit.max(1));
     for mut op in req.operations {
-        if req.fail_on_errors.is_some_and(|limit| failures >= limit) {
+        if limit.is_some_and(|limit| failures >= limit) {
             break;
         }
         let mut entry = json!({ "method": op.method });
@@ -1379,9 +1296,8 @@ const BULK_ID: &str = "bulkId:";
 /// the resource that the operation `<id>` made, of `made`.
 fn resolve_bulk_ids(op: &mut ScimBulkOp, made: &HashMap<String, String>) -> ScimResult<()> {
     let resolve = |reference: &str| {
-        made.get(reference).cloned().ok_or_else(|| ScimError {
-            code: ErrorCode::InvalidArgument,
-            ..ScimError::new(
+        made.get(reference).cloned().ok_or_else(|| {
+            ScimError::new(
                 StatusCode::CONFLICT,
                 format!("No earlier operation made the resource of {BULK_ID}{reference}"),
             )
@@ -1473,7 +1389,7 @@ async fn apply_bulk_op(
             Ok((StatusCode::OK, resource(&GROUPS, id)))
         }
         ("DELETE", Some(id)) if users => {
-            delete_user_at(state, id).await?;
+            state.metastore.scim().delete_user(id).await?;
             Ok((StatusCode::NO_CONTENT, None))
         }
         ("DELETE", Some(id)) => {
@@ -1565,8 +1481,14 @@ pub async fn get_resource_type(BaseUrl(base): BaseUrl, Path(id): Path<String>) -
     responses((status = 200, description = "SCIM ServiceProviderConfig")),
     tag = "SCIM",
 )]
-pub async fn service_provider_config(BaseUrl(base): BaseUrl) -> Scim {
-    Scim::ok(scim_schema::service_provider_config(&base))
+pub async fn service_provider_config(
+    State(state): State<AppState>,
+    BaseUrl(base): BaseUrl,
+) -> Scim {
+    Scim::ok(scim_schema::service_provider_config(
+        &base,
+        state.http.max_request_length,
+    ))
 }
 
 pub fn router() -> OpenApiRouter<AppState> {

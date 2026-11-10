@@ -28,7 +28,7 @@ use uc_common::{Error, ErrorCode, Result, now_epoch_millis};
 pub const INTERNAL_ISSUER: &str = "internal";
 /// The bootstrap user: the first owner of the metastore. Only the tokens of
 /// `uc-server token` sign it in.
-pub const ADMIN: &str = "admin";
+pub use uc_metastore::ADMIN;
 /// The issuer of the signed sign-in state between `/auth/login` and
 /// `/auth/callback` (`crate::authn::sign_in`): signed with the server's key, but
 /// never a token that [`SecurityContext::verify`] accepts.
@@ -45,6 +45,11 @@ pub struct TokenClaims {
     /// `ACCESS`.
     #[serde(rename = "type")]
     pub token_type: String,
+    /// The id of the user that the token signs in, whatever principal the
+    /// user has by then. A token without it, as `uc-server token` makes,
+    /// signs in the user with the principal `sub`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
 }
 
 pub struct SecurityContext {
@@ -159,6 +164,27 @@ impl SecurityContext {
     /// Upstream `createAccessToken`: a token for `principal` that expires
     /// after `ttl`.
     pub fn create_access_token(&self, principal: &str, ttl: Duration) -> Result<String> {
+        self.sign_access_token(principal, None, ttl)
+    }
+
+    /// A token for the user with the id `user_id`, whose principal is
+    /// `principal`, that expires after `ttl`. It signs in that user only:
+    /// not a later user with the same principal.
+    pub fn create_user_token(
+        &self,
+        user_id: &str,
+        principal: &str,
+        ttl: Duration,
+    ) -> Result<String> {
+        self.sign_access_token(principal, Some(user_id), ttl)
+    }
+
+    fn sign_access_token(
+        &self,
+        principal: &str,
+        user_id: Option<&str>,
+        ttl: Duration,
+    ) -> Result<String> {
         let now = now_epoch_millis() / 1000;
         let claims = TokenClaims {
             sub: principal.to_string(),
@@ -167,6 +193,7 @@ impl SecurityContext {
             exp: now + ttl.as_secs() as i64,
             jti: Uuid::new_v4().to_string(),
             token_type: "ACCESS".to_string(),
+            uid: user_id.map(str::to_string),
         };
         jsonwebtoken::encode(&self.header(), &claims, &self.encoding)
             .map_err(|e| internal("sign token", e))
@@ -242,25 +269,7 @@ impl SecurityContext {
 /// Upstream `UnityAccessUtil.initializeAdmin`: with authorization on, the
 /// user `admin` exists and owns the metastore when it has no owner.
 pub async fn initialize_admin(metastore: &uc_metastore::DynMetastore) -> Result<()> {
-    use uc_api::scim::{ScimUser, schema_uri};
-    let scim = metastore.scim();
-    if scim.find_user_by_principal(ADMIN).await?.is_none() {
-        // No email: the user name is the principal.
-        let admin = ScimUser {
-            schemas: vec![schema_uri::USER.to_string()],
-            user_name: ADMIN.to_string(),
-            display_name: Some("Admin".to_string()),
-            active: Some(true),
-            ..Default::default()
-        };
-        // Another replica may create it at the same time.
-        match scim.create_user(admin).await {
-            Err(e) if e.code().is_already_exists() => {}
-            other => {
-                other?;
-            }
-        }
-    }
+    metastore.scim().create_admin().await?;
     let permissions = metastore.permissions();
     if permissions.metastore_owner().await?.is_none() {
         permissions.set_metastore_owner(ADMIN).await?;

@@ -168,16 +168,14 @@ impl ScimUser {
         self.active != Some(false)
     }
 
-    /// The user's name in grants and owners: the primary email, else the
-    /// first, else the user name.
+    /// The user's name in grants and owners
+    /// ([`uc_common::scim::principal`]).
     pub fn principal(&self) -> &str {
-        let emails = self.emails.as_deref().unwrap_or_default();
-        emails
-            .iter()
-            .find(|e| e.primary == Some(true))
-            .or_else(|| emails.first())
-            .map(|e| e.value.as_str())
-            .unwrap_or(&self.user_name)
+        let emails = self.emails.iter().flatten();
+        uc_common::scim::principal(
+            &self.user_name,
+            emails.map(|e| (e.value.as_str(), e.primary == Some(true))),
+        )
     }
 }
 

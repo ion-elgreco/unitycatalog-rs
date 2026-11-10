@@ -301,14 +301,12 @@ async fn a_missing_user_is_refused_unless_made_or_known_by_its_client_id() {
         .await
         .unwrap()
         .unwrap();
-    scim.update_user(old.id.as_deref().unwrap(), &mut |current| {
-        Ok(ScimUser {
-            active: Some(false),
-            ..current.clone()
-        })
-    })
-    .await
-    .unwrap();
+    let edit = scim.edit_user(old.id.as_deref().unwrap()).await.unwrap();
+    let disabled = ScimUser {
+        active: Some(false),
+        ..edit.current().clone()
+    };
+    edit.save(disabled).await.unwrap();
     let old_token = app_token(
         &idp,
         json!({ "oid": "0ld", "appid": "old-app", "azp": "old-app" }),
@@ -419,6 +417,111 @@ async fn a_person_is_named_by_the_user_name_that_scim_keeps() {
         "alice.smith@corp.example.com"
     );
     assert_eq!(metastore.scim().list_users(None).await.unwrap().len(), 1);
+}
+
+/// A deleted user is not made again at its next request, and the server's
+/// token of before signs in no later user of its email. A server token
+/// names its user by id: it follows a new email.
+#[tokio::test]
+async fn a_deleted_user_does_not_come_back_at_sign_in() {
+    let idp = Idp::start().await;
+    let (app, metastore) = app(vec![entra(&idp)], Some(Duration::ZERO)).await;
+    let scim = metastore.scim();
+    let token = idp.token(json!({ "aud": "api://uc", "email": "Bob@example.com", "oid": "b0b" }));
+    assert_eq!(
+        get(&app, "/catalogs", &token).await.status(),
+        StatusCode::OK
+    );
+    let bob = scim.find_user_by_principal("Bob@example.com").await;
+    let bob = bob.unwrap().unwrap();
+    let id = bob.id.clone().unwrap();
+    let exchanged = json_body(exchange(&app, &token).await).await;
+    let server_token = exchanged["access_token"].as_str().unwrap().to_string();
+    let claims = security().verify(&server_token).unwrap();
+    assert_eq!(
+        (claims.sub.as_str(), claims.uid.as_deref()),
+        ("Bob@example.com", Some(id.as_str()))
+    );
+
+    // A new email: the server's token still signs in the user.
+    may_create_catalogs(&metastore, "Bob@example.com").await;
+    let edit = scim.edit_user(&id).await.unwrap();
+    let moved = ScimUser {
+        emails: Some(vec![uc_api::ScimEmail {
+            value: "robert@example.com".into(),
+            primary: Some(true),
+            r#type: None,
+            display: None,
+        }]),
+        ..edit.current().clone()
+    };
+    edit.save(moved).await.unwrap();
+    assert_eq!(
+        owner_of_a_new_catalog(&app, &server_token, "roberts").await,
+        "robert@example.com"
+    );
+
+    scim.delete_user(&id).await.unwrap();
+    let not_allowed = |token: String, message: &'static str| {
+        let app = app.clone();
+        async move {
+            refused(
+                &app,
+                &token,
+                StatusCode::FORBIDDEN,
+                "PERMISSION_DENIED",
+                message,
+            )
+            .await;
+        }
+    };
+    not_allowed(server_token.clone(), "User not allowed: Bob@example.com").await;
+    // Its old email and its user name stay refused, in any case.
+    let robert =
+        idp.token(json!({ "aud": "api://uc", "email": "Robert@example.com", "oid": "b0b" }));
+    not_allowed(robert, "User not allowed").await;
+    not_allowed(token.clone(), "User not allowed").await;
+    assert!(scim.list_users(None).await.unwrap().is_empty());
+
+    // An admin makes the user again: the provider's token signs it in,
+    // the server's token of the deleted user does not.
+    user(&metastore, "bob@example.com", None).await;
+    assert_eq!(
+        get(&app, "/catalogs", &token).await.status(),
+        StatusCode::OK
+    );
+    not_allowed(server_token, "User not allowed: Bob@example.com").await;
+}
+
+/// The external id of an application's user compares with case: a client
+/// whose id differs only in case is another client.
+#[tokio::test]
+async fn client_ids_that_differ_in_case_are_not_one_user() {
+    let idp = Idp::start().await;
+    let entra = Issuer {
+        create_users: false,
+        ..entra(&idp)
+    };
+    let (app, metastore) = app(vec![entra], None).await;
+    user(&metastore, "etl@example.com", Some("entra:etl-app")).await;
+    assert_eq!(
+        get(&app, "/catalogs", &app_token(&idp, json!({})))
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    let other = app_token(
+        &idp,
+        json!({ "oid": "0th3r", "appid": "ETL-App", "azp": "ETL-App" }),
+    );
+    refused(
+        &app,
+        &other,
+        StatusCode::FORBIDDEN,
+        "PERMISSION_DENIED",
+        "User not allowed",
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -703,14 +806,12 @@ async fn accepted_tokens_are_kept_until_the_cap() {
     // The user is disabled: the token passes until the cap, then not.
     let scim = metastore.scim();
     let made = scim.get_user_by_name("entra:7f3e").await.unwrap().unwrap();
-    scim.update_user(made.id.as_deref().unwrap(), &mut |current| {
-        Ok(ScimUser {
-            active: Some(false),
-            ..current.clone()
-        })
-    })
-    .await
-    .unwrap();
+    let edit = scim.edit_user(made.id.as_deref().unwrap()).await.unwrap();
+    let disabled = ScimUser {
+        active: Some(false),
+        ..edit.current().clone()
+    };
+    edit.save(disabled).await.unwrap();
     assert_eq!(
         get(&app, "/catalogs", &token).await.status(),
         StatusCode::OK

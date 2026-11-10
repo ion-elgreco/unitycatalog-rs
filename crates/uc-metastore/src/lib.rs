@@ -43,7 +43,7 @@ pub use iceberg_table::{IcebergTableOps, IcebergTableRef, IcebergTableState};
 pub use model::ModelOps;
 pub use permissions::{Lineage, Node, PathOwner, PermissionOps};
 pub use schema::{PropertyChanges, SchemaOps};
-pub use scim::{Change, Page, ScimKey, ScimOps, SeedReport, SeedUser};
+pub use scim::{ADMIN, Edit, Page, ScimKey, ScimOps, SeedReport, SeedUser};
 pub use search::{SearchHit, SearchOps};
 pub use secrets::{CachedStore, DatabaseStore, OpenError, SecretRef, SecretStore, SecretValue};
 pub use sharing::SharingOps;
