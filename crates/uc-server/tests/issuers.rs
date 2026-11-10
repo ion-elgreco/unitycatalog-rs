@@ -167,12 +167,7 @@ async fn user(metastore: &DynMetastore, email: &str, external_id: Option<&str>) 
         .scim()
         .create_user(ScimUser {
             user_name: email.to_string(),
-            emails: Some(vec![uc_api::ScimEmail {
-                value: email.to_string(),
-                primary: Some(true),
-                r#type: None,
-                display: None,
-            }]),
+            emails: Some(vec![uc_api::ScimEmail::primary(email)]),
             external_id: external_id.map(str::to_string),
             active: Some(true),
             ..Default::default()
@@ -274,12 +269,7 @@ async fn a_user_named_by_its_subject_stays_that_user_with_an_email() {
     );
     let edit = scim.edit_user(made.id.as_deref().unwrap()).await.unwrap();
     let with_email = ScimUser {
-        emails: Some(vec![uc_api::ScimEmail {
-            value: "etl@example.com".to_string(),
-            primary: Some(true),
-            r#type: None,
-            display: None,
-        }]),
+        emails: Some(vec![uc_api::ScimEmail::primary("etl@example.com")]),
         ..edit.current().clone()
     };
     edit.save(with_email).await.unwrap();
@@ -485,12 +475,7 @@ async fn a_deleted_user_does_not_come_back_at_sign_in() {
     may_create_catalogs(&metastore, "Bob@example.com").await;
     let edit = scim.edit_user(&id).await.unwrap();
     let moved = ScimUser {
-        emails: Some(vec![uc_api::ScimEmail {
-            value: "robert@example.com".into(),
-            primary: Some(true),
-            r#type: None,
-            display: None,
-        }]),
+        emails: Some(vec![uc_api::ScimEmail::primary("robert@example.com")]),
         ..edit.current().clone()
     };
     edit.save(moved).await.unwrap();

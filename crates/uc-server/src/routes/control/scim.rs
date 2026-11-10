@@ -147,9 +147,26 @@ impl Scim {
         }
     }
 
-    /// 201 with `resource`, as [`located`] makes it, and its URL as
+    /// 200 with `resource`: its URLs are under `base` ([`located`]), and
+    /// it has the attributes that `selection` picks.
+    fn resource<T: Serialize>(
+        resource_type: &ResourceType,
+        resource: &T,
+        base: &str,
+        selection: &Selection,
+    ) -> Self {
+        Self::ok(selection.apply(resource_type, located(resource_type, resource, base)))
+    }
+
+    /// 201 with `resource`, as [`Self::resource`] gives it, and its URL as
     /// `Location`, whatever attributes `selection` picks.
-    fn created(resource_type: &ResourceType, resource: Value, selection: &Selection) -> Self {
+    fn created<T: Serialize>(
+        resource_type: &ResourceType,
+        resource: &T,
+        base: &str,
+        selection: &Selection,
+    ) -> Self {
+        let resource = located(resource_type, resource, base);
         Self {
             status: StatusCode::CREATED,
             location: resource["meta"]["location"].as_str().map(str::to_string),
@@ -317,15 +334,11 @@ pub struct Selection {
 }
 
 impl Selection {
-    fn names(text: &Option<String>) -> Vec<String> {
-        text.iter().map(String::to_string).collect()
-    }
-
     fn apply(&self, resource_type: &ResourceType, resource: Value) -> Value {
         resource_type.select(
             resource,
-            &Self::names(&self.attributes),
-            &Self::names(&self.excluded_attributes),
+            self.attributes.as_slice(),
+            self.excluded_attributes.as_slice(),
         )
     }
 }
@@ -388,8 +401,13 @@ impl ListQuery {
             params.filter.as_deref(),
             params.start_index,
             params.count,
-            Selection::names(&params.selection.attributes),
-            Selection::names(&params.selection.excluded_attributes),
+            params.selection.attributes.iter().cloned().collect(),
+            params
+                .selection
+                .excluded_attributes
+                .iter()
+                .cloned()
+                .collect(),
         )
     }
 
@@ -430,13 +448,17 @@ impl ListQuery {
         }
     }
 
-    /// The ListResponse of `resources`, each as JSON with its type:
-    /// `totalResults` counts the matches, the page holds `count` of them
-    /// from `start`. Only the page gets its URLs under `base`
-    /// ([`locate`]), unless the filter names one.
-    fn answer(&self, resources: Vec<(&'static ResourceType, Value)>, base: &str) -> Value {
-        let locate_all =
-            (self.filter.as_ref()).is_some_and(|f| f.names("$ref") || f.names("location"));
+    /// The ListResponse of those of `resources`, each as JSON with its
+    /// type, that match `filter`: `totalResults` counts the matches, the
+    /// page holds `count` of them from `start`. Only the page gets its URLs
+    /// under `base` ([`locate`]), unless the filter names one.
+    fn answer(
+        &self,
+        filter: &Filter,
+        resources: Vec<(&'static ResourceType, Value)>,
+        base: &str,
+    ) -> Value {
+        let locate_all = filter.names("$ref") || filter.names("location");
         let located = |(resource_type, mut resource): (&'static ResourceType, Value)| {
             locate(resource_type, &mut resource, base);
             (resource_type, resource)
@@ -444,11 +466,7 @@ impl ListQuery {
         let matching: Vec<(&'static ResourceType, Value)> = resources
             .into_iter()
             .map(|r| if locate_all { located(r) } else { r })
-            .filter(|(_, r)| {
-                self.filter
-                    .as_ref()
-                    .is_none_or(|f| scim_filter::matches(f, r))
-            })
+            .filter(|(_, r)| scim_filter::matches(filter, r))
             .collect();
         let total = matching.len();
         let page = matching
@@ -462,18 +480,23 @@ impl ListQuery {
 
     /// The ListResponse of `page`, of `total` matches.
     fn list_response(&self, total: usize, page: Vec<(&ResourceType, Value)>) -> Value {
-        let page: Vec<Value> = page
+        let page = page
             .into_iter()
             .map(|(rt, r)| rt.select(r, &self.attributes, &self.excluded))
             .collect();
-        json!({
-            "schemas": [schema_uri::LIST_RESPONSE],
-            "totalResults": total,
-            "startIndex": self.start,
-            "itemsPerPage": page.len(),
-            "Resources": page,
-        })
+        list_response(total, self.start, page)
     }
+}
+
+/// A ListResponse: `resources`, the page from `start` of `total` results.
+fn list_response(total: usize, start: usize, resources: Vec<Value>) -> Value {
+    json!({
+        "schemas": [schema_uri::LIST_RESPONSE],
+        "totalResults": total,
+        "startIndex": start,
+        "itemsPerPage": resources.len(),
+        "Resources": resources,
+    })
 }
 
 /// `resource` as JSON.
@@ -487,13 +510,15 @@ fn locate(resource_type: &ResourceType, resource: &mut Value, base: &str) {
     if let Some(members) = resource.get_mut("members").and_then(Value::as_array_mut) {
         for member in members.iter_mut().filter_map(Value::as_object_mut) {
             if let Some(id) = member.get("value").and_then(Value::as_str) {
-                let url = format!("{base}{}/{id}", USERS.endpoint);
+                let url = USERS.url(base, id);
                 member.insert("$ref".into(), json!(url));
             }
         }
     }
-    if let Some(id) = resource["id"].as_str().map(str::to_string) {
-        let location = format!("{base}{}/{id}", resource_type.endpoint);
+    if let Some(location) = resource["id"]
+        .as_str()
+        .map(|id| resource_type.url(base, id))
+    {
         match resource.get_mut("meta").and_then(Value::as_object_mut) {
             Some(meta) => {
                 meta.insert("location".into(), json!(location));
@@ -584,15 +609,6 @@ fn set(resource: &mut Map<String, Value>, name: String, value: Value) {
     }
 }
 
-/// The user that a client sent, as the server keeps it: no id, times or
-/// roles.
-fn new_user(mut user: ScimUser) -> ScimUser {
-    user.id = None;
-    user.meta = None;
-    user.roles = None;
-    user
-}
-
 /// `resource` as a JSON object.
 fn object<T: Serialize>(resource: &T) -> ScimResult<Map<String, Value>> {
     match serde_json::to_value(resource) {
@@ -601,8 +617,32 @@ fn object<T: Serialize>(resource: &T) -> ScimResult<Map<String, Value>> {
     }
 }
 
+/// The resource that a PUT of `body` to `id` makes of `current`
+/// ([`replaced`]).
+fn put_onto<T: Serialize + DeserializeOwned>(
+    resource_type: &ResourceType,
+    current: &T,
+    body: Value,
+    id: &str,
+) -> ScimResult<T> {
+    let merged = replaced(resource_type, object(current)?, body, id)?;
+    decode(resource_type, Value::Object(merged))
+}
+
+/// The resource that the patch `operations` make of `current`.
+fn patch_onto<T: Serialize + DeserializeOwned>(
+    resource_type: &ResourceType,
+    current: &T,
+    operations: &[ScimPatchOperation],
+) -> ScimResult<T> {
+    let mut resource = object(current)?;
+    scim_patch::apply(&mut resource, resource_type, operations)?;
+    has_required(resource_type, &resource)?;
+    decode(resource_type, Value::Object(resource))
+}
+
 async fn create_user_from(state: &AppState, body: Value) -> ScimResult<ScimUser> {
-    let user = new_user(decode_new(&USERS, body)?);
+    let user = decode_new(&USERS, body)?;
     Ok(state.metastore.scim().create_user(user).await?)
 }
 
@@ -616,7 +656,7 @@ async fn modify_user(
 ) -> ScimResult<ScimUser> {
     let edit = state.metastore.scim().edit_user(id).await?;
     let old = edit.current().principal().to_string();
-    let user = new_user(change(edit.current())?);
+    let user = change(edit.current())?;
     let updated = edit.save(user).await?;
     if updated.principal() != old {
         principal_changed(state, &old, updated.principal());
@@ -643,20 +683,13 @@ fn principal_changed(state: &AppState, old: &str, new: &str) {
 }
 
 async fn put_user_from(state: &AppState, id: &str, body: Value) -> ScimResult<ScimUser> {
-    modify_user(state, id, |current| {
-        let merged = replaced(&USERS, object(current)?, body, id)?;
-        decode(&USERS, Value::Object(merged))
-    })
-    .await
+    modify_user(state, id, |current| put_onto(&USERS, current, body, id)).await
 }
 
 async fn patch_user_from(state: &AppState, id: &str, body: Value) -> ScimResult<ScimUser> {
     let operations = patch_operations(body)?;
     modify_user(state, id, |current| {
-        let mut resource = object(current)?;
-        scim_patch::apply(&mut resource, &USERS, &operations)?;
-        has_required(&USERS, &resource)?;
-        decode(&USERS, Value::Object(resource))
+        patch_onto(&USERS, current, &operations)
     })
     .await
 }
@@ -681,11 +714,7 @@ pub async fn create_user(
 ) -> ScimResult<Scim> {
     authz::require_admin(&state, &principal.username).await?;
     let user = create_user_from(&state, body).await?;
-    Ok(Scim::created(
-        &USERS,
-        located(&USERS, &user, &base),
-        &selection,
-    ))
+    Ok(Scim::created(&USERS, &user, &base, &selection))
 }
 
 #[utoipa::path(
@@ -715,21 +744,15 @@ pub async fn list_users(
 /// name attribute of `resource_type`, `externalId` or a user's
 /// `displayName` equal to a text. Of several, the one that finds the
 /// fewest.
-fn key_term<'f>(
-    filter: Option<&'f Filter>,
-    resource_type: &ResourceType,
-) -> Option<(ScimKey, &'f str)> {
-    let name = match resource_type.id {
-        "User" => "userName",
-        _ => "displayName",
-    };
+fn key_term<'f>(filter: &'f Filter, resource_type: &ResourceType) -> Option<(ScimKey, &'f str)> {
+    let name = (resource_type.attributes.iter()).find(|a| a.unique)?.name;
     let keys = [
         ("id", ScimKey::Id),
         (name, ScimKey::Name),
         ("externalId", ScimKey::ExternalId),
         ("displayName", ScimKey::DisplayName),
     ];
-    let terms = filter?.required_texts();
+    let terms = filter.required_texts();
     keys.into_iter().find_map(|(attribute, key)| {
         terms
             .iter()
@@ -741,10 +764,7 @@ fn key_term<'f>(
 /// Whether no resource of `resource_type` matches `filter`: a term that
 /// every match has names an attribute that the type lacks, or another
 /// `meta.resourceType`.
-fn rules_out(filter: Option<&Filter>, resource_type: &ResourceType) -> bool {
-    let Some(filter) = filter else {
-        return false;
-    };
+fn rules_out(filter: &Filter, resource_type: &ResourceType) -> bool {
     (filter.required_texts())
         .into_iter()
         .any(|(attribute, sub, text)| {
@@ -759,7 +779,7 @@ fn rules_out(filter: Option<&Filter>, resource_type: &ResourceType) -> bool {
 /// else every user.
 async fn users(
     state: &AppState,
-    filter: Option<&Filter>,
+    filter: &Filter,
 ) -> ScimResult<Vec<(&'static ResourceType, Value)>> {
     if rules_out(filter, &USERS) {
         return Ok(Vec::new());
@@ -774,17 +794,17 @@ async fn users(
 
 /// A list of users. Without a filter, the metastore reads only the page.
 async fn list_users_by(state: &AppState, base: &str, query: ListQuery) -> ScimResult<Scim> {
-    if query.filter.is_none() {
+    let Some(filter) = &query.filter else {
         let scim = state.metastore.scim();
-        let total = scim.count_users().await?;
-        let users = scim.list_users(Some(query.page())).await?;
+        let (total, users) =
+            tokio::try_join!(scim.count_users(), scim.list_users(Some(query.page())))?;
         let page = (users.iter())
             .map(|u| (&USERS, located(&USERS, u, base)))
             .collect();
         return Ok(Scim::ok(query.list_response(total, page)));
-    }
-    let users = users(state, query.filter.as_ref()).await?;
-    Ok(Scim::ok(query.answer(users, base)))
+    };
+    let users = users(state, filter).await?;
+    Ok(Scim::ok(query.answer(filter, users, base)))
 }
 
 #[utoipa::path(
@@ -826,9 +846,7 @@ pub async fn get_user(
 ) -> ScimResult<Scim> {
     authz::require_admin(&state, &principal.username).await?;
     let user = state.metastore.scim().get_user(&id).await?;
-    Ok(Scim::ok(
-        selection.apply(&USERS, located(&USERS, &user, &base)),
-    ))
+    Ok(Scim::resource(&USERS, &user, &base, &selection))
 }
 
 #[utoipa::path(
@@ -854,9 +872,7 @@ pub async fn put_user(
 ) -> ScimResult<Scim> {
     authz::require_admin(&state, &principal.username).await?;
     let user = put_user_from(&state, &id, body).await?;
-    Ok(Scim::ok(
-        selection.apply(&USERS, located(&USERS, &user, &base)),
-    ))
+    Ok(Scim::resource(&USERS, &user, &base, &selection))
 }
 
 #[utoipa::path(
@@ -881,9 +897,7 @@ pub async fn patch_user(
 ) -> ScimResult<Scim> {
     authz::require_admin(&state, &principal.username).await?;
     let user = patch_user_from(&state, &id, body).await?;
-    Ok(Scim::ok(
-        selection.apply(&USERS, located(&USERS, &user, &base)),
-    ))
+    Ok(Scim::resource(&USERS, &user, &base, &selection))
 }
 
 #[utoipa::path(
@@ -930,13 +944,12 @@ pub async fn me(
     let Some(caller) = principal.actor() else {
         return Err(ScimError::new(StatusCode::BAD_REQUEST, "No user found."));
     };
-    let mut user = state
-        .metastore
-        .scim()
-        .find_user_by_principal(caller)
-        .await?
-        .ok_or_else(|| Error::not_found(format!("User not found: {caller}")))?;
-    if authz::is_admin(&state, caller).await? {
+    let (user, admin) = tokio::try_join!(
+        state.metastore.scim().find_user_by_principal(caller),
+        authz::is_admin(&state, caller),
+    )?;
+    let mut user = user.ok_or_else(|| Error::not_found(format!("User not found: {caller}")))?;
+    if admin {
         user.roles = Some(vec![ScimRole {
             value: ScimRole::ADMIN.into(),
         }]);
@@ -960,13 +973,16 @@ pub async fn search(
 ) -> ScimResult<Scim> {
     authz::require_admin(&state, &principal.username).await?;
     let query = ListQuery::from_search(body)?;
-    if query.filter.is_none() {
+    let Some(filter) = &query.filter else {
         // The users, then the groups: the metastore reads only the page.
         let scim = state.metastore.scim();
-        let (users, groups) = (scim.count_users().await?, scim.count_groups().await?);
         let Page { offset, limit } = query.page();
-        let mut page: Vec<(&ResourceType, Value)> = (scim.list_users(Some(query.page())).await?)
-            .iter()
+        let (users, groups, first) = tokio::try_join!(
+            scim.count_users(),
+            scim.count_groups(),
+            scim.list_users(Some(query.page())),
+        )?;
+        let mut page: Vec<(&ResourceType, Value)> = (first.iter())
             .map(|u| (&USERS, located(&USERS, u, &base)))
             .collect();
         let rest = Page {
@@ -978,26 +994,15 @@ pub async fn search(
             page.extend(groups.iter().map(|g| (&GROUPS, located(&GROUPS, g, &base))));
         }
         return Ok(Scim::ok(query.list_response(users + groups, page)));
-    }
-    let mut resources = users(&state, query.filter.as_ref()).await?;
-    resources.extend(groups(&state, query.filter.as_ref()).await?);
-    Ok(Scim::ok(query.answer(resources, &base)))
-}
-
-/// The group that a client sent, as the server keeps it: no id or times.
-fn new_group(mut group: ScimGroup) -> ScimGroup {
-    group.id = None;
-    group.meta = None;
-    group
+    };
+    let mut resources = users(&state, filter).await?;
+    resources.extend(groups(&state, filter).await?);
+    Ok(Scim::ok(query.answer(filter, resources, &base)))
 }
 
 async fn create_group_from(state: &AppState, body: Value) -> ScimResult<ScimGroup> {
-    let group: ScimGroup = decode_new(&GROUPS, body)?;
-    Ok(state
-        .metastore
-        .scim()
-        .create_group(new_group(group))
-        .await?)
+    let group = decode_new(&GROUPS, body)?;
+    Ok(state.metastore.scim().create_group(group).await?)
 }
 
 /// Change the group `id` with `change`, as [`modify_user`] does a user.
@@ -1007,25 +1012,18 @@ async fn modify_group(
     change: impl FnOnce(&ScimGroup) -> ScimResult<ScimGroup> + Send,
 ) -> ScimResult<ScimGroup> {
     let edit = state.metastore.scim().edit_group(id).await?;
-    let group = new_group(change(edit.current())?);
+    let group = change(edit.current())?;
     Ok(edit.save(group).await?)
 }
 
 async fn put_group_from(state: &AppState, id: &str, body: Value) -> ScimResult<ScimGroup> {
-    modify_group(state, id, |current| {
-        let merged = replaced(&GROUPS, object(current)?, body, id)?;
-        decode(&GROUPS, Value::Object(merged))
-    })
-    .await
+    modify_group(state, id, |current| put_onto(&GROUPS, current, body, id)).await
 }
 
 async fn patch_group_from(state: &AppState, id: &str, body: Value) -> ScimResult<ScimGroup> {
     let operations = patch_operations(body)?;
     modify_group(state, id, |current| {
-        let mut resource = object(current)?;
-        scim_patch::apply(&mut resource, &GROUPS, &operations)?;
-        has_required(&GROUPS, &resource)?;
-        decode(&GROUPS, Value::Object(resource))
+        patch_onto(&GROUPS, current, &operations)
     })
     .await
 }
@@ -1050,11 +1048,7 @@ pub async fn create_group(
 ) -> ScimResult<Scim> {
     authz::require_admin(&state, &principal.username).await?;
     let group = create_group_from(&state, body).await?;
-    Ok(Scim::created(
-        &GROUPS,
-        located(&GROUPS, &group, &base),
-        &selection,
-    ))
+    Ok(Scim::created(&GROUPS, &group, &base, &selection))
 }
 
 #[utoipa::path(
@@ -1083,7 +1077,7 @@ pub async fn list_groups(
 /// The groups that can match `filter`, as [`users`] finds users.
 async fn groups(
     state: &AppState,
-    filter: Option<&Filter>,
+    filter: &Filter,
 ) -> ScimResult<Vec<(&'static ResourceType, Value)>> {
     if rules_out(filter, &GROUPS) {
         return Ok(Vec::new());
@@ -1098,17 +1092,17 @@ async fn groups(
 
 /// A list of groups, as [`list_users_by`] lists users.
 async fn list_groups_by(state: &AppState, base: &str, query: ListQuery) -> ScimResult<Scim> {
-    if query.filter.is_none() {
+    let Some(filter) = &query.filter else {
         let scim = state.metastore.scim();
-        let total = scim.count_groups().await?;
-        let groups = scim.list_groups(Some(query.page())).await?;
+        let (total, groups) =
+            tokio::try_join!(scim.count_groups(), scim.list_groups(Some(query.page())))?;
         let page = (groups.iter())
             .map(|g| (&GROUPS, located(&GROUPS, g, base)))
             .collect();
         return Ok(Scim::ok(query.list_response(total, page)));
-    }
-    let groups = groups(state, query.filter.as_ref()).await?;
-    Ok(Scim::ok(query.answer(groups, base)))
+    };
+    let groups = groups(state, filter).await?;
+    Ok(Scim::ok(query.answer(filter, groups, base)))
 }
 
 #[utoipa::path(
@@ -1150,9 +1144,7 @@ pub async fn get_group(
 ) -> ScimResult<Scim> {
     authz::require_admin(&state, &principal.username).await?;
     let group = state.metastore.scim().get_group(&id).await?;
-    Ok(Scim::ok(
-        selection.apply(&GROUPS, located(&GROUPS, &group, &base)),
-    ))
+    Ok(Scim::resource(&GROUPS, &group, &base, &selection))
 }
 
 #[utoipa::path(
@@ -1176,9 +1168,7 @@ pub async fn put_group(
 ) -> ScimResult<Scim> {
     authz::require_admin(&state, &principal.username).await?;
     let group = put_group_from(&state, &id, body).await?;
-    Ok(Scim::ok(
-        selection.apply(&GROUPS, located(&GROUPS, &group, &base)),
-    ))
+    Ok(Scim::resource(&GROUPS, &group, &base, &selection))
 }
 
 #[utoipa::path(
@@ -1203,9 +1193,7 @@ pub async fn patch_group(
 ) -> ScimResult<Scim> {
     authz::require_admin(&state, &principal.username).await?;
     let group = patch_group_from(&state, &id, body).await?;
-    Ok(Scim::ok(
-        selection.apply(&GROUPS, located(&GROUPS, &group, &base)),
-    ))
+    Ok(Scim::resource(&GROUPS, &group, &base, &selection))
 }
 
 #[utoipa::path(
@@ -1297,7 +1285,7 @@ pub async fn bulk(
             Ok((status, resource)) => {
                 entry["status"] = json!(status.as_u16().to_string());
                 if let Some((resource_type, id)) = resource {
-                    entry["location"] = json!(format!("{base}{}/{id}", resource_type.endpoint));
+                    entry["location"] = json!(resource_type.url(&base, &id));
                     if status == StatusCode::CREATED
                         && let Some(bulk_id) = &op.bulk_id
                     {
@@ -1466,13 +1454,7 @@ async fn apply_bulk_op(
 
 /// `resources` as a ListResponse.
 fn discovery_list(resources: Vec<Value>) -> Value {
-    json!({
-        "schemas": [schema_uri::LIST_RESPONSE],
-        "totalResults": resources.len(),
-        "startIndex": 1,
-        "itemsPerPage": resources.len(),
-        "Resources": resources,
-    })
+    list_response(resources.len(), 1, resources)
 }
 
 #[utoipa::path(get, path = "/scim2/Schemas",

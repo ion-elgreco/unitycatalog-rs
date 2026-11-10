@@ -75,6 +75,18 @@ pub struct ScimEmail {
     pub display: Option<String>,
 }
 
+impl ScimEmail {
+    /// The primary email `value`.
+    pub fn primary(value: impl Into<String>) -> Self {
+        Self {
+            value: value.into(),
+            primary: Some(true),
+            r#type: None,
+            display: None,
+        }
+    }
+}
+
 /// The parts of a user's name (RFC 7643, section 4.1.1).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ScimName {

@@ -502,7 +502,7 @@ pub(crate) async fn apply_permission_change<E: Exec + ?Sized>(
 }
 
 /// Remove every grant of `principal`, in `ex`.
-pub(crate) async fn clear_principal<E: Exec + ?Sized>(ex: &E, principal: &str) -> Result<()> {
+async fn clear_principal<E: Exec + ?Sized>(ex: &E, principal: &str) -> Result<()> {
     ex.execute(
         "DELETE FROM permission WHERE principal = $1",
         &[principal.into()],

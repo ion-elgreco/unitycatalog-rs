@@ -174,12 +174,7 @@ async fn signed_in_server() -> (String, String) {
     uc_metastore::Metastore::scim(&*metastore)
         .create_user(uc_api::ScimUser {
             user_name: "alice@example.com".into(),
-            emails: Some(vec![uc_api::ScimEmail {
-                value: "alice@example.com".into(),
-                primary: Some(true),
-                r#type: None,
-                display: None,
-            }]),
+            emails: Some(vec![uc_api::ScimEmail::primary("alice@example.com")]),
             active: Some(true),
             ..Default::default()
         })

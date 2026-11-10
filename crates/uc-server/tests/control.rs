@@ -75,12 +75,7 @@ async fn user(metastore: &DynMetastore, email: &str, external_id: Option<&str>, 
         .create_user(uc_api::ScimUser {
             schemas: vec![],
             user_name: email.to_string(),
-            emails: Some(vec![uc_api::ScimEmail {
-                value: email.to_string(),
-                primary: Some(true),
-                r#type: None,
-                display: None,
-            }]),
+            emails: Some(vec![uc_api::ScimEmail::primary(email)]),
             external_id: external_id.map(str::to_string),
             active: Some(active),
             ..Default::default()
@@ -557,12 +552,7 @@ async fn the_upstream_ui_signs_in_with_a_cookie() {
         .create_user(uc_api::ScimUser {
             user_name: "alice@example.com".into(),
             display_name: Some("Alice Liddell".into()),
-            emails: Some(vec![uc_api::ScimEmail {
-                value: "alice@example.com".into(),
-                primary: Some(true),
-                r#type: None,
-                display: None,
-            }]),
+            emails: Some(vec![uc_api::ScimEmail::primary("alice@example.com")]),
             active: Some(true),
             ..Default::default()
         })

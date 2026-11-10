@@ -210,12 +210,7 @@ async fn a_missing_user_is_refused_unless_made_or_known() {
     (metastore.scim())
         .create_user(ScimUser {
             user_name: "etl@example.com".into(),
-            emails: Some(vec![uc_api::ScimEmail {
-                value: "etl@example.com".into(),
-                primary: Some(true),
-                r#type: None,
-                display: None,
-            }]),
+            emails: Some(vec![uc_api::ScimEmail::primary("etl@example.com")]),
             external_id: Some(ETL.into()),
             active: Some(true),
             ..Default::default()

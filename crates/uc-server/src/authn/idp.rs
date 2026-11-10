@@ -495,7 +495,6 @@ pub(crate) async fn resolve(
     kind: TokenKind,
 ) -> Result<Named> {
     let scim = state.metastore.scim();
-    let not_allowed = || Error::invalid_argument("User not allowed");
     // The principal of a user that is missing: (name, whether an email).
     let mut candidate: Option<(String, bool)> = None;
     for name in &issuer.principal_claims {
@@ -511,11 +510,7 @@ pub(crate) async fn resolve(
             true => value.to_string(),
             false => format!("{}:{value}", issuer.name),
         };
-        let found = match is_email {
-            true => user_of_email(state, issuer, &principal).await?,
-            false => scim.find_user_named(&principal).await?,
-        };
-        if let Some(user) = found {
+        if let Some(user) = user_of(state, issuer, &principal, is_email).await? {
             return assumable(user).ok_or_else(not_allowed);
         }
         candidate = Some((principal, is_email));
@@ -535,21 +530,27 @@ pub(crate) async fn resolve(
     }
 }
 
-/// The user with the principal `email` in any case, else the user with
-/// the user name `email` (`ScimOps::find_user_named`): SCIM keeps an
-/// identity provider's user name, which can differ from the user's email.
-/// Only an issuer without `*` names users by user name: that is the
+fn not_allowed() -> Error {
+    Error::invalid_argument("User not allowed")
+}
+
+/// The user that `name`, the principal that a token of `issuer` gives,
+/// names: the user with that principal in any case, else the user with
+/// that user name (`ScimOps::find_user_named`). SCIM keeps an identity
+/// provider's user name, which can differ from the user's email. Only an
+/// issuer without `*` names users by user name with an email: that is the
 /// provider that the admin trusts with its users' names, while anyone can
 /// make an issuer that `*` matches.
-async fn user_of_email(
+async fn user_of(
     state: &AppState,
     issuer: &IssuerSettings,
-    email: &str,
+    name: &str,
+    is_email: bool,
 ) -> Result<Option<ScimUser>> {
     let scim = state.metastore.scim();
-    match issuer.issuer.contains('*') {
-        true => scim.find_user_by_principal_any_case(email).await,
-        false => scim.find_user_named(email).await,
+    match is_email && issuer.issuer.contains('*') {
+        true => scim.find_user_by_principal_any_case(name).await,
+        false => scim.find_user_named(name).await,
     }
 }
 
@@ -614,18 +615,10 @@ async fn create(
         user_name: principal.clone(),
         display_name: Some(display_name),
         external_id,
-        emails: is_email.then(|| {
-            vec![ScimEmail {
-                value: principal.clone(),
-                primary: Some(true),
-                r#type: None,
-                display: None,
-            }]
-        }),
+        emails: is_email.then(|| vec![ScimEmail::primary(principal.clone())]),
         active: Some(true),
         ..Default::default()
     };
-    let not_allowed = || Error::invalid_argument("User not allowed");
     match scim.create_user_at_sign_in(user).await {
         Ok(Some(user)) => {
             tracing::info!(%principal, issuer = %issuer.name, "made the user at its first request");
@@ -640,10 +633,7 @@ async fn create(
         }
         // Another request, or another replica, made it first.
         Err(e) if e.code().is_already_exists() => {
-            let user = match is_email {
-                true => user_of_email(state, issuer, &principal).await?,
-                false => scim.find_user_named(&principal).await?,
-            };
+            let user = user_of(state, issuer, &principal, is_email).await?;
             user.and_then(assumable).ok_or_else(not_allowed)
         }
         Err(e) => Err(e),
