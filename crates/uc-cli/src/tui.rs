@@ -2251,7 +2251,8 @@ mod tests {
 
     /// An app whose server does not answer, for what needs none.
     fn offline() -> App {
-        app("http://127.0.0.1:9")
+        let url = format!("http://127.0.0.1:9{API_BASE}/");
+        App::new(config::client_without_retries(&url).unwrap(), url, None)
     }
 
     fn press(app: &mut App, code: KeyCode) {
