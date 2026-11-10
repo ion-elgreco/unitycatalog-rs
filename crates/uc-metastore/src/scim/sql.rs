@@ -85,7 +85,13 @@ fn non_empty<T>(items: Option<Vec<T>>) -> Option<Vec<T>> {
     items.filter(|items| !items.is_empty())
 }
 
-/// The row of `user`, with its user name and emails trimmed.
+/// `id`, or none when empty: the unique index would let one user have it.
+fn external_id(id: Option<String>) -> Option<String> {
+    id.filter(|id| !id.is_empty())
+}
+
+/// The row of `user`, with its user name and emails trimmed, and without
+/// its blank emails.
 fn user_to_row(
     mut user: ScimUser,
     id: String,
@@ -95,6 +101,9 @@ fn user_to_row(
     user.user_name = user.user_name.trim().to_string();
     for email in user.emails.iter_mut().flatten() {
         email.value = email.value.trim().to_string();
+    }
+    if let Some(emails) = user.emails.as_mut() {
+        emails.retain(|email| !email.value.is_empty());
     }
     let principal = user.principal().to_string();
     let user_name = match user.user_name.is_empty() {
@@ -107,7 +116,7 @@ fn user_to_row(
         principal,
         name: user.name.filter(|name| *name != ScimName::default()),
         display_name: user.display_name,
-        external_id: user.external_id,
+        external_id: external_id(user.external_id),
         emails: non_empty(user.emails),
         active: user.active,
         photos: non_empty(user.photos),
@@ -143,13 +152,13 @@ impl From<ScimGroupRow> for ScimGroup {
     }
 }
 
+/// The row of `group`, with its name trimmed and one entry per member.
 fn group_to_row(
     group: ScimGroup,
     id: String,
     created_at: Option<i64>,
     updated_at: Option<i64>,
 ) -> ScimGroupRow {
-    // One entry per user.
     let mut seen = BTreeSet::new();
     let members: Vec<ScimGroupMember> = group
         .members
@@ -159,8 +168,8 @@ fn group_to_row(
         .collect();
     ScimGroupRow {
         id_string: id,
-        display_name: group.display_name,
-        external_id: group.external_id,
+        display_name: group.display_name.trim().to_string(),
+        external_id: external_id(group.external_id),
         members: non_empty(Some(members)),
         created_at,
         updated_at,
@@ -394,10 +403,12 @@ async fn user_named<E: Exec + ?Sized>(
         return Ok(Some(user));
     }
     let mut any_case = find(SAME_PRINCIPAL_ANY_CASE, " LIMIT 2").await?;
-    if any_case.len() == 1 {
-        return Ok(any_case.pop());
+    match any_case.len() {
+        0 => Ok(find(SAME_USER_NAME, "").await?.pop()),
+        1 => Ok(any_case.pop()),
+        // Two users have the principal in other cases: it names neither.
+        _ => Ok(None),
     }
-    Ok(find(SAME_USER_NAME, "").await?.pop())
 }
 
 /// The name in grants that `name` stands for, in `tx`: a user's principal,
@@ -450,10 +461,13 @@ async fn others<E: Exec + ?Sized>(
     .await
 }
 
-/// Check `row` against the other users and the groups: its user name,
-/// principal and external id belong to no other user (`was` is the row
-/// before an update), and no group has the principal as name. A new
-/// principal locks the names ([`lock_names`]).
+/// Check `row` against the other users and the groups (`was` is the row
+/// before an update): its user name and external id belong to no other
+/// user, and its principal to no other user or group. A name finds a user
+/// by principal, then by user name ([`ScimOps::find_user_named`]), so no
+/// user has the principal of another as user name, or the user name of
+/// another as principal, in any case: the name would find the other user.
+/// A new user name or principal locks the names ([`lock_names`]).
 async fn check_user<E: Exec + ?Sized>(
     ex: &E,
     row: &ScimUserRow,
@@ -462,27 +476,25 @@ async fn check_user<E: Exec + ?Sized>(
     require_non_empty("principal", &row.principal)?;
     require_non_empty("userName", &row.user_name)?;
     let id = row.id_string.as_str();
-    if was.is_none_or(|w| !w.user_name.eq_ignore_ascii_case(&row.user_name))
-        && !others(ex, SAME_USER_NAME, &row.user_name, id)
-            .await?
-            .is_empty()
-    {
-        return Err(Error::already_exists(format!(
-            "User already exists: {}",
-            row.user_name
-        )));
-    }
-    if was.is_none_or(|w| w.principal != row.principal) {
-        if !others(ex, SAME_PRINCIPAL, &row.principal, id)
-            .await?
-            .is_empty()
-        {
-            return Err(Error::already_exists(format!(
-                "User already exists: {}",
-                row.principal
-            )));
-        }
+    let taken = |name: &str| Error::already_exists(format!("User already exists: {name}"));
+    let new_user_name = was.is_none_or(|w| !w.user_name.eq_ignore_ascii_case(&row.user_name));
+    let new_principal = was.is_none_or(|w| w.principal != row.principal);
+    if new_user_name || new_principal {
         lock_names(ex).await?;
+    }
+    if new_user_name {
+        for same in [SAME_USER_NAME, SAME_PRINCIPAL_ANY_CASE] {
+            if !others(ex, same, &row.user_name, id).await?.is_empty() {
+                return Err(taken(&row.user_name));
+            }
+        }
+    }
+    if new_principal {
+        for same in [SAME_PRINCIPAL, SAME_USER_NAME] {
+            if !others(ex, same, &row.principal, id).await?.is_empty() {
+                return Err(taken(&row.principal));
+            }
+        }
         require_no_group(ex, &row.principal).await?;
     }
     if let Some(external_id) = row.external_id.as_deref()
@@ -632,13 +644,13 @@ impl Edit<ScimGroup> for GroupEdit {
     async fn save(self: Box<Self>, new: ScimGroup) -> Result<ScimGroup> {
         let GroupEdit { tx, stored, .. } = *self;
         let failed = db_err("update group");
-        require_non_empty("displayName", &new.display_name)?;
         let row = group_to_row(
             new,
             stored.id_string.clone(),
             stored.created_at,
             Some(now_epoch_millis()),
         );
+        require_non_empty("displayName", &row.display_name)?;
         let renamed = stored.display_name != row.display_name;
         if renamed && is_admin(&row.display_name) {
             return Err(admin_name_taken());
@@ -702,11 +714,17 @@ impl ScimOps for SqlMetastore {
         if self.find_user_by_principal(ADMIN).await?.is_some() {
             return Ok(());
         }
-        // No email: the user name is the principal.
+        // Upstream's clients read the first email of each user.
         let row = new_user_row(ScimUser {
             schemas: vec![schema_uri::USER.to_string()],
             user_name: ADMIN.to_string(),
             display_name: Some("Admin".to_string()),
+            emails: Some(vec![ScimEmail {
+                value: ADMIN.to_string(),
+                primary: Some(true),
+                r#type: None,
+                display: None,
+            }]),
             ..Default::default()
         });
         match self.insert_user(row, false).await {
@@ -893,7 +911,10 @@ impl ScimOps for SqlMetastore {
                     };
                     let row = new_user_row(user);
                     check_admin(&row, None)?;
-                    forget_deleted(tx.as_ref(), &row).await?;
+                    if was_deleted(tx.as_ref(), &row).await? {
+                        report.deleted.push(row.principal);
+                        continue;
+                    }
                     check_user(tx.as_ref(), &row, None).await?;
                     insert(tx.as_ref(), &SCIM_USER, &row)
                         .await

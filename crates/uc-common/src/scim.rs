@@ -2,13 +2,16 @@
 
 /// A user's name in grants and owners: its primary email, else its first
 /// email, else its user name. `emails` gives each email with whether it is
-/// the primary one.
+/// the primary one; a blank email does not count.
 pub fn principal<'a>(
     user_name: &'a str,
     emails: impl IntoIterator<Item = (&'a str, bool)>,
 ) -> &'a str {
     let mut first = None;
     for (email, primary) in emails {
+        if email.trim().is_empty() {
+            continue;
+        }
         if primary {
             return email;
         }
@@ -26,5 +29,7 @@ mod tests {
         assert_eq!(principal("u", [("a@x", false), ("b@x", true)]), "b@x");
         assert_eq!(principal("u", [("a@x", false), ("b@x", false)]), "a@x");
         assert_eq!(principal("u", []), "u");
+        assert_eq!(principal("u", [(" ", true)]), "u");
+        assert_eq!(principal("u", [("", true), ("a@x", false)]), "a@x");
     }
 }

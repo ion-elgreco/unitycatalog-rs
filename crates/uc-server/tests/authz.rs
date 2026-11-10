@@ -1341,6 +1341,40 @@ async fn users_of_the_settings() {
     );
 }
 
+/// A deleted user of the settings stays deleted at the next start, until
+/// an admin makes it again.
+#[tokio::test]
+async fn a_deleted_user_of_the_settings_is_not_made_again() {
+    use uc_server::authn::bootstrap;
+
+    let (_app, metastore) = common::signed_in_app().await;
+    let text = "[[auth.users]]\nemail = \"alice@example.com\"\nprivileges = [\"CREATE CATALOG\"]";
+    let auth = uc_common::settings::Settings::from_toml(text).unwrap().auth;
+    let seeds = bootstrap::seed_users(&auth).unwrap();
+    bootstrap::seed(&metastore, &seeds).await.unwrap();
+    let scim = metastore.scim();
+    let find = || scim.find_user_by_principal("alice@example.com");
+    let alice = find().await.unwrap().unwrap();
+    scim.delete_user(alice.id.as_deref().unwrap())
+        .await
+        .unwrap();
+
+    let report = bootstrap::seed(&metastore, &seeds).await.unwrap();
+    assert_eq!((report.created, report.granted), (0, 0));
+    assert_eq!(report.deleted, ["alice@example.com"]);
+    assert!(find().await.unwrap().is_none());
+
+    scim.create_user(uc_api::ScimUser {
+        user_name: "alice@example.com".into(),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    let report = bootstrap::seed(&metastore, &seeds).await.unwrap();
+    assert_eq!((report.created, report.granted), (0, 1));
+    assert!(report.deleted.is_empty());
+}
+
 /// An identity provider can change the email of a user of the settings:
 /// the next start finds the user by its user name, and grants to its new
 /// email.

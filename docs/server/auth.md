@@ -67,7 +67,9 @@ To end all sign-ins at once, replace the file with a file that has only a new ke
 
 At each start, the server makes the users of `[[auth.users]]` and `admin_principals` that are
 missing. It grants the missing `privileges` of `[[auth.users]]` on the metastore. It never changes
-or deletes a user that exists. The users of `admin_principals` are admins.
+or deletes a user that exists. The users of `admin_principals` are admins. A user that was
+deleted through SCIM stays deleted: the server logs a warning at each start, until an admin
+creates the user again or the entry leaves the settings.
 
 ```toml
 [[auth.users]]

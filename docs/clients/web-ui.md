@@ -82,7 +82,8 @@ groups and audit log:
   the external locations bound to it.
 - **External locations**: a URL in cloud storage and its credential. See
   [Cloud storage](../server/cloud-storage.md).
-- **Users**: create a user by email; **Delete** deactivates the user.
+- **Users**: create a user by email; **Delete** deletes the user, with its grants, access tokens
+  and group memberships.
 - **Groups**: create a group, then add and remove its members on its page.
 - **Audit log**: the calls that changed the catalog, with a filter by principal, method, path and
   time. A signed-in admin sees it.

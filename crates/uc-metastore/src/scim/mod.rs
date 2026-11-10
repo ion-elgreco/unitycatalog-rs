@@ -18,12 +18,15 @@ pub struct SeedUser {
 }
 
 /// What [`ScimOps::seed_users`] changed.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SeedReport {
     /// The users it made.
     pub created: usize,
     /// The privileges it granted.
     pub granted: usize,
+    /// The users it did not make, as they were deleted: only an admin makes
+    /// a deleted user again.
+    pub deleted: Vec<String>,
 }
 
 /// The server's own user, the first owner of the metastore, which
