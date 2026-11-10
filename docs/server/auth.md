@@ -441,10 +441,12 @@ keeps each provider to its own groups.
 - It checks the signature with the provider's keys, and the issuer, audience and times, with
   60 seconds of clock skew. A token without `exp` is refused.
 - It fetches a provider's keys once an hour, and never more than once a minute. When the provider
-  does not answer, or answers without keys, it keeps the keys it has.
+  does not answer, or its answer is not a key set, it keeps the keys it has. A key set without
+  keys withdraws them.
 - For an `issuer` with `*`, it fetches keys for new issuers until 20 of them had none in a
-  minute. So tokens with made-up issuers cannot make it call out for each one. While such tokens
-  arrive, a new issuer can get HTTP 503 until the next minute.
+  minute, and for at most 200 new issuers in a minute. So tokens with made-up issuers cannot make
+  it call out for each one. While such tokens arrive, a new issuer can get HTTP 500 until the
+  next minute.
 - It keeps a token from a `direct` block until the token expires, for at most five minutes. A busy
   client then costs one check per token, not one per request. A user disabled in the server can
   still make requests for that time.
@@ -517,7 +519,9 @@ forward_logout_url = "https://auth.example.com/logout"
 ```
 
 The server reads the email from `Remote-Email`, else the user from `Remote-User`. It reads these
-headers only on connections from `forward_trusted_proxies`.
+headers only on connections from `forward_trusted_proxies`. A header that has more than one value,
+in several lines or with a `,` between, names nobody: the proxy must replace the client's value,
+not add to it.
 
 #### Envoy Gateway
 

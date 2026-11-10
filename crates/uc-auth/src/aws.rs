@@ -22,14 +22,14 @@
 //! The caller is named by the ARN, an assumed role by its role
 //! (`arn:aws:iam::<account>:role/<name>`, without the role's path), so each
 //! session is not a caller of its own. The identity is kept until the
-//! signed request expires. A value that STS refused is refused for
-//! [`REFUSED_TTL`] without a call.
+//! signed request expires. A value that STS refused, or whose caller no
+//! provider takes, is refused for [`REFUSED_TTL`] without a call.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use axum::http::{HeaderName, HeaderValue};
+use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{NaiveDateTime, Utc};
 use moka::future::Cache;
@@ -51,7 +51,7 @@ pub const LEEWAY: Duration = Duration::from_secs(60);
 /// regional ones. The `*` is a region only: other AWS services have hosts of
 /// this shape (`sts.s3.amazonaws.com` is a bucket).
 pub const STS_ENDPOINTS: [&str; 2] = ["https://sts.amazonaws.com", "https://sts.*.amazonaws.com"];
-/// How long a value that STS refused is refused without a call.
+/// How long a refused value is refused without a call.
 pub const REFUSED_TTL: Duration = Duration::from_secs(60);
 /// The most refused values that are remembered.
 const MAX_REFUSED: u64 = 10_000;
@@ -124,7 +124,8 @@ pub struct AwsResolver {
     providers: Vec<AwsProvider>,
     http: reqwest::Client,
     transport: Box<dyn Transport>,
-    /// Why STS refused a value, by the hash of the value.
+    /// Why a value was refused after a call to STS, by the hash of the
+    /// value.
     refused: Cache<[u8; 32], String>,
 }
 
@@ -212,45 +213,40 @@ impl AwsResolver {
         }
         let left = (ttl - age).to_std().unwrap_or_default();
         // Only the headers of the signature go to STS.
-        let headers: BTreeMap<String, String> = headers
-            .into_iter()
-            .filter(|(name, _)| {
-                name == "authorization"
-                    || name == "content-type"
-                    || name == header
-                    || name.starts_with("x-amz-")
-            })
-            .collect();
-        for (name, value) in &headers {
-            if HeaderName::from_bytes(name.as_bytes()).is_err() {
-                return Err(format!("not a header name: {name:?}"));
+        let mut sent = HeaderMap::new();
+        for (name, value) in headers {
+            if name != "authorization"
+                && name != "content-type"
+                && name != header
+                && !name.starts_with("x-amz-")
+            {
+                continue;
             }
-            if HeaderValue::from_str(value).is_err() {
-                return Err(format!("not a value of header {name}"));
-            }
+            let value =
+                HeaderValue::from_str(&value).map_err(|_| format!("not a value of header {name}"));
+            let name = HeaderName::from_bytes(name.as_bytes())
+                .map_err(|_| format!("not a header name: {name:?}"))?;
+            sent.insert(name, value?);
         }
         Ok(Checked {
             providers,
             url,
-            headers,
+            headers: sent,
             left,
         })
     }
 
-    /// Send the signed request to STS. An answer of 4xx refuses the token;
-    /// no answer, one of 5xx, or STS's throttling (HTTP 400 or 429) is
-    /// [`AuthError::Unavailable`], as the caller may well be signed in.
-    async fn caller_identity(&self, checked: &Checked<'_>) -> Result<CallerIdentity, AuthError> {
-        let mut request = self
-            .http
-            .post(checked.url.clone())
+    /// Send the signed request to STS, which names the caller or refuses
+    /// the request. No answer, one of 5xx, STS's throttling (HTTP 400 or
+    /// 429), or a proxy's own answer (HTTP 407 or 408) is
+    /// [`StsError::Unavailable`], as the caller may well be signed in.
+    async fn caller_identity(&self, checked: &Checked<'_>) -> Result<CallerIdentity, StsError> {
+        let request = (self.http.post(checked.url.clone()))
+            .headers(checked.headers.clone())
             .body(GET_CALLER_IDENTITY);
-        for (name, value) in &checked.headers {
-            request = request.header(name, value);
-        }
         let unreachable = |e: &dyn std::fmt::Display| {
             tracing::warn!(url = %checked.url, error = %e, "cannot reach STS");
-            AuthError::Unavailable("Could not check the AWS identity".into())
+            StsError::Unavailable("Could not check the AWS identity".into())
         };
         let response = (self.transport.send(request).await).map_err(|e| unreachable(&e))?;
         let status = response.status();
@@ -258,16 +254,22 @@ impl AwsResolver {
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS || throttled(&body) {
             return Err(unreachable(&"STS throttles the requests"));
         }
+        if status == reqwest::StatusCode::PROXY_AUTHENTICATION_REQUIRED
+            || status == reqwest::StatusCode::REQUEST_TIMEOUT
+        {
+            return Err(unreachable(&format!("HTTP {}", status.as_u16())));
+        }
         if status.is_client_error() {
             tracing::warn!(
                 status = status.as_u16(),
                 answer = %body.chars().take(300).collect::<String>(),
                 "AWS token refused by STS"
             );
-            return Err(AuthError::invalid(format!(
-                "STS refused it: HTTP {}",
-                status.as_u16()
-            )));
+            let reason = format!("STS refused it: HTTP {}", status.as_u16());
+            return Err(match not_yet_known(&body) {
+                true => StsError::NotYet(reason),
+                false => StsError::Refused(reason),
+            });
         }
         if !status.is_success() {
             return Err(unreachable(&format!("HTTP {}", status.as_u16())));
@@ -296,11 +298,15 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
         }
         let identity = match self.caller_identity(&checked).await {
             Ok(identity) => identity,
-            Err(e) => {
-                if let AuthError::Invalid(reason) = &e {
-                    self.refused.insert(key, reason.clone()).await;
-                }
-                return Resolution::Refused(e);
+            Err(StsError::Unavailable(reason)) => {
+                return Resolution::Refused(AuthError::Unavailable(reason));
+            }
+            Err(StsError::NotYet(reason)) => {
+                return Resolution::Refused(AuthError::Invalid(reason));
+            }
+            Err(StsError::Refused(reason)) => {
+                self.refused.insert(key, reason.clone()).await;
+                return Resolution::Refused(AuthError::Invalid(reason));
             }
         };
         // Of the providers of the endpoint and server id, the first that
@@ -310,14 +316,18 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
             .copied()
         else {
             let names: Vec<&str> = checked.providers.iter().map(|p| p.name.as_str()).collect();
-            return refused(format!(
+            let reason = format!(
                 "account {} not allowed by {}",
                 identity.account,
                 names.join(", ")
-            ));
+            );
+            self.refused.insert(key, reason.clone()).await;
+            return refused(reason);
         };
         let Some(arn) = principal_arn(&identity.arn) else {
-            return refused(format!("not an ARN: {}", identity.arn));
+            let reason = format!("not an ARN: {}", identity.arn);
+            self.refused.insert(key, reason.clone()).await;
+            return refused(reason);
         };
         let mut found = Identity::new(&provider.name, Identity::AWS_SIGV4, arn.clone());
         found.claims.insert("arn".into(), Value::from(arn));
@@ -353,10 +363,20 @@ struct Checked<'a> {
     /// The providers of its endpoint and server id, one or more.
     providers: Vec<&'a AwsProvider>,
     url: reqwest::Url,
-    /// The headers sent to STS, lowercase.
-    headers: BTreeMap<String, String>,
+    /// The headers sent to STS.
+    headers: HeaderMap,
     /// Until when STS takes it.
     left: Duration,
+}
+
+/// Why STS did not name the caller.
+enum StsError {
+    /// STS refused the request, and will refuse it again.
+    Refused(String),
+    /// STS refused the request, and may take it later.
+    NotYet(String),
+    /// STS gave no answer on the request.
+    Unavailable(String),
 }
 
 /// The `SignedHeaders=` of a SigV4 `Authorization` header: `None` unless
@@ -391,6 +411,13 @@ fn throttled(xml: &str) -> bool {
         element(xml, "Code").as_deref(),
         Some("Throttling" | "ThrottlingException" | "RequestLimitExceeded")
     )
+}
+
+/// Whether the answer of STS is that it does not know the access key
+/// (`InvalidClientTokenId`), which it also says of a new key for some
+/// seconds.
+fn not_yet_known(xml: &str) -> bool {
+    element(xml, "Code").as_deref() == Some("InvalidClientTokenId")
 }
 
 /// The text of the first element `name` of an STS answer.
@@ -524,6 +551,8 @@ mod tests {
         };
         assert!(throttled(&answer("Throttling")));
         assert!(!throttled(&answer("InvalidClientTokenId")));
+        assert!(not_yet_known(&answer("InvalidClientTokenId")));
+        assert!(!not_yet_known(&answer("SignatureDoesNotMatch")));
         assert!(!throttled("not xml"));
     }
 

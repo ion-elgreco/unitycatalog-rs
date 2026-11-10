@@ -171,11 +171,17 @@ impl CedarAuthorizer {
             Err(e) => return Err(format!("loading entities: {e}")),
         };
         if let Some(entity) = &request.resource_entity {
-            // A uid in either of Cedar's JSON forms.
+            let kind = resource.type_name().to_string();
+            let id: &str = resource.id().as_ref();
+            // A uid in either of Cedar's JSON forms: `{type, id}`, or that
+            // in `__entity`.
             let is_resource = |entity: &Value| {
                 (entity.get("uid"))
-                    .and_then(|uid| EntityUid::from_json(uid.clone()).ok())
-                    .is_some_and(|uid| uid == resource)
+                    .map(|uid| uid.get("__entity").unwrap_or(uid))
+                    .is_some_and(|uid| {
+                        uid.get("type").and_then(Value::as_str) == Some(kind.as_str())
+                            && uid.get("id").and_then(Value::as_str) == Some(id)
+                    })
             };
             if !is_resource(entity) {
                 return Err("resource_entity is not the request's resource".into());

@@ -16,8 +16,9 @@ use crate::{Identity, RequestContext, Resolution, Resolver};
 /// request has names the caller, so the proxy must set or remove each of
 /// them: a header that it lets through from the client names any user. A
 /// header that the request has more than once names nobody, as a proxy that
-/// adds its value to the client's would make it. Requests from elsewhere,
-/// or without the headers, pass to the next resolver.
+/// adds its value to the client's would make it; nor does a value with a
+/// `,`, which is two values in one line. Requests from elsewhere, or
+/// without the headers, pass to the next resolver.
 #[derive(Debug, Clone)]
 pub struct TrustedHeaders {
     provider: String,
@@ -53,10 +54,16 @@ impl TrustedHeaders {
     }
 
     /// The user the proxy names in `headers`, whatever their address:
-    /// `None` when one of the proxy's headers is there more than once.
+    /// `None` when one of the proxy's headers is there more than once, in
+    /// several lines or as one value with a `,`.
     pub fn user<'a>(&self, headers: &'a HeaderMap) -> Option<&'a str> {
-        if (self.headers.iter()).any(|name| headers.get_all(name).iter().nth(1).is_some()) {
-            tracing::warn!("a header of the auth proxy is there more than once; it names nobody");
+        let twice = |name: &&String| {
+            let mut values = headers.get_all(name.as_str()).iter();
+            let first = values.next();
+            values.next().is_some() || first.is_some_and(|v| v.as_bytes().contains(&b','))
+        };
+        if let Some(header) = self.headers.iter().find(twice) {
+            tracing::warn!(%header, "the auth proxy's header has more than one value; it names nobody");
             return None;
         }
         self.headers.iter().find_map(|name| {
@@ -143,6 +150,8 @@ mod tests {
         // The client's value, and the proxy's added to it.
         let twice = [("Remote-User", "admin"), ("Remote-User", "alice")];
         assert_eq!(resolve(Some("10.0.0.1:1"), &twice).await, None);
+        let joined = [("Remote-User", "admin, alice")];
+        assert_eq!(resolve(Some("10.0.0.1:1"), &joined).await, None);
         assert_eq!(resolve(Some("192.0.2.8:1"), &both).await, None);
         assert_eq!(resolve(None, &both).await, None);
     }
