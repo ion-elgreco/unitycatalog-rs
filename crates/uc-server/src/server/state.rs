@@ -230,4 +230,10 @@ impl AppState {
         self.inner().admin_principals = Arc::new(admins.into_iter().map(Into::into).collect());
         self
     }
+
+    /// Whether `auth.admin_principals` names `principal`. A name is one
+    /// user in any case, as in `[[auth.users]]` and at sign-in.
+    pub fn names_admin(&self, principal: &str) -> bool {
+        (self.admin_principals.iter()).any(|admin| admin.trim().eq_ignore_ascii_case(principal))
+    }
 }

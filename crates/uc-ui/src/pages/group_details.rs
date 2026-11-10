@@ -123,7 +123,7 @@ fn GroupPage(name: String) -> impl IntoView {
         list.sort_by_key(|u| {
             u.display_name
                 .clone()
-                .unwrap_or_else(|| u.user_name.clone())
+                .unwrap_or_else(|| u.principal().to_string())
         });
         list
     });
@@ -155,7 +155,7 @@ fn GroupPage(name: String) -> impl IntoView {
                                     .or_else(|| member.display.clone());
                                 let email = user
                                     .as_ref()
-                                    .map(|u| u.user_name.clone())
+                                    .map(|u| u.principal().to_string())
                                     .unwrap_or_else(|| member.value.clone());
                                 let label = format!("Remove {email} from the group");
                                 let id = member.value.clone();
@@ -204,7 +204,10 @@ fn GroupPage(name: String) -> impl IntoView {
                             </option>
                             {list
                                 .into_iter()
-                                .map(|u| (u.id, u.display_name, u.user_name))
+                                .map(|u| {
+                                    let email = u.principal().to_string();
+                                    (u.id, u.display_name, email)
+                                })
                                 .map(|(id, name, email)| {
                                     let text = match name {
                                         Some(name) if !name.is_empty() => format!("{name} ({email})"),

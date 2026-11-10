@@ -629,7 +629,7 @@ async fn modify_user(
 /// them in warnings.
 fn principal_changed(state: &AppState, old: &str, new: &str) {
     tracing::info!(%old, %new, "a user's principal changed: its grants, objects and tokens moved");
-    if state.admin_principals.contains(old) {
+    if state.names_admin(old) && !state.names_admin(new) {
         tracing::warn!(%old, %new, "auth.admin_principals names the old principal of a user");
     }
     for (file, names) in state.cedar_names.iter() {
