@@ -22,8 +22,9 @@
 //! The caller is named by the ARN, an assumed role by its role
 //! (`arn:aws:iam::<account>:role/<name>`, without the role's path), so each
 //! session is not a caller of its own. The identity is kept until the
-//! signed request expires. A value that STS refused, or whose caller no
-//! provider takes, is refused for [`REFUSED_TTL`] without a call.
+//! signed request expires. A request that STS refused, or whose caller no
+//! provider takes, is refused for [`REFUSED_TTL`] without a call, however
+//! the value writes it.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -51,9 +52,9 @@ pub const LEEWAY: Duration = Duration::from_secs(60);
 /// regional ones. The `*` is a region only: other AWS services have hosts of
 /// this shape (`sts.s3.amazonaws.com` is a bucket).
 pub const STS_ENDPOINTS: [&str; 2] = ["https://sts.amazonaws.com", "https://sts.*.amazonaws.com"];
-/// How long a refused value is refused without a call.
+/// How long a refused request is refused without a call.
 pub const REFUSED_TTL: Duration = Duration::from_secs(60);
-/// The most refused values that are remembered.
+/// The most refused requests that are remembered.
 const MAX_REFUSED: u64 = 10_000;
 
 /// The accounts whose identities an [`AwsResolver`] takes, the STS
@@ -124,8 +125,8 @@ pub struct AwsResolver {
     providers: Vec<AwsProvider>,
     http: reqwest::Client,
     transport: Box<dyn Transport>,
-    /// Why a value was refused after a call to STS, by the hash of the
-    /// value.
+    /// Why a request was refused after a call to STS, by the hash of what
+    /// is sent to STS ([`Checked::key`]).
     refused: Cache<[u8; 32], String>,
 }
 
@@ -212,8 +213,11 @@ impl AwsResolver {
             return Err(format!("signed at {signed}, too long ago or ahead"));
         }
         let left = (ttl - age).to_std().unwrap_or_default();
-        // Only the headers of the signature go to STS.
+        // Only the headers of the signature go to STS. The hash is of the
+        // URL and these headers, in the order of their names.
         let mut sent = HeaderMap::new();
+        let mut hash = Sha256::new();
+        hash.update(url.as_str());
         for (name, value) in headers {
             if name != "authorization"
                 && name != "content-type"
@@ -226,12 +230,18 @@ impl AwsResolver {
                 HeaderValue::from_str(&value).map_err(|_| format!("not a value of header {name}"));
             let name = HeaderName::from_bytes(name.as_bytes())
                 .map_err(|_| format!("not a header name: {name:?}"))?;
-            sent.insert(name, value?);
+            let value = value?;
+            for part in [name.as_str().as_bytes(), value.as_bytes()] {
+                hash.update(b"\n");
+                hash.update(part);
+            }
+            sent.insert(name, value);
         }
         Ok(Checked {
             providers,
             url,
             headers: sent,
+            key: hash.finalize().into(),
             left,
         })
     }
@@ -276,6 +286,14 @@ impl AwsResolver {
         }
         parse_caller_identity(&body).ok_or_else(|| unreachable(&"no Arn and Account in the answer"))
     }
+
+    /// Refuse the request `key` for `reason`, now and for [`REFUSED_TTL`]
+    /// without a call.
+    async fn refuse(&self, key: [u8; 32], reason: String) -> Resolution {
+        tracing::warn!(%reason, "AWS token refused");
+        self.refused.insert(key, reason.clone()).await;
+        Resolution::Refused(AuthError::Invalid(reason))
+    }
 }
 
 #[async_trait]
@@ -284,15 +302,14 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
         let Some(token) = cx.token().filter(|t| t.starts_with(&self.prefix)) else {
             return Resolution::Pass;
         };
-        let refused = |reason: String| {
-            tracing::warn!(%reason, "AWS token refused");
-            Resolution::Refused(AuthError::Invalid(reason))
-        };
         let checked = match self.check(token) {
             Ok(checked) => checked,
-            Err(reason) => return refused(reason),
+            Err(reason) => {
+                tracing::warn!(%reason, "AWS token refused");
+                return Resolution::Refused(AuthError::Invalid(reason));
+            }
         };
-        let key: [u8; 32] = Sha256::digest(token.as_bytes()).into();
+        let key = checked.key;
         if let Some(reason) = self.refused.get(&key).await {
             return Resolution::Refused(AuthError::Invalid(reason));
         }
@@ -304,10 +321,7 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
             Err(StsError::NotYet(reason)) => {
                 return Resolution::Refused(AuthError::Invalid(reason));
             }
-            Err(StsError::Refused(reason)) => {
-                self.refused.insert(key, reason.clone()).await;
-                return Resolution::Refused(AuthError::Invalid(reason));
-            }
+            Err(StsError::Refused(reason)) => return self.refuse(key, reason).await,
         };
         // Of the providers of the endpoint and server id, the first that
         // takes the account.
@@ -321,13 +335,11 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
                 identity.account,
                 names.join(", ")
             );
-            self.refused.insert(key, reason.clone()).await;
-            return refused(reason);
+            return self.refuse(key, reason).await;
         };
         let Some(arn) = principal_arn(&identity.arn) else {
             let reason = format!("not an ARN: {}", identity.arn);
-            self.refused.insert(key, reason.clone()).await;
-            return refused(reason);
+            return self.refuse(key, reason).await;
         };
         let mut found = Identity::new(&provider.name, Identity::AWS_SIGV4, arn.clone());
         found.claims.insert("arn".into(), Value::from(arn));
@@ -365,6 +377,8 @@ struct Checked<'a> {
     url: reqwest::Url,
     /// The headers sent to STS.
     headers: HeaderMap,
+    /// The hash of the URL and the headers sent to STS.
+    key: [u8; 32],
     /// Until when STS takes it.
     left: Duration,
 }
@@ -554,6 +568,38 @@ mod tests {
         assert!(not_yet_known(&answer("InvalidClientTokenId")));
         assert!(!not_yet_known(&answer("SignatureDoesNotMatch")));
         assert!(!throttled("not xml"));
+    }
+
+    #[test]
+    fn a_request_has_one_key_however_it_is_written() {
+        let provider = AwsProvider::new("aws", ["api"], ["123456789012"]);
+        let resolver = AwsResolver::new("aws:", "X-Server-Id", vec![provider]);
+        let date = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+        let token = |server_id: &str, extra: Option<&str>, signature: &str, padding: &str| {
+            let authorization = format!(
+                "AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders=host;x-amz-date;x-server-id, \
+                 Signature={signature}"
+            );
+            let mut request = serde_json::json!({
+                "method": "POST",
+                "url": "https://sts.amazonaws.com/",
+                "body": GET_CALLER_IDENTITY,
+                "headers": { server_id: "api", "X-Amz-Date": date, "Authorization": authorization },
+            });
+            if let Some(extra) = extra {
+                request["headers"]["Accept"] = extra.into();
+            }
+            let json = URL_SAFE_NO_PAD.encode(request.to_string());
+            format!("aws:{json}{padding}")
+        };
+        let key = |token: String| resolver.check(&token).map(|c| c.key).unwrap();
+        let one = key(token("x-server-id", None, "ab", ""));
+        // Padding, the case of a header name, and a header that is not sent
+        // to STS.
+        assert_eq!(key(token("x-server-id", None, "ab", "==")), one);
+        assert_eq!(key(token("X-Server-ID", None, "ab", "")), one);
+        assert_eq!(key(token("x-server-id", Some("*/*"), "ab", "")), one);
+        assert_ne!(key(token("x-server-id", None, "cd", "")), one);
     }
 
     #[test]

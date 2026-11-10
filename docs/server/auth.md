@@ -444,9 +444,10 @@ keeps each provider to its own groups.
   does not answer, or its answer is not a key set, it keeps the keys it has. A key set without
   keys withdraws them.
 - For an `issuer` with `*`, it fetches keys for new issuers until 20 of them had none in a
-  minute, and for at most 200 new issuers in a minute. So tokens with made-up issuers cannot make
-  it call out for each one. While such tokens arrive, a new issuer can get HTTP 500 until the
-  next minute.
+  minute, and for at most 200 new issuers in a minute. It fetches for 20 new issuers at a time;
+  the others wait. So tokens with made-up issuers cannot make it call out for each one. While
+  such tokens arrive, a new issuer can get HTTP 500 until the next minute.
+- It accepts a key whose `alg` is `ES512`, as it does a key without `alg`.
 - It keeps a token from a `direct` block until the token expires, for at most five minutes. A busy
   client then costs one check per token, not one per request. A user disabled in the server can
   still make requests for that time.
@@ -519,9 +520,10 @@ forward_logout_url = "https://auth.example.com/logout"
 ```
 
 The server reads the email from `Remote-Email`, else the user from `Remote-User`. It reads these
-headers only on connections from `forward_trusted_proxies`. A header that has more than one value,
-in several lines or with a `,` between, names nobody: the proxy must replace the client's value,
-not add to it.
+headers only on connections from `forward_trusted_proxies`. The first of these headers that has a
+value names the user. If it has more than one value, in several lines or with a `,` between, it
+names nobody: the proxy must replace the client's value, not add to it. So a name with a `,`,
+such as a certificate's distinguished name, cannot be the user's name.
 
 #### Envoy Gateway
 

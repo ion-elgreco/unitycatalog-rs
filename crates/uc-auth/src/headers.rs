@@ -14,11 +14,12 @@ use crate::{Identity, RequestContext, Resolution, Resolver};
 /// addresses, as anyone else could send them; the address is the
 /// connection's, never `X-Forwarded-For`. The first of the headers that the
 /// request has names the caller, so the proxy must set or remove each of
-/// them: a header that it lets through from the client names any user. A
-/// header that the request has more than once names nobody, as a proxy that
-/// adds its value to the client's would make it; nor does a value with a
-/// `,`, which is two values in one line. Requests from elsewhere, or
-/// without the headers, pass to the next resolver.
+/// them: a header that it lets through from the client names any user.
+/// That header names nobody when the request has it more than once, as a
+/// proxy that adds its value to the client's would make it, or when its
+/// value has a `,`, which is two values in one line. The headers after it
+/// are not read. Requests from elsewhere, or without the headers, pass to
+/// the next resolver.
 #[derive(Debug, Clone)]
 pub struct TrustedHeaders {
     provider: String,
@@ -53,24 +54,26 @@ impl TrustedHeaders {
             .any(|net| net.contains(&peer) || v4.is_some_and(|v4| net.contains(&v4)))
     }
 
-    /// The user the proxy names in `headers`, whatever their address:
-    /// `None` when one of the proxy's headers is there more than once, in
-    /// several lines or as one value with a `,`.
+    /// The user the proxy names in `headers`, whatever their address: the
+    /// value of the first of the proxy's headers that is there and not
+    /// blank. `None` when that header is there more than once, in several
+    /// lines or as one value with a `,`.
     pub fn user<'a>(&self, headers: &'a HeaderMap) -> Option<&'a str> {
-        let twice = |name: &&String| {
-            let mut values = headers.get_all(name.as_str()).iter();
-            let first = values.next();
-            values.next().is_some() || first.is_some_and(|v| v.as_bytes().contains(&b','))
-        };
-        if let Some(header) = self.headers.iter().find(twice) {
-            tracing::warn!(%header, "the auth proxy's header has more than one value; it names nobody");
-            return None;
+        for header in &self.headers {
+            let mut values = headers.get_all(header.as_str()).iter();
+            let Some(first) = values.next() else {
+                continue;
+            };
+            let value = first.to_str().map(str::trim).unwrap_or_default();
+            if values.next().is_some() || value.contains(',') {
+                tracing::warn!(%header, "the auth proxy's header has more than one value; it names nobody");
+                return None;
+            }
+            if !value.is_empty() {
+                return Some(value);
+            }
         }
-        self.headers.iter().find_map(|name| {
-            (headers.get(name)?.to_str().ok())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-        })
+        None
     }
 }
 
@@ -152,6 +155,20 @@ mod tests {
         assert_eq!(resolve(Some("10.0.0.1:1"), &twice).await, None);
         let joined = [("Remote-User", "admin, alice")];
         assert_eq!(resolve(Some("10.0.0.1:1"), &joined).await, None);
+        let blank_twice = [("Remote-Email", ""), ("Remote-Email", ""), both[0]];
+        assert_eq!(resolve(Some("10.0.0.1:1"), &blank_twice).await, None);
+        // The header that names the user decides; those after it are not
+        // read.
+        let after = [("Remote-Email", "alice@example.com"), joined[0]];
+        assert_eq!(
+            resolve(Some("10.0.0.1:1"), &after).await.as_deref(),
+            Some("alice@example.com")
+        );
+        let after = [both[1], twice[0], twice[1]];
+        assert_eq!(
+            resolve(Some("10.0.0.1:1"), &after).await.as_deref(),
+            Some("alice@example.com")
+        );
         assert_eq!(resolve(Some("192.0.2.8:1"), &both).await, None);
         assert_eq!(resolve(None, &both).await, None);
     }

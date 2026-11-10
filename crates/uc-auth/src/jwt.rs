@@ -5,7 +5,8 @@
 //! ([`JwtKeys`]), which are cached per issuer and refetched when a key id is
 //! unknown. An issuer is asked at most once a minute, also after a fetch
 //! that failed or whose request went away, and its keys are kept while it
-//! cannot be reached. A key set without keys withdraws them.
+//! cannot be reached. A key set without keys withdraws them. A key keeps
+//! its place when `jsonwebtoken` does not know its `alg`, as with ES512.
 //! RS256/384/512 and ES256/384/512 are accepted, with [`DEFAULT_LEEWAY`] of
 //! clock skew.
 
@@ -21,7 +22,7 @@ use jsonwebtoken::{
 };
 use moka::future::Cache;
 use serde_json::{Map, Value};
-use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
+use tokio::sync::{Mutex, OwnedMutexGuard, OwnedSemaphorePermit, RwLock, Semaphore};
 
 use crate::{
     Allowlist, AuthError, Direct, Identity, RequestContext, Resolution, Resolver, Transport,
@@ -38,7 +39,9 @@ const MAX_ISSUERS: u64 = 1_000;
 /// The most issuers without keys that are asked per [`MIN_REFRESH`] and
 /// have none, for each pattern with `*`, so tokens that name made-up issuers
 /// of a pattern do not make a call each. An issuer that answers with keys is
-/// not counted, nor are issuers named exactly.
+/// not counted, nor are issuers named exactly. It is also the most of them
+/// that are asked at a time: the others wait, as those asked may all have
+/// none.
 const MAX_NEW_ISSUERS: u32 = 20;
 /// The most issuers without keys that are asked per [`MIN_REFRESH`] for each
 /// pattern with `*`, whatever they answer, so tokens that name real issuers
@@ -156,52 +159,62 @@ struct Window {
     start: Instant,
     /// The issuers asked since `start`.
     asked: u32,
-    /// Those of them that did not answer with keys, or not yet.
+    /// Those of them that had no keys.
     without_keys: u32,
+    /// A place for each issuer that may still have no keys. An issuer holds
+    /// one while it is asked, and one that has no keys does not give it
+    /// back. Closed when [`MAX_NEW_ISSUERS`] had none.
+    places: Arc<Semaphore>,
 }
 
 impl Window {
-    /// Whether no more issuers may be asked until the next window.
-    fn full(&self) -> bool {
-        self.start.elapsed() < MIN_REFRESH
-            && (self.without_keys >= MAX_NEW_ISSUERS || self.asked >= MAX_ASKED_ISSUERS)
+    fn new() -> Self {
+        Self {
+            start: Instant::now(),
+            asked: 0,
+            without_keys: 0,
+            places: Arc::new(Semaphore::new(MAX_NEW_ISSUERS as usize)),
+        }
     }
 }
 
 impl NewIssuers {
-    /// Whether [`ask`](Self::ask) would allow one more issuer of `pattern`.
-    fn left(&self, pattern: &str) -> bool {
-        let windows = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        !windows.get(pattern).is_some_and(Window::full)
-    }
-
-    /// Count an issuer of `pattern` that is asked now: the start of its
-    /// window, or `None` when the window is full.
-    fn ask(&self, pattern: &str) -> Option<Instant> {
+    /// Read or change the current window of `pattern`.
+    fn window<T>(&self, pattern: &str, f: impl FnOnce(&mut Window) -> T) -> T {
         let mut windows = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        let new = || Window {
-            start: Instant::now(),
-            asked: 0,
-            without_keys: 0,
-        };
-        let window = windows.entry(pattern.to_string()).or_insert_with(new);
-        if window.full() {
-            return None;
-        }
+        let window = (windows.entry(pattern.to_string())).or_insert_with(Window::new);
         if window.start.elapsed() >= MIN_REFRESH {
-            *window = new();
+            *window = Window::new();
         }
-        window.asked += 1;
-        window.without_keys += 1;
-        Some(window.start)
+        f(window)
     }
 
-    /// An issuer of `pattern` that was asked in the window of `start`
-    /// answered with keys.
-    fn answered_with_keys(&self, pattern: &str, start: Instant) {
-        let mut windows = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(window) = windows.get_mut(pattern).filter(|w| w.start == start) {
-            window.without_keys = window.without_keys.saturating_sub(1);
+    /// Count an issuer of `pattern` that is asked now, and give it a place
+    /// to hold until it answered. It waits while [`MAX_NEW_ISSUERS`] others
+    /// are asked. `None` when no more issuers are asked in this window.
+    async fn reserve(&self, pattern: &str) -> Option<OwnedSemaphorePermit> {
+        let left = |window: &mut Window| window.asked < MAX_ASKED_ISSUERS;
+        let places = self.window(pattern, |w| left(w).then(|| w.places.clone()))?;
+        let place = places.acquire_owned().await.ok()?;
+        self.window(pattern, |w| left(w).then(|| w.asked += 1))?;
+        Some(place)
+    }
+
+    /// The issuer of `pattern` that held `place` had no keys.
+    fn had_no_keys(&self, pattern: &str, place: OwnedSemaphorePermit) {
+        let counted = self.window(pattern, |window| {
+            // A place of an older window goes back to those who wait there.
+            if !Arc::ptr_eq(&window.places, place.semaphore()) {
+                return false;
+            }
+            window.without_keys += 1;
+            if window.without_keys >= MAX_NEW_ISSUERS {
+                window.places.close();
+            }
+            true
+        });
+        if counted {
+            place.forget();
         }
     }
 }
@@ -397,16 +410,28 @@ impl JwtKeys {
             tracing::warn!(%issuer, ?pattern, "too many new issuers; the token is refused for now");
             VerifyError::Unavailable(format!("Too many new issuers, try again later: {issuer}"))
         };
-        let keys = match self.issuers.get(issuer).await {
-            Some(keys) => keys,
-            // Nothing is kept for the issuers that are not asked.
-            None if pattern.is_some_and(|pattern| !self.new_issuers.left(pattern)) => {
-                return Err(too_many());
-            }
-            None => {
+        let mut reserved = None;
+        let keys = match (self.issuers.get(issuer).await, pattern) {
+            (Some(keys), _) => keys,
+            (None, None) => {
                 (self.issuers)
                     .get_with(issuer.to_string(), async { Arc::default() })
                     .await
+            }
+            // A new issuer of a pattern is counted before it is kept, so
+            // nothing is kept for the issuers that are not asked.
+            (None, Some(pattern)) => {
+                let counted = async {
+                    reserved = Some(self.new_issuers.reserve(pattern).await.ok_or(())?);
+                    Ok::<_, ()>(Arc::default())
+                };
+                let kept = (self.issuers)
+                    .try_get_with(issuer.to_string(), counted)
+                    .await;
+                match kept {
+                    Ok(keys) => keys,
+                    Err(_) => return Err(too_many()),
+                }
             }
         };
         let stale = {
@@ -436,18 +461,17 @@ impl JwtKeys {
             }
             pattern.filter(|_| !fetched.has_keys())
         };
-        let counted = match new {
-            None => None,
-            Some(pattern) => match self.new_issuers.ask(pattern) {
-                Some(window) => Some((self.new_issuers.clone(), pattern.to_string(), window)),
-                None => {
-                    // Requests that arrive together all get an entry before
-                    // one of them is counted.
-                    self.issuers.invalidate(issuer).await;
-                    return Err(too_many());
-                }
+        // An issuer that was kept before is counted again.
+        let counted = match (new, reserved) {
+            (None, _) => None,
+            (Some(pattern), Some(place)) => Some((pattern, place)),
+            (Some(pattern), None) => match self.new_issuers.reserve(pattern).await {
+                Some(place) => Some((pattern, place)),
+                None => return Err(too_many()),
             },
         };
+        let counted =
+            counted.map(|(pattern, place)| (self.new_issuers.clone(), pattern.to_string(), place));
         {
             // Asked now, also when this request goes away before the answer:
             // the fetch runs on, and the requests until it ends get this.
@@ -474,25 +498,21 @@ impl JwtKeys {
 }
 
 /// Fetch the keys of `issuer` and keep what it answered, then let the next
-/// fetch run (`guard`). `counted` is the pattern and window that a new
-/// issuer was counted in: one that answers with keys is a real one, and no
-/// longer counts as an issuer without keys.
+/// fetch run (`guard`). `counted` is the pattern of a new issuer and the
+/// place that it holds: one that answers with keys is a real one, and gives
+/// its place back.
 async fn refresh(
     fetcher: Arc<Fetcher>,
     issuer: String,
     keys: Arc<IssuerKeys>,
-    counted: Option<(Arc<NewIssuers>, String, Instant)>,
+    counted: Option<(Arc<NewIssuers>, String, OwnedSemaphorePermit)>,
     guard: OwnedMutexGuard<()>,
 ) {
     let result = fetcher.fetch_keys(&issuer).await;
+    let has_keys = matches!(&result, Ok(set) if !set.is_empty());
     let mut fetched = keys.fetched.write().await;
     match result {
         Ok(set) => {
-            if let Some((new_issuers, pattern, window)) = counted
-                && !set.is_empty()
-            {
-                new_issuers.answered_with_keys(&pattern, window);
-            }
             fetched.keys = Some((set, Instant::now()));
             fetched.failure = None;
         }
@@ -502,6 +522,12 @@ async fn refresh(
             }
             fetched.failure = Some(e);
         }
+    }
+    drop(fetched);
+    if let Some((new_issuers, pattern, place)) = counted
+        && !has_keys
+    {
+        new_issuers.had_no_keys(&pattern, place);
     }
     drop(guard);
 }
@@ -571,14 +597,24 @@ impl Fetcher {
         };
         // Keys of kinds that do not parse are skipped, not fatal. A key set
         // without keys withdraws the keys it had.
-        let keys: Vec<Jwk> = (keys.iter())
-            .filter_map(|k| serde_json::from_value(k.clone()).ok())
-            .collect();
+        let keys: Vec<Jwk> = keys.iter().filter_map(parse_jwk).collect();
         if keys.is_empty() {
             tracing::warn!(%jwks_uri, "the issuer's key set has no usable keys");
         }
         Ok(keys)
     }
+}
+
+/// A key of a key set, `None` for a kind that is not known. An `alg` that
+/// `jsonwebtoken` does not know, such as ES512, is left out: the algorithm
+/// is the token's, checked against the kind of the key.
+fn parse_jwk(key: &Value) -> Option<Jwk> {
+    if let Ok(jwk) = serde_json::from_value(key.clone()) {
+        return Some(jwk);
+    }
+    let mut key = key.as_object()?.clone();
+    key.remove("alg")?;
+    serde_json::from_value(Value::Object(key)).ok()
 }
 
 /// An ES512 (P-521) signature, which `jsonwebtoken` does not verify.
@@ -1009,7 +1045,22 @@ mod tests {
         assert!(key(0).await.is_ok());
     }
 
-    #[tokio::test]
+    #[test]
+    fn keys_with_an_unknown_alg_are_kept() {
+        let key = |alg: &str| {
+            parse_jwk(&serde_json::json!({
+                "kty": "EC", "crv": "P-521", "kid": "k1", "alg": alg, "x": "AQ", "y": "AQ",
+            }))
+        };
+        assert_eq!(key("ES512").unwrap().common.key_id.as_deref(), Some("k1"));
+        assert!(key("ES384").unwrap().common.key_algorithm.is_some());
+        assert!(parse_jwk(&serde_json::json!({ "kty": "EC", "crv": "secp256k1" })).is_none());
+        assert!(parse_jwk(&serde_json::json!("k1")).is_none());
+    }
+
+    /// Requests that arrive together: the issuers over the limit wait for
+    /// those asked, and are refused when these had no keys.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn issuers_that_are_not_asked_leave_nothing() {
         let down = Down(Default::default(), Duration::from_millis(20));
         let keys = Arc::new(JwtKeys::new(down.clone()));
@@ -1027,6 +1078,27 @@ mod tests {
         assert_eq!(down.calls(), MAX_NEW_ISSUERS as usize);
         keys.issuers.run_pending_tasks().await;
         assert_eq!(keys.issuers.entry_count(), u64::from(MAX_NEW_ISSUERS));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn real_issuers_that_arrive_together_are_all_asked() {
+        let keys = Arc::new(JwtKeys::new(Serves::new(KEY_SET)));
+        let mut all = tokio::task::JoinSet::new();
+        for n in 0..3 * MAX_NEW_ISSUERS {
+            let keys = keys.clone();
+            all.spawn(async move {
+                let issuer = format!("https://t{}.a", n / 2);
+                keys.key(&issuer, Some("k1"), Some("https://*.a")).await
+            });
+        }
+        for key in all.join_all().await {
+            assert!(key.is_ok(), "{:?}", key.err());
+        }
+        keys.issuers.run_pending_tasks().await;
+        assert_eq!(
+            keys.issuers.entry_count(),
+            u64::from(3 * MAX_NEW_ISSUERS / 2)
+        );
     }
 
     #[tokio::test]
