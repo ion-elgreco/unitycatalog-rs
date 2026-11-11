@@ -442,15 +442,21 @@ keeps each provider to its own groups.
   60 seconds of clock skew. A token without `exp` is refused.
 - It fetches a provider's keys once an hour, and never more than once a minute. When the provider
   does not answer, or its answer is not a key set or has no key that the server can use, it keeps
-  the keys it has, for one day at most. A key set with no keys at all withdraws them.
+  the keys it has, for one day at most. A key set with no keys at all withdraws them. When the
+  keys are older than one hour, a request waits for the new keys, so a key that the provider
+  withdrew is refused. Only while the provider does not answer, a request uses the kept keys at
+  once.
 - For an `issuer` with `*`, it fetches keys for the new issuers of each client until 20 of them
   answered that they have none in a minute, and for at most 200 new issuers in a minute. A new
   issuer that does not answer, or answers with HTTP 5xx, is not one of the 20, so issuers that
   were down for a short time do not stop the client's other new issuers. A new issuer whose host
-  name has no address is one of the 20. It fetches for 20 new
-  issuers of a client at a time; the others wait, for 4 seconds at most. For all clients
-  together, it fetches for at most 400 new issuers of one `issuer` in a minute. So tokens with
-  made-up issuers cannot make it call out for each one. While such tokens arrive, a new issuer
+  name has no address is one of the 20; one whose name could not be looked up is not. It fetches
+  for 20 new issuers of a client at a time; the others wait, for 4 seconds at most. For all
+  clients together, it fetches for at most 400 new issuers of one `issuer` in a minute. At most
+  200 of them are for clients that have a new issuer in that minute that did not answer with
+  keys. The rest stays free for the first new issuer of each client, and for its next one after
+  each that had keys. So tokens with made-up issuers cannot make it call out for each one, and
+  the made-up issuers of a few clients do not stop the new issuers of the others. While such tokens arrive, a new issuer
   can get HTTP 500 until the next minute. A client is an address:
   see [Behind a proxy](#behind-a-proxy).
 - It accepts a key whose `alg` is `ES512`, as it does a key without `alg`. It does not use
@@ -506,18 +512,20 @@ job whose credentials expired does not stop the other callers behind its address
 
 After 100 requests of one client in a row that STS did not answer, the server sends one request of
 that client at a time. The first answer of STS ends this, so the client is served again as soon as
-STS is. A request that ends before STS answers, such as one that timed out, counts as not answered.
+STS is. So does a minute without a request of that client. A request that ends before STS answers,
+such as one that timed out, counts as not answered.
 
-A client that had a refused or unanswered request in the current minute shares 10 of the 20
-requests at a time with the other such clients. The other 10 stay free for the clients that had
-none.
+A client that had a refused request in the current minute, or an unanswered one since the last
+answer of STS, shares 10 of the 20 requests at a time with the other such clients. The other 10
+stay free for the clients that had none.
 
 The server sends the headers that the request signs to STS, except those of the connection, such
 as `Host`.
 
 ### Behind a proxy
 
-The limits on new issuers and on requests to STS count for each client. A client is the address of
+The limits on new issuers and on requests to STS count for each client, and so does
+`server.rate_limit_per_sec`. A client is the address of
 the connection; all addresses of one IPv6 /64 network are one client. Behind a proxy, such as an
 ingress, each connection comes from the proxy, so all callers are one client: one caller that
 reaches a limit then stops the others.

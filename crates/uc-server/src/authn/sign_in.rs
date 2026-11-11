@@ -353,7 +353,6 @@ impl ForwardSignIn {
     }
 }
 
-/// A CIDR, or an address as a network of one.
 /// A CIDR or an address of setting `key`.
 pub(crate) fn parse_cidr(key: &str, text: &str) -> Result<ipnet::IpNet, String> {
     text.parse::<ipnet::IpNet>()

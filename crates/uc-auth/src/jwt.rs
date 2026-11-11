@@ -7,6 +7,9 @@
 //! that failed or whose request went away, and its keys are kept while it
 //! cannot be reached, or while its key set has keys but none that is
 //! usable, for a day at most. A key set with no keys at all withdraws them.
+//! A request whose key is older than `KEYS_TTL` waits for the fetch, so a
+//! key that the issuer withdrew does not pass. Only while the issuer is down
+//! does the kept key serve at once.
 //! Encryption keys are left out. An ES512 key is kept, although
 //! `jsonwebtoken` does not know that `alg`. RS256/384/512 and ES256/384/512
 //! are accepted, with [`DEFAULT_LEEWAY`] of clock skew.
@@ -15,7 +18,9 @@
 //! its issuers without keys that are asked is limited for each client
 //! ([`RequestContext::client`]), so one client's made-up issuers do not keep
 //! the others from theirs, and for all clients together
-//! (`MAX_ASKED_ISSUERS_ALL`), so many clients do not make a call each. An
+//! (`MAX_ASKED_ISSUERS_ALL`), so many clients do not make a call each. Half
+//! of that is for the clients whose issuers all answered with keys so far,
+//! so the made-up issuers of a few clients leave the others theirs. An
 //! issuer that does not answer is not counted as made up, so an issuer that
 //! was down for a short time is asked again at once. One whose host has no
 //! address is counted: anyone can name such a host. An issuer of a pattern
@@ -24,12 +29,13 @@
 //! issuers do not take their places.
 
 use std::collections::HashSet;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use dns_lookup::{AddrInfoHints, LookupErrorKind, SockType};
 use jsonwebtoken::{
     Algorithm, DecodingKey, Validation,
     jwk::{AlgorithmParameters, EllipticCurve, Jwk, PublicKeyUse},
@@ -75,6 +81,12 @@ const MAX_ASKED_ISSUERS: u32 = 200;
 /// The most issuers without keys that are asked per [`MIN_REFRESH`] for each
 /// pattern with `*`, for all clients together, whatever they answer.
 const MAX_ASKED_ISSUERS_ALL: u32 = 400;
+/// The most of them that are asked for a client while another of its
+/// issuers, asked in the same [`MIN_REFRESH`], has not answered with keys.
+/// The rest is for the first issuer of each client, and for the next one
+/// after each that had keys, so a few clients with made-up issuers do not
+/// use up the pattern for all.
+const MAX_UNPROVEN_ISSUERS_ALL: u32 = MAX_ASKED_ISSUERS_ALL / 2;
 /// How long each call to an issuer may take: its discovery document and
 /// its keys fit in a request's time.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(4);
@@ -195,8 +207,19 @@ struct NewIssuers {
 struct AllClients {
     /// The issuers asked since the start.
     asked: u32,
+    /// Those of them asked for a client while another of its issuers had
+    /// not answered with keys.
+    unproven: u32,
     /// Whether the log says that tokens of the pattern are refused.
     logged: bool,
+}
+
+impl AllClients {
+    /// Whether one more issuer may be asked: `proven` for a client whose
+    /// issuers all answered with keys so far.
+    fn takes(&self, proven: bool) -> bool {
+        self.asked < MAX_ASKED_ISSUERS_ALL && (proven || self.unproven < MAX_UNPROVEN_ISSUERS_ALL)
+    }
 }
 
 /// A pattern with `*`, and the client whose tokens name its issuers.
@@ -207,6 +230,8 @@ struct Window {
     asked: u32,
     /// Those of them that answered, and had no keys.
     without_keys: u32,
+    /// Those of them that answered with keys.
+    with_keys: u32,
     /// A place for each issuer that may still have no keys. An issuer holds
     /// one while it is asked, and one that answers without keys does not
     /// give it back. Closed when [`MAX_NEW_ISSUERS`] had none.
@@ -218,6 +243,11 @@ impl Window {
     fn has(&self, places: &Arc<Semaphore>) -> bool {
         Arc::ptr_eq(&self.places, places)
     }
+
+    /// Whether each issuer asked so far answered with keys.
+    fn proven(&self) -> bool {
+        self.asked == self.with_keys
+    }
 }
 
 impl Default for Window {
@@ -225,6 +255,7 @@ impl Default for Window {
         Self {
             asked: 0,
             without_keys: 0,
+            with_keys: 0,
             places: Arc::new(Semaphore::new(MAX_NEW_ISSUERS as usize)),
         }
     }
@@ -263,7 +294,8 @@ impl NewIssuers {
         deadline: tokio::time::Instant,
     ) -> Option<OwnedSemaphorePermit> {
         loop {
-            if (self.all).with(&scope.0, |all, _| all.asked >= MAX_ASKED_ISSUERS_ALL) {
+            let proven = self.window(scope, |window| window.proven());
+            if !(self.all).with(&scope.0, |all, _| all.takes(proven)) {
                 return None;
             }
             let (places, ends) = self.windows.with(scope, |window, start| {
@@ -278,28 +310,31 @@ impl NewIssuers {
                 }
                 continue;
             };
-            // `None` when the window of `places` is over.
+            // `None` when the window of `places` is over, else whether the
+            // client was proven, if the issuer is asked.
             let counted = self.window(scope, |window| {
                 window.has(&places).then(|| {
                     let asked = place.is_ok() && window.asked < MAX_ASKED_ISSUERS;
-                    if asked {
+                    asked.then(|| {
+                        let proven = window.proven();
                         window.asked += 1;
-                    }
-                    asked
+                        proven
+                    })
                 })
             });
             match counted {
-                Some(true) => {
+                Some(Some(proven)) => {
                     let asked = self.all.with(&scope.0, |all, _| {
-                        let asked = all.asked < MAX_ASKED_ISSUERS_ALL;
+                        let asked = all.takes(proven);
                         if asked {
                             all.asked += 1;
+                            all.unproven += u32::from(!proven);
                         }
                         asked
                     });
                     return place.ok().filter(|_| asked);
                 }
-                Some(false) => return None,
+                Some(None) => return None,
                 None => {}
             }
         }
@@ -308,6 +343,15 @@ impl NewIssuers {
     /// Whether `place` is of the current window of `scope`.
     fn is_current(&self, scope: &Scope, place: &OwnedSemaphorePermit) -> bool {
         self.window(scope, |window| window.has(place.semaphore()))
+    }
+
+    /// The issuer of `scope` that held `place` answered with keys.
+    fn had_keys(&self, scope: &Scope, place: &OwnedSemaphorePermit) {
+        self.window(scope, |window| {
+            if window.has(place.semaphore()) {
+                window.with_keys += 1;
+            }
+        });
     }
 
     /// The issuer of `scope` that held `place` answered, and had no keys.
@@ -364,6 +408,9 @@ struct Fetched {
     tried: Option<Instant>,
     /// Why the last fetch failed, if it did.
     failure: Option<VerifyError>,
+    /// Whether the last fetch that ended failed: the issuer is down, and
+    /// its kept keys serve without a wait for the next fetch.
+    down: bool,
     /// Whether it ever answered with one key or more: it is no new issuer
     /// then, also after it withdrew its keys, and it is kept with the
     /// issuers that had keys.
@@ -438,6 +485,7 @@ impl JwtKeys {
     pub fn new(transport: impl Transport) -> Self {
         let http = reqwest::Client::builder()
             .timeout(FETCH_TIMEOUT)
+            .dns_resolver(Arc::new(SystemDns))
             .build()
             .unwrap_or_default();
         Self {
@@ -601,10 +649,13 @@ impl JwtKeys {
             if let Some(key) = fetched.fresh(key_id) {
                 return Ok(key);
             }
-            fetched.kept(key_id)
+            // A key older than [`KEYS_TTL`] waits for the fetch, which may
+            // find that the issuer withdrew it. Not so while the issuer is
+            // down: its fetches end with the kept keys.
+            fetched.kept(key_id).filter(|_| fetched.down)
         };
-        // One fetch at a time per issuer. While one runs, the keys that it
-        // is to replace serve.
+        // One fetch at a time per issuer. While one runs for an issuer that
+        // is down, its kept keys serve.
         let guard = match keys.refresh.clone().try_lock_owned() {
             Ok(guard) => guard,
             Err(_) => match stale {
@@ -656,8 +707,9 @@ impl JwtKeys {
                 )));
             }
         }
-        // The fetch is a task, so a request with a kept key does not wait
-        // for it.
+        // The fetch is a task, so it runs on when this request goes away,
+        // and a request with a kept key of an issuer that is down does not
+        // wait for it.
         let task = tokio::spawn(refresh(
             self.fetcher.clone(),
             self.issuers.clone(),
@@ -696,6 +748,7 @@ async fn refresh(
             let has_keys = !set.is_empty();
             fetched.keys = Some((set, Instant::now()));
             fetched.failure = None;
+            fetched.down = false;
             (has_keys, !has_keys)
         }
         Err(FetchError { error, no_issuer }) => {
@@ -703,6 +756,7 @@ async fn refresh(
                 tracing::warn!(%issuer, %error, "keeping the issuer's keys");
             }
             fetched.failure = Some(error);
+            fetched.down = true;
             (false, no_issuer)
         }
     };
@@ -711,10 +765,12 @@ async fn refresh(
     if first_keys {
         keep(&issuers, &issuer, &keys).await;
     }
-    if let Some((new_issuers, scope, place)) = counted
-        && made_up
-    {
-        new_issuers.had_no_keys(&scope, place);
+    if let Some((new_issuers, scope, place)) = counted {
+        if made_up {
+            new_issuers.had_no_keys(&scope, place);
+        } else if has_keys {
+            new_issuers.had_keys(&scope, &place);
+        }
     }
     drop(guard);
 }
@@ -834,16 +890,57 @@ impl Fetcher {
     }
 }
 
-/// Whether `error` is of a host name that has no address.
+/// Whether `error` is of a host name that has no address ([`NoSuchHost`]).
 fn no_such_host(error: &reqwest::Error) -> bool {
     let mut cause = std::error::Error::source(error);
     while let Some(error) = cause {
-        if error.to_string().starts_with("dns error") {
+        if error.is::<NoSuchHost>() {
             return true;
         }
         cause = error.source();
     }
     false
+}
+
+/// The answer of the name service that a host name has no address. A
+/// lookup that failed, as when the name service is down, is not this.
+#[derive(Debug, thiserror::Error)]
+#[error("the host name has no address")]
+struct NoSuchHost;
+
+/// Finds the addresses of a host as the system does (`getaddrinfo`), and
+/// tells a name without an address ([`NoSuchHost`]) from a lookup that
+/// failed.
+struct SystemDns;
+
+impl reqwest::dns::Resolve for SystemDns {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        Box::pin(async move {
+            let lookup = tokio::task::spawn_blocking(move || addresses(name.as_str()));
+            let addresses = lookup.await??;
+            Ok(Box::new(addresses.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+/// The addresses of `host`, each with port 0: the caller sets the port.
+fn addresses(host: &str) -> Result<Vec<SocketAddr>, Box<dyn std::error::Error + Send + Sync>> {
+    let hints = AddrInfoHints {
+        socktype: SockType::Stream.into(),
+        ..Default::default()
+    };
+    let found = match dns_lookup::getaddrinfo(Some(host), None, Some(hints)) {
+        Ok(found) => found,
+        Err(e) if matches!(e.kind(), LookupErrorKind::NoName | LookupErrorKind::NoData) => {
+            return Err(NoSuchHost.into());
+        }
+        Err(e) => return Err(std::io::Error::from(e).into()),
+    };
+    let addresses: Vec<SocketAddr> = found.flatten().map(|info| info.sockaddr).collect();
+    match addresses.is_empty() {
+        true => Err(NoSuchHost.into()),
+        false => Ok(addresses),
+    }
 }
 
 /// A key of a key set, `None` for a kind that is not known and for an
@@ -1173,6 +1270,7 @@ mod tests {
             keys: Some((vec![jwk(Some("k1"))], Instant::now())),
             tried: Some(Instant::now()),
             failure: Some(VerifyError::Unavailable("down".into())),
+            down: true,
             known: true,
         };
         assert!(fetched.answer(Some("k1"), "https://x").is_ok());
@@ -1335,17 +1433,29 @@ mod tests {
         }
     }
 
-    /// The key `k1` of `issuer` once its keys were fetched again: the
-    /// request that starts the fetch has the kept key, and does not wait.
+    /// The key `k1` of `issuer` once its keys were fetched again. The
+    /// request that starts the fetch waits for it, unless the issuer was
+    /// down the last time.
     async fn refetched(
         keys: &JwtKeys,
         issuer: &str,
         scope: Option<&Scope>,
     ) -> Result<Jwk, VerifyError> {
         expire(keys, issuer).await;
-        assert!(keys.key(issuer, Some("k1"), scope).await.is_ok());
+        let _ = keys.key(issuer, Some("k1"), scope).await;
         fetch_ended(keys, issuer).await;
         keys.key(issuer, Some("k1"), scope).await
+    }
+
+    #[tokio::test]
+    async fn a_withdrawn_key_does_not_pass_while_the_keys_are_fetched_again() {
+        let serves = Serves::new(KEY_SET);
+        let keys = JwtKeys::new(serves.clone());
+        assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
+        serves.set(r#"{"keys": [{"kty": "RSA", "kid": "k2", "n": "AQAB", "e": "AQAB"}]}"#);
+        expire(&keys, "https://a").await;
+        let key = keys.key("https://a", Some("k1"), None).await;
+        assert!(matches!(key, Err(VerifyError::Invalid(_))), "{key:?}");
     }
 
     #[tokio::test]
@@ -1406,14 +1516,62 @@ mod tests {
         assert_eq!(down.calls(), 2 * MAX_NEW_ISSUERS as usize);
     }
 
+    /// Sends each request with a name service that knows no host
+    /// (`no_host`), or that is down.
+    struct Lookup(reqwest::Client);
+
+    struct NameService {
+        no_host: bool,
+    }
+
+    impl reqwest::dns::Resolve for NameService {
+        fn resolve(&self, _: reqwest::dns::Name) -> reqwest::dns::Resolving {
+            let no_host = self.no_host;
+            Box::pin(async move {
+                Err(match no_host {
+                    true => NoSuchHost.into(),
+                    false => std::io::Error::other("the name service is down").into(),
+                })
+            })
+        }
+    }
+
+    impl Lookup {
+        fn new(no_host: bool) -> Self {
+            let client = reqwest::Client::builder().dns_resolver(Arc::new(NameService { no_host }));
+            Self(client.build().unwrap())
+        }
+    }
+
+    #[async_trait]
+    impl Transport for Lookup {
+        async fn send(
+            &self,
+            request: reqwest::RequestBuilder,
+        ) -> reqwest::Result<reqwest::Response> {
+            self.0.execute(request.build()?).await
+        }
+    }
+
     #[tokio::test]
     async fn an_issuer_whose_host_has_no_address_is_made_up() {
-        let keys = JwtKeys::default();
-        let scope = scope("http://*.made-up.invalid");
-        let key = (keys.key("http://t1.made-up.invalid", Some("k1"), Some(&scope))).await;
-        assert!(matches!(key, Err(VerifyError::Unavailable(_))), "{key:?}");
-        let counts = (keys.new_issuers).window(&scope, |w| (w.asked, w.without_keys));
-        assert_eq!(counts, (1, 1));
+        // A name without an address, then a name service that is down.
+        for (no_host, without_keys) in [(true, 1), (false, 0)] {
+            let keys = JwtKeys::new(Lookup::new(no_host));
+            let scope = scope("http://*.made-up.invalid");
+            let key = (keys.key("http://t1.made-up.invalid", Some("k1"), Some(&scope))).await;
+            assert!(matches!(key, Err(VerifyError::Unavailable(_))), "{key:?}");
+            let counts = (keys.new_issuers).window(&scope, |w| (w.asked, w.without_keys));
+            assert_eq!(counts, (1, without_keys));
+        }
+    }
+
+    #[test]
+    #[ignore = "asks the name service of the machine"]
+    fn the_system_says_that_a_name_has_no_address() {
+        let error = addresses("t1.made-up.invalid").unwrap_err();
+        assert!(error.is::<NoSuchHost>(), "{error}");
+        assert!(addresses("localhost").is_ok());
     }
 
     #[tokio::test]
@@ -1471,7 +1629,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_request_with_a_kept_key_does_not_wait_for_the_fetch() {
+    async fn the_kept_key_of_an_issuer_that_is_down_serves_without_a_wait() {
         let serves = Serves::new(KEY_SET);
         let keys = JwtKeys::new(serves);
         assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
@@ -1483,12 +1641,49 @@ mod tests {
             }),
             ..keys
         };
+        // The issuer answered the last time: the request waits for the
+        // fetch, which may find that the key is withdrawn.
+        expire(&keys, "https://a").await;
+        let asked = tokio::time::Instant::now();
+        assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
+        assert_eq!(asked.elapsed(), Duration::from_secs(3));
+        // It is down now: the next fetch runs without the request.
         expire(&keys, "https://a").await;
         let asked = tokio::time::Instant::now();
         assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
         assert_eq!(asked.elapsed(), Duration::ZERO);
         fetch_ended(&keys, "https://a").await;
-        assert_eq!(slow.calls(), 1);
+        assert_eq!(slow.calls(), 2);
+    }
+
+    #[tokio::test]
+    async fn made_up_issuers_of_a_few_clients_leave_the_pattern_to_the_others() {
+        let new_issuers = NewIssuers::default();
+        let deadline = tokio::time::Instant::now() + FETCH_TIMEOUT;
+        let client = |n: u32| -> Scope {
+            let address = std::net::Ipv4Addr::from(n).into();
+            ("https://*.a".to_string(), Client::of(Some(address)))
+        };
+        // Each client asks as many issuers at a time as it may. All but its
+        // first are asked while another has not answered with keys.
+        let mut asked = Vec::new();
+        for n in 0..MAX_NEW_ISSUERS {
+            for _ in 0..MAX_NEW_ISSUERS {
+                asked.extend(new_issuers.reserve(&client(n), deadline).await);
+            }
+        }
+        let first = MAX_NEW_ISSUERS;
+        assert_eq!(asked.len() as u32, first + MAX_UNPROVEN_ISSUERS_ALL);
+        // Another client has its first issuer, and the next one after it
+        // answered with keys.
+        let real = client(MAX_NEW_ISSUERS);
+        for _ in 0..2 {
+            let place = new_issuers.reserve(&real, deadline).await.unwrap();
+            new_issuers.had_keys(&real, &place);
+        }
+        let place = new_issuers.reserve(&real, deadline).await;
+        assert!(place.is_some());
+        assert!(new_issuers.reserve(&real, deadline).await.is_none());
     }
 
     #[tokio::test]
@@ -1758,7 +1953,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn old_keys_serve_while_a_fetch_runs() {
+    async fn old_keys_serve_while_a_fetch_runs_for_an_issuer_that_is_down() {
         let Some(old) = Instant::now().checked_sub(KEYS_TTL + Duration::from_secs(1)) else {
             return;
         };
@@ -1774,6 +1969,14 @@ mod tests {
             .insert("https://a".into(), issuer.clone())
             .await;
         let _running = issuer.refresh.clone().lock_owned().await;
+        // The issuer answered the last time: the request waits for the
+        // fetch that runs.
+        let waits = tokio::time::timeout(
+            Duration::from_millis(20),
+            keys.key("https://a", Some("k1"), None),
+        );
+        assert!(waits.await.is_err());
+        issuer.fetched.write().await.down = true;
         assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
     }
 

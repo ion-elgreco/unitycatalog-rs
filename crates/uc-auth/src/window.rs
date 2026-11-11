@@ -27,9 +27,13 @@ impl Client {
     }
 }
 
-/// A `T` per key, which a new one replaces `length` after it was made.
+/// A `T` per key, which a new one replaces `length` after it was made, or
+/// `length` after it was last read or changed ([`Windows::since_last`]).
 pub(crate) struct Windows<K, T> {
     length: Duration,
+    /// Whether `length` counts from the last [`with`](Self::with), not from
+    /// the first.
+    since_last: bool,
     inner: std::sync::Mutex<Inner<K, T>>,
 }
 
@@ -45,11 +49,22 @@ impl<K: Eq + Hash + Clone, T: Default> Windows<K, T> {
     pub(crate) fn new(length: Duration) -> Self {
         Self {
             length,
+            since_last: false,
             inner: std::sync::Mutex::new(Inner {
                 windows: HashMap::new(),
                 sweep_at: MIN_SWEEP,
                 swept: None,
             }),
+        }
+    }
+
+    /// A `T` per key that is kept while [`with`](Self::with) reads or
+    /// changes it, and for `length` after the last time: for what counts
+    /// in a row, which the start of a new window must not end.
+    pub(crate) fn since_last(length: Duration) -> Self {
+        Self {
+            since_last: true,
+            ..Self::new(length)
         }
     }
 
@@ -93,7 +108,11 @@ impl<K: Eq + Hash + Clone, T: Default> Windows<K, T> {
             *start = now;
             *value = T::default();
         }
-        f(value, *start)
+        let started = *start;
+        if self.since_last {
+            *start = now;
+        }
+        f(value, started)
     }
 }
 
@@ -167,6 +186,25 @@ mod tests {
         assert_eq!(count(next, MIN_SWEEP), 1);
         let kept = windows.inner.lock().unwrap().windows.len();
         assert_eq!(kept, 2);
+    }
+
+    #[test]
+    fn a_window_since_the_last_time_is_kept_while_it_is_used() {
+        let length = Duration::from_secs(60);
+        let windows: Windows<u8, u32> = Windows::since_last(length);
+        let start = Instant::now();
+        let count = |at: Instant| {
+            windows.with_at(at, &0, |count, _| {
+                *count += 1;
+                *count
+            })
+        };
+        let step = length - Duration::from_millis(1);
+        assert_eq!(
+            (count(start), count(start + step), count(start + 2 * step)),
+            (1, 2, 3)
+        );
+        assert_eq!(count(start + 2 * step + length), 1);
     }
 
     #[test]

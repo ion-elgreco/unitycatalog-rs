@@ -44,11 +44,12 @@
 //! refusals in a [`REFUSED_TTL`], no request of that client is sent until
 //! the next one starts: it gets HTTP 503 for new values then. After as many
 //! calls in a row without an answer of STS, one request of that client is
-//! sent at a time until STS answers one. A call whose request went away
-//! before the answer is one without an answer. The other clients are
+//! sent at a time until STS answers one, or until the client sent nothing
+//! for a [`REFUSED_TTL`]. A call whose request went away before the answer
+//! is one without an answer. The other clients are
 //! served, and so are the identities that are kept.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -228,6 +229,11 @@ struct StsCalls {
     /// The calls of each client without a caller in the current
     /// [`REFUSED_TTL`].
     refusals: Windows<Client, Refusals>,
+    /// The calls of each client in a row without an answer of STS. They
+    /// are kept while the client's requests come, so a new [`REFUSED_TTL`]
+    /// does not end the row: calls that hang end too slowly to reach the
+    /// limit in one.
+    unanswered: Windows<Client, Unanswered>,
     /// The refusals of each access key of a client in the current
     /// [`REFUSED_TTL`].
     keys: Windows<(Client, String), u32>,
@@ -242,18 +248,21 @@ struct Place<'a> {
     _probe: Option<Probe<'a>>,
 }
 
-/// The calls of a client that named no caller.
+/// The calls of a client that STS, or the check of its answer, refused.
 #[derive(Default)]
 struct Refusals {
-    /// Those that STS, or the check of its answer, refused.
     refused: u32,
-    /// Those that STS did not answer, since its last answer.
-    unanswered: u32,
+    /// Whether the log says that the client is over a limit.
+    logged: bool,
+}
+
+/// The calls of a client that STS did not answer, since its last answer.
+#[derive(Default)]
+struct Unanswered {
+    calls: u32,
     /// Whether a call of the client runs while it is over the limit of
     /// calls without an answer.
     probing: bool,
-    /// Whether the log says that the client is over the limit.
-    logged: bool,
 }
 
 /// What the current [`REFUSED_TTL`] says of a client.
@@ -272,13 +281,13 @@ enum Standing {
 /// The one call of a client that is over the limit of calls without an
 /// answer. The next one may run when this one ended.
 struct Probe<'a> {
-    refusals: &'a Windows<Client, Refusals>,
+    unanswered: &'a Windows<Client, Unanswered>,
     client: &'a Client,
 }
 
 impl Drop for Probe<'_> {
     fn drop(&mut self) {
-        (self.refusals).with(self.client, |calls, _| calls.probing = false);
+        (self.unanswered).with(self.client, |unanswered, _| unanswered.probing = false);
     }
 }
 
@@ -335,6 +344,7 @@ impl AwsResolver {
                 all: Semaphore::new(MAX_STS_CALLS),
                 limited: Semaphore::new(MAX_LIMITED_STS_CALLS),
                 refusals: Windows::new(REFUSED_TTL),
+                unanswered: Windows::since_last(REFUSED_TTL),
                 keys: Windows::new(REFUSED_TTL),
                 busy: Every::new(REFUSED_TTL),
             },
@@ -377,7 +387,8 @@ impl AwsResolver {
             .ok_or("no authorization header")?;
         let authorization =
             Authorization::parse(authorization).ok_or("not a Signature Version 4 authorization")?;
-        let signed = |name: &str| authorization.signed_headers.split(';').any(|h| h == name);
+        let signed_names: HashSet<&str> = authorization.signed_headers.split(';').collect();
+        let signed = |name: &str| signed_names.contains(name);
         if !signed(header) {
             return Err(format!("{header} is not signed"));
         }
@@ -509,12 +520,19 @@ impl AwsResolver {
         client: &Client,
     ) -> Result<Result<Named, String>, AuthError> {
         let key = (client.clone(), checked.access_key.clone());
-        if self.calls.refuses(&key) {
-            return Err(AuthError::Invalid(
+        let refused = || {
+            AuthError::Invalid(
                 "STS refused the last requests of the access key, try again later".into(),
-            ));
+            )
+        };
+        if self.calls.refuses(&key) {
+            return Err(refused());
         }
         let _place = self.calls.enter(client).await?;
+        // The calls that this one waited for may have been the key's.
+        if self.calls.refuses(&key) {
+            return Err(refused());
+        }
         let mut running = Running {
             calls: &self.calls,
             key: &key,
@@ -599,7 +617,7 @@ impl StsCalls {
         let probe = match self.standing(client, true) {
             Standing::TooOften => return Err(too_often()),
             Standing::Probe => Some(Probe {
-                refusals: &self.refusals,
+                unanswered: &self.unanswered,
                 client,
             }),
             Standing::Clean | Standing::WithoutCaller => None,
@@ -611,29 +629,31 @@ impl StsCalls {
         })
     }
 
-    /// What the current [`REFUSED_TTL`] says of `client`. With `claim`, a
+    /// What the refusals of the current [`REFUSED_TTL`] and the calls
+    /// without an answer say of `client`. With `claim`, a
     /// [`Standing::Probe`] is taken: the caller makes the one call, and
     /// holds a [`Probe`] for it. The log says once per client and
     /// [`REFUSED_TTL`] that the client is over a limit.
     fn standing(&self, client: &Client, claim: bool) -> Standing {
-        let (standing, log) = self.refusals.with(client, |calls, _| {
-            let unanswered = calls.unanswered >= MAX_STS_REFUSALS;
-            let standing = if calls.refused >= MAX_STS_REFUSALS || (unanswered && calls.probing) {
+        let refused = (self.refusals).with(client, |refusals, _| refusals.refused);
+        let standing = self.unanswered.with(client, |unanswered, _| {
+            let over = unanswered.calls >= MAX_STS_REFUSALS;
+            if refused >= MAX_STS_REFUSALS || (over && unanswered.probing) {
                 Standing::TooOften
-            } else if unanswered {
-                calls.probing = claim;
+            } else if over {
+                unanswered.probing = claim;
                 Standing::Probe
-            } else if calls.refused > 0 || calls.unanswered > 0 {
+            } else if refused > 0 || unanswered.calls > 0 {
                 Standing::WithoutCaller
             } else {
                 Standing::Clean
-            };
-            let over = matches!(standing, Standing::TooOften | Standing::Probe);
-            (
-                standing,
-                over && !std::mem::replace(&mut calls.logged, true),
-            )
+            }
         });
+        let over = matches!(standing, Standing::TooOften | Standing::Probe);
+        let log = over
+            && (self.refusals).with(client, |refusals, _| {
+                !std::mem::replace(&mut refusals.logged, true)
+            });
         if log {
             tracing::warn!(
                 ?client,
@@ -658,15 +678,15 @@ impl StsCalls {
         if matches!(result, Err(StsError::Refused(_) | StsError::NotYet(_))) {
             self.keys.with(key, |refused, _| *refused += 1);
         }
-        self.refusals.with(&key.0, |calls, _| match result {
-            Ok(_) => calls.unanswered = 0,
-            Err(StsError::Unavailable(_)) => {
-                calls.unanswered = calls.unanswered.saturating_add(1);
-            }
-            Err(StsError::Refused(_) | StsError::NotYet(_)) => {
-                calls.refused += 1;
-                calls.unanswered = 0;
-            }
+        let answered = !matches!(result, Err(StsError::Unavailable(_)));
+        if result.is_err() && answered {
+            (self.refusals).with(&key.0, |refusals, _| refusals.refused += 1);
+        }
+        self.unanswered.with(&key.0, |unanswered, _| {
+            unanswered.calls = match answered {
+                true => 0,
+                false => unanswered.calls.saturating_add(1),
+            };
         });
     }
 }
@@ -1122,7 +1142,7 @@ mod tests {
                 .is_err()
         );
         let unanswered = |resolver: &AwsResolver| {
-            (resolver.calls.refusals).with(&Client::of(None), |calls, _| calls.unanswered)
+            (resolver.calls.unanswered).with(&Client::of(None), |unanswered, _| unanswered.calls)
         };
         assert_eq!(unanswered(&resolver), 1);
         assert_eq!(resolver.calls.all.available_permits(), MAX_STS_CALLS);

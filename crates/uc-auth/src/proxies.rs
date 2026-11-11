@@ -4,7 +4,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use axum::http::{HeaderMap, request::Parts};
-use ipnet::IpNet;
+use ipnet::{IpNet, Ipv4Net};
 
 use crate::RequestContext;
 
@@ -35,8 +35,10 @@ pub struct ClientAddress(pub IpAddr);
 pub struct TrustedProxies(Vec<IpNet>);
 
 impl TrustedProxies {
+    /// A network of IPv4-mapped addresses (`::ffff:10.0.0.0/104`) is its
+    /// IPv4 network, as the addresses are compared in that form.
     pub fn new(proxies: impl IntoIterator<Item = IpNet>) -> Self {
-        Self(proxies.into_iter().collect())
+        Self(proxies.into_iter().map(unmapped_net).collect())
     }
 
     /// Whether `address` is one of the proxies'. An IPv4 peer of a
@@ -112,6 +114,18 @@ pub(crate) fn unmapped(address: IpAddr) -> IpAddr {
     }
 }
 
+/// The IPv4 network of a network of IPv4-mapped addresses. Any other
+/// network as it is.
+fn unmapped_net(net: IpNet) -> IpNet {
+    let IpNet::V6(v6) = net else {
+        return net;
+    };
+    let v4 = (v6.network().to_ipv4_mapped())
+        .zip(v6.prefix_len().checked_sub(96))
+        .and_then(|(address, prefix)| Ipv4Net::new(address, prefix).ok());
+    v4.map_or(net, IpNet::V4)
+}
+
 /// An address of `X-Forwarded-For`, which some proxies write with a port.
 fn address(value: &str) -> Option<IpAddr> {
     let plain = value.parse::<IpAddr>().ok();
@@ -163,6 +177,21 @@ mod tests {
             client("10.0.0.1", &["192.0.2.7, unknown, 10.0.0.2"]),
             "10.0.0.2"
         );
+    }
+
+    #[test]
+    fn a_network_of_mapped_addresses_is_its_ipv4_network() {
+        let proxies = TrustedProxies::new([
+            "::ffff:10.42.0.0/112".parse().unwrap(),
+            "::ffff:192.0.2.7/128".parse().unwrap(),
+            "2001:db8::/32".parse().unwrap(),
+        ]);
+        for peer in ["10.42.0.5", "::ffff:10.42.0.5", "192.0.2.7", "2001:db8::1"] {
+            assert!(proxies.trusts(peer.parse().unwrap()), "{peer}");
+        }
+        for peer in ["10.43.0.5", "192.0.2.8", "2001:db9::1"] {
+            assert!(!proxies.trusts(peer.parse().unwrap()), "{peer}");
+        }
     }
 
     #[test]
