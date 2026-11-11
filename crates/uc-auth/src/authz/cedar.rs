@@ -8,8 +8,8 @@ use cedar_policy::{
 };
 use serde_json::Value;
 
-use super::Authorizer;
 use super::wire::{AuthorizeRequest, AuthorizeResponse, Decision, EntityRef};
+use super::{Authorizer, failed_closed};
 
 /// Supplies the Cedar entities a [`CedarAuthorizer`] evaluates a request
 /// against, implemented by the host against wherever its users, groups and
@@ -265,10 +265,7 @@ fn uid(entity: &EntityRef) -> Result<EntityUid, String> {
 #[async_trait]
 impl Authorizer for CedarAuthorizer {
     async fn authorize(&self, request: &AuthorizeRequest) -> AuthorizeResponse {
-        self.decide(request).await.unwrap_or_else(|error| {
-            tracing::warn!(%error, "authorization failed closed");
-            AuthorizeResponse::deny(error)
-        })
+        self.decide(request).await.unwrap_or_else(failed_closed)
     }
 }
 

@@ -259,7 +259,6 @@ struct StsCalls {
 struct Place<'a> {
     _limited: Option<SemaphorePermit<'a>>,
     _call: SemaphorePermit<'a>,
-    _probe: Option<Probe<'a>>,
     _entered: Entered<'a>,
 }
 
@@ -296,29 +295,22 @@ enum Standing {
     TooOften,
 }
 
-/// The one call of a client that is over the limit of calls without an
-/// answer. The next one may run when this one ended.
-struct Probe<'a> {
-    unanswered: &'a Windows<Client, Unanswered>,
-    client: &'a Client,
-}
-
-impl Drop for Probe<'_> {
-    fn drop(&mut self) {
-        (self.unanswered).with(self.client, |unanswered, _| unanswered.probing = false);
-    }
-}
-
 /// A call of a client that waits for a place or runs.
 struct Entered<'a> {
     unanswered: &'a Windows<Client, Unanswered>,
     client: &'a Client,
+    /// Whether it is the one call of a client that is over the limit of
+    /// calls without an answer. The next one may run when this one ended.
+    probing: bool,
 }
 
 impl Drop for Entered<'_> {
     fn drop(&mut self) {
         (self.unanswered).with(self.client, |unanswered, _| {
             unanswered.entered = unanswered.entered.saturating_sub(1);
+            if self.probing {
+                unanswered.probing = false;
+            }
         });
     }
 }
@@ -647,9 +639,10 @@ impl StsCalls {
             unanswered.entered += 1;
             unanswered.entered == 1
         });
-        let entered = Entered {
+        let mut entered = Entered {
             unanswered: &self.unanswered,
             client,
+            probing: false,
         };
         let limited = match self.standing(client, false) {
             Standing::TooOften => return Err(too_often()),
@@ -674,18 +667,14 @@ impl StsCalls {
             ));
         };
         // The calls that this one waited for may have been the client's.
-        let probe = match self.standing(client, true) {
+        match self.standing(client, true) {
             Standing::TooOften => return Err(too_often()),
-            Standing::Probe => Some(Probe {
-                unanswered: &self.unanswered,
-                client,
-            }),
-            Standing::Clean | Standing::WithoutCaller => None,
-        };
+            Standing::Probe => entered.probing = true,
+            Standing::Clean | Standing::WithoutCaller => {}
+        }
         Ok(Place {
             _limited: limited,
             _call: call,
-            _probe: probe,
             _entered: entered,
         })
     }
@@ -693,7 +682,7 @@ impl StsCalls {
     /// What the refusals of the current [`REFUSED_TTL`] and the calls
     /// without an answer say of `client`. With `claim`, a
     /// [`Standing::Probe`] is taken: the caller makes the one call, and
-    /// holds a [`Probe`] for it. The log says once per client and
+    /// its [`Entered`] gives it back. The log says once per client and
     /// [`REFUSED_TTL`] that the client is over a limit.
     fn standing(&self, client: &Client, claim: bool) -> Standing {
         let refused = (self.refusals).read(client, |refusals| refusals.refused);
@@ -1110,36 +1099,112 @@ mod tests {
         assert!(!throttled("not xml"));
     }
 
-    /// A bearer value with the server id `api` in header `server_id`, signed
-    /// now with the access key `A`.
-    fn token(server_id: &str, extra: Option<&str>, signature: &str, padding: &str) -> String {
-        token_of("A", server_id, extra, signature, padding)
+    /// A signed request to STS with the server id `api`, signed now. The
+    /// default is one of the access key `A` with the signature `ab`.
+    struct Signed<'a> {
+        access_key: &'a str,
+        /// The name of the server id header, as the request writes it.
+        server_id_header: &'a str,
+        /// The `SignedHeaders`.
+        signed: &'a str,
+        signature: &'a str,
+        /// The headers next to those that each request has.
+        headers: &'a [(&'a str, &'a str)],
+        url: &'a str,
+        /// The text after the base64url text of the bearer value.
+        padding: &'a str,
     }
 
-    /// As [`token`], signed with `access_key`.
-    fn token_of(
-        access_key: &str,
-        server_id: &str,
-        extra: Option<&str>,
-        signature: &str,
-        padding: &str,
-    ) -> String {
-        let date = Utc::now().format(AMZ_DATE).to_string();
-        let authorization = format!(
-            "AWS4-HMAC-SHA256 Credential={access_key}/x, \
-             SignedHeaders=host;x-amz-date;x-server-id, Signature={signature}"
-        );
-        let mut request = serde_json::json!({
-            "method": "POST",
-            "url": "https://sts.amazonaws.com/",
-            "body": GET_CALLER_IDENTITY,
-            "headers": { server_id: "api", "X-Amz-Date": date, "Authorization": authorization },
-        });
-        if let Some(extra) = extra {
-            request["headers"]["Accept"] = extra.into();
+    impl Signed<'_> {
+        fn new() -> Self {
+            Self {
+                access_key: "A",
+                server_id_header: "x-server-id",
+                signed: "host;x-amz-date;x-server-id",
+                signature: "ab",
+                headers: &[],
+                url: "https://sts.amazonaws.com/",
+                padding: "",
+            }
         }
-        let json = URL_SAFE_NO_PAD.encode(request.to_string());
-        format!("aws:{json}{padding}")
+    }
+
+    impl<'a> Signed<'a> {
+        fn access_key(self, access_key: &'a str) -> Self {
+            Self { access_key, ..self }
+        }
+
+        fn server_id_header(self, server_id_header: &'a str) -> Self {
+            Self {
+                server_id_header,
+                ..self
+            }
+        }
+
+        fn signed(self, signed: &'a str) -> Self {
+            Self { signed, ..self }
+        }
+
+        fn signature(self, signature: &'a str) -> Self {
+            Self { signature, ..self }
+        }
+
+        fn headers(self, headers: &'a [(&'a str, &'a str)]) -> Self {
+            Self { headers, ..self }
+        }
+
+        fn url(self, url: &'a str) -> Self {
+            Self { url, ..self }
+        }
+
+        fn padding(self, padding: &'a str) -> Self {
+            Self { padding, ..self }
+        }
+
+        /// The bearer value.
+        fn token(&self) -> String {
+            let date = Utc::now().format(AMZ_DATE).to_string();
+            let authorization = format!(
+                "AWS4-HMAC-SHA256 Credential={}/x, SignedHeaders={}, Signature={}",
+                self.access_key, self.signed, self.signature
+            );
+            let mut request = serde_json::json!({
+                "method": "POST",
+                "url": self.url,
+                "body": GET_CALLER_IDENTITY,
+                "headers": {
+                    self.server_id_header: "api",
+                    "X-Amz-Date": date,
+                    "Authorization": authorization,
+                },
+            });
+            for (name, value) in self.headers {
+                request["headers"][name] = (*value).into();
+            }
+            let json = URL_SAFE_NO_PAD.encode(request.to_string());
+            format!("aws:{json}{}", self.padding)
+        }
+    }
+
+    /// What the resolver makes of `signed`, which it takes.
+    fn checked<'a>(resolver: &'a AwsResolver, signed: Signed) -> Checked<'a> {
+        match resolver.check(&signed.token()) {
+            Ok(checked) => checked,
+            Err(reason) => panic!("refused: {reason}"),
+        }
+    }
+
+    /// Why the resolver refuses `signed` before a call to STS.
+    fn refused(resolver: &AwsResolver, signed: Signed) -> String {
+        resolver.check(&signed.token()).map(|_| ()).unwrap_err()
+    }
+
+    /// Take all the places for the clients that had a call without a caller.
+    async fn take_limited(resolver: &AwsResolver) -> SemaphorePermit<'_> {
+        (resolver.calls.limited)
+            .acquire_many(MAX_LIMITED_STS_CALLS as u32)
+            .await
+            .unwrap()
     }
 
     /// Answers every request as it is set to, and counts them.
@@ -1205,8 +1270,8 @@ mod tests {
             let peer: std::net::SocketAddr = format!("{peer}:1").parse().unwrap();
             parts.extensions.insert(axum::extract::ConnectInfo(peer));
         }
-        let token = token_of(access_key, "x-server-id", None, signature, "");
-        let cx = RequestContext::new(&parts, Some(token));
+        let signed = Signed::new().access_key(access_key).signature(signature);
+        let cx = RequestContext::new(&parts, Some(signed.token()));
         match Resolver::<()>::resolve(resolver, &cx, &()).await {
             Resolution::Resolved(_) => 200,
             Resolution::Refused(AuthError::Invalid(_)) => 401,
@@ -1298,8 +1363,9 @@ mod tests {
             ("Expect", "100-continue"),
         ] {
             let signed = format!("host;{};x-amz-date;x-server-id", name.to_ascii_lowercase());
-            let token = token_with(&signed, &[("Host", "sts.amazonaws.com"), (name, value)]);
-            let refused = resolver.check(&token).map(|_| ()).unwrap_err();
+            let headers = [("Host", "sts.amazonaws.com"), (name, value)];
+            let signed = Signed::new().signed(&signed).headers(&headers);
+            let refused = refused(&resolver, signed);
             assert!(refused.contains("is not sent to STS"), "{name}: {refused}");
         }
     }
@@ -1333,7 +1399,8 @@ mod tests {
             .await
             .unwrap();
         let (parts, ()) = axum::http::Request::new(()).into_parts();
-        let cx = RequestContext::new(&parts, Some(token("x-server-id", None, "g1", "")));
+        let token = Signed::new().signature("g1").token();
+        let cx = RequestContext::new(&parts, Some(token));
         let answer = Resolver::<()>::resolve(&resolver, &cx, &()).await;
         let Resolution::Refused(AuthError::Unavailable(reason)) = answer else {
             panic!("not HTTP 503");
@@ -1421,10 +1488,7 @@ mod tests {
         let resolver = resolver(&sts);
         sts.set(403, true, REFUSAL);
         assert_eq!(status_of(&resolver, "j1", Some("192.0.2.1")).await, 401);
-        let _running = (resolver.calls.limited)
-            .acquire_many(MAX_LIMITED_STS_CALLS as u32)
-            .await
-            .unwrap();
+        let _running = take_limited(&resolver).await;
         sts.set(200, true, CALLER);
         assert_eq!(status_of(&resolver, "j2", Some("192.0.2.1")).await, 503);
         assert_eq!(status_of(&resolver, "j2", Some("192.0.2.2")).await, 200);
@@ -1434,18 +1498,17 @@ mod tests {
     #[test]
     fn the_signed_headers_go_to_sts() {
         let resolver = resolver(&Answers::default());
-        let token = token_with(
-            "amz-sdk-request;content-length;host;x-amz-date;x-server-id",
-            &[
+        let signed = Signed::new()
+            .signed("amz-sdk-request;content-length;host;x-amz-date;x-server-id")
+            .headers(&[
                 ("Amz-Sdk-Request", "attempt=1"),
                 ("Content-Length", "43"),
                 ("Host", "sts.amazonaws.com"),
                 ("TE", "trailers"),
                 ("X-Amz-Security-Token", "t"),
                 ("Accept", "*/*"),
-            ],
-        );
-        let checked = resolver.check(&token).map_err(drop).unwrap();
+            ]);
+        let checked = checked(&resolver, signed);
         let mut sent: Vec<&str> = checked.headers.keys().map(HeaderName::as_str).collect();
         sent.sort_unstable();
         // Not those that the HTTP client writes, nor one that is not signed.
@@ -1462,15 +1525,15 @@ mod tests {
     #[test]
     fn a_request_has_one_key_however_it_is_written() {
         let resolver = resolver(&Answers::default());
-        let key = |token: String| resolver.check(&token).map(|c| c.key).unwrap();
-        let one = key(token("x-server-id", None, "ab", ""));
+        let key = |signed: Signed| checked(&resolver, signed).key;
+        let one = key(Signed::new());
         // Padding, the case of a header name, and a header that is not sent
         // to STS.
-        assert_eq!(key(token("x-server-id", None, "ab", "==")), one);
-        assert_eq!(key(token("X-Server-ID", None, "ab", "")), one);
-        assert_eq!(key(token("x-server-id", Some("*/*"), "ab", "")), one);
+        assert_eq!(key(Signed::new().padding("==")), one);
+        assert_eq!(key(Signed::new().server_id_header("X-Server-ID")), one);
+        assert_eq!(key(Signed::new().headers(&[("Accept", "*/*")])), one);
         // Spaces that the signature does not read.
-        assert_eq!(key(token("x-server-id", None, "ab ", "")), one);
+        assert_eq!(key(Signed::new().signature("ab ")), one);
         assert_eq!(single_spaces("  a   b "), "a b");
         assert_eq!(single_spaces("\t a b \t"), "a b");
         let written = "AWS4-HMAC-SHA256 Credential=A/x,SignedHeaders=host,  Signature=ab";
@@ -1478,35 +1541,13 @@ mod tests {
             Authorization::parse(written).unwrap().to_string(),
             "AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders=host, Signature=ab"
         );
-        assert_ne!(key(token("x-server-id", None, "cd", "")), one);
-    }
-
-    /// A bearer value with `headers` next to those that each request has,
-    /// which signs `signed`.
-    fn token_with(signed: &str, headers: &[(&str, &str)]) -> String {
-        let date = Utc::now().format(AMZ_DATE).to_string();
-        let authorization =
-            format!("AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders={signed}, Signature=ab");
-        let mut request = serde_json::json!({
-            "method": "POST",
-            "url": "https://sts.amazonaws.com/",
-            "body": GET_CALLER_IDENTITY,
-            "headers": { "X-Server-Id": "api", "X-Amz-Date": date, "Authorization": authorization },
-        });
-        for (name, value) in headers {
-            request["headers"][name] = (*value).into();
-        }
-        format!("aws:{}", URL_SAFE_NO_PAD.encode(request.to_string()))
+        assert_ne!(key(Signed::new().signature("cd")), one);
     }
 
     #[test]
     fn a_header_that_is_not_signed_makes_no_other_request() {
         let resolver = resolver(&Answers::default());
-        let signed = "host;x-amz-date;x-server-id";
-        let key = |headers: &[(&str, &str)]| {
-            let checked = resolver.check(&token_with(signed, headers));
-            checked.map(|c| c.key).map_err(drop).unwrap()
-        };
+        let key = |headers: &[(&str, &str)]| checked(&resolver, Signed::new().headers(headers)).key;
         let one = key(&[("Content-Type", "application/x-www-form-urlencoded")]);
         assert_eq!(key(&[("Content-Type", "text/plain; n=1")]), one);
         assert_eq!(
@@ -1515,23 +1556,21 @@ mod tests {
         );
         assert_ne!(key(&[]), one);
         // A signed one is sent as it is written.
-        let signed = "content-type;host;x-amz-date;x-server-id";
-        let token = token_with(signed, &[("Content-Type", "text/plain")]);
-        let checked = resolver.check(&token).map_err(drop).unwrap();
+        let signed = Signed::new()
+            .signed("content-type;host;x-amz-date;x-server-id")
+            .headers(&[("Content-Type", "text/plain")]);
+        let checked = checked(&resolver, signed);
         assert_eq!(checked.headers["content-type"], "text/plain");
     }
 
     #[test]
     fn the_date_is_signed_and_the_access_key_is_short() {
         let resolver = resolver(&Answers::default());
-        let refused = |token: String| resolver.check(&token).map(|_| ()).unwrap_err();
-        assert_eq!(
-            refused(token_with("host;x-server-id", &[])),
-            "x-amz-date is not signed"
-        );
+        let no_date = Signed::new().signed("host;x-server-id");
+        assert_eq!(refused(&resolver, no_date), "x-amz-date is not signed");
         let long = "A".repeat(MAX_ACCESS_KEY_LENGTH + 1);
-        let long = token_of(&long, "x-server-id", None, "ab", "");
-        assert_eq!(refused(long), "the access key id is too long");
+        let long = Signed::new().access_key(&long);
+        assert_eq!(refused(&resolver, long), "the access key id is too long");
     }
 
     #[tokio::test(start_paused = true)]
@@ -1539,10 +1578,7 @@ mod tests {
         let sts = Answers::default();
         let resolver = resolver(&sts);
         sts.set(200, true, CALLER);
-        let _running = (resolver.calls.limited)
-            .acquire_many(MAX_LIMITED_STS_CALLS as u32)
-            .await
-            .unwrap();
+        let _running = take_limited(&resolver).await;
         // The first call of the client has a place, its next one waits with
         // the clients that had a call without a caller.
         let (a, b) = tokio::join!(
@@ -1560,10 +1596,7 @@ mod tests {
         let resolver = resolver(&sts);
         sts.set(403, true, REFUSAL);
         assert_eq!(status_of(&resolver, "o1", Some("192.0.2.1")).await, 401);
-        let _running = (resolver.calls.limited)
-            .acquire_many(MAX_LIMITED_STS_CALLS as u32)
-            .await
-            .unwrap();
+        let _running = take_limited(&resolver).await;
         sts.set(200, true, CALLER);
         // The first client finds no place. The other one waits for it, as
         // the value is the same, and then asks for itself.
@@ -1578,15 +1611,8 @@ mod tests {
     #[test]
     fn a_url_with_a_user_is_no_endpoint() {
         let resolver = resolver(&Answers::default());
-        let with_user = token("x-server-id", None, "ab", "");
-        let json = URL_SAFE_NO_PAD
-            .decode(with_user.strip_prefix("aws:").unwrap())
-            .unwrap();
-        let json = String::from_utf8(json)
-            .unwrap()
-            .replace("https://sts.", "https://a1@sts.");
-        let with_user = format!("aws:{}", URL_SAFE_NO_PAD.encode(json));
-        let refused = resolver.check(&with_user).map(|_| ()).unwrap_err();
+        let with_user = Signed::new().url("https://a1@sts.amazonaws.com/");
+        let refused = refused(&resolver, with_user);
         assert!(refused.starts_with("not an STS endpoint"), "{refused}");
     }
 
