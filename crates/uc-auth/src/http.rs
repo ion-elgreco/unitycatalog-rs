@@ -19,9 +19,9 @@ impl Transport for Direct {
     }
 }
 
-/// Whether an HTTP 4xx `status` says nothing of the request: it is of a
-/// proxy on the way (407, 408), or of a service that has too much to do
-/// (429).
-pub(crate) fn no_answer(status: reqwest::StatusCode) -> bool {
-    matches!(status.as_u16(), 407 | 408 | 429)
+/// Whether `status` is the service's own no to the request: an HTTP 4xx,
+/// but not one of a proxy on the way (407, 408) or of a service that has
+/// too much to do (429).
+pub(crate) fn refuses(status: reqwest::StatusCode) -> bool {
+    status.is_client_error() && !matches!(status.as_u16(), 407 | 408 | 429)
 }

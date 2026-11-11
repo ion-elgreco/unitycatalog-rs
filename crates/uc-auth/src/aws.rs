@@ -53,7 +53,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tokio::sync::{Semaphore, SemaphorePermit};
 
-use crate::http::no_answer;
+use crate::http::refuses;
 use crate::window::{Client, Windows};
 use crate::{
     Allowlist, AuthError, Direct, Identity, RequestContext, Resolution, Resolver, Transport,
@@ -89,7 +89,10 @@ pub const MAX_STS_CALLS: usize = 20;
 /// clients that had none, so many clients with made-up signatures do not
 /// keep them waiting.
 pub const MAX_LIMITED_STS_CALLS: usize = MAX_STS_CALLS / 2;
-const CALL_WAIT: Duration = Duration::from_secs(5);
+/// How long a call to STS waits for a place.
+pub const CALL_WAIT: Duration = Duration::from_secs(5);
+/// The format of the `X-Amz-Date` header.
+const AMZ_DATE: &str = "%Y%m%dT%H%M%SZ";
 /// The header that each answer of AWS has, also one without an error code.
 const REQUEST_ID_HEADER: &str = "x-amzn-requestid";
 /// The signed headers that are not sent to STS as the client wrote them:
@@ -321,7 +324,7 @@ impl AwsResolver {
             ));
         }
         let date = headers.get("x-amz-date").ok_or("no x-amz-date header")?;
-        let date = NaiveDateTime::parse_from_str(date, "%Y%m%dT%H%M%SZ")
+        let date = NaiveDateTime::parse_from_str(date, AMZ_DATE)
             .map_err(|e| format!("x-amz-date: {e}"))?
             .and_utc();
         let age = Utc::now().signed_duration_since(date);
@@ -395,10 +398,7 @@ impl AwsResolver {
         if throttled(&body) {
             return Err(unreachable(&"STS throttles the requests"));
         }
-        if no_answer(status) {
-            return Err(unreachable(&format!("HTTP {}", status.as_u16())));
-        }
-        if status.is_client_error() {
+        if refuses(status) {
             let code = element(&body, "Code");
             let too_large = status == reqwest::StatusCode::PAYLOAD_TOO_LARGE
                 || status == reqwest::StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE;
@@ -436,49 +436,48 @@ impl AwsResolver {
         client: &Client,
     ) -> Result<Result<Named, String>, AuthError> {
         let _place = self.calls.enter(client).await?;
-        let identity = match self.caller_identity(checked).await {
-            Ok(identity) => identity,
-            Err(StsError::Unavailable(reason)) => {
-                self.calls.unanswered(client);
-                return Err(AuthError::Unavailable(reason));
-            }
-            // Not an answer to keep: STS may take the request later.
-            Err(StsError::NotYet(reason)) => {
-                self.calls.refused(client);
-                return Err(AuthError::Invalid(reason));
-            }
-            Err(StsError::Refused(reason)) => {
-                self.calls.refused(client);
-                return Ok(Err(reason));
-            }
+        let named = match self.caller_identity(checked).await {
+            Ok(identity) => checked.named(identity),
+            Err(e) => Err(e),
         };
-        self.calls.answered(client);
+        self.calls.ended(client, &named);
+        match named {
+            Ok(named) => Ok(Ok(named)),
+            Err(StsError::Refused(reason)) => Ok(Err(reason)),
+            // Not an answer to keep: STS may take the request later.
+            Err(StsError::NotYet(reason)) => Err(AuthError::Invalid(reason)),
+            Err(StsError::Unavailable(reason)) => Err(AuthError::Unavailable(reason)),
+        }
+    }
+}
+
+impl Checked<'_> {
+    /// The caller that STS answered with, as the providers name it: of the
+    /// providers of the endpoint and server id, the first that takes the
+    /// account decides.
+    fn named(&self, identity: CallerIdentity) -> Result<Named, StsError> {
         let refuse = |reason: String| {
             tracing::warn!(%reason, "AWS token refused");
-            self.calls.refused(client);
-            Ok(Err(reason))
+            Err(StsError::Refused(reason))
         };
-        // Of the providers of the endpoint and server id, the first that
-        // takes the account.
         let Some(provider) =
-            (checked.providers.iter()).find(|p| p.accounts.contains(&identity.account))
+            (self.providers.iter()).find(|p| p.accounts.contains(&identity.account))
         else {
-            let names: Vec<&str> = checked.providers.iter().map(|p| p.name.as_str()).collect();
-            let reason = format!(
+            let names: Vec<&str> = self.providers.iter().map(|p| p.name.as_str()).collect();
+            return refuse(format!(
                 "account {} not allowed by {}",
                 identity.account,
                 names.join(", ")
-            );
-            return refuse(reason);
+            ));
         };
         let Some(arn) = principal_arn(&identity.arn) else {
             return refuse(format!("not an ARN: {}", identity.arn));
         };
-        Ok(Ok(Named {
+        Ok(Named {
             provider: provider.name.clone(),
             arn,
             identity,
-        }))
+        })
     }
 }
 
@@ -497,12 +496,12 @@ impl StsCalls {
         };
         let places = async {
             let limited = match limited {
-                true => Some(self.limited.acquire().await),
+                true => Some(self.limited.acquire().await?),
                 false => None,
             };
-            (limited, self.all.acquire().await)
+            Ok::<_, tokio::sync::AcquireError>((limited, self.all.acquire().await?))
         };
-        let Ok((limited, Ok(call))) = tokio::time::timeout(CALL_WAIT, places).await else {
+        let Ok(Ok((limited, call))) = tokio::time::timeout(CALL_WAIT, places).await else {
             tracing::warn!("no call to STS ended in time; the AWS token is not checked");
             return Err(AuthError::Unavailable(
                 "STS is busy, try again later".into(),
@@ -518,7 +517,7 @@ impl StsCalls {
             Standing::Clean | Standing::WithoutCaller => None,
         };
         Ok(Place {
-            _limited: limited.and_then(Result::ok),
+            _limited: limited,
             _call: call,
             _probe: probe,
         })
@@ -557,25 +556,19 @@ impl StsCalls {
         standing
     }
 
-    /// STS, or the check of its answer, refused a call of `client`. STS
-    /// answered, so the calls without an answer start anew.
-    fn refused(&self, client: &Client) {
-        self.refusals.with(client, |calls, _| {
-            calls.refused += 1;
-            calls.unanswered = 0;
+    /// Count a call of `client` that ended with `result`. An answer of STS
+    /// lets the calls without an answer start anew.
+    fn ended<T>(&self, client: &Client, result: &Result<T, StsError>) {
+        self.refusals.with(client, |calls, _| match result {
+            Ok(_) => calls.unanswered = 0,
+            Err(StsError::Unavailable(_)) => {
+                calls.unanswered = calls.unanswered.saturating_add(1);
+            }
+            Err(StsError::Refused(_) | StsError::NotYet(_)) => {
+                calls.refused += 1;
+                calls.unanswered = 0;
+            }
         });
-    }
-
-    /// STS did not answer a call of `client`.
-    fn unanswered(&self, client: &Client) {
-        self.refusals.with(client, |calls, _| {
-            calls.unanswered = calls.unanswered.saturating_add(1);
-        });
-    }
-
-    /// STS answered a call of `client`.
-    fn answered(&self, client: &Client) {
-        self.refusals.with(client, |calls, _| calls.unanswered = 0);
     }
 }
 
@@ -658,9 +651,10 @@ struct Named {
     identity: CallerIdentity,
 }
 
-/// Why STS did not name the caller.
+/// Why a call to STS named no caller.
 enum StsError {
-    /// STS refused the request, and will refuse it again.
+    /// STS, or the check of its answer, refused the request, and will
+    /// refuse it again.
     Refused(String),
     /// STS refused the request, and may take it later.
     NotYet(String),
@@ -879,7 +873,7 @@ mod tests {
     /// A bearer value with the server id `api` in header `server_id`, signed
     /// now.
     fn token(server_id: &str, extra: Option<&str>, signature: &str, padding: &str) -> String {
-        let date = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+        let date = Utc::now().format(AMZ_DATE).to_string();
         let authorization = format!(
             "AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders=host;x-amz-date;x-server-id, \
              Signature={signature}"
@@ -924,7 +918,7 @@ mod tests {
             let (status, from_aws, body) = *self.answer.lock().unwrap();
             let mut response = axum::http::Response::builder().status(status);
             if from_aws {
-                response = response.header("x-amzn-RequestId", "r1");
+                response = response.header(REQUEST_ID_HEADER, "r1");
             }
             Ok(response.body(body).unwrap().into())
         }
@@ -1112,7 +1106,7 @@ mod tests {
     #[test]
     fn the_signed_headers_go_to_sts() {
         let resolver = resolver(&Answers::default());
-        let date = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+        let date = Utc::now().format(AMZ_DATE).to_string();
         let request = serde_json::json!({
             "method": "POST",
             "url": "https://sts.amazonaws.com/",

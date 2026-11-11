@@ -15,10 +15,10 @@
 //! its issuers without keys that are asked is limited for each client
 //! ([`RequestContext::client`]), so one client's made-up issuers do not keep
 //! the others from theirs, and for all clients together
-//! ([`MAX_ASKED_ISSUERS_ALL`]), so many clients do not make a call each. An
+//! (`MAX_ASKED_ISSUERS_ALL`), so many clients do not make a call each. An
 //! issuer that does not answer is not counted as made up, so an issuer that
 //! was down for a short time is asked again at once. An issuer of a pattern
-//! that never had keys is forgotten [`UNKNOWN_ISSUER_TTL`] after it was last
+//! that never had keys is forgotten `UNKNOWN_ISSUER_TTL` after it was last
 //! asked. It is kept apart from the issuers that had keys, so made-up
 //! issuers do not take their places.
 
@@ -37,7 +37,7 @@ use moka::future::Cache;
 use serde_json::{Map, Value};
 use tokio::sync::{Mutex, OwnedMutexGuard, OwnedSemaphorePermit, RwLock, Semaphore};
 
-use crate::http::no_answer;
+use crate::http::refuses;
 use crate::window::{Client, Windows};
 use crate::{
     Allowlist, AuthError, Direct, Identity, RequestContext, Resolution, Resolver, Transport,
@@ -212,6 +212,13 @@ struct Window {
     places: Arc<Semaphore>,
 }
 
+impl Window {
+    /// Whether `places` are this window's, not those of an older one.
+    fn has(&self, places: &Arc<Semaphore>) -> bool {
+        Arc::ptr_eq(&self.places, places)
+    }
+}
+
 impl Default for Window {
     fn default() -> Self {
         Self {
@@ -272,7 +279,7 @@ impl NewIssuers {
             };
             // `None` when the window of `places` is over.
             let counted = self.window(scope, |window| {
-                Arc::ptr_eq(&window.places, &places).then(|| {
+                window.has(&places).then(|| {
                     let asked = place.is_ok() && window.asked < MAX_ASKED_ISSUERS;
                     if asked {
                         window.asked += 1;
@@ -299,16 +306,14 @@ impl NewIssuers {
 
     /// Whether `place` is of the current window of `scope`.
     fn is_current(&self, scope: &Scope, place: &OwnedSemaphorePermit) -> bool {
-        self.window(scope, |window| {
-            Arc::ptr_eq(&window.places, place.semaphore())
-        })
+        self.window(scope, |window| window.has(place.semaphore()))
     }
 
     /// The issuer of `scope` that held `place` answered, and had no keys.
     fn had_no_keys(&self, scope: &Scope, place: OwnedSemaphorePermit) {
         let counted = self.window(scope, |window| {
             // A place of an older window goes back to those who wait there.
-            if !Arc::ptr_eq(&window.places, place.semaphore()) {
+            if !window.has(place.semaphore()) {
                 return false;
             }
             window.without_keys += 1;
@@ -475,10 +480,10 @@ impl JwtKeys {
     ///
     /// `pattern` is the pattern with `*` that `issuer` matched, `None` for an
     /// issuer named exactly: the issuers of a pattern that have no keys yet
-    /// are asked until [`MAX_NEW_ISSUERS`] of them had none in a minute, or
-    /// [`MAX_ASKED_ISSUERS`] were asked, for each pattern and `client`, the
+    /// are asked until `MAX_NEW_ISSUERS` of them had none in a minute, or
+    /// `MAX_ASKED_ISSUERS` were asked, for each pattern and `client`, the
     /// address that sent the token ([`RequestContext::client`]), and until
-    /// [`MAX_ASKED_ISSUERS_ALL`] were asked for all clients of the pattern.
+    /// `MAX_ASKED_ISSUERS_ALL` were asked for all clients of the pattern.
     ///
     /// # Errors
     ///
@@ -579,18 +584,15 @@ impl JwtKeys {
             // A new issuer of a pattern is counted before it is kept, so
             // nothing is kept for the issuers that are not asked.
             (None, Some(scope)) => {
-                let counted = async {
+                let entry = async {
                     let place = (self.new_issuers.reserve(scope, deadline).await).ok_or(())?;
                     Ok::<_, ()>(Arc::new(IssuerKeys {
                         place: std::sync::Mutex::new(Some(place)),
                         ..Default::default()
                     }))
                 };
-                let kept = (self.unknown).try_get_with_by_ref(issuer, counted).await;
-                match kept {
-                    Ok(keys) => keys,
-                    Err(_) => return Err(too_many()),
-                }
+                let kept = (self.unknown).try_get_with_by_ref(issuer, entry).await;
+                kept.map_err(|_| too_many())?
             }
         };
         let stale = {
@@ -687,24 +689,22 @@ async fn refresh(
     guard: OwnedMutexGuard<()>,
 ) {
     let result = fetcher.fetch_keys(&issuer).await;
-    let has_keys = matches!(&result, Ok(set) if !set.is_empty());
-    let made_up = match &result {
-        Ok(set) => set.is_empty(),
-        Err(e) => e.no_issuer,
-    };
     let mut fetched = keys.fetched.write().await;
-    match result {
+    let (has_keys, made_up) = match result {
         Ok(set) => {
+            let has_keys = !set.is_empty();
             fetched.keys = Some((set, Instant::now()));
             fetched.failure = None;
+            (has_keys, !has_keys)
         }
-        Err(FetchError { error, .. }) => {
+        Err(FetchError { error, no_issuer }) => {
             if fetched.keys.is_some() {
                 tracing::warn!(%issuer, %error, "keeping the issuer's keys");
             }
             fetched.failure = Some(error);
+            (false, no_issuer)
         }
-    }
+    };
     let first_keys = has_keys && !std::mem::replace(&mut fetched.known, true);
     drop(fetched);
     if first_keys {
@@ -768,7 +768,7 @@ impl Fetcher {
                 "Could not get issuer configuration from {path}: HTTP {}",
                 status.as_u16()
             ));
-            let no_issuer = status.is_client_error() && !no_answer(status);
+            let no_issuer = refuses(status);
             return Err(FetchError { error, no_issuer });
         }
         let config: Map<String, Value> = response.json().await.map_err(|_| {

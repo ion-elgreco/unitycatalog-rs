@@ -90,7 +90,8 @@ impl TrustedProxies {
         if self.trusts(peer) {
             let client = self.forwarded(peer, &parts.headers);
             parts.extensions.insert(ClientAddress(client));
-        } else if parts.headers.contains_key(X_FORWARDED_FOR)
+        } else if !LOGGED.load(Ordering::Relaxed)
+            && parts.headers.contains_key(X_FORWARDED_FOR)
             && !LOGGED.swap(true, Ordering::Relaxed)
         {
             tracing::warn!(
