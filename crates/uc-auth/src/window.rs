@@ -1,9 +1,52 @@
 //! Limits per client and per fixed time.
 
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::net::IpAddr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+use moka::future::Cache;
+
+/// How often a request asks again when the request with the same key that
+/// it waited for ended at a limit of another client.
+const MAX_ASKS: u32 = 3;
+
+/// The value of `key` in `cache`, from `ask` when it has none. The requests
+/// for one key that arrive together make one `ask`, and all get its answer.
+/// An error is not kept. A request that waited for the `ask` of another
+/// request, and got an error that is `of_asker` (a limit of the client that
+/// asked), asks for itself, [`MAX_ASKS`] times at most.
+pub(crate) async fn asked_once<K, Q, V, E, F, Fut>(
+    cache: &Cache<K, V>,
+    key: &Q,
+    ask: F,
+    of_asker: impl Fn(&E) -> bool,
+) -> Result<V, Arc<E>>
+where
+    K: Borrow<Q> + Hash + Eq + Send + Sync + 'static,
+    Q: ToOwned<Owned = K> + Hash + Eq + ?Sized,
+    V: Clone + Send + Sync + 'static,
+    E: Send + Sync + 'static,
+    F: Fn() -> Fut,
+    Fut: Future<Output = Result<V, E>>,
+{
+    let own = AtomicBool::new(false);
+    let mut asks = 0;
+    loop {
+        let asked = async {
+            own.store(true, Ordering::Relaxed);
+            ask().await
+        };
+        asks += 1;
+        match cache.try_get_with_by_ref(key, asked).await {
+            Err(e) if !own.load(Ordering::Relaxed) && asks < MAX_ASKS && of_asker(&e) => {}
+            answer => return answer,
+        }
+    }
+}
 
 /// The fewest windows at which those that are over are removed.
 const MIN_SWEEP: usize = 1024;
@@ -80,9 +123,15 @@ impl<K: Eq + Hash + Clone, T: Default> Windows<K, T> {
     /// Read the current window of `key`, if it has one. No window is made.
     pub(crate) fn read<R>(&self, key: &K, f: impl FnOnce(&T) -> R) -> Option<R> {
         let now = Instant::now();
-        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        let (start, value) = inner.windows.get(key)?;
-        (now.saturating_duration_since(*start) < self.length).then(|| f(value))
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let (start, value) = inner.windows.get_mut(key)?;
+        if now.saturating_duration_since(*start) >= self.length {
+            return None;
+        }
+        if self.since_last {
+            *start = now;
+        }
+        Some(f(value))
     }
 
     /// As [`with`](Self::with), at the time `now`.

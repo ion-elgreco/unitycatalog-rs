@@ -53,7 +53,6 @@
 //! served, and so are the identities that are kept.
 
 use std::collections::{BTreeMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -67,7 +66,7 @@ use sha2::{Digest, Sha256};
 use tokio::sync::{Semaphore, SemaphorePermit};
 
 use crate::http::refuses;
-use crate::window::{Client, Every, Windows};
+use crate::window::{Client, Every, Windows, asked_once};
 use crate::{
     Allowlist, AuthError, Direct, Identity, RequestContext, Resolution, Resolver, Transport,
 };
@@ -116,9 +115,6 @@ pub const CALL_WAIT: Duration = Duration::from_secs(5);
 /// The longest access key id of a signed request, which is the longest
 /// that AWS makes.
 pub const MAX_ACCESS_KEY_LENGTH: usize = 128;
-/// How often a request asks again when the request with the same value that
-/// it waited for ended at a limit of another client.
-const MAX_ASKS: u32 = 3;
 /// The format of the `X-Amz-Date` header.
 const AMZ_DATE: &str = "%Y%m%dT%H%M%SZ";
 /// The header that each answer of AWS has, also one without an error code.
@@ -700,7 +696,8 @@ impl StsCalls {
     /// holds a [`Probe`] for it. The log says once per client and
     /// [`REFUSED_TTL`] that the client is over a limit.
     fn standing(&self, client: &Client, claim: bool) -> Standing {
-        let refused = (self.refusals).with(client, |refusals, _| refusals.refused);
+        let refused = (self.refusals).read(client, |refusals| refusals.refused);
+        let refused = refused.unwrap_or(0);
         let standing = self.unanswered.with(client, |unanswered, _| {
             let over = unanswered.calls >= MAX_STS_REFUSALS;
             if refused >= MAX_STS_REFUSALS || (over && unanswered.probing) {
@@ -754,10 +751,10 @@ impl StsCalls {
                  are refused without a call for now"
             );
         }
-        let answered = !matches!(result, Err(StsError::Unavailable(_)));
-        if result.is_err() && answered {
+        if refused {
             (self.refusals).with(&key.0, |refusals, _| refusals.refused += 1);
         }
+        let answered = !matches!(result, Err(StsError::Unavailable(_)));
         self.unanswered.with(&key.0, |unanswered, _| {
             unanswered.calls = match answered {
                 true => 0,
@@ -784,21 +781,13 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
         // A request that waited for the one of another client, which ended
         // at a limit of that client, asks again.
         let client = Client::of(cx.client());
-        let own = AtomicBool::new(false);
-        let mut asks = 0;
-        let answer = loop {
-            let ask = async {
-                own.store(true, Ordering::Relaxed);
-                self.ask(&checked, &client).await
-            };
-            asks += 1;
-            let unanswered = match self.answers.try_get_with(checked.key, ask).await {
-                Ok(answer) => break answer,
-                Err(unanswered) => unanswered,
-            };
-            match &*unanswered {
-                NoAnswer::Limit(_) if !own.load(Ordering::Relaxed) && asks < MAX_ASKS => {}
-                NoAnswer::Limit(e) | NoAnswer::Sts(e) => return Resolution::Refused(e.clone()),
+        let ask = || self.ask(&checked, &client);
+        let limit = |unanswered: &NoAnswer| matches!(unanswered, NoAnswer::Limit(_));
+        let answer = match asked_once(&self.answers, &checked.key, ask, limit).await {
+            Ok(answer) => answer,
+            Err(unanswered) => {
+                let (NoAnswer::Limit(e) | NoAnswer::Sts(e)) = &*unanswered;
+                return Resolution::Refused(e.clone());
             }
         };
         let Named {

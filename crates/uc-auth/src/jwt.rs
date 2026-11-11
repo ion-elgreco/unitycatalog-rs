@@ -36,7 +36,6 @@
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -51,7 +50,7 @@ use serde_json::{Map, Value};
 use tokio::sync::{Mutex, OwnedMutexGuard, OwnedSemaphorePermit, RwLock, Semaphore};
 
 use crate::http::refuses;
-use crate::window::{Client, Windows};
+use crate::window::{Client, Windows, asked_once};
 use crate::{
     Allowlist, AuthError, Direct, Identity, RequestContext, Resolution, Resolver, Transport,
 };
@@ -99,10 +98,6 @@ const MAX_UNPROVEN_ISSUERS_ALL: u32 = MAX_ASKED_ISSUERS_ALL / 2;
 /// How long each call to an issuer may take: its discovery document and
 /// its keys fit in a request's time.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(4);
-/// How often a request asks again for a place of a new issuer when the
-/// request for the same issuer that it waited for found none for another
-/// client.
-const MAX_ASKS: u32 = 3;
 
 /// The header and claims of a token, unverified.
 pub struct UnverifiedJwt {
@@ -706,24 +701,15 @@ impl JwtKeys {
             // A request that waited for the one of another client, which
             // found no place for that client, reserves for itself.
             (None, Some(scope)) => {
-                let own = AtomicBool::new(false);
-                let mut asks = 0;
-                loop {
-                    let entry = async {
-                        own.store(true, Ordering::Relaxed);
-                        let place = self.new_issuers.reserve(scope, deadline).await;
-                        Ok::<_, ()>(Arc::new(IssuerKeys {
-                            place: std::sync::Mutex::new(Some((scope.clone(), place.ok_or(())?))),
-                            ..Default::default()
-                        }))
-                    };
-                    asks += 1;
-                    match (self.unknown).try_get_with_by_ref(issuer, entry).await {
-                        Ok(keys) => break keys,
-                        Err(_) if !own.load(Ordering::Relaxed) && asks < MAX_ASKS => {}
-                        Err(_) => return Err(too_many()),
-                    }
-                }
+                let entry = || async {
+                    let place = self.new_issuers.reserve(scope, deadline).await;
+                    Ok::<_, ()>(Arc::new(IssuerKeys {
+                        place: std::sync::Mutex::new(Some((scope.clone(), place.ok_or(())?))),
+                        ..Default::default()
+                    }))
+                };
+                let kept = asked_once(&self.unknown, issuer, entry, |()| true).await;
+                kept.map_err(|_| too_many())?
             }
         };
         let stale = {
