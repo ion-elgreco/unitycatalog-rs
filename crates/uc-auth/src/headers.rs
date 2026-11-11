@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use axum::http::HeaderMap;
 use ipnet::IpNet;
 
-use crate::{Identity, RequestContext, Resolution, Resolver};
+use crate::{Identity, RequestContext, Resolution, Resolver, TrustedProxies};
 
 /// An auth proxy in front of the service (such as oauth2-proxy or
 /// Authelia) signs users in and names the user in its headers on every
@@ -28,7 +28,7 @@ use crate::{Identity, RequestContext, Resolution, Resolver};
 #[derive(Debug, Clone)]
 pub struct TrustedHeaders {
     provider: String,
-    proxies: Vec<IpNet>,
+    proxies: TrustedProxies,
     headers: Vec<String>,
     commas: bool,
 }
@@ -43,7 +43,7 @@ impl TrustedHeaders {
     ) -> Self {
         Self {
             provider: provider.into(),
-            proxies: proxies.into_iter().collect(),
+            proxies: TrustedProxies::new(proxies),
             headers: headers.into_iter().map(Into::into).collect(),
             commas: false,
         }
@@ -60,13 +60,7 @@ impl TrustedHeaders {
     /// Whether `peer`, the address of a connection, is one of the proxy's.
     /// An IPv4 peer of a dual-stack listener shows as `::ffff:a.b.c.d`.
     pub fn trusts(&self, peer: IpAddr) -> bool {
-        let v4 = match peer {
-            IpAddr::V6(v6) => v6.to_ipv4_mapped().map(IpAddr::V4),
-            IpAddr::V4(_) => None,
-        };
-        self.proxies
-            .iter()
-            .any(|net| net.contains(&peer) || v4.is_some_and(|v4| net.contains(&v4)))
+        self.proxies.trusts(peer)
     }
 
     /// The user the proxy names in `headers`, whatever their address: the

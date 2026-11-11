@@ -444,7 +444,9 @@ keeps each provider to its own groups.
   does not answer, or its answer is not a key set or has no key that the server can use, it keeps
   the keys it has, for one day at most. A key set with no keys at all withdraws them.
 - For an `issuer` with `*`, it fetches keys for the new issuers of each client until 20 of them
-  had none in a minute, and for at most 200 new issuers in a minute. It fetches for 20 new
+  answered that they have none in a minute, and for at most 200 new issuers in a minute. A new
+  issuer that does not answer, or answers with HTTP 5xx, is not one of the 20, so issuers that
+  were down for a short time do not stop the client's other new issuers. It fetches for 20 new
   issuers of a client at a time; the others wait, for 4 seconds at most. For all clients
   together, it fetches for at most 400 new issuers of one `issuer` in a minute. So tokens with
   made-up issuers cannot make it call out for each one. While such tokens arrive, a new issuer
@@ -492,10 +494,18 @@ When STS limits the server's requests, or a proxy on the way answers in its plac
 answers with HTTP 500, not "Invalid access token".
 
 The server sends at most 20 requests to STS at a time. After 100 refused requests of one client
-in a minute, or 100 of its requests that STS did not answer, it sends none of that client until
-the next minute. So requests with made-up signatures cannot make it call STS for each one. That
-client gets HTTP 500 for new callers until then. The other clients are not affected, nor are
-the callers that the server keeps. A client is an address: see [Behind a proxy](#behind-a-proxy).
+in a minute, it sends none of that client until the next minute. So requests with made-up
+signatures cannot make it call STS for each one. That client gets HTTP 500 for new callers until
+then. The other clients are not affected, nor are the callers that the server keeps. A client is
+an address: see [Behind a proxy](#behind-a-proxy).
+
+After 100 requests of one client in a row that STS did not answer, the server sends one request of
+that client at a time. The first answer of STS ends this, so the client is served again as soon as
+STS is.
+
+A client that had a refused or unanswered request in the current minute shares 10 of the 20
+requests at a time with the other such clients. The other 10 stay free for the clients that had
+none.
 
 The server sends the headers that the request signs to STS, except those of the connection, such
 as `Host`.
@@ -511,12 +521,23 @@ Set `trusted_proxies` to the addresses of the proxies:
 
 ```toml
 [auth]
-trusted_proxies = ["10.42.0.0/16"]
+trusted_proxies = ["10.42.3.17", "10.42.5.4"]
 ```
 
 On a connection from one of them, the client is the last address in `X-Forwarded-For` that is not
 a proxy's. Each proxy must add the address of its client to this header. If one does not, a caller
 can write the header itself and choose its address.
+
+!!! warning
+
+    Each address in `trusted_proxies` can name any client. If you set a network that holds more
+    than the proxies, such as the pod network `10.42.0.0/16`, each workload in it can connect to
+    the server, write `X-Forwarded-For` itself, and so use up the limits of another client or
+    have no limit of its own. When the proxies have no fixed addresses, set their network and
+    let only the proxies connect to the server, such as with a network policy.
+
+When `trusted_proxies` does not name a proxy that is in front of the server, the server writes one
+warning to its log: a request with `X-Forwarded-For` came from an address that is no trusted proxy.
 
 This setting does not change `context.source_ip` in Cedar policies, nor
 `forward_trusted_proxies`.

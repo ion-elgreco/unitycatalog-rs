@@ -58,10 +58,7 @@ impl<'a> RequestContext<'a> {
             .get::<ConnectInfo<SocketAddr>>()?
             .0
             .ip();
-        Some(match peer {
-            IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(peer, IpAddr::V4),
-            IpAddr::V4(_) => peer,
-        })
+        Some(crate::proxies::unmapped(peer))
     }
 
     /// The address of the client, for limits per client: the host's

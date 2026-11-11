@@ -30,12 +30,15 @@
 //! is of a proxy on the way, and is no refusal.
 //!
 //! The signature is the caller's to choose, so each value could make a call
-//! to STS. At most [`MAX_STS_CALLS`] run at a time. After
-//! [`MAX_STS_REFUSALS`] refusals in a [`REFUSED_TTL`], or as many calls
-//! without an answer of STS, no request of that client
-//! ([`RequestContext::client`]) is sent until the next one starts: it gets
-//! HTTP 503 for new values then. The other clients are served, and so are
-//! the identities that are kept.
+//! to STS. At most [`MAX_STS_CALLS`] run at a time, and at most
+//! [`MAX_LIMITED_STS_CALLS`] of them for the clients
+//! ([`RequestContext::client`]) that had a call without a caller in the
+//! current [`REFUSED_TTL`], so the other clients have places. After
+//! [`MAX_STS_REFUSALS`] refusals in a [`REFUSED_TTL`], no request of that
+//! client is sent until the next one starts: it gets HTTP 503 for new values
+//! then. After as many calls in a row without an answer of STS, one request
+//! of that client is sent at a time until STS answers one. The other clients
+//! are served, and so are the identities that are kept.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -71,13 +74,20 @@ pub const REFUSED_TTL: Duration = Duration::from_secs(60);
 const MAX_ANSWERS: u64 = 10_000;
 /// The most requests of one client that STS, or the check of its answer,
 /// may refuse per [`REFUSED_TTL`], so values with made-up signatures do not
-/// make a call each. It is also the most of its calls that may end without
-/// an answer of STS, so values for an endpoint that does not answer do not
-/// hold the places of [`MAX_STS_CALLS`].
+/// make a call each. It is also the most of its calls in a row that may end
+/// without an answer of STS before one of its calls runs at a time, so
+/// values for an endpoint that does not answer do not hold the places of
+/// [`MAX_STS_CALLS`]. An answer of STS ends that: an STS that was down for a
+/// short time serves the client again at once.
 pub const MAX_STS_REFUSALS: u32 = 100;
 /// The most calls to STS at a time: the others wait up to [`CALL_WAIT`], as
 /// those that run may all be refused.
 pub const MAX_STS_CALLS: usize = 20;
+/// The most calls to STS at a time for the clients that had a call without
+/// a caller in the current [`REFUSED_TTL`]. The other places are for the
+/// clients that had none, so many clients with made-up signatures do not
+/// keep them waiting.
+pub const MAX_LIMITED_STS_CALLS: usize = MAX_STS_CALLS / 2;
 const CALL_WAIT: Duration = Duration::from_secs(5);
 /// The header that each answer of AWS has, also one without an error code.
 const REQUEST_ID_HEADER: &str = "x-amzn-requestid";
@@ -170,6 +180,9 @@ pub struct AwsResolver {
     answers: Cache<[u8; 32], Result<Named, String>>,
     /// A place for each call to STS that runs.
     calls: Semaphore,
+    /// A place for each call that runs for a client that had a call without
+    /// a caller.
+    limited_calls: Semaphore,
     /// The calls of each client without a caller in the current
     /// [`REFUSED_TTL`].
     refusals: Windows<Client, Refusals>,
@@ -180,10 +193,39 @@ pub struct AwsResolver {
 struct Refusals {
     /// Those that STS, or the check of its answer, refused.
     refused: u32,
-    /// Those that STS did not answer.
+    /// Those that STS did not answer, since its last answer.
     unanswered: u32,
+    /// Whether a call of the client runs while it is over the limit of
+    /// calls without an answer.
+    probing: bool,
     /// Whether the log says that the client is over the limit.
     logged: bool,
+}
+
+/// What the current [`REFUSED_TTL`] says of a client.
+enum Standing {
+    /// Each of its calls named a caller.
+    Clean,
+    /// Some of its calls named no caller.
+    WithoutCaller,
+    /// STS answered none of its last [`MAX_STS_REFUSALS`] calls, and none
+    /// of its calls runs now: one may.
+    Probe,
+    /// None of its requests goes to STS now.
+    TooOften,
+}
+
+/// The one call of a client that is over the limit of calls without an
+/// answer. The next one may run when this one ended.
+struct Probe<'a> {
+    refusals: &'a Windows<Client, Refusals>,
+    client: &'a Client,
+}
+
+impl Drop for Probe<'_> {
+    fn drop(&mut self) {
+        (self.refusals).with(self.client, |calls, _| calls.probing = false);
+    }
 }
 
 impl AwsResolver {
@@ -210,6 +252,7 @@ impl AwsResolver {
                 .time_to_live(REFUSED_TTL)
                 .build(),
             calls: Semaphore::new(MAX_STS_CALLS),
+            limited_calls: Semaphore::new(MAX_LIMITED_STS_CALLS),
             refusals: Windows::new(REFUSED_TTL),
         }
     }
@@ -374,32 +417,53 @@ impl AwsResolver {
         parse_caller_identity(&body).ok_or_else(|| unreachable(&"no Arn and Account in the answer"))
     }
 
+    /// Count a refusal of `client` that the log has. STS answered, so the
+    /// calls without an answer start anew.
+    fn count_refusal(&self, client: &Client) {
+        self.refusals.with(client, |calls, _| {
+            calls.refused += 1;
+            calls.unanswered = 0;
+        });
+    }
+
     /// Count a refusal of `client`, and answer with its `reason`.
     fn refuse(&self, client: &Client, reason: String) -> String {
         tracing::warn!(%reason, "AWS token refused");
-        self.refusals.with(client, |calls, _| calls.refused += 1);
+        self.count_refusal(client);
         reason
     }
 
-    /// Whether `client` had [`MAX_STS_REFUSALS`] refusals, or as many calls
-    /// without an answer, in the current [`REFUSED_TTL`]. The log says so
-    /// once per client and [`REFUSED_TTL`].
-    fn refused_too_often(&self, client: &Client) -> bool {
-        let (too_often, log) = self.refusals.with(client, |calls, _| {
-            let too_often =
-                calls.refused >= MAX_STS_REFUSALS || calls.unanswered >= MAX_STS_REFUSALS;
+    /// What the current [`REFUSED_TTL`] says of `client`. With `claim`, a
+    /// [`Standing::Probe`] is taken: the caller makes the one call, and
+    /// holds a [`Probe`] for it. The log says once per client and
+    /// [`REFUSED_TTL`] that the client is over a limit.
+    fn standing(&self, client: &Client, claim: bool) -> Standing {
+        let (standing, log) = self.refusals.with(client, |calls, _| {
+            let unanswered = calls.unanswered >= MAX_STS_REFUSALS;
+            let standing = if calls.refused >= MAX_STS_REFUSALS || (unanswered && calls.probing) {
+                Standing::TooOften
+            } else if unanswered {
+                calls.probing = claim;
+                Standing::Probe
+            } else if calls.refused > 0 || calls.unanswered > 0 {
+                Standing::WithoutCaller
+            } else {
+                Standing::Clean
+            };
+            let over = matches!(standing, Standing::TooOften | Standing::Probe);
             (
-                too_often,
-                too_often && !std::mem::replace(&mut calls.logged, true),
+                standing,
+                over && !std::mem::replace(&mut calls.logged, true),
             )
         });
         if log {
             tracing::warn!(
                 ?client,
-                "too many AWS tokens without a caller; none of the client goes to STS for now"
+                "too many AWS tokens without a caller; the client's go to STS one at a time or \
+                 not at all for now"
             );
         }
-        too_often
+        standing
     }
 
     /// Ask STS for the caller of a request of `client` that has no answer
@@ -413,30 +477,51 @@ impl AwsResolver {
         let too_often = || {
             Unanswered::Unavailable("Too many AWS tokens without a caller, try again later".into())
         };
-        if self.refused_too_often(client) {
-            return Err(too_often());
-        }
-        let Ok(Ok(_call)) = tokio::time::timeout(CALL_WAIT, self.calls.acquire()).await else {
+        let limited = match self.standing(client, false) {
+            Standing::TooOften => return Err(too_often()),
+            Standing::Clean => false,
+            Standing::WithoutCaller | Standing::Probe => true,
+        };
+        let places = async {
+            let limited = match limited {
+                true => Some(self.limited_calls.acquire().await),
+                false => None,
+            };
+            (limited, self.calls.acquire().await)
+        };
+        let Ok((_limited, Ok(_call))) = tokio::time::timeout(CALL_WAIT, places).await else {
             tracing::warn!("no call to STS ended in time; the AWS token is not checked");
             return Err(Unanswered::Unavailable(
                 "STS is busy, try again later".into(),
             ));
         };
         // The calls that this one waited for may have been the client's.
-        if self.refused_too_often(client) {
-            return Err(too_often());
-        }
+        let _probe = match self.standing(client, true) {
+            Standing::TooOften => return Err(too_often()),
+            Standing::Probe => Some(Probe {
+                refusals: &self.refusals,
+                client,
+            }),
+            Standing::Clean | Standing::WithoutCaller => None,
+        };
         let identity = match self.caller_identity(checked).await {
             Ok(identity) => identity,
             Err(StsError::Unavailable(reason)) => {
-                (self.refusals).with(client, |calls, _| calls.unanswered += 1);
+                (self.refusals).with(client, |calls, _| {
+                    calls.unanswered = calls.unanswered.saturating_add(1);
+                });
                 return Err(Unanswered::Unavailable(reason));
             }
             Err(StsError::NotYet(reason)) => {
-                return Err(Unanswered::NotYet(self.refuse(client, reason)));
+                self.count_refusal(client);
+                return Err(Unanswered::NotYet(reason));
             }
-            Err(StsError::Refused(reason)) => return Ok(Err(self.refuse(client, reason))),
+            Err(StsError::Refused(reason)) => {
+                self.count_refusal(client);
+                return Ok(Err(reason));
+            }
         };
+        (self.refusals).with(client, |calls, _| calls.unanswered = 0);
         // Of the providers of the endpoint and server id, the first that
         // takes the account.
         let Some(provider) =
@@ -969,11 +1054,44 @@ mod tests {
                 503
             );
         }
-        assert_eq!(sts.calls(), MAX_STS_REFUSALS as usize);
-        assert_eq!(status_of(&resolver, "i1", Some("192.0.2.1")).await, 503);
-        assert_eq!(sts.calls(), MAX_STS_REFUSALS as usize);
+        let calls = MAX_STS_REFUSALS as usize;
+        assert_eq!(sts.calls(), calls);
+        // One of its requests at a time goes to STS now.
+        let (a, b, c) = tokio::join!(
+            status_of(&resolver, "i1", Some("192.0.2.1")),
+            status_of(&resolver, "i2", Some("192.0.2.1")),
+            status_of(&resolver, "i3", Some("192.0.2.1")),
+        );
+        assert_eq!([a, b, c], [503; 3]);
+        assert_eq!(sts.calls(), calls + 1);
+        // The others are served, and so is the client once STS answers.
         sts.set(200, true, CALLER);
-        assert_eq!(status_of(&resolver, "i1", Some("192.0.2.2")).await, 200);
+        assert_eq!(status_of(&resolver, "i4", Some("192.0.2.2")).await, 200);
+        assert_eq!(status_of(&resolver, "i8", Some("192.0.2.1")).await, 200);
+        let (a, b, c) = tokio::join!(
+            status_of(&resolver, "i5", Some("192.0.2.1")),
+            status_of(&resolver, "i6", Some("192.0.2.1")),
+            status_of(&resolver, "i7", Some("192.0.2.1")),
+        );
+        assert_eq!([a, b, c], [200; 3]);
+        assert_eq!(sts.calls(), calls + 6);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn clients_with_refusals_leave_places_to_the_others() {
+        let sts = Answers::default();
+        let resolver = resolver(&sts);
+        sts.set(403, true, REFUSAL);
+        assert_eq!(status_of(&resolver, "j1", Some("192.0.2.1")).await, 401);
+        let _running = resolver
+            .limited_calls
+            .acquire_many(MAX_LIMITED_STS_CALLS as u32)
+            .await
+            .unwrap();
+        sts.set(200, true, CALLER);
+        assert_eq!(status_of(&resolver, "j2", Some("192.0.2.1")).await, 503);
+        assert_eq!(status_of(&resolver, "j2", Some("192.0.2.2")).await, 200);
+        assert_eq!(sts.calls(), 2);
     }
 
     #[test]

@@ -17,15 +17,12 @@ pub(crate) struct Client(Option<IpAddr>);
 
 impl Client {
     pub(crate) fn of(peer: Option<IpAddr>) -> Self {
-        Self(peer.map(|peer| match peer {
-            IpAddr::V4(_) => peer,
-            IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
-                Some(v4) => IpAddr::V4(v4),
-                None => {
-                    let [a, b, c, d, ..] = v6.segments();
-                    IpAddr::V6([a, b, c, d, 0, 0, 0, 0].into())
-                }
-            },
+        Self(peer.map(|peer| match crate::proxies::unmapped(peer) {
+            IpAddr::V6(v6) => {
+                let [a, b, c, d, ..] = v6.segments();
+                IpAddr::V6([a, b, c, d, 0, 0, 0, 0].into())
+            }
+            v4 => v4,
         }))
     }
 }

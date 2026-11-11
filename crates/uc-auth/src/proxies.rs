@@ -1,6 +1,7 @@
 //! The client's address behind proxies.
 
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use axum::http::{HeaderMap, request::Parts};
 use ipnet::IpNet;
@@ -24,6 +25,12 @@ pub struct ClientAddress(pub IpAddr);
 /// header that is not a proxy's: the proxies add at the end, so the
 /// addresses before it are the client's to choose. A proxy that does not
 /// add to the header lets the client choose its address.
+///
+/// Each address of the proxies can name any client: whoever connects from
+/// one of them writes the header. A network that holds more than the
+/// proxies, such as all the pods of a cluster, lets each of its hosts choose
+/// its address, so name the proxies only, or let only them reach the
+/// service.
 #[derive(Debug, Clone, Default)]
 pub struct TrustedProxies(Vec<IpNet>);
 
@@ -67,21 +74,33 @@ impl TrustedProxies {
         client
     }
 
-    /// Put the [`ClientAddress`] into the extensions of a request, when it
-    /// is known.
+    /// Put the [`ClientAddress`] into the extensions of a request from one
+    /// of the proxies. The client of any other request is the address of
+    /// its connection. Such a request with `X-Forwarded-For` may come from a
+    /// proxy that is not named: the log says so once.
     pub fn mark(&self, parts: &mut Parts) {
-        if self.0.is_empty() {
-            return;
-        }
+        static LOGGED: AtomicBool = AtomicBool::new(false);
         let Some(peer) = RequestContext::new(parts, None).peer() else {
             return;
         };
-        let client = self.client(peer, &parts.headers);
-        parts.extensions.insert(ClientAddress(client));
+        if self.trusts(peer) {
+            let client = self.client(peer, &parts.headers);
+            parts.extensions.insert(ClientAddress(client));
+        } else if parts.headers.contains_key(X_FORWARDED_FOR)
+            && !LOGGED.swap(true, Ordering::Relaxed)
+        {
+            tracing::warn!(
+                %peer,
+                "a request with X-Forwarded-For came from an address that is no trusted proxy; \
+                 if it is a proxy, all its callers count as one client for the limits per client"
+            );
+        }
     }
 }
 
-fn unmapped(address: IpAddr) -> IpAddr {
+/// The IPv4 address of `::ffff:a.b.c.d`, which is how an IPv4 peer of a
+/// dual-stack listener shows. Any other address as it is.
+pub(crate) fn unmapped(address: IpAddr) -> IpAddr {
     match address {
         IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(address, IpAddr::V4),
         IpAddr::V4(_) => address,
