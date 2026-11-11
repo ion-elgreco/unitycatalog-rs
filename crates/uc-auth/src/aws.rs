@@ -14,6 +14,9 @@
 //! - it signs the host's server id header, whose value is one of the
 //!   provider's server ids: a request signed for another service does not
 //!   pass here;
+//! - it signs no header of the connection but `host` and `content-length`:
+//!   the HTTP client writes those, so STS would not find the signature
+//!   right;
 //! - it was signed less than [`SIGNED_REQUEST_TTL`] ago, as STS also checks;
 //! - STS answers with the ARN of one of the provider's `accounts`.
 //!
@@ -34,11 +37,16 @@
 //! [`MAX_LIMITED_STS_CALLS`] of them for the clients
 //! ([`RequestContext::client`]) that had a call without a caller in the
 //! current [`REFUSED_TTL`], so the other clients have places. After
-//! [`MAX_STS_REFUSALS`] refusals in a [`REFUSED_TTL`], no request of that
-//! client is sent until the next one starts: it gets HTTP 503 for new values
-//! then. After as many calls in a row without an answer of STS, one request
-//! of that client is sent at a time until STS answers one. The other clients
-//! are served, and so are the identities that are kept.
+//! [`MAX_KEY_REFUSALS`] refusals of one access key of a client in a
+//! [`REFUSED_TTL`], its next requests with that key are refused without a
+//! call, so one job whose credentials are over does not use up the refusals
+//! of all the callers behind its address. After [`MAX_STS_REFUSALS`]
+//! refusals in a [`REFUSED_TTL`], no request of that client is sent until
+//! the next one starts: it gets HTTP 503 for new values then. After as many
+//! calls in a row without an answer of STS, one request of that client is
+//! sent at a time until STS answers one. A call whose request went away
+//! before the answer is one without an answer. The other clients are
+//! served, and so are the identities that are kept.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -54,7 +62,7 @@ use sha2::{Digest, Sha256};
 use tokio::sync::{Semaphore, SemaphorePermit};
 
 use crate::http::refuses;
-use crate::window::{Client, Windows};
+use crate::window::{Client, Every, Windows};
 use crate::{
     Allowlist, AuthError, Direct, Identity, RequestContext, Resolution, Resolver, Transport,
 };
@@ -66,8 +74,9 @@ pub const SIGNED_REQUEST_TTL: Duration = Duration::from_secs(15 * 60);
 /// The clock skew that a signed request may have.
 pub const LEEWAY: Duration = Duration::from_secs(60);
 /// The STS endpoints of a provider that names none: the global one and the
-/// regional ones. The `*` is a region only: other AWS services have hosts of
-/// this shape (`sts.s3.amazonaws.com` is a bucket).
+/// regional ones. A `*` that is the label before `amazonaws.com` is a region
+/// only, in these and in a provider's own patterns: other AWS services have
+/// hosts of this shape (`sts.s3.amazonaws.com` is a bucket).
 pub const STS_ENDPOINTS: [&str; 2] = ["https://sts.amazonaws.com", "https://sts.*.amazonaws.com"];
 /// How long a refused request is refused without a call.
 pub const REFUSED_TTL: Duration = Duration::from_secs(60);
@@ -81,6 +90,12 @@ const MAX_ANSWERS: u64 = 10_000;
 /// [`MAX_STS_CALLS`]. An answer of STS ends that: an STS that was down for a
 /// short time serves the client again at once.
 pub const MAX_STS_REFUSALS: u32 = 100;
+/// The most requests of one client with one access key that STS, or the
+/// check of its answer, may refuse per [`REFUSED_TTL`]. The next ones are
+/// refused without a call, and do not count for [`MAX_STS_REFUSALS`], so one
+/// job whose credentials are over does not stop the other callers behind
+/// its address.
+pub const MAX_KEY_REFUSALS: u32 = 10;
 /// The most calls to STS at a time: the others wait up to [`CALL_WAIT`], as
 /// those that run may all be refused.
 pub const MAX_STS_CALLS: usize = 20;
@@ -96,10 +111,11 @@ const AMZ_DATE: &str = "%Y%m%dT%H%M%SZ";
 /// The header that each answer of AWS has, also one without an error code.
 const REQUEST_ID_HEADER: &str = "x-amzn-requestid";
 /// The signed headers that are not sent to STS as the client wrote them:
-/// those of the connection, which the HTTP client writes.
-const NOT_FORWARDED: [&str; 11] = [
-    "host",
-    "content-length",
+/// the HTTP client writes them.
+const NOT_FORWARDED: [&str; 2] = ["host", "content-length"];
+/// The headers of the connection, which a request to STS cannot carry as
+/// the client wrote them: a request that signs one is refused.
+const NOT_SIGNED: [&str; 9] = [
     "connection",
     "expect",
     "keep-alive",
@@ -146,18 +162,35 @@ impl AwsProvider {
     }
 
     fn takes(&self, origin: &str, server_id: &str) -> bool {
-        self.endpoints.is_allowed(origin)
-            && !other_aws_service(origin)
-            && self.server_ids.iter().any(|id| id == server_id)
+        let endpoint = match self.endpoints.matching(origin) {
+            None => false,
+            Some(None) => true,
+            Some(Some(pattern)) => !other_aws_service(pattern, origin),
+        };
+        endpoint && self.server_ids.iter().any(|id| id == server_id)
     }
 }
 
-/// Whether `origin` is `https://sts.<label>.amazonaws.com` with a label
-/// that is not a region, so the host of another AWS service.
-fn other_aws_service(origin: &str) -> bool {
-    (origin.strip_prefix("https://sts."))
-        .and_then(|rest| rest.strip_suffix(".amazonaws.com"))
-        .is_some_and(|label| !label.contains('.') && !is_region(label))
+/// Whether `origin`, which `pattern` matches, is the host of another AWS
+/// service: the pattern has a `*` as the label before `amazonaws.com` or
+/// `amazonaws.com.cn`, and the origin has no region there.
+fn other_aws_service(pattern: &str, origin: &str) -> bool {
+    let labels = |url: &str| -> Vec<String> {
+        let host = url.split_once("://").map_or(url, |(_, rest)| rest);
+        let host = host.split([':', '/']).next().unwrap_or_default();
+        host.split('.').map(str::to_string).collect()
+    };
+    let (pattern, origin) = (labels(pattern), labels(origin));
+    let names: Vec<&str> = pattern.iter().map(String::as_str).collect();
+    let fixed = match names.as_slice() {
+        [.., "amazonaws", "com", "cn"] => 3,
+        [.., "amazonaws", "com"] => 2,
+        _ => return false,
+    };
+    let Some(at) = names.len().checked_sub(fixed + 1) else {
+        return false;
+    };
+    names[at] == "*" && !origin.get(at).is_some_and(|label| is_region(label))
 }
 
 /// Whether `label` has the shape of an AWS region: lowercase words and then
@@ -195,6 +228,11 @@ struct StsCalls {
     /// The calls of each client without a caller in the current
     /// [`REFUSED_TTL`].
     refusals: Windows<Client, Refusals>,
+    /// The refusals of each access key of a client in the current
+    /// [`REFUSED_TTL`].
+    keys: Windows<(Client, String), u32>,
+    /// When the log last said that no place was free in time.
+    busy: Every,
 }
 
 /// The places that a call to STS holds while it runs.
@@ -244,6 +282,32 @@ impl Drop for Probe<'_> {
     }
 }
 
+/// A call to STS that runs for an access key of a client. One that is
+/// dropped before it ended is counted as a call without an answer: its
+/// request went away, as after a timeout of the host.
+struct Running<'a> {
+    calls: &'a StsCalls,
+    key: &'a (Client, String),
+    ended: bool,
+}
+
+impl Running<'_> {
+    /// The call ended with `result`.
+    fn end<T>(&mut self, result: &Result<T, StsError>) {
+        self.ended = true;
+        self.calls.ended(self.key, result);
+    }
+}
+
+impl Drop for Running<'_> {
+    fn drop(&mut self) {
+        if !self.ended {
+            let unanswered = StsError::Unavailable(String::new());
+            self.calls.ended::<()>(self.key, &Err(unanswered));
+        }
+    }
+}
+
 impl AwsResolver {
     /// Takes bearer values that start with `prefix`, whose signed request
     /// carries the server id in header `server_id_header` (lowercase).
@@ -271,6 +335,8 @@ impl AwsResolver {
                 all: Semaphore::new(MAX_STS_CALLS),
                 limited: Semaphore::new(MAX_LIMITED_STS_CALLS),
                 refusals: Windows::new(REFUSED_TTL),
+                keys: Windows::new(REFUSED_TTL),
+                busy: Every::new(REFUSED_TTL),
             },
         }
     }
@@ -314,6 +380,11 @@ impl AwsResolver {
         let signed = |name: &str| authorization.signed_headers.split(';').any(|h| h == name);
         if !signed(header) {
             return Err(format!("{header} is not signed"));
+        }
+        if let Some(name) = NOT_SIGNED.iter().find(|name| signed(name)) {
+            return Err(format!(
+                "{name} is signed, and is not sent to STS as it is written"
+            ));
         }
         let providers: Vec<&AwsProvider> = (self.providers.iter())
             .filter(|p| p.takes(&origin, server_id))
@@ -367,8 +438,10 @@ impl AwsResolver {
             }
             sent.insert(header_name, value);
         }
+        let access_key = authorization.credential.split('/').next();
         Ok(Checked {
             providers,
+            access_key: access_key.unwrap_or_default().to_string(),
             url,
             headers: sent,
             key: hash.finalize().into(),
@@ -435,12 +508,23 @@ impl AwsResolver {
         checked: &Checked<'_>,
         client: &Client,
     ) -> Result<Result<Named, String>, AuthError> {
+        let key = (client.clone(), checked.access_key.clone());
+        if self.calls.refuses(&key) {
+            return Err(AuthError::Invalid(
+                "STS refused the last requests of the access key, try again later".into(),
+            ));
+        }
         let _place = self.calls.enter(client).await?;
+        let mut running = Running {
+            calls: &self.calls,
+            key: &key,
+            ended: false,
+        };
         let named = match self.caller_identity(checked).await {
             Ok(identity) => checked.named(identity),
             Err(e) => Err(e),
         };
-        self.calls.ended(client, &named);
+        running.end(&named);
         match named {
             Ok(named) => Ok(Ok(named)),
             Err(StsError::Refused(reason)) => Ok(Err(reason)),
@@ -502,7 +586,11 @@ impl StsCalls {
             Ok::<_, tokio::sync::AcquireError>((limited, self.all.acquire().await?))
         };
         let Ok(Ok((limited, call))) = tokio::time::timeout(CALL_WAIT, places).await else {
-            tracing::warn!("no call to STS ended in time; the AWS token is not checked");
+            if self.busy.due() {
+                tracing::warn!(
+                    "no call to STS ended in time; AWS tokens are not checked while it is so"
+                );
+            }
             return Err(AuthError::Unavailable(
                 "STS is busy, try again later".into(),
             ));
@@ -556,10 +644,21 @@ impl StsCalls {
         standing
     }
 
-    /// Count a call of `client` that ended with `result`. An answer of STS
-    /// lets the calls without an answer start anew.
-    fn ended<T>(&self, client: &Client, result: &Result<T, StsError>) {
-        self.refusals.with(client, |calls, _| match result {
+    /// Whether STS refused [`MAX_KEY_REFUSALS`] requests of the client and
+    /// access key `key` in the current [`REFUSED_TTL`].
+    fn refuses(&self, key: &(Client, String)) -> bool {
+        let refused = self.keys.read(key, |refused| *refused);
+        refused.is_some_and(|refused| refused >= MAX_KEY_REFUSALS)
+    }
+
+    /// Count a call of the client and access key `key` that ended with
+    /// `result`. An answer of STS lets the calls without an answer start
+    /// anew.
+    fn ended<T>(&self, key: &(Client, String), result: &Result<T, StsError>) {
+        if matches!(result, Err(StsError::Refused(_) | StsError::NotYet(_))) {
+            self.keys.with(key, |refused, _| *refused += 1);
+        }
+        self.refusals.with(&key.0, |calls, _| match result {
             Ok(_) => calls.unanswered = 0,
             Err(StsError::Unavailable(_)) => {
                 calls.unanswered = calls.unanswered.saturating_add(1);
@@ -632,6 +731,8 @@ struct SignedRequest {
 struct Checked<'a> {
     /// The providers of its endpoint and server id, one or more.
     providers: Vec<&'a AwsProvider>,
+    /// The id of the access key that signed it, as the value says.
+    access_key: String,
     url: reqwest::Url,
     /// The headers sent to STS.
     headers: HeaderMap,
@@ -871,12 +972,23 @@ mod tests {
     }
 
     /// A bearer value with the server id `api` in header `server_id`, signed
-    /// now.
+    /// now with the access key `A`.
     fn token(server_id: &str, extra: Option<&str>, signature: &str, padding: &str) -> String {
+        token_of("A", server_id, extra, signature, padding)
+    }
+
+    /// As [`token`], signed with `access_key`.
+    fn token_of(
+        access_key: &str,
+        server_id: &str,
+        extra: Option<&str>,
+        signature: &str,
+        padding: &str,
+    ) -> String {
         let date = Utc::now().format(AMZ_DATE).to_string();
         let authorization = format!(
-            "AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders=host;x-amz-date;x-server-id, \
-             Signature={signature}"
+            "AWS4-HMAC-SHA256 Credential={access_key}/x, \
+             SignedHeaders=host;x-amz-date;x-server-id, Signature={signature}"
         );
         let mut request = serde_json::json!({
             "method": "POST",
@@ -936,14 +1048,26 @@ mod tests {
         status_of(resolver, signature, None).await
     }
 
-    /// As [`status`], for a request from the address `peer`.
+    /// As [`status`], for a request from the address `peer`. Each value has
+    /// an access key of its own.
     async fn status_of(resolver: &AwsResolver, signature: &str, peer: Option<&str>) -> u16 {
+        status_with_key(resolver, &format!("K{signature}"), signature, peer).await
+    }
+
+    /// As [`status_of`], for a value signed with `access_key`.
+    async fn status_with_key(
+        resolver: &AwsResolver,
+        access_key: &str,
+        signature: &str,
+        peer: Option<&str>,
+    ) -> u16 {
         let (mut parts, ()) = axum::http::Request::new(()).into_parts();
         if let Some(peer) = peer {
             let peer: std::net::SocketAddr = format!("{peer}:1").parse().unwrap();
             parts.extensions.insert(axum::extract::ConnectInfo(peer));
         }
-        let cx = RequestContext::new(&parts, Some(token("x-server-id", None, signature, "")));
+        let token = token_of(access_key, "x-server-id", None, signature, "");
+        let cx = RequestContext::new(&parts, Some(token));
         match Resolver::<()>::resolve(resolver, &cx, &()).await {
             Resolution::Resolved(_) => 200,
             Resolution::Refused(AuthError::Invalid(_)) => 401,
@@ -974,6 +1098,86 @@ mod tests {
         assert_eq!(status_of(&resolver, "e1", Some("192.0.2.1")).await, 503);
         assert_eq!(status_of(&resolver, "e1", Some("192.0.2.2")).await, 200);
         assert_eq!(sts.calls(), 1 + MAX_STS_REFUSALS as usize);
+    }
+
+    /// Answers no request.
+    struct Hangs;
+
+    #[async_trait]
+    impl Transport for Hangs {
+        async fn send(&self, _: reqwest::RequestBuilder) -> reqwest::Result<reqwest::Response> {
+            std::future::pending().await
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_request_that_goes_away_is_a_call_without_an_answer() {
+        let provider = AwsProvider::new("aws", ["api"], ["123456789012"]);
+        let resolver =
+            AwsResolver::new("aws:", "X-Server-Id", vec![provider]).with_transport(Hangs);
+        let request = status(&resolver, "k1");
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), request)
+                .await
+                .is_err()
+        );
+        let unanswered = |resolver: &AwsResolver| {
+            (resolver.calls.refusals).with(&Client::of(None), |calls, _| calls.unanswered)
+        };
+        assert_eq!(unanswered(&resolver), 1);
+        assert_eq!(resolver.calls.all.available_permits(), MAX_STS_CALLS);
+    }
+
+    #[tokio::test]
+    async fn the_refusals_of_one_access_key_leave_the_others_of_the_client_served() {
+        let sts = Answers::default();
+        let resolver = resolver(&sts);
+        let peer = Some("192.0.2.1");
+        // A job with credentials that are over signs each request anew.
+        sts.set(403, true, REFUSAL);
+        for n in 0..2 * MAX_STS_REFUSALS {
+            let signature = format!("l{n}");
+            assert_eq!(
+                status_with_key(&resolver, "OVER", &signature, peer).await,
+                401
+            );
+        }
+        assert_eq!(sts.calls(), MAX_KEY_REFUSALS as usize);
+        // Another job behind the same address.
+        sts.set(200, true, CALLER);
+        assert_eq!(status_with_key(&resolver, "OTHER", "m1", peer).await, 200);
+        assert_eq!(status_with_key(&resolver, "OVER", "m2", peer).await, 401);
+        assert_eq!(sts.calls(), 1 + MAX_KEY_REFUSALS as usize);
+    }
+
+    #[test]
+    fn a_signed_header_of_the_connection_is_refused() {
+        let resolver = resolver(&Answers::default());
+        let date = Utc::now().format(AMZ_DATE).to_string();
+        for (name, value) in [
+            ("TE", "trailers"),
+            ("Connection", "close"),
+            ("Expect", "100-continue"),
+        ] {
+            let signed = format!("host;{};x-amz-date;x-server-id", name.to_ascii_lowercase());
+            let authorization =
+                format!("AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders={signed}, Signature=ab");
+            let request = serde_json::json!({
+                "method": "POST",
+                "url": "https://sts.amazonaws.com/",
+                "body": GET_CALLER_IDENTITY,
+                "headers": {
+                    "Authorization": authorization,
+                    "Host": "sts.amazonaws.com",
+                    name: value,
+                    "X-Amz-Date": date,
+                    "X-Server-Id": "api",
+                },
+            });
+            let token = format!("aws:{}", URL_SAFE_NO_PAD.encode(request.to_string()));
+            let refused = resolver.check(&token).map(|_| ()).unwrap_err();
+            assert!(refused.contains("is not sent to STS"), "{name}: {refused}");
+        }
     }
 
     #[tokio::test]
@@ -1113,8 +1317,10 @@ mod tests {
             "body": GET_CALLER_IDENTITY,
             "headers": {
                 "Authorization": "AWS4-HMAC-SHA256 Credential=A/x, \
-                    SignedHeaders=amz-sdk-request;host;te;x-amz-date;x-server-id, Signature=ab",
+                    SignedHeaders=amz-sdk-request;content-length;host;x-amz-date;x-server-id, \
+                    Signature=ab",
                 "Amz-Sdk-Request": "attempt=1",
+                "Content-Length": "43",
                 "Host": "sts.amazonaws.com",
                 "TE": "trailers",
                 "X-Amz-Date": date,
@@ -1127,7 +1333,7 @@ mod tests {
         let checked = resolver.check(&token).map_err(drop).unwrap();
         let mut sent: Vec<&str> = checked.headers.keys().map(HeaderName::as_str).collect();
         sent.sort_unstable();
-        // Not the headers of the connection, nor one that is not signed.
+        // Not those that the HTTP client writes, nor one that is not signed.
         let expected = [
             "amz-sdk-request",
             "authorization",
@@ -1197,6 +1403,25 @@ mod tests {
                 provider.takes(&origin, "https://api.example.com"),
                 "{origin}"
             );
+        }
+        // A `*` before `amazonaws.com` is a region in each pattern.
+        let others = provider.clone().with_endpoints(&[
+            "https://sts-fips.*.amazonaws.com",
+            "https://sts.*.amazonaws.com.cn",
+            "https://*.sts.eu-west-1.vpce.amazonaws.com",
+        ]);
+        for origin in [
+            "https://sts-fips.us-east-1.amazonaws.com",
+            "https://sts.cn-north-1.amazonaws.com.cn",
+            "https://vpce-0a1b-2c3d.sts.eu-west-1.vpce.amazonaws.com",
+        ] {
+            assert!(others.takes(origin, "https://api.example.com"), "{origin}");
+        }
+        for origin in [
+            "https://sts-fips.s3.amazonaws.com",
+            "https://sts.s3.amazonaws.com.cn",
+        ] {
+            assert!(!others.takes(origin, "https://api.example.com"), "{origin}");
         }
         let local = provider.with_endpoints(&["http://127.0.0.1:9000"]);
         assert!(local.takes("http://127.0.0.1:9000", "https://api.example.com"));

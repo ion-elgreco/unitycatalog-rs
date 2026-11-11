@@ -37,6 +37,8 @@ struct Inner<K, T> {
     windows: HashMap<K, (Instant, T)>,
     /// The number of windows at which those that are over are removed.
     sweep_at: usize,
+    /// When those that are over were last removed.
+    swept: Option<Instant>,
 }
 
 impl<K: Eq + Hash + Clone, T: Default> Windows<K, T> {
@@ -46,6 +48,7 @@ impl<K: Eq + Hash + Clone, T: Default> Windows<K, T> {
             inner: std::sync::Mutex::new(Inner {
                 windows: HashMap::new(),
                 sweep_at: MIN_SWEEP,
+                swept: None,
             }),
         }
     }
@@ -55,15 +58,32 @@ impl<K: Eq + Hash + Clone, T: Default> Windows<K, T> {
         self.with_at(Instant::now(), key, f)
     }
 
+    /// Read the current window of `key`, if it has one. No window is made.
+    pub(crate) fn read<R>(&self, key: &K, f: impl FnOnce(&T) -> R) -> Option<R> {
+        let now = Instant::now();
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let (start, value) = inner.windows.get(key)?;
+        (now.saturating_duration_since(*start) < self.length).then(|| f(value))
+    }
+
     /// As [`with`](Self::with), at the time `now`.
     fn with_at<R>(&self, now: Instant, key: &K, f: impl FnOnce(&mut T, Instant) -> R) -> R {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let inner = &mut *inner;
         let length = self.length;
         let over = |start: &Instant| now.saturating_duration_since(*start) >= length;
-        if inner.windows.len() >= inner.sweep_at && !inner.windows.contains_key(key) {
+        // The windows that are over are removed when a new key makes the
+        // map twice as large as it was after the last time, and once per
+        // `length` while it has [`MIN_SWEEP`] or more, so the windows of a
+        // burst do not stay until the next one.
+        let full = inner.windows.len() >= inner.sweep_at && !inner.windows.contains_key(key);
+        let swept = *inner.swept.get_or_insert(now);
+        let due = inner.windows.len() >= MIN_SWEEP && over(&swept);
+        if full || due {
             inner.windows.retain(|_, (start, _)| !over(start));
             inner.sweep_at = (2 * inner.windows.len()).max(MIN_SWEEP);
+            inner.windows.shrink_to(inner.sweep_at);
+            inner.swept = Some(now);
         }
         let (start, value) = match inner.windows.get_mut(key) {
             Some(window) => window,
@@ -74,6 +94,36 @@ impl<K: Eq + Hash + Clone, T: Default> Windows<K, T> {
             *value = T::default();
         }
         f(value, *start)
+    }
+}
+
+/// Says once per `length` that something is due, such as a line of the log
+/// that many requests would write.
+pub(crate) struct Every {
+    length: Duration,
+    last: std::sync::Mutex<Option<Instant>>,
+}
+
+impl Every {
+    pub(crate) fn new(length: Duration) -> Self {
+        Self {
+            length,
+            last: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// Whether `length` went by since this was last `true`.
+    pub(crate) fn due(&self) -> bool {
+        self.due_at(Instant::now())
+    }
+
+    fn due_at(&self, now: Instant) -> bool {
+        let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
+        let due = last.is_none_or(|at| now.saturating_duration_since(at) >= self.length);
+        if due {
+            *last = Some(now);
+        }
+        due
     }
 }
 
@@ -117,5 +167,31 @@ mod tests {
         assert_eq!(count(next, MIN_SWEEP), 1);
         let kept = windows.inner.lock().unwrap().windows.len();
         assert_eq!(kept, 2);
+    }
+
+    #[test]
+    fn something_is_due_once_per_length() {
+        let length = Duration::from_secs(60);
+        let every = Every::new(length);
+        let start = Instant::now();
+        assert!(every.due_at(start));
+        assert!(!every.due_at(start));
+        assert!(!every.due_at(start + length - Duration::from_millis(1)));
+        assert!(every.due_at(start + length));
+        assert!(!every.due_at(start + length));
+    }
+
+    #[test]
+    fn the_windows_of_a_burst_are_removed_when_they_are_over() {
+        let length = Duration::from_secs(60);
+        let windows: Windows<usize, u32> = Windows::new(length);
+        let start = Instant::now();
+        for key in 0..4 * MIN_SWEEP - 100 {
+            windows.with_at(start, &key, |_, _| ());
+        }
+        // No more keys arrive than before the burst.
+        windows.with_at(start + length, &0, |_, _| ());
+        let kept = windows.inner.lock().unwrap().windows.len();
+        assert_eq!(kept, 1);
     }
 }

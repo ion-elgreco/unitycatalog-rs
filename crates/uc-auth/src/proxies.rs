@@ -48,7 +48,8 @@ impl TrustedProxies {
 
     /// The client of a request with `headers` on a connection from `peer`:
     /// `peer` itself, unless it is a proxy that names another address.
-    pub fn client(&self, peer: IpAddr, headers: &HeaderMap) -> IpAddr {
+    #[cfg(test)]
+    fn client(&self, peer: IpAddr, headers: &HeaderMap) -> IpAddr {
         let peer = unmapped(peer);
         match self.trusts(peer) {
             true => self.forwarded(peer, headers),
@@ -58,10 +59,9 @@ impl TrustedProxies {
 
     /// The client that `headers` name on a connection from the proxy `peer`.
     fn forwarded(&self, peer: IpAddr, headers: &HeaderMap) -> IpAddr {
+        // A line that is no text is one value that is no address.
         let lines = headers.get_all(X_FORWARDED_FOR).iter().rev();
-        let forwarded = lines
-            .filter_map(|line| line.to_str().ok())
-            .flat_map(|line| line.rsplit(','));
+        let forwarded = lines.flat_map(|line| line.to_str().unwrap_or_default().rsplit(','));
         // The address that the last proxy saw, then the one before it, up
         // to the first that is no proxy. A value that is no address ends
         // the chain: what is before it cannot be trusted.
@@ -163,6 +163,25 @@ mod tests {
             client("10.0.0.1", &["192.0.2.7, unknown, 10.0.0.2"]),
             "10.0.0.2"
         );
+    }
+
+    #[test]
+    fn a_line_that_is_no_text_ends_the_chain() {
+        let proxies = TrustedProxies::new(["10.0.0.0/8".parse().unwrap()]);
+        let no_text = axum::http::HeaderValue::from_bytes(b"\xff").unwrap();
+        let peer: IpAddr = "10.0.0.1".parse().unwrap();
+        // What a client sent, and what the proxy added.
+        let mut headers = HeaderMap::new();
+        headers.append(X_FORWARDED_FOR, "192.0.2.7".parse().unwrap());
+        headers.append(X_FORWARDED_FOR, no_text.clone());
+        assert_eq!(proxies.forwarded(peer, &headers), peer);
+        headers.append(X_FORWARDED_FOR, "192.0.2.8".parse().unwrap());
+        assert_eq!(proxies.forwarded(peer, &headers).to_string(), "192.0.2.8");
+        let mut headers = HeaderMap::new();
+        headers.append(X_FORWARDED_FOR, "192.0.2.7".parse().unwrap());
+        headers.append(X_FORWARDED_FOR, no_text);
+        headers.append(X_FORWARDED_FOR, "10.0.0.2".parse().unwrap());
+        assert_eq!(proxies.forwarded(peer, &headers).to_string(), "10.0.0.2");
     }
 
     #[test]

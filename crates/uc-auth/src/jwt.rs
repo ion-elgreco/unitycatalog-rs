@@ -17,7 +17,8 @@
 //! the others from theirs, and for all clients together
 //! (`MAX_ASKED_ISSUERS_ALL`), so many clients do not make a call each. An
 //! issuer that does not answer is not counted as made up, so an issuer that
-//! was down for a short time is asked again at once. An issuer of a pattern
+//! was down for a short time is asked again at once. One whose host has no
+//! address is counted: anyone can name such a host. An issuer of a pattern
 //! that never had keys is forgotten `UNKNOWN_ISSUER_TTL` after it was last
 //! asked. It is kept apart from the issuers that had keys, so made-up
 //! issuers do not take their places.
@@ -759,9 +760,13 @@ impl Fetcher {
                 "Could not get issuer configuration from {path}"
             )))
         };
+        // A host without an address is no issuer: anyone can name one.
         let response = (self.transport.send(self.http.get(&path)))
             .await
-            .map_err(|e| unreachable(&e))?;
+            .map_err(|e| FetchError {
+                no_issuer: no_such_host(&e),
+                ..unreachable(&e)
+            })?;
         let status = response.status();
         if !status.is_success() {
             let error = VerifyError::Unavailable(format!(
@@ -771,7 +776,9 @@ impl Fetcher {
             let no_issuer = refuses(status);
             return Err(FetchError { error, no_issuer });
         }
-        let config: Map<String, Value> = response.json().await.map_err(|_| {
+        // An answer that ends early is of an issuer that is down.
+        let body = response.bytes().await.map_err(|e| unreachable(&e))?;
+        let config: Map<String, Value> = serde_json::from_slice(&body).map_err(|_| {
             FetchError::no_issuer(VerifyError::Unavailable(format!(
                 "Issuer configuration from {path} is not valid JSON"
             )))
@@ -825,6 +832,18 @@ impl Fetcher {
         }
         Ok(usable)
     }
+}
+
+/// Whether `error` is of a host name that has no address.
+fn no_such_host(error: &reqwest::Error) -> bool {
+    let mut cause = std::error::Error::source(error);
+    while let Some(error) = cause {
+        if error.to_string().starts_with("dns error") {
+            return true;
+        }
+        cause = error.source();
+    }
+    false
 }
 
 /// A key of a key set, `None` for a kind that is not known and for an
@@ -1385,6 +1404,45 @@ mod tests {
                 .is_err()
         );
         assert_eq!(down.calls(), 2 * MAX_NEW_ISSUERS as usize);
+    }
+
+    #[tokio::test]
+    async fn an_issuer_whose_host_has_no_address_is_made_up() {
+        let keys = JwtKeys::default();
+        let scope = scope("http://*.made-up.invalid");
+        let key = (keys.key("http://t1.made-up.invalid", Some("k1"), Some(&scope))).await;
+        assert!(matches!(key, Err(VerifyError::Unavailable(_))), "{key:?}");
+        let counts = (keys.new_issuers).window(&scope, |w| (w.asked, w.without_keys));
+        assert_eq!(counts, (1, 1));
+    }
+
+    #[tokio::test]
+    async fn an_answer_that_ends_early_is_of_no_made_up_issuer() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let issuer = format!("http://{}", listener.local_addr().unwrap());
+        // The headers and the start of a document, then the connection ends.
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let mut request = [0; 1024];
+                let _ = stream.read(&mut request).await;
+                let answer = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                              content-length: 100\r\n\r\n{\"issuer\":";
+                let _ = stream.write_all(answer.as_bytes()).await;
+            }
+        });
+        let keys = JwtKeys::default();
+        let scope = scope("http://*");
+        let key = keys.key(&issuer, Some("k1"), Some(&scope)).await;
+        let Err(VerifyError::Unavailable(reason)) = key else {
+            panic!("not unavailable");
+        };
+        assert!(
+            reason.starts_with("Could not get issuer configuration"),
+            "{reason}"
+        );
+        let counts = (keys.new_issuers).window(&scope, |w| (w.asked, w.without_keys));
+        assert_eq!(counts, (1, 0));
     }
 
     #[test]

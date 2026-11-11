@@ -7,14 +7,13 @@ pub mod scim_filter;
 pub mod scim_patch;
 pub mod scim_schema;
 
-use std::net::SocketAddr;
 use std::time::Duration;
 
 use axum::{
-    Extension, Json,
+    Json,
     body::Bytes,
-    extract::{ConnectInfo, State},
-    http::{HeaderMap, StatusCode, header},
+    extract::State,
+    http::{HeaderMap, StatusCode, header, request::Parts},
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
@@ -87,13 +86,12 @@ fn parse_form(headers: &HeaderMap, body: &[u8]) -> Result<OAuthTokenExchangeForm
 pub async fn grant_token(
     State(state): State<AppState>,
     Query(params): Query<TokenParams>,
-    connection: Option<Extension<ConnectInfo<SocketAddr>>>,
-    headers: HeaderMap,
+    parts: Parts,
     body: Bytes,
 ) -> ApiResult<Response> {
     // The limits on new issuers count for the client's address.
-    let client = connection
-        .map(|Extension(ConnectInfo(peer))| state.auth.proxies.client(peer.ip(), &headers));
+    let client = uc_auth::RequestContext::new(&parts, None).client();
+    let headers = &parts.headers;
     let cookie_requested = match params.ext.as_deref() {
         None => false,
         Some("cookie") => true,
@@ -101,7 +99,7 @@ pub async fn grant_token(
             return Err(Error::invalid_argument(format!("Unsupported ext: {other}")).into());
         }
     };
-    let form = parse_form(&headers, &body)?;
+    let form = parse_form(headers, &body)?;
     let shown = |v: &Option<String>| v.clone().unwrap_or_else(|| "null".into());
     if form.grant_type.as_deref() != Some(TOKEN_EXCHANGE) {
         return Err(Error::invalid_argument(format!(
