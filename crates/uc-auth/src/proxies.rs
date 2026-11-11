@@ -1,6 +1,6 @@
 //! The client's address behind proxies.
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use axum::http::{HeaderMap, request::Parts};
@@ -46,17 +46,6 @@ impl TrustedProxies {
     pub fn trusts(&self, address: IpAddr) -> bool {
         let address = unmapped(address);
         self.0.iter().any(|net| net.contains(&address))
-    }
-
-    /// The client of a request with `headers` on a connection from `peer`:
-    /// `peer` itself, unless it is a proxy that names another address.
-    #[cfg(test)]
-    fn client(&self, peer: IpAddr, headers: &HeaderMap) -> IpAddr {
-        let peer = unmapped(peer);
-        match self.trusts(peer) {
-            true => self.forwarded(peer, headers),
-            false => peer,
-        }
     }
 
     /// The client that `headers` name on a connection from the proxy `peer`.
@@ -126,24 +115,35 @@ fn unmapped_net(net: IpNet) -> IpNet {
     v4.map_or(net, IpNet::V4)
 }
 
-/// An address of `X-Forwarded-For`, which some proxies write with a port.
+/// An address of `X-Forwarded-For`, which some proxies write with a port,
+/// and an IPv6 one in brackets.
 fn address(value: &str) -> Option<IpAddr> {
     let plain = value.parse::<IpAddr>().ok();
     let with_port = || value.parse::<SocketAddr>().ok().map(|socket| socket.ip());
-    plain.or_else(with_port).map(unmapped)
+    let in_brackets = || {
+        let bare = value.strip_prefix('[')?.strip_suffix(']')?;
+        bare.parse::<Ipv6Addr>().ok().map(IpAddr::V6)
+    };
+    plain.or_else(with_port).or_else(in_brackets).map(unmapped)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// The client of a request with the `X-Forwarded-For` lines `forwarded`
+    /// on a connection from `peer`, as [`TrustedProxies::mark`] finds it.
     fn client(peer: &str, forwarded: &[&str]) -> String {
         let proxies = TrustedProxies::new(["10.0.0.0/8".parse().unwrap()]);
-        let mut headers = HeaderMap::new();
+        let (mut parts, ()) = axum::http::Request::new(()).into_parts();
         for line in forwarded {
-            headers.append(X_FORWARDED_FOR, line.parse().unwrap());
+            (parts.headers).append(X_FORWARDED_FOR, line.parse().unwrap());
         }
-        proxies.client(peer.parse().unwrap(), &headers).to_string()
+        let peer = SocketAddr::new(peer.parse().unwrap(), 5000);
+        (parts.extensions).insert(axum::extract::ConnectInfo(peer));
+        proxies.mark(&mut parts);
+        let client = RequestContext::new(&parts, None).client();
+        client.unwrap().to_string()
     }
 
     #[test]
@@ -163,6 +163,8 @@ mod tests {
             "2001:db8::1"
         );
         assert_eq!(client("10.0.0.1", &["192.0.2.7:1234"]), "192.0.2.7");
+        assert_eq!(client("10.0.0.1", &["[2001:db8::1]"]), "2001:db8::1");
+        assert_eq!(client("10.0.0.1", &["192.0.2.7, [192.0.2.8]"]), "10.0.0.1");
     }
 
     #[test]

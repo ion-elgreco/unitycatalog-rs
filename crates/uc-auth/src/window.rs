@@ -7,6 +7,10 @@ use std::time::{Duration, Instant};
 
 /// The fewest windows at which those that are over are removed.
 const MIN_SWEEP: usize = 1024;
+/// The most windows that are kept. A new key then takes the place of
+/// another one, whose window starts anew: whoever has that many keys has a
+/// new key for each request too.
+const MAX_WINDOWS: usize = 100_000;
 
 /// Who a limit counts for: the address of the client
 /// ([`RequestContext::client`](crate::RequestContext::client)), an IPv6 one
@@ -99,6 +103,10 @@ impl<K: Eq + Hash + Clone, T: Default> Windows<K, T> {
             inner.sweep_at = (2 * inner.windows.len()).max(MIN_SWEEP);
             inner.windows.shrink_to(inner.sweep_at);
             inner.swept = Some(now);
+        }
+        if inner.windows.len() >= MAX_WINDOWS && !inner.windows.contains_key(key) {
+            let other = inner.windows.keys().next().cloned();
+            other.and_then(|other| inner.windows.remove(&other));
         }
         let (start, value) = match inner.windows.get_mut(key) {
             Some(window) => window,
@@ -205,6 +213,20 @@ mod tests {
             (1, 2, 3)
         );
         assert_eq!(count(start + 2 * step + length), 1);
+    }
+
+    #[test]
+    fn the_windows_are_kept_up_to_a_limit() {
+        let windows: Windows<usize, u32> = Windows::new(Duration::from_secs(60));
+        let start = Instant::now();
+        for key in 0..MAX_WINDOWS + 10 {
+            windows.with_at(start, &key, |count, _| *count += 1);
+        }
+        let kept = windows.inner.lock().unwrap().windows.len();
+        assert_eq!(kept, MAX_WINDOWS);
+        // A key that has a window keeps it.
+        let last = MAX_WINDOWS + 9;
+        assert_eq!(windows.with_at(start, &last, |count, _| *count), 1);
     }
 
     #[test]

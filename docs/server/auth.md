@@ -442,10 +442,12 @@ keeps each provider to its own groups.
   60 seconds of clock skew. A token without `exp` is refused.
 - It fetches a provider's keys once an hour, and never more than once a minute. When the provider
   does not answer, or its answer is not a key set or has no key that the server can use, it keeps
-  the keys it has, for one day at most. A key set with no keys at all withdraws them. When the
-  keys are older than one hour, a request waits for the new keys, so a key that the provider
-  withdrew is refused. Only while the provider does not answer, a request uses the kept keys at
-  once.
+  the keys it has, for one day at most. A key set with no keys at all withdraws them. So does an
+  answer that there is no such provider: an HTTP 4xx other than 407, 408 and 429, or a discovery
+  document that is not the provider's. The server starts the fetch five minutes before the hour
+  ends, so requests do not wait for it. When the keys are older than one hour, a request waits for
+  the new keys, so a key that the provider withdrew is refused. Only while the provider does not
+  answer, a request uses the kept keys at once.
 - For an `issuer` with `*`, it fetches keys for the new issuers of each client until 20 of them
   answered that they have none in a minute, and for at most 200 new issuers in a minute. A new
   issuer that does not answer, or answers with HTTP 5xx, is not one of the 20, so issuers that
@@ -516,11 +518,14 @@ STS is. So does a minute without a request of that client. A request that ends b
 such as one that timed out, counts as not answered.
 
 A client that had a refused request in the current minute, or an unanswered one since the last
-answer of STS, shares 10 of the 20 requests at a time with the other such clients. The other 10
-stay free for the clients that had none.
+answer of STS, shares 10 of the 20 requests at a time with the other such clients. So does each
+request of a client that waits or runs next to another request of that client. The other 10 stay
+free for one request at a time of each client that had none.
 
 The server sends the headers that the request signs to STS, except those of the connection, such
-as `Host`.
+as `Host`. Of the headers that the request does not sign, it sends `X-Amz-Security-Token`, and a
+`Content-Type` that it writes itself.
+The request must sign `X-Amz-Date`. STS can answer in XML or in JSON.
 
 ### Behind a proxy
 

@@ -17,6 +17,8 @@
 //! - it signs no header of the connection but `host` and `content-length`:
 //!   the HTTP client writes those, so STS would not find the signature
 //!   right;
+//! - it signs `x-amz-date`, and its access key id is no longer than
+//!   [`MAX_ACCESS_KEY_LENGTH`];
 //! - it was signed less than [`SIGNED_REQUEST_TTL`] ago, as STS also checks;
 //! - STS answers with the ARN of one of the provider's `accounts`.
 //!
@@ -36,7 +38,8 @@
 //! to STS. At most [`MAX_STS_CALLS`] run at a time, and at most
 //! [`MAX_LIMITED_STS_CALLS`] of them for the clients
 //! ([`RequestContext::client`]) that had a call without a caller in the
-//! current [`REFUSED_TTL`], so the other clients have places. After
+//! current [`REFUSED_TTL`], and for each call of a client next to another
+//! of its calls, so the other clients have places. After
 //! [`MAX_KEY_REFUSALS`] refusals of one access key of a client in a
 //! [`REFUSED_TTL`], its next requests with that key are refused without a
 //! call, so one job whose credentials are over does not use up the refusals
@@ -50,6 +53,7 @@
 //! served, and so are the identities that are kept.
 
 use std::collections::{BTreeMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -101,12 +105,20 @@ pub const MAX_KEY_REFUSALS: u32 = 10;
 /// those that run may all be refused.
 pub const MAX_STS_CALLS: usize = 20;
 /// The most calls to STS at a time for the clients that had a call without
-/// a caller in the current [`REFUSED_TTL`]. The other places are for the
-/// clients that had none, so many clients with made-up signatures do not
-/// keep them waiting.
+/// a caller in the current [`REFUSED_TTL`], and for the calls of a client
+/// that has another call waiting or running. The other places are for the
+/// one call of each client that had none, so clients with made-up
+/// signatures, or with many values for an endpoint that does not answer, do
+/// not keep the others waiting.
 pub const MAX_LIMITED_STS_CALLS: usize = MAX_STS_CALLS / 2;
 /// How long a call to STS waits for a place.
 pub const CALL_WAIT: Duration = Duration::from_secs(5);
+/// The longest access key id of a signed request, which is the longest
+/// that AWS makes.
+pub const MAX_ACCESS_KEY_LENGTH: usize = 128;
+/// How often a request asks again when the request with the same value that
+/// it waited for ended at a limit of another client.
+const MAX_ASKS: u32 = 3;
 /// The format of the `X-Amz-Date` header.
 const AMZ_DATE: &str = "%Y%m%dT%H%M%SZ";
 /// The header that each answer of AWS has, also one without an error code.
@@ -114,6 +126,13 @@ const REQUEST_ID_HEADER: &str = "x-amzn-requestid";
 /// The signed headers that are not sent to STS as the client wrote them:
 /// the HTTP client writes them.
 const NOT_FORWARDED: [&str; 2] = ["host", "content-length"];
+/// The headers that go to STS also when they are not signed. Any other
+/// header that is not signed is not sent: STS does not read it, so each
+/// value of it would be a request of its own with one signature.
+const FORWARDED_UNSIGNED: [&str; 2] = ["content-type", "x-amz-security-token"];
+/// The `content-type` that is sent when the request does not sign its own,
+/// so that it is one request however it writes the header.
+const FORM: &str = "application/x-www-form-urlencoded; charset=utf-8";
 /// The headers of the connection, which a request to STS cannot carry as
 /// the client wrote them: a request that signs one is refused.
 const NOT_SIGNED: [&str; 9] = [
@@ -176,13 +195,12 @@ impl AwsProvider {
 /// service: the pattern has a `*` as the label before `amazonaws.com` or
 /// `amazonaws.com.cn`, and the origin has no region there.
 fn other_aws_service(pattern: &str, origin: &str) -> bool {
-    let labels = |url: &str| -> Vec<String> {
+    fn labels(url: &str) -> Vec<&str> {
         let host = url.split_once("://").map_or(url, |(_, rest)| rest);
         let host = host.split([':', '/']).next().unwrap_or_default();
-        host.split('.').map(str::to_string).collect()
-    };
-    let (pattern, origin) = (labels(pattern), labels(origin));
-    let names: Vec<&str> = pattern.iter().map(String::as_str).collect();
+        host.split('.').collect()
+    }
+    let (names, origin) = (labels(pattern), labels(origin));
     let fixed = match names.as_slice() {
         [.., "amazonaws", "com", "cn"] => 3,
         [.., "amazonaws", "com"] => 2,
@@ -246,6 +264,7 @@ struct Place<'a> {
     _limited: Option<SemaphorePermit<'a>>,
     _call: SemaphorePermit<'a>,
     _probe: Option<Probe<'a>>,
+    _entered: Entered<'a>,
 }
 
 /// The calls of a client that STS, or the check of its answer, refused.
@@ -256,10 +275,13 @@ struct Refusals {
     logged: bool,
 }
 
-/// The calls of a client that STS did not answer, since its last answer.
+/// The calls of a client that STS did not answer, since its last answer,
+/// and those that wait or run now.
 #[derive(Default)]
 struct Unanswered {
     calls: u32,
+    /// The calls that wait for a place or run.
+    entered: u32,
     /// Whether a call of the client runs while it is over the limit of
     /// calls without an answer.
     probing: bool,
@@ -289,6 +311,30 @@ impl Drop for Probe<'_> {
     fn drop(&mut self) {
         (self.unanswered).with(self.client, |unanswered, _| unanswered.probing = false);
     }
+}
+
+/// A call of a client that waits for a place or runs.
+struct Entered<'a> {
+    unanswered: &'a Windows<Client, Unanswered>,
+    client: &'a Client,
+}
+
+impl Drop for Entered<'_> {
+    fn drop(&mut self) {
+        (self.unanswered).with(self.client, |unanswered, _| {
+            unanswered.entered = unanswered.entered.saturating_sub(1);
+        });
+    }
+}
+
+/// Why a request has no answer of STS to keep.
+#[derive(Clone)]
+enum NoAnswer {
+    /// A limit of the client that asked. A request of another client with
+    /// the same value asks for itself.
+    Limit(AuthError),
+    /// STS gave no answer, or one that may change.
+    Sts(AuthError),
 }
 
 /// A call to STS that runs for an access key of a client. One that is
@@ -392,6 +438,14 @@ impl AwsResolver {
         if !signed(header) {
             return Err(format!("{header} is not signed"));
         }
+        if !signed("x-amz-date") {
+            return Err("x-amz-date is not signed".into());
+        }
+        let access_key = authorization.credential.split('/').next();
+        let access_key = access_key.unwrap_or_default();
+        if access_key.len() > MAX_ACCESS_KEY_LENGTH {
+            return Err("the access key id is too long".into());
+        }
         if let Some(name) = NOT_SIGNED.iter().find(|name| signed(name)) {
             return Err(format!(
                 "{name} is signed, and is not sent to STS as it is written"
@@ -417,15 +471,14 @@ impl AwsResolver {
         }
         let left = (ttl - age).to_std().unwrap_or_default();
         // The headers that go to STS are the authorization, the signed ones
-        // (but [`NOT_FORWARDED`]), and those of AWS, which a client can add
-        // after it signed. They are written in one way: the authorization
-        // from its parts, the others with single spaces, as the signature
-        // reads them. The hash is of the URL and these headers, in the
-        // order of their names.
+        // (but [`NOT_FORWARDED`]), and [`FORWARDED_UNSIGNED`]. They are
+        // written in one way: the authorization from its parts, a
+        // `content-type` that is not signed as [`FORM`], the others with
+        // single spaces, as the signature reads them. The hash is of the
+        // URL and these headers, in the order of their names.
         let forwarded = |name: &str| {
             name == "authorization"
-                || name == "content-type"
-                || name.starts_with("x-amz-")
+                || FORWARDED_UNSIGNED.contains(&name)
                 || (signed(name) && !NOT_FORWARDED.contains(&name))
         };
         let mut sent = HeaderMap::new();
@@ -437,9 +490,10 @@ impl AwsResolver {
             }
             let header_name = HeaderName::from_bytes(name.as_bytes())
                 .map_err(|_| format!("not a header name: {name:?}"))?;
-            let value = match name == "authorization" {
-                true => authorization.to_string(),
-                false => single_spaces(value),
+            let value = match name.as_str() {
+                "authorization" => authorization.to_string(),
+                "content-type" if !signed(name) => FORM.to_string(),
+                _ => single_spaces(value),
             };
             let value = HeaderValue::from_str(&value)
                 .map_err(|_| format!("not a value of header {name}"))?;
@@ -449,10 +503,9 @@ impl AwsResolver {
             }
             sent.insert(header_name, value);
         }
-        let access_key = authorization.credential.split('/').next();
         Ok(Checked {
             providers,
-            access_key: access_key.unwrap_or_default().to_string(),
+            access_key: access_key.to_string(),
             url,
             headers: sent,
             key: hash.finalize().into(),
@@ -461,7 +514,8 @@ impl AwsResolver {
     }
 
     /// Send the signed request to STS, which names the caller or refuses
-    /// the request. No answer, one of 5xx, STS's throttling (HTTP 400 or
+    /// the request, in XML or, for a request that signs such an `accept`,
+    /// in JSON. No answer, one of 5xx, STS's throttling (HTTP 400 or
     /// 429), or a proxy's own answer (HTTP 407 or 408, or another 4xx
     /// without an STS error code and without the request id of AWS) is
     /// [`StsError::Unavailable`], as the caller may well be signed in. A
@@ -518,17 +572,17 @@ impl AwsResolver {
         &self,
         checked: &Checked<'_>,
         client: &Client,
-    ) -> Result<Result<Named, String>, AuthError> {
+    ) -> Result<Result<Named, String>, NoAnswer> {
         let key = (client.clone(), checked.access_key.clone());
         let refused = || {
-            AuthError::Invalid(
+            NoAnswer::Limit(AuthError::Invalid(
                 "STS refused the last requests of the access key, try again later".into(),
-            )
+            ))
         };
         if self.calls.refuses(&key) {
             return Err(refused());
         }
-        let _place = self.calls.enter(client).await?;
+        let _place = (self.calls.enter(client).await).map_err(NoAnswer::Limit)?;
         // The calls that this one waited for may have been the key's.
         if self.calls.refuses(&key) {
             return Err(refused());
@@ -547,8 +601,10 @@ impl AwsResolver {
             Ok(named) => Ok(Ok(named)),
             Err(StsError::Refused(reason)) => Ok(Err(reason)),
             // Not an answer to keep: STS may take the request later.
-            Err(StsError::NotYet(reason)) => Err(AuthError::Invalid(reason)),
-            Err(StsError::Unavailable(reason)) => Err(AuthError::Unavailable(reason)),
+            Err(StsError::NotYet(reason)) => Err(NoAnswer::Sts(AuthError::Invalid(reason))),
+            Err(StsError::Unavailable(reason)) => {
+                Err(NoAnswer::Sts(AuthError::Unavailable(reason)))
+            }
         }
     }
 }
@@ -591,9 +647,19 @@ impl StsCalls {
         let too_often = || {
             AuthError::Unavailable("Too many AWS tokens without a caller, try again later".into())
         };
+        // Counted before the wait, so the calls of one client that arrive
+        // together do not all count as its first.
+        let first = self.unanswered.with(client, |unanswered, _| {
+            unanswered.entered += 1;
+            unanswered.entered == 1
+        });
+        let entered = Entered {
+            unanswered: &self.unanswered,
+            client,
+        };
         let limited = match self.standing(client, false) {
             Standing::TooOften => return Err(too_often()),
-            Standing::Clean => false,
+            Standing::Clean => !first,
             Standing::WithoutCaller | Standing::Probe => true,
         };
         let places = async {
@@ -626,6 +692,7 @@ impl StsCalls {
             _limited: limited,
             _call: call,
             _probe: probe,
+            _entered: entered,
         })
     }
 
@@ -675,8 +742,19 @@ impl StsCalls {
     /// `result`. An answer of STS lets the calls without an answer start
     /// anew.
     fn ended<T>(&self, key: &(Client, String), result: &Result<T, StsError>) {
-        if matches!(result, Err(StsError::Refused(_) | StsError::NotYet(_))) {
-            self.keys.with(key, |refused, _| *refused += 1);
+        let refused = matches!(result, Err(StsError::Refused(_) | StsError::NotYet(_)));
+        let over = refused
+            && self.keys.with(key, |refused, _| {
+                *refused += 1;
+                *refused == MAX_KEY_REFUSALS
+            });
+        if over {
+            tracing::warn!(
+                client = ?key.0,
+                access_key = %key.1,
+                "STS refused too many requests of the access key; its next ones from the client \
+                 are refused without a call for now"
+            );
         }
         let answered = !matches!(result, Err(StsError::Unavailable(_)));
         if result.is_err() && answered {
@@ -705,18 +783,33 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
             }
         };
         // One call for the requests with one value that arrive together.
+        // A request that waited for the one of another client, which ended
+        // at a limit of that client, asks again.
         let client = Client::of(cx.client());
-        let answer = (self.answers)
-            .try_get_with(checked.key, self.ask(&checked, &client))
-            .await;
+        let own = AtomicBool::new(false);
+        let mut asks = 0;
+        let answer = loop {
+            let ask = async {
+                own.store(true, Ordering::Relaxed);
+                self.ask(&checked, &client).await
+            };
+            asks += 1;
+            let unanswered = match self.answers.try_get_with(checked.key, ask).await {
+                Ok(answer) => break answer,
+                Err(unanswered) => unanswered,
+            };
+            match &*unanswered {
+                NoAnswer::Limit(_) if !own.load(Ordering::Relaxed) && asks < MAX_ASKS => {}
+                NoAnswer::Limit(e) | NoAnswer::Sts(e) => return Resolution::Refused(e.clone()),
+            }
+        };
         let Named {
             provider,
             arn,
             identity,
         } = match answer {
-            Ok(Ok(named)) => named,
-            Ok(Err(reason)) => return Resolution::Refused(AuthError::Invalid(reason)),
-            Err(unanswered) => return Resolution::Refused((*unanswered).clone()),
+            Ok(named) => named,
+            Err(reason) => return Resolution::Refused(AuthError::Invalid(reason)),
         };
         let mut found = Identity::new(&provider, Identity::AWS_SIGV4, arn.clone());
         found.claims.insert("arn".into(), Value::from(arn));
@@ -841,9 +934,9 @@ fn single_spaces(value: &str) -> String {
 
 /// Whether the answer of STS is its throttling (`Throttling: Rate
 /// exceeded`), which comes as HTTP 400.
-fn throttled(xml: &str) -> bool {
+fn throttled(answer: &str) -> bool {
     matches!(
-        element(xml, "Code").as_deref(),
+        element(answer, "Code").as_deref(),
         Some("Throttling" | "ThrottlingException" | "RequestLimitExceeded")
     )
 }
@@ -852,12 +945,28 @@ fn throttled(xml: &str) -> bool {
 /// also says of a new key for some seconds.
 const NOT_YET_KNOWN: &str = "InvalidClientTokenId";
 
-/// The text of the first element `name` of an STS answer.
-fn element(xml: &str, name: &str) -> Option<String> {
-    let open = format!("<{name}>");
-    let start = xml.find(&open)? + open.len();
-    let end = start + xml[start..].find(&format!("</{name}>"))?;
-    Some(xml[start..end].trim().to_string()).filter(|v| !v.is_empty())
+/// The text of the first element `name` of an STS answer in XML, or of the
+/// first member `name` of one in JSON.
+fn element(answer: &str, name: &str) -> Option<String> {
+    let text = match answer.trim_start().starts_with('{') {
+        true => member(&serde_json::from_str(answer).ok()?, name)?,
+        false => {
+            let open = format!("<{name}>");
+            let start = answer.find(&open)? + open.len();
+            let end = start + answer[start..].find(&format!("</{name}>"))?;
+            answer[start..end].to_string()
+        }
+    };
+    Some(text.trim().to_string()).filter(|v| !v.is_empty())
+}
+
+/// The first text member `name` of a JSON value, at any depth.
+fn member(json: &Value, name: &str) -> Option<String> {
+    let object = json.as_object()?;
+    match object.get(name).and_then(Value::as_str) {
+        Some(text) => Some(text.to_string()),
+        None => object.values().find_map(|value| member(value, name)),
+    }
 }
 
 /// What STS says of the caller.
@@ -869,11 +978,11 @@ struct CallerIdentity {
 }
 
 /// The `Arn`, `Account` and `UserId` of an STS `GetCallerIdentity` answer.
-fn parse_caller_identity(xml: &str) -> Option<CallerIdentity> {
+fn parse_caller_identity(answer: &str) -> Option<CallerIdentity> {
     Some(CallerIdentity {
-        arn: element(xml, "Arn")?,
-        account: element(xml, "Account")?,
-        user_id: element(xml, "UserId").unwrap_or_default(),
+        arn: element(answer, "Arn")?,
+        account: element(answer, "Account")?,
+        user_id: element(answer, "UserId").unwrap_or_default(),
     })
 }
 
@@ -947,6 +1056,25 @@ mod tests {
             })
         );
         assert_eq!(parse_caller_identity("<Arn>x</Arn>"), None);
+    }
+
+    #[test]
+    fn the_answer_of_sts_in_json() {
+        let json = r#"{"GetCallerIdentityResponse": {"GetCallerIdentityResult": {
+            "Account": "123456789012", "Arn": "arn:aws:iam::123456789012:user/alice",
+            "UserId": "AIDAEXAMPLE"}, "ResponseMetadata": {"RequestId": "r1"}}}"#;
+        let identity = parse_caller_identity(json).unwrap();
+        assert_eq!(identity.arn, "arn:aws:iam::123456789012:user/alice");
+        assert_eq!(identity.account, "123456789012");
+        assert_eq!(identity.user_id, "AIDAEXAMPLE");
+        let error = |code: &str| {
+            format!(r#"{{"Error": {{"Code": "{code}", "Type": "Sender"}}, "RequestId": "r1"}}"#)
+        };
+        assert!(throttled(&error("Throttling")));
+        let code = element(&error(NOT_YET_KNOWN), "Code");
+        assert_eq!(code.as_deref(), Some(NOT_YET_KNOWN));
+        assert_eq!(parse_caller_identity(r#"{"Arn": 1}"#), None);
+        assert_eq!(parse_caller_identity("{"), None);
     }
 
     #[test]
@@ -1383,6 +1511,100 @@ mod tests {
             "AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders=host, Signature=ab"
         );
         assert_ne!(key(token("x-server-id", None, "cd", "")), one);
+    }
+
+    /// A bearer value with `headers` next to those that each request has,
+    /// which signs `signed`.
+    fn token_with(signed: &str, headers: &[(&str, &str)]) -> String {
+        let date = Utc::now().format(AMZ_DATE).to_string();
+        let authorization =
+            format!("AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders={signed}, Signature=ab");
+        let mut request = serde_json::json!({
+            "method": "POST",
+            "url": "https://sts.amazonaws.com/",
+            "body": GET_CALLER_IDENTITY,
+            "headers": { "X-Server-Id": "api", "X-Amz-Date": date, "Authorization": authorization },
+        });
+        for (name, value) in headers {
+            request["headers"][name] = (*value).into();
+        }
+        format!("aws:{}", URL_SAFE_NO_PAD.encode(request.to_string()))
+    }
+
+    #[test]
+    fn a_header_that_is_not_signed_makes_no_other_request() {
+        let resolver = resolver(&Answers::default());
+        let signed = "host;x-amz-date;x-server-id";
+        let key = |headers: &[(&str, &str)]| {
+            let checked = resolver.check(&token_with(signed, headers));
+            checked.map(|c| c.key).map_err(drop).unwrap()
+        };
+        let one = key(&[("Content-Type", "application/x-www-form-urlencoded")]);
+        assert_eq!(key(&[("Content-Type", "text/plain; n=1")]), one);
+        assert_eq!(
+            key(&[("Content-Type", "text/plain"), ("X-Amz-N", "1")]),
+            one
+        );
+        assert_ne!(key(&[]), one);
+        // A signed one is sent as it is written.
+        let signed = "content-type;host;x-amz-date;x-server-id";
+        let token = token_with(signed, &[("Content-Type", "text/plain")]);
+        let checked = resolver.check(&token).map_err(drop).unwrap();
+        assert_eq!(checked.headers["content-type"], "text/plain");
+    }
+
+    #[test]
+    fn the_date_is_signed_and_the_access_key_is_short() {
+        let resolver = resolver(&Answers::default());
+        let refused = |token: String| resolver.check(&token).map(|_| ()).unwrap_err();
+        assert_eq!(
+            refused(token_with("host;x-server-id", &[])),
+            "x-amz-date is not signed"
+        );
+        let long = "A".repeat(MAX_ACCESS_KEY_LENGTH + 1);
+        let long = token_of(&long, "x-server-id", None, "ab", "");
+        assert_eq!(refused(long), "the access key id is too long");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_calls_of_one_client_at_a_time_leave_places_to_the_others() {
+        let sts = Answers::default();
+        let resolver = resolver(&sts);
+        sts.set(200, true, CALLER);
+        let _running = (resolver.calls.limited)
+            .acquire_many(MAX_LIMITED_STS_CALLS as u32)
+            .await
+            .unwrap();
+        // The first call of the client has a place, its next one waits with
+        // the clients that had a call without a caller.
+        let (a, b) = tokio::join!(
+            status_of(&resolver, "n1", Some("192.0.2.1")),
+            status_of(&resolver, "n2", Some("192.0.2.1")),
+        );
+        assert_eq!([a, b], [200, 503]);
+        assert_eq!(status_of(&resolver, "n3", Some("192.0.2.1")).await, 200);
+        assert_eq!(sts.calls(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_limit_of_one_client_is_not_the_answer_to_another() {
+        let sts = Answers::default();
+        let resolver = resolver(&sts);
+        sts.set(403, true, REFUSAL);
+        assert_eq!(status_of(&resolver, "o1", Some("192.0.2.1")).await, 401);
+        let _running = (resolver.calls.limited)
+            .acquire_many(MAX_LIMITED_STS_CALLS as u32)
+            .await
+            .unwrap();
+        sts.set(200, true, CALLER);
+        // The first client finds no place. The other one waits for it, as
+        // the value is the same, and then asks for itself.
+        let (a, b) = tokio::join!(
+            status_of(&resolver, "o2", Some("192.0.2.1")),
+            status_of(&resolver, "o2", Some("192.0.2.2")),
+        );
+        assert_eq!([a, b], [503, 200]);
+        assert_eq!(sts.calls(), 2);
     }
 
     #[test]
