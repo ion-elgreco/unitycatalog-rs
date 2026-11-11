@@ -773,7 +773,9 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
         let checked = match self.check(token) {
             Ok(checked) => checked,
             Err(reason) => {
-                tracing::warn!(%reason, "AWS token refused");
+                // The reason may hold text of the token, such as its server
+                // id: the log has it with control characters escaped.
+                tracing::warn!(?reason, "AWS token refused");
                 return Resolution::Refused(AuthError::Invalid(reason));
             }
         };

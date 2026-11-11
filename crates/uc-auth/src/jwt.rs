@@ -964,13 +964,19 @@ impl Fetcher {
                     "JWKS configuration missing".into(),
                 ))
             })?;
+        let no_key_set = |e: &dyn std::fmt::Display| {
+            tracing::warn!(%jwks_uri, error = %e, "cannot fetch the issuer's keys");
+            FetchError::down(VerifyError::Unavailable(format!(
+                "Could not get the keys of issuer {issuer}"
+            )))
+        };
         let set: Value = (self.transport.send(self.http.get(jwks_uri)))
             .await
             .and_then(|r| r.error_for_status())
-            .map_err(|e| unreachable(&e))?
+            .map_err(|e| no_key_set(&e))?
             .json()
             .await
-            .map_err(|e| unreachable(&e))?;
+            .map_err(|e| no_key_set(&e))?;
         // An answer that is no key set is an error page or a broken issuer:
         // the keys it had are kept.
         let Some(keys) = set["keys"].as_array() else {
@@ -1270,8 +1276,11 @@ impl<S: Send + Sync> Resolver<S> for JwtResolver {
                 return Resolution::Refused(AuthError::Unavailable(reason));
             }
             Err(e) => {
-                tracing::warn!(%iss, reason = %e, "token refused");
-                return Resolution::Refused(AuthError::invalid(e.to_string()));
+                // The reason may hold text of the token, such as its key id
+                // or `alg`: the log has it with control characters escaped.
+                let reason = e.to_string();
+                tracing::warn!(%iss, ?reason, "token refused");
+                return Resolution::Refused(AuthError::invalid(reason));
             }
         };
         let claims = decoded.claims;
@@ -1615,6 +1624,40 @@ mod tests {
         // It is back: its keys serve again.
         (removed.gone).store(false, std::sync::atomic::Ordering::SeqCst);
         assert!(refetched(&keys, "https://a", None).await.is_ok());
+    }
+
+    /// Answers as an issuer whose key set is down: HTTP 500 for all but the
+    /// discovery document.
+    struct KeysDown;
+
+    #[async_trait]
+    impl Transport for KeysDown {
+        async fn send(
+            &self,
+            request: reqwest::RequestBuilder,
+        ) -> reqwest::Result<reqwest::Response> {
+            let url = request.build()?.url().to_string();
+            let response = match url.strip_suffix("/.well-known/openid-configuration") {
+                Some(issuer) => axum::http::Response::new(
+                    serde_json::json!({ "issuer": issuer, "jwks_uri": format!("{issuer}/keys") })
+                        .to_string(),
+                ),
+                None => (axum::http::Response::builder().status(500))
+                    .body(String::new())
+                    .unwrap(),
+            };
+            Ok(response.into())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_key_set_that_cannot_be_fetched_is_not_the_configuration() {
+        let keys = JwtKeys::new(KeysDown);
+        let key = keys.key("https://a", Some("k1"), None).await;
+        assert!(
+            matches!(&key, Err(VerifyError::Unavailable(m)) if m == "Could not get the keys of issuer https://a"),
+            "{key:?}"
+        );
     }
 
     #[tokio::test]
