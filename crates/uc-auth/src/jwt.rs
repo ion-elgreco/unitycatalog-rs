@@ -6,7 +6,8 @@
 //! unknown. An issuer is asked at most once a minute, also after a fetch
 //! that failed or whose request went away, and its keys are kept while it
 //! cannot be reached, or while its key set has keys but none that is
-//! usable. A key set with no keys at all withdraws them. Encryption keys
+//! usable, for a day at most. A key set with no keys at all withdraws them.
+//! Encryption keys
 //! are left out. An ES512 key is kept, although `jsonwebtoken` does not
 //! know that `alg`.
 //! RS256/384/512 and ES256/384/512 are accepted, with [`DEFAULT_LEEWAY`] of
@@ -36,6 +37,10 @@ pub const DEFAULT_LEEWAY: Duration = Duration::from_secs(60);
 /// issuer is asked at most [`MIN_REFRESH`] often.
 const KEYS_TTL: Duration = Duration::from_secs(60 * 60);
 const MIN_REFRESH: Duration = Duration::from_secs(60);
+/// Keys serve this long after they were fetched while each fetch since
+/// failed. After that the tokens of the issuer are refused until it answers
+/// with keys, so a key that the issuer withdrew does not serve without end.
+const KEPT_KEYS_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// The most issuers whose keys are kept. A pattern with `*` matches many.
 const MAX_ISSUERS: u64 = 1_000;
 /// The most issuers without keys that are asked per [`MIN_REFRESH`] and
@@ -196,11 +201,14 @@ impl NewIssuers {
 
     /// Count an issuer of `pattern` that is asked now, and give it a place
     /// to hold until it answered. It waits while [`MAX_NEW_ISSUERS`] others
-    /// are asked, for [`FETCH_TIMEOUT`] at most, and moves to the next
-    /// window when that one starts. `None` when no more issuers are asked
-    /// in the window, or when the wait was too long.
-    async fn reserve(&self, pattern: &str) -> Option<OwnedSemaphorePermit> {
-        let deadline = tokio::time::Instant::now() + FETCH_TIMEOUT;
+    /// are asked, until `deadline` at most, and moves to the next window
+    /// when that one starts. `None` when no more issuers are asked in the
+    /// window, or when no place was free by `deadline`.
+    async fn reserve(
+        &self,
+        pattern: &str,
+        deadline: tokio::time::Instant,
+    ) -> Option<OwnedSemaphorePermit> {
         loop {
             let (places, ends) = self.window(pattern, |window| {
                 (window.asked < MAX_ASKED_ISSUERS)
@@ -230,6 +238,13 @@ impl NewIssuers {
                 None => {}
             }
         }
+    }
+
+    /// Whether `place` is of the current window of `pattern`.
+    fn is_current(&self, pattern: &str, place: &OwnedSemaphorePermit) -> bool {
+        self.window(pattern, |window| {
+            Arc::ptr_eq(&window.places, place.semaphore())
+        })
     }
 
     /// The issuer of `pattern` that held `place` had no keys.
@@ -285,16 +300,24 @@ struct Fetched {
 impl Fetched {
     /// The key `key_id` among keys younger than [`KEYS_TTL`].
     fn fresh(&self, key_id: Option<&str>) -> Option<Jwk> {
+        self.younger(KEYS_TTL, key_id)
+    }
+
+    /// The key `key_id` among keys younger than [`KEPT_KEYS_TTL`]: those
+    /// that serve while a fetch runs, and after one that failed.
+    fn kept(&self, key_id: Option<&str>) -> Option<Jwk> {
+        self.younger(KEPT_KEYS_TTL, key_id)
+    }
+
+    fn younger(&self, ttl: Duration, key_id: Option<&str>) -> Option<Jwk> {
         let (set, at) = self.keys.as_ref()?;
-        (at.elapsed() < KEYS_TTL)
-            .then(|| find(set, key_id))
-            .flatten()
+        (at.elapsed() < ttl).then(|| find(set, key_id)).flatten()
     }
 
     /// The key `key_id` after a fetch: from the keys just fetched, or from
-    /// older ones when the fetch failed.
+    /// older ones when the fetch failed, up to [`KEPT_KEYS_TTL`] old.
     fn answer(&self, key_id: Option<&str>, issuer: &str) -> Result<Jwk, VerifyError> {
-        if let Some(key) = (self.keys.as_ref()).and_then(|(set, _)| find(set, key_id)) {
+        if let Some(key) = self.kept(key_id) {
             return Ok(key);
         }
         if let Some(failure) = &self.failure {
@@ -445,18 +468,20 @@ impl JwtKeys {
             tracing::warn!(%issuer, ?pattern, "too many new issuers; the token is refused for now");
             VerifyError::Unavailable(format!("Too many new issuers, try again later: {issuer}"))
         };
-        let keys = match (self.issuers.get(issuer).await, pattern) {
-            (Some(keys), _) => keys,
-            (None, None) => {
+        // The wait for a place ends here for all the requests for one
+        // issuer, also for those that wait for its fetch lock first.
+        let deadline = tokio::time::Instant::now() + FETCH_TIMEOUT;
+        let keys = match pattern {
+            None => {
                 (self.issuers)
                     .get_with(issuer.to_string(), async { Arc::default() })
                     .await
             }
             // A new issuer of a pattern is counted before it is kept, so
             // nothing is kept for the issuers that are not asked.
-            (None, Some(pattern)) => {
+            Some(pattern) => {
                 let counted = async {
-                    let place = self.new_issuers.reserve(pattern).await.ok_or(())?;
+                    let place = (self.new_issuers.reserve(pattern, deadline).await).ok_or(())?;
                     Ok::<_, ()>(Arc::new(IssuerKeys {
                         place: std::sync::Mutex::new(Some(place)),
                         ..Default::default()
@@ -476,7 +501,7 @@ impl JwtKeys {
             if let Some(key) = fetched.fresh(key_id) {
                 return Ok(key);
             }
-            (fetched.keys.as_ref()).and_then(|(set, _)| find(set, key_id))
+            fetched.kept(key_id)
         };
         // One fetch at a time per issuer. While one runs, the keys that it
         // is to replace serve.
@@ -498,19 +523,22 @@ impl JwtKeys {
             }
             pattern.filter(|_| !fetched.known)
         };
-        // An issuer that was kept before is counted again. The fetch lock
-        // is held here, so only this request takes or reserves a place.
+        // An issuer that was kept before is counted again, and so is one
+        // whose place is of a window that is over. The fetch lock is held
+        // here, so only this request takes or reserves a place.
         let reserved = (keys.place.lock().unwrap_or_else(|e| e.into_inner())).take();
-        let counted = match (new, reserved) {
-            (None, _) => None,
-            (Some(pattern), Some(place)) => Some((pattern, place)),
-            (Some(pattern), None) => match self.new_issuers.reserve(pattern).await {
-                Some(place) => Some((pattern, place)),
-                None => return Err(too_many()),
-            },
+        let counted = match new {
+            None => None,
+            Some(pattern) => {
+                let place = match reserved.filter(|p| self.new_issuers.is_current(pattern, p)) {
+                    Some(place) => place,
+                    None => {
+                        (self.new_issuers.reserve(pattern, deadline).await).ok_or_else(too_many)?
+                    }
+                };
+                Some((self.new_issuers.clone(), pattern.to_string(), place))
+            }
         };
-        let counted =
-            counted.map(|(pattern, place)| (self.new_issuers.clone(), pattern.to_string(), place));
         {
             // Asked now, also when this request goes away before the answer:
             // the fetch runs on, and the requests until it ends get this.
@@ -974,6 +1002,19 @@ mod tests {
             Fetched::default().answer(Some("k1"), "https://x"),
             Err(VerifyError::Invalid(_))
         ));
+        // Not without end: the issuer may have withdrawn them.
+        let Some(old) = Instant::now().checked_sub(KEPT_KEYS_TTL + Duration::from_secs(1)) else {
+            return;
+        };
+        let fetched = Fetched {
+            keys: Some((vec![jwk(Some("k1"))], old)),
+            ..fetched
+        };
+        assert!(fetched.kept(Some("k1")).is_none());
+        assert!(matches!(
+            fetched.answer(Some("k1"), "https://x"),
+            Err(VerifyError::Unavailable(_))
+        ));
     }
 
     /// Answers every request with HTTP 500 after `delay`, and counts them.
@@ -1133,11 +1174,60 @@ mod tests {
         let places = new_issuers.window("https://*.a", |w| w.places.clone());
         let taken = places.acquire_many_owned(MAX_NEW_ISSUERS).await.unwrap();
         let waited = tokio::time::Instant::now();
-        assert!(new_issuers.reserve("https://*.a").await.is_none());
+        let deadline = waited + FETCH_TIMEOUT;
+        assert!(new_issuers.reserve("https://*.a", deadline).await.is_none());
         assert_eq!(waited.elapsed(), FETCH_TIMEOUT);
         assert_eq!(new_issuers.window("https://*.a", |w| w.asked), 0);
         drop(taken);
-        assert!(new_issuers.reserve("https://*.a").await.is_some());
+        // A free place is taken also after the deadline.
+        assert!(new_issuers.reserve("https://*.a", deadline).await.is_some());
+    }
+
+    /// Requests for one issuer that is kept, when no place is free: they
+    /// wait together, not one after the other.
+    #[tokio::test(start_paused = true)]
+    async fn requests_for_one_issuer_wait_for_a_place_together() {
+        let keys = Arc::new(JwtKeys::new(Down::default()));
+        keys.issuers
+            .insert("https://t.a".into(), Arc::default())
+            .await;
+        let places = keys.new_issuers.window("https://*.a", |w| w.places.clone());
+        let _taken = places.acquire_many_owned(MAX_NEW_ISSUERS).await.unwrap();
+        let waited = tokio::time::Instant::now();
+        let mut all = tokio::task::JoinSet::new();
+        for _ in 0..10 {
+            let keys = keys.clone();
+            all.spawn(async move {
+                keys.key("https://t.a", Some("k1"), Some("https://*.a"))
+                    .await
+            });
+        }
+        for key in all.join_all().await {
+            assert!(matches!(key, Err(VerifyError::Unavailable(_))), "{key:?}");
+        }
+        assert_eq!(waited.elapsed(), FETCH_TIMEOUT);
+    }
+
+    /// The place of an issuer whose first fetch did not start in the window
+    /// of the place: the fetch is counted in the window that it runs in.
+    #[tokio::test]
+    async fn a_place_of_an_old_window_is_not_used() {
+        let keys = JwtKeys::new(Serves::new(KEY_SET));
+        let pattern = "https://*.a";
+        let deadline = tokio::time::Instant::now() + FETCH_TIMEOUT;
+        let place = keys.new_issuers.reserve(pattern, deadline).await.unwrap();
+        let entry = Arc::new(IssuerKeys {
+            place: std::sync::Mutex::new(Some(place)),
+            ..Default::default()
+        });
+        keys.issuers.insert("https://t.a".into(), entry).await;
+        keys.new_issuers.window(pattern, |w| *w = Window::new());
+        assert!(
+            keys.key("https://t.a", Some("k1"), Some(pattern))
+                .await
+                .is_ok()
+        );
+        assert_eq!(keys.new_issuers.window(pattern, |w| w.asked), 1);
     }
 
     #[tokio::test]

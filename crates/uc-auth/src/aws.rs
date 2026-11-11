@@ -24,8 +24,15 @@
 //! session is not a caller of its own. The identity is kept until the
 //! signed request expires. A request that STS refused, or whose caller no
 //! provider takes, is refused for [`REFUSED_TTL`] without a call, however
-//! the value writes it. An HTTP 4xx answer without an STS error code is of
-//! a proxy on the way, and is no refusal.
+//! the value writes it. An HTTP 4xx answer without an STS error code and
+//! without the request id of AWS is of a proxy on the way, and is no
+//! refusal.
+//!
+//! The signature is the caller's to choose, so each value could make a call
+//! to STS. At most [`MAX_STS_CALLS`] run at a time, and after
+//! [`MAX_STS_REFUSALS`] refusals in a [`REFUSED_TTL`] no request is sent
+//! until the next one starts: new callers get HTTP 503 then, and the
+//! identities that are kept still serve.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -38,6 +45,7 @@ use moka::future::Cache;
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use tokio::sync::Semaphore;
 
 use crate::{
     Allowlist, AuthError, Direct, Identity, RequestContext, Resolution, Resolver, Transport,
@@ -57,6 +65,16 @@ pub const STS_ENDPOINTS: [&str; 2] = ["https://sts.amazonaws.com", "https://sts.
 pub const REFUSED_TTL: Duration = Duration::from_secs(60);
 /// The most refused requests that are remembered.
 const MAX_REFUSED: u64 = 10_000;
+/// The most requests that STS, or the check of its answer, may refuse per
+/// [`REFUSED_TTL`], so values with made-up signatures do not make a call
+/// each.
+pub const MAX_STS_REFUSALS: u32 = 100;
+/// The most calls to STS at a time: the others wait up to [`CALL_WAIT`], as
+/// those that run may all be refused.
+pub const MAX_STS_CALLS: usize = 20;
+const CALL_WAIT: Duration = Duration::from_secs(5);
+/// The header that each answer of AWS has, also one without an error code.
+const REQUEST_ID_HEADER: &str = "x-amzn-requestid";
 
 /// The accounts whose identities an [`AwsResolver`] takes, the STS
 /// endpoints their requests may go to, and the server ids they must sign.
@@ -129,6 +147,10 @@ pub struct AwsResolver {
     /// Why a request was refused after a call to STS, by the hash of what
     /// is sent to STS ([`Checked::key`]).
     refused: Cache<[u8; 32], String>,
+    /// A place for each call to STS that runs.
+    calls: Semaphore,
+    /// The refusals since the start of the current [`REFUSED_TTL`].
+    refusals: std::sync::Mutex<(Instant, u32)>,
 }
 
 impl AwsResolver {
@@ -154,6 +176,8 @@ impl AwsResolver {
                 .max_capacity(MAX_REFUSED)
                 .time_to_live(REFUSED_TTL)
                 .build(),
+            calls: Semaphore::new(MAX_STS_CALLS),
+            refusals: std::sync::Mutex::new((Instant::now(), 0)),
         }
     }
 
@@ -249,8 +273,10 @@ impl AwsResolver {
     /// Send the signed request to STS, which names the caller or refuses
     /// the request. No answer, one of 5xx, STS's throttling (HTTP 400 or
     /// 429), or a proxy's own answer (HTTP 407 or 408, or another 4xx
-    /// without an STS error code) is [`StsError::Unavailable`], as the
-    /// caller may well be signed in.
+    /// without an STS error code and without the request id of AWS) is
+    /// [`StsError::Unavailable`], as the caller may well be signed in. A
+    /// request that is too large (HTTP 413 or 431) is refused, whoever says
+    /// so.
     async fn caller_identity(&self, checked: &Checked<'_>) -> Result<CallerIdentity, StsError> {
         let request = (self.http.post(checked.url.clone()))
             .headers(checked.headers.clone())
@@ -261,6 +287,7 @@ impl AwsResolver {
         };
         let response = (self.transport.send(request).await).map_err(|e| unreachable(&e))?;
         let status = response.status();
+        let from_aws = response.headers().contains_key(REQUEST_ID_HEADER);
         let body = response.text().await.map_err(|e| unreachable(&e))?;
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS || throttled(&body) {
             return Err(unreachable(&"STS throttles the requests"));
@@ -271,12 +298,16 @@ impl AwsResolver {
             return Err(unreachable(&format!("HTTP {}", status.as_u16())));
         }
         if status.is_client_error() {
-            let Some(code) = element(&body, "Code") else {
+            let code = element(&body, "Code");
+            let too_large = status == reqwest::StatusCode::PAYLOAD_TOO_LARGE
+                || status == reqwest::StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE;
+            if code.is_none() && !from_aws && !too_large {
                 return Err(unreachable(&format!(
                     "HTTP {} without an STS error code",
                     status.as_u16()
                 )));
-            };
+            }
+            let code = code.unwrap_or_default();
             tracing::warn!(
                 status = status.as_u16(),
                 %code,
@@ -299,8 +330,38 @@ impl AwsResolver {
     /// without a call.
     async fn refuse(&self, key: [u8; 32], reason: String) -> Resolution {
         self.refused.insert(key, reason.clone()).await;
+        self.count_refusal();
         refused(reason)
     }
+
+    /// The refusals of the current [`REFUSED_TTL`].
+    fn refusals<T>(&self, f: impl FnOnce(&mut u32) -> T) -> T {
+        let mut refusals = self.refusals.lock().unwrap_or_else(|e| e.into_inner());
+        if refusals.0.elapsed() >= REFUSED_TTL {
+            *refusals = (Instant::now(), 0);
+        }
+        f(&mut refusals.1)
+    }
+
+    fn count_refusal(&self) {
+        self.refusals(|count| *count += 1);
+    }
+
+    /// The answer to the request `key` without a call to STS, if it has
+    /// one: it was refused before, or too many requests were.
+    async fn without_call(&self, key: &[u8; 32]) -> Option<Resolution> {
+        if let Some(reason) = self.refused.get(key).await {
+            return Some(Resolution::Refused(AuthError::Invalid(reason)));
+        }
+        (self.refusals(|count| *count >= MAX_STS_REFUSALS)).then(too_many)
+    }
+}
+
+/// No call to STS for now.
+fn too_many() -> Resolution {
+    tracing::warn!("too many refused AWS tokens; no request goes to STS for now");
+    let reason = "Too many refused AWS tokens, try again later";
+    Resolution::Refused(AuthError::Unavailable(reason.into()))
 }
 
 /// Refuse a bearer value for `reason`.
@@ -320,8 +381,15 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
             Err(reason) => return refused(reason),
         };
         let key = checked.key;
-        if let Some(reason) = self.refused.get(&key).await {
-            return Resolution::Refused(AuthError::Invalid(reason));
+        if let Some(answer) = self.without_call(&key).await {
+            return answer;
+        }
+        let Ok(Ok(_call)) = tokio::time::timeout(CALL_WAIT, self.calls.acquire()).await else {
+            return too_many();
+        };
+        // The calls that this one waited for may have decided it.
+        if let Some(answer) = self.without_call(&key).await {
+            return answer;
         }
         let identity = match self.caller_identity(&checked).await {
             Ok(identity) => identity,
@@ -329,6 +397,7 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
                 return Resolution::Refused(AuthError::Unavailable(reason));
             }
             Err(StsError::NotYet(reason)) => {
+                self.count_refusal();
                 return Resolution::Refused(AuthError::Invalid(reason));
             }
             Err(StsError::Refused(reason)) => return self.refuse(key, reason).await,
@@ -575,28 +644,117 @@ mod tests {
         assert!(!throttled("not xml"));
     }
 
+    /// A bearer value for server id `api`, signed now.
+    fn token(server_id: &str, extra: Option<&str>, signature: &str, padding: &str) -> String {
+        let date = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+        let authorization = format!(
+            "AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders=host;x-amz-date;x-server-id, \
+             Signature={signature}"
+        );
+        let mut request = serde_json::json!({
+            "method": "POST",
+            "url": "https://sts.amazonaws.com/",
+            "body": GET_CALLER_IDENTITY,
+            "headers": { server_id: "api", "X-Amz-Date": date, "Authorization": authorization },
+        });
+        if let Some(extra) = extra {
+            request["headers"]["Accept"] = extra.into();
+        }
+        let json = URL_SAFE_NO_PAD.encode(request.to_string());
+        format!("aws:{json}{padding}")
+    }
+
+    /// Answers every request as it is set to, and counts them.
+    #[derive(Clone, Default)]
+    struct Answers {
+        calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        answer: std::sync::Arc<std::sync::Mutex<(u16, bool, &'static str)>>,
+    }
+
+    impl Answers {
+        /// The next answers: the status, whether with the request id of
+        /// AWS, and the body.
+        fn set(&self, status: u16, from_aws: bool, body: &'static str) {
+            *self.answer.lock().unwrap() = (status, from_aws, body);
+        }
+
+        fn calls(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl Transport for Answers {
+        async fn send(&self, _: reqwest::RequestBuilder) -> reqwest::Result<reqwest::Response> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let (status, from_aws, body) = *self.answer.lock().unwrap();
+            let mut response = axum::http::Response::builder().status(status);
+            if from_aws {
+                response = response.header("x-amzn-RequestId", "r1");
+            }
+            Ok(response.body(body).unwrap().into())
+        }
+    }
+
+    fn resolver(sts: &Answers) -> AwsResolver {
+        let provider = AwsProvider::new("aws", ["api"], ["123456789012"]);
+        AwsResolver::new("aws:", "X-Server-Id", vec![provider]).with_transport(sts.clone())
+    }
+
+    /// The HTTP status of the answer to a request with the value of
+    /// `signature`: 401 for a refused one, 503 for one that was not checked.
+    async fn status(resolver: &AwsResolver, signature: &str) -> u16 {
+        let (parts, ()) = axum::http::Request::new(()).into_parts();
+        let cx = RequestContext::new(&parts, Some(token("x-server-id", None, signature, "")));
+        match Resolver::<()>::resolve(resolver, &cx, &()).await {
+            Resolution::Refused(AuthError::Invalid(_)) => 401,
+            Resolution::Refused(AuthError::Unavailable(_)) => 503,
+            _ => 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn answers_without_an_error_code() {
+        let sts = Answers::default();
+        let resolver = resolver(&sts);
+        // Of a proxy on the way: no refusal, and asked again.
+        sts.set(403, false, "<html>Forbidden</html>");
+        assert_eq!(status(&resolver, "a1").await, 503);
+        assert_eq!(status(&resolver, "a1").await, 503);
+        assert_eq!(sts.calls(), 2);
+        // Of AWS, and of a hop that finds the request too large: refused,
+        // and not asked again.
+        sts.set(404, true, "<UnknownOperationException/>");
+        assert_eq!(status(&resolver, "a2").await, 401);
+        assert_eq!(status(&resolver, "a2").await, 401);
+        sts.set(431, false, "");
+        assert_eq!(status(&resolver, "a3").await, 401);
+        assert_eq!(status(&resolver, "a3").await, 401);
+        assert_eq!(sts.calls(), 4);
+    }
+
+    #[tokio::test]
+    async fn refused_requests_make_a_limited_number_of_calls() {
+        let sts = Answers::default();
+        let resolver = resolver(&sts);
+        sts.set(
+            403,
+            true,
+            "<ErrorResponse><Error><Code>InvalidClientTokenId</Code></Error></ErrorResponse>",
+        );
+        for n in 0..MAX_STS_REFUSALS {
+            assert_eq!(status(&resolver, &format!("b{n}")).await, 401, "{n}");
+        }
+        for n in 0..5 {
+            assert_eq!(status(&resolver, &format!("c{n}")).await, 503, "{n}");
+        }
+        assert_eq!(sts.calls(), MAX_STS_REFUSALS as usize);
+    }
+
     #[test]
     fn a_request_has_one_key_however_it_is_written() {
         let provider = AwsProvider::new("aws", ["api"], ["123456789012"]);
         let resolver = AwsResolver::new("aws:", "X-Server-Id", vec![provider]);
-        let date = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
-        let token = |server_id: &str, extra: Option<&str>, signature: &str, padding: &str| {
-            let authorization = format!(
-                "AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders=host;x-amz-date;x-server-id, \
-                 Signature={signature}"
-            );
-            let mut request = serde_json::json!({
-                "method": "POST",
-                "url": "https://sts.amazonaws.com/",
-                "body": GET_CALLER_IDENTITY,
-                "headers": { server_id: "api", "X-Amz-Date": date, "Authorization": authorization },
-            });
-            if let Some(extra) = extra {
-                request["headers"]["Accept"] = extra.into();
-            }
-            let json = URL_SAFE_NO_PAD.encode(request.to_string());
-            format!("aws:{json}{padding}")
-        };
         let key = |token: String| resolver.check(&token).map(|c| c.key).unwrap();
         let one = key(token("x-server-id", None, "ab", ""));
         // Padding, the case of a header name, and a header that is not sent

@@ -442,7 +442,7 @@ keeps each provider to its own groups.
   60 seconds of clock skew. A token without `exp` is refused.
 - It fetches a provider's keys once an hour, and never more than once a minute. When the provider
   does not answer, or its answer is not a key set or has no key that the server can use, it keeps
-  the keys it has. A key set with no keys at all withdraws them.
+  the keys it has, for one day at most. A key set with no keys at all withdraws them.
 - For an `issuer` with `*`, it fetches keys for new issuers until 20 of them had none in a
   minute, and for at most 200 new issuers in a minute. It fetches for 20 new issuers at a time;
   the others wait, for 4 seconds at most. So tokens with made-up issuers cannot make it call out
@@ -487,6 +487,11 @@ A signed request is valid for 15 minutes. The server keeps the caller for five m
 for tokens. AWS identities are accepted on each request. They have no token exchange and no groups.
 When STS limits the server's requests, or a proxy on the way answers in its place, the server
 answers with HTTP 500, not "Invalid access token".
+
+The server sends at most 20 requests to STS at a time. After 100 refused requests in a minute, it
+sends none until the next minute. So requests with made-up signatures cannot make it call STS for
+each one. While such requests arrive, a new caller can get HTTP 500. Callers that the server keeps
+are not affected.
 
 ## Sign in to the web UI
 
