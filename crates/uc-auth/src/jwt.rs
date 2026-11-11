@@ -36,6 +36,7 @@
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -98,6 +99,10 @@ const MAX_UNPROVEN_ISSUERS_ALL: u32 = MAX_ASKED_ISSUERS_ALL / 2;
 /// How long each call to an issuer may take: its discovery document and
 /// its keys fit in a request's time.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(4);
+/// How often a request asks again for a place of a new issuer when the
+/// request for the same issuer that it waited for found none for another
+/// client.
+const MAX_ASKS: u32 = 3;
 
 /// The header and claims of a token, unverified.
 pub struct UnverifiedJwt {
@@ -698,16 +703,27 @@ impl JwtKeys {
             }
             // A new issuer of a pattern is counted before it is kept, so
             // nothing is kept for the issuers that are not asked.
+            // A request that waited for the one of another client, which
+            // found no place for that client, reserves for itself.
             (None, Some(scope)) => {
-                let entry = async {
-                    let place = (self.new_issuers.reserve(scope, deadline).await).ok_or(())?;
-                    Ok::<_, ()>(Arc::new(IssuerKeys {
-                        place: std::sync::Mutex::new(Some((scope.clone(), place))),
-                        ..Default::default()
-                    }))
-                };
-                let kept = (self.unknown).try_get_with_by_ref(issuer, entry).await;
-                kept.map_err(|_| too_many())?
+                let own = AtomicBool::new(false);
+                let mut asks = 0;
+                loop {
+                    let entry = async {
+                        own.store(true, Ordering::Relaxed);
+                        let place = self.new_issuers.reserve(scope, deadline).await;
+                        Ok::<_, ()>(Arc::new(IssuerKeys {
+                            place: std::sync::Mutex::new(Some((scope.clone(), place.ok_or(())?))),
+                            ..Default::default()
+                        }))
+                    };
+                    asks += 1;
+                    match (self.unknown).try_get_with_by_ref(issuer, entry).await {
+                        Ok(keys) => break keys,
+                        Err(_) if !own.load(Ordering::Relaxed) && asks < MAX_ASKS => {}
+                        Err(_) => return Err(too_many()),
+                    }
+                }
             }
         };
         let stale = {
@@ -827,8 +843,7 @@ async fn refresh(
         // issuer may be removed.
         Err(FetchError {
             error,
-            no_issuer: true,
-            ..
+            cause: Cause::NoIssuer,
         }) => {
             if fetched.keys.take().is_some() {
                 tracing::warn!(%issuer, %error, "withdrawing the issuer's keys");
@@ -837,13 +852,13 @@ async fn refresh(
             fetched.down = false;
             (false, true)
         }
-        Err(FetchError { error, no_host, .. }) => {
+        Err(FetchError { error, cause }) => {
             if fetched.keys.is_some() {
                 tracing::warn!(%issuer, %error, "keeping the issuer's keys");
             }
             fetched.failure = Some(error);
             fetched.down = true;
-            (false, no_host)
+            (false, matches!(cause, Cause::NoHost))
         }
     };
     let first_keys = has_keys && !std::mem::replace(&mut fetched.known, true);
@@ -864,30 +879,30 @@ async fn refresh(
 /// Why the keys of an issuer were not fetched.
 struct FetchError {
     error: VerifyError,
-    /// Whether the answer says that there is no such issuer. Not so when
-    /// the issuer, or the way to it, is down or broken.
-    no_issuer: bool,
-    /// Whether the host of the issuer has no address. A new issuer is made
-    /// up then. The keys that an issuer had are kept: the name service may
-    /// say so for a time.
-    no_host: bool,
+    cause: Cause,
+}
+
+/// What a fetch that failed says of the issuer.
+enum Cause {
+    /// The answer says that there is no such issuer.
+    NoIssuer,
+    /// The host of the issuer has no address. A new issuer is made up then.
+    /// The keys that an issuer had are kept: the name service may say so
+    /// for a time.
+    NoHost,
+    /// The issuer, or the way to it, is down or broken.
+    Down,
 }
 
 impl FetchError {
     fn no_issuer(error: VerifyError) -> Self {
-        Self {
-            error,
-            no_issuer: true,
-            no_host: false,
-        }
+        let cause = Cause::NoIssuer;
+        Self { error, cause }
     }
 
     fn down(error: VerifyError) -> Self {
-        Self {
-            error,
-            no_issuer: false,
-            no_host: false,
-        }
+        let cause = Cause::Down;
+        Self { error, cause }
     }
 }
 
@@ -911,9 +926,15 @@ impl Fetcher {
         // A host without an address is no new issuer: anyone can name one.
         let response = (self.transport.send(self.http.get(&path)))
             .await
-            .map_err(|e| FetchError {
-                no_host: no_such_host(&e),
-                ..unreachable(&e)
+            .map_err(|e| {
+                let cause = match no_such_host(&e) {
+                    true => Cause::NoHost,
+                    false => Cause::Down,
+                };
+                FetchError {
+                    cause,
+                    ..unreachable(&e)
+                }
             })?;
         let status = response.status();
         if !status.is_success() {
@@ -922,9 +943,9 @@ impl Fetcher {
             let error = VerifyError::Unavailable(format!(
                 "Could not get issuer configuration from {path}: HTTP {status}"
             ));
-            return Err(FetchError {
-                no_issuer: refuses(response.status()),
-                ..FetchError::down(error)
+            return Err(match refuses(response.status()) {
+                true => FetchError::no_issuer(error),
+                false => FetchError::down(error),
             });
         }
         // An answer that ends early is of an issuer that is down.
@@ -2046,6 +2067,25 @@ mod tests {
             assert!(matches!(key, Err(VerifyError::Unavailable(_))), "{key:?}");
         }
         assert_eq!(waited.elapsed(), FETCH_TIMEOUT);
+    }
+
+    /// Requests of two clients for one new issuer: the first client finds no
+    /// place. The other one waits for it, and then reserves for itself.
+    #[tokio::test(start_paused = true)]
+    async fn a_limit_of_one_client_is_not_the_answer_to_another() {
+        let keys = JwtKeys::new(Serves::new(KEY_SET));
+        let scope = |peer: &str| ("https://*.a".to_string(), Client::of(peer.parse().ok()));
+        let (one, other) = (scope("192.0.2.1"), scope("192.0.2.2"));
+        let places = keys.new_issuers.window(&one, |w| w.places.clone());
+        let _taken = places.acquire_many_owned(MAX_NEW_ISSUERS).await.unwrap();
+        let (a, b) = tokio::join!(
+            keys.key("https://t.a", Some("k1"), Some(&one)),
+            keys.key("https://t.a", Some("k1"), Some(&other)),
+        );
+        assert!(matches!(a, Err(VerifyError::Unavailable(_))), "{a:?}");
+        assert!(b.is_ok(), "{:?}", b.err());
+        let asked = |scope: &Scope| keys.new_issuers.window(scope, |w| w.asked);
+        assert_eq!((asked(&one), asked(&other)), (0, 1));
     }
 
     /// The place of an issuer whose first fetch did not start in the window

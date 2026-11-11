@@ -1301,28 +1301,13 @@ mod tests {
     #[test]
     fn a_signed_header_of_the_connection_is_refused() {
         let resolver = resolver(&Answers::default());
-        let date = Utc::now().format(AMZ_DATE).to_string();
         for (name, value) in [
             ("TE", "trailers"),
             ("Connection", "close"),
             ("Expect", "100-continue"),
         ] {
             let signed = format!("host;{};x-amz-date;x-server-id", name.to_ascii_lowercase());
-            let authorization =
-                format!("AWS4-HMAC-SHA256 Credential=A/x, SignedHeaders={signed}, Signature=ab");
-            let request = serde_json::json!({
-                "method": "POST",
-                "url": "https://sts.amazonaws.com/",
-                "body": GET_CALLER_IDENTITY,
-                "headers": {
-                    "Authorization": authorization,
-                    "Host": "sts.amazonaws.com",
-                    name: value,
-                    "X-Amz-Date": date,
-                    "X-Server-Id": "api",
-                },
-            });
-            let token = format!("aws:{}", URL_SAFE_NO_PAD.encode(request.to_string()));
+            let token = token_with(&signed, &[("Host", "sts.amazonaws.com"), (name, value)]);
             let refused = resolver.check(&token).map(|_| ()).unwrap_err();
             assert!(refused.contains("is not sent to STS"), "{name}: {refused}");
         }
@@ -1458,26 +1443,17 @@ mod tests {
     #[test]
     fn the_signed_headers_go_to_sts() {
         let resolver = resolver(&Answers::default());
-        let date = Utc::now().format(AMZ_DATE).to_string();
-        let request = serde_json::json!({
-            "method": "POST",
-            "url": "https://sts.amazonaws.com/",
-            "body": GET_CALLER_IDENTITY,
-            "headers": {
-                "Authorization": "AWS4-HMAC-SHA256 Credential=A/x, \
-                    SignedHeaders=amz-sdk-request;content-length;host;x-amz-date;x-server-id, \
-                    Signature=ab",
-                "Amz-Sdk-Request": "attempt=1",
-                "Content-Length": "43",
-                "Host": "sts.amazonaws.com",
-                "TE": "trailers",
-                "X-Amz-Date": date,
-                "X-Amz-Security-Token": "t",
-                "X-Server-Id": "api",
-                "Accept": "*/*",
-            },
-        });
-        let token = format!("aws:{}", URL_SAFE_NO_PAD.encode(request.to_string()));
+        let token = token_with(
+            "amz-sdk-request;content-length;host;x-amz-date;x-server-id",
+            &[
+                ("Amz-Sdk-Request", "attempt=1"),
+                ("Content-Length", "43"),
+                ("Host", "sts.amazonaws.com"),
+                ("TE", "trailers"),
+                ("X-Amz-Security-Token", "t"),
+                ("Accept", "*/*"),
+            ],
+        );
         let checked = resolver.check(&token).map_err(drop).unwrap();
         let mut sent: Vec<&str> = checked.headers.keys().map(HeaderName::as_str).collect();
         sent.sort_unstable();
