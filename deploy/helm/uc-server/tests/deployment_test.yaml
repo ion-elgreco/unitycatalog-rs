@@ -206,6 +206,17 @@ tests:
           content:
             name: UC_AUTH_MODE
 
+  - it: sets the proxies that name the client's address
+    set:
+      auth.enabled: true
+      auth.trustedProxies: 10.42.0.0/16
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_TRUSTED_PROXIES
+            value: 10.42.0.0/16
+
   - it: sets the sign-in through an auth proxy from auth.forward
     set:
       auth.enabled: true

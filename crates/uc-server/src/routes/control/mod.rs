@@ -91,8 +91,9 @@ pub async fn grant_token(
     headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Response> {
-    // The limits on new issuers count for the address of the connection.
-    let client = connection.map(|Extension(ConnectInfo(peer))| peer.ip());
+    // The limits on new issuers count for the client's address.
+    let client = connection
+        .map(|Extension(ConnectInfo(peer))| state.auth.proxies.client(peer.ip(), &headers));
     let cookie_requested = match params.ext.as_deref() {
         None => false,
         Some("cookie") => true,

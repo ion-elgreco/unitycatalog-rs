@@ -443,10 +443,13 @@ keeps each provider to its own groups.
 - It fetches a provider's keys once an hour, and never more than once a minute. When the provider
   does not answer, or its answer is not a key set or has no key that the server can use, it keeps
   the keys it has, for one day at most. A key set with no keys at all withdraws them.
-- For an `issuer` with `*`, it fetches keys for new issuers until 20 of them had none in a
-  minute, and for at most 200 new issuers in a minute. It fetches for 20 new issuers at a time;
-  the others wait, for 4 seconds at most. So tokens with made-up issuers cannot make it call out
-  for each one. While such tokens arrive, a new issuer can get HTTP 500 until the next minute.
+- For an `issuer` with `*`, it fetches keys for the new issuers of each client until 20 of them
+  had none in a minute, and for at most 200 new issuers in a minute. It fetches for 20 new
+  issuers of a client at a time; the others wait, for 4 seconds at most. For all clients
+  together, it fetches for at most 400 new issuers of one `issuer` in a minute. So tokens with
+  made-up issuers cannot make it call out for each one. While such tokens arrive, a new issuer
+  can get HTTP 500 until the next minute. A client is an address:
+  see [Behind a proxy](#behind-a-proxy).
 - It accepts a key whose `alg` is `ES512`, as it does a key without `alg`. It does not use
   encryption keys (`"use": "enc"`).
 - It keeps a token from a `direct` block until the token expires, for at most five minutes. A busy
@@ -488,10 +491,35 @@ for tokens. AWS identities are accepted on each request. They have no token exch
 When STS limits the server's requests, or a proxy on the way answers in its place, the server
 answers with HTTP 500, not "Invalid access token".
 
-The server sends at most 20 requests to STS at a time. After 100 refused requests in a minute, it
-sends none until the next minute. So requests with made-up signatures cannot make it call STS for
-each one. While such requests arrive, a new caller can get HTTP 500. Callers that the server keeps
-are not affected.
+The server sends at most 20 requests to STS at a time. After 100 refused requests of one client
+in a minute, or 100 of its requests that STS did not answer, it sends none of that client until
+the next minute. So requests with made-up signatures cannot make it call STS for each one. That
+client gets HTTP 500 for new callers until then. The other clients are not affected, nor are
+the callers that the server keeps. A client is an address: see [Behind a proxy](#behind-a-proxy).
+
+The server sends the headers that the request signs to STS, except those of the connection, such
+as `Host`.
+
+### Behind a proxy
+
+The limits on new issuers and on requests to STS count for each client. A client is the address of
+the connection; all addresses of one IPv6 /64 network are one client. Behind a proxy, such as an
+ingress, each connection comes from the proxy, so all callers are one client: one caller that
+reaches a limit then stops the others.
+
+Set `trusted_proxies` to the addresses of the proxies:
+
+```toml
+[auth]
+trusted_proxies = ["10.42.0.0/16"]
+```
+
+On a connection from one of them, the client is the last address in `X-Forwarded-For` that is not
+a proxy's. Each proxy must add the address of its client to this header. If one does not, a caller
+can write the header itself and choose its address.
+
+This setting does not change `context.source_ip` in Cedar policies, nor
+`forward_trusted_proxies`.
 
 ## Sign in to the web UI
 
@@ -528,9 +556,12 @@ forward_logout_url = "https://auth.example.com/logout"
 The server reads the email from `Remote-Email`, else the user from `Remote-User`. It reads these
 headers only on connections from `forward_trusted_proxies`. The first of these headers that has a
 value names the user. If it has more than one value, in several lines or with a `,` between, it
-names nobody: the proxy must replace the client's value, not add to it. So a name with a `,`,
-such as a certificate's distinguished name, cannot be the user's name. A value that is not UTF-8
+names nobody: the proxy must replace the client's value, not add to it. A value that is not UTF-8
 names nobody either.
+
+Some proxies name users with a `,`, such as the subject of a client certificate
+(`CN=alice,OU=eng`). With `forward_names_with_commas = true`, a value with a `,` is one name. Set
+it only when the proxy replaces the client's header.
 
 #### Envoy Gateway
 

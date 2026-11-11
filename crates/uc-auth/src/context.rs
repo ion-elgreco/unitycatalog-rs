@@ -64,6 +64,15 @@ impl<'a> RequestContext<'a> {
         })
     }
 
+    /// The address of the client, for limits per client: the host's
+    /// [`ClientAddress`](crate::ClientAddress) when the request has one,
+    /// else the address of the connection. Behind a proxy the address of
+    /// the connection is the proxy's, for all its clients.
+    pub fn client(&self) -> Option<IpAddr> {
+        let marked = self.parts.extensions.get::<crate::ClientAddress>();
+        marked.map(|client| client.0).or_else(|| self.peer())
+    }
+
     /// The request's token, if it has one.
     pub fn token(&self) -> Option<&str> {
         self.token.as_deref()

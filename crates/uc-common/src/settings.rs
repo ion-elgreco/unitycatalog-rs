@@ -206,6 +206,11 @@ pub struct Auth {
     pub cedar: bool,
     #[serde(deserialize_with = "list")]
     pub cedar_policies: Vec<String>,
+    /// The proxies in front of the server, such as an ingress, that add
+    /// the client's address to `X-Forwarded-For`: CIDRs or addresses. The
+    /// limits per client count by that address then, not by the proxy's.
+    #[serde(deserialize_with = "list")]
+    pub trusted_proxies: Vec<String>,
     /// The web UI's sign-in: `none`, `oidc` or `forward`.
     pub mode: SignInMode,
     /// The server's external URL: the provider returns the browser to
@@ -253,6 +258,7 @@ impl Default for Auth {
             admin_principals: Vec::new(),
             cedar: false,
             cedar_policies: Vec::new(),
+            trusted_proxies: Vec::new(),
             mode: SignInMode::None,
             public_url: None,
             oidc_issuer: None,

@@ -31,10 +31,11 @@
 //!
 //! The signature is the caller's to choose, so each value could make a call
 //! to STS. At most [`MAX_STS_CALLS`] run at a time. After
-//! [`MAX_STS_REFUSALS`] refusals in a [`REFUSED_TTL`], no request of that
-//! client (the address of the connection) is sent until the next one
-//! starts: it gets HTTP 503 for new values then. The other clients are
-//! served, and so are the identities that are kept.
+//! [`MAX_STS_REFUSALS`] refusals in a [`REFUSED_TTL`], or as many calls
+//! without an answer of STS, no request of that client
+//! ([`RequestContext::client`]) is sent until the next one starts: it gets
+//! HTTP 503 for new values then. The other clients are served, and so are
+//! the identities that are kept.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -70,7 +71,9 @@ pub const REFUSED_TTL: Duration = Duration::from_secs(60);
 const MAX_ANSWERS: u64 = 10_000;
 /// The most requests of one client that STS, or the check of its answer,
 /// may refuse per [`REFUSED_TTL`], so values with made-up signatures do not
-/// make a call each.
+/// make a call each. It is also the most of its calls that may end without
+/// an answer of STS, so values for an endpoint that does not answer do not
+/// hold the places of [`MAX_STS_CALLS`].
 pub const MAX_STS_REFUSALS: u32 = 100;
 /// The most calls to STS at a time: the others wait up to [`CALL_WAIT`], as
 /// those that run may all be refused.
@@ -78,6 +81,21 @@ pub const MAX_STS_CALLS: usize = 20;
 const CALL_WAIT: Duration = Duration::from_secs(5);
 /// The header that each answer of AWS has, also one without an error code.
 const REQUEST_ID_HEADER: &str = "x-amzn-requestid";
+/// The signed headers that are not sent to STS as the client wrote them:
+/// those of the connection, which the HTTP client writes.
+const NOT_FORWARDED: [&str; 11] = [
+    "host",
+    "content-length",
+    "connection",
+    "expect",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+];
 
 /// The accounts whose identities an [`AwsResolver`] takes, the STS
 /// endpoints their requests may go to, and the server ids they must sign.
@@ -152,8 +170,20 @@ pub struct AwsResolver {
     answers: Cache<[u8; 32], Result<Named, String>>,
     /// A place for each call to STS that runs.
     calls: Semaphore,
-    /// The refusals of each client in the current [`REFUSED_TTL`].
-    refusals: Windows<Client, u32>,
+    /// The calls of each client without a caller in the current
+    /// [`REFUSED_TTL`].
+    refusals: Windows<Client, Refusals>,
+}
+
+/// The calls of a client that named no caller.
+#[derive(Default)]
+struct Refusals {
+    /// Those that STS, or the check of its answer, refused.
+    refused: u32,
+    /// Those that STS did not answer.
+    unanswered: u32,
+    /// Whether the log says that the client is over the limit.
+    logged: bool,
 }
 
 impl AwsResolver {
@@ -242,20 +272,27 @@ impl AwsResolver {
             return Err(format!("signed at {signed}, too long ago or ahead"));
         }
         let left = (ttl - age).to_std().unwrap_or_default();
-        // Only the headers of the signature go to STS, written in one way:
-        // the authorization from its parts, the others with single spaces,
-        // as the signature reads them. The hash is of the URL and these
-        // headers, in the order of their names.
+        // The headers that go to STS are the authorization, the signed ones
+        // (but [`NOT_FORWARDED`]), and those of AWS, which a client can add
+        // after it signed. They are written in one way: the authorization
+        // from its parts, the others with single spaces, as the signature
+        // reads them. The hash is of the URL and these headers, in the
+        // order of their names.
+        let signed_headers: Vec<String> =
+            (authorization.signed_headers.split(';').map(str::to_string)).collect();
+        let forwarded = |name: &str| {
+            let signed = signed_headers.iter().any(|signed| signed == name);
+            name == "authorization"
+                || name == "content-type"
+                || name.starts_with("x-amz-")
+                || (signed && !NOT_FORWARDED.contains(&name))
+        };
         let authorization = authorization.to_string();
         let mut sent = HeaderMap::new();
         let mut hash = Sha256::new();
         hash.update(url.as_str());
         for (name, value) in headers {
-            if name != "authorization"
-                && name != "content-type"
-                && name != header
-                && !name.starts_with("x-amz-")
-            {
+            if !forwarded(&name) {
                 continue;
             }
             let header_name = HeaderName::from_bytes(name.as_bytes())
@@ -340,20 +377,26 @@ impl AwsResolver {
     /// Count a refusal of `client`, and answer with its `reason`.
     fn refuse(&self, client: &Client, reason: String) -> String {
         tracing::warn!(%reason, "AWS token refused");
-        self.refusals.with(client, |count, _| *count += 1);
+        self.refusals.with(client, |calls, _| calls.refused += 1);
         reason
     }
 
-    /// Whether `client` had [`MAX_STS_REFUSALS`] in the current
-    /// [`REFUSED_TTL`].
+    /// Whether `client` had [`MAX_STS_REFUSALS`] refusals, or as many calls
+    /// without an answer, in the current [`REFUSED_TTL`]. The log says so
+    /// once per client and [`REFUSED_TTL`].
     fn refused_too_often(&self, client: &Client) -> bool {
-        let too_often = self
-            .refusals
-            .with(client, |count, _| *count >= MAX_STS_REFUSALS);
-        if too_often {
+        let (too_often, log) = self.refusals.with(client, |calls, _| {
+            let too_often =
+                calls.refused >= MAX_STS_REFUSALS || calls.unanswered >= MAX_STS_REFUSALS;
+            (
+                too_often,
+                too_often && !std::mem::replace(&mut calls.logged, true),
+            )
+        });
+        if log {
             tracing::warn!(
                 ?client,
-                "too many refused AWS tokens; none of the client goes to STS for now"
+                "too many AWS tokens without a caller; none of the client goes to STS for now"
             );
         }
         too_often
@@ -367,8 +410,9 @@ impl AwsResolver {
         checked: &Checked<'_>,
         client: &Client,
     ) -> Result<Result<Named, String>, Unanswered> {
-        let too_often =
-            || Unanswered::Unavailable("Too many refused AWS tokens, try again later".into());
+        let too_often = || {
+            Unanswered::Unavailable("Too many AWS tokens without a caller, try again later".into())
+        };
         if self.refused_too_often(client) {
             return Err(too_often());
         }
@@ -384,7 +428,10 @@ impl AwsResolver {
         }
         let identity = match self.caller_identity(checked).await {
             Ok(identity) => identity,
-            Err(StsError::Unavailable(reason)) => return Err(Unanswered::Unavailable(reason)),
+            Err(StsError::Unavailable(reason)) => {
+                (self.refusals).with(client, |calls, _| calls.unanswered += 1);
+                return Err(Unanswered::Unavailable(reason));
+            }
             Err(StsError::NotYet(reason)) => {
                 return Err(Unanswered::NotYet(self.refuse(client, reason)));
             }
@@ -432,7 +479,7 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
             Err(reason) => return refused(reason),
         };
         // One call for the requests with one value that arrive together.
-        let client = Client::of(cx.peer());
+        let client = Client::of(cx.client());
         let answer = (self.answers)
             .try_get_with(checked.key, self.ask(&checked, &client))
             .await;
@@ -848,7 +895,7 @@ mod tests {
             );
             assert_eq!([a, b, c, d], [expected; 4]);
             assert_eq!(sts.calls(), 1);
-            let count = resolver.refusals.with(&Client::of(None), |count, _| *count);
+            let count = (resolver.refusals).with(&Client::of(None), |calls, _| calls.refused);
             assert_eq!(count, u32::from(expected == 401));
         }
     }
@@ -908,6 +955,61 @@ mod tests {
             assert_eq!(status(&resolver, &format!("c{n}")).await, 503, "{n}");
         }
         assert_eq!(sts.calls(), MAX_STS_REFUSALS as usize);
+    }
+
+    #[tokio::test]
+    async fn calls_without_an_answer_are_limited_for_each_client() {
+        let sts = Answers::default();
+        let resolver = resolver(&sts);
+        sts.set(500, false, "");
+        for n in 0..MAX_STS_REFUSALS {
+            let signature = format!("h{n}");
+            assert_eq!(
+                status_of(&resolver, &signature, Some("192.0.2.1")).await,
+                503
+            );
+        }
+        assert_eq!(sts.calls(), MAX_STS_REFUSALS as usize);
+        assert_eq!(status_of(&resolver, "i1", Some("192.0.2.1")).await, 503);
+        assert_eq!(sts.calls(), MAX_STS_REFUSALS as usize);
+        sts.set(200, true, CALLER);
+        assert_eq!(status_of(&resolver, "i1", Some("192.0.2.2")).await, 200);
+    }
+
+    #[test]
+    fn the_signed_headers_go_to_sts() {
+        let provider = AwsProvider::new("aws", ["api"], ["123456789012"]);
+        let resolver = AwsResolver::new("aws:", "X-Server-Id", vec![provider]);
+        let date = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+        let request = serde_json::json!({
+            "method": "POST",
+            "url": "https://sts.amazonaws.com/",
+            "body": GET_CALLER_IDENTITY,
+            "headers": {
+                "Authorization": "AWS4-HMAC-SHA256 Credential=A/x, \
+                    SignedHeaders=amz-sdk-request;host;te;x-amz-date;x-server-id, Signature=ab",
+                "Amz-Sdk-Request": "attempt=1",
+                "Host": "sts.amazonaws.com",
+                "TE": "trailers",
+                "X-Amz-Date": date,
+                "X-Amz-Security-Token": "t",
+                "X-Server-Id": "api",
+                "Accept": "*/*",
+            },
+        });
+        let token = format!("aws:{}", URL_SAFE_NO_PAD.encode(request.to_string()));
+        let checked = resolver.check(&token).map_err(drop).unwrap();
+        let mut sent: Vec<&str> = checked.headers.keys().map(HeaderName::as_str).collect();
+        sent.sort_unstable();
+        // Not the headers of the connection, nor one that is not signed.
+        let expected = [
+            "amz-sdk-request",
+            "authorization",
+            "x-amz-date",
+            "x-amz-security-token",
+            "x-server-id",
+        ];
+        assert_eq!(sent, expected);
     }
 
     #[test]

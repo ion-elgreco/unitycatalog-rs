@@ -8,10 +8,10 @@ use std::time::{Duration, Instant};
 /// The fewest windows at which those that are over are removed.
 const MIN_SWEEP: usize = 1024;
 
-/// Who a limit counts for: the address of the connection, an IPv6 one by
-/// its /64, which is one subscriber's. Requests without an address count
-/// together. Behind a proxy the address is the proxy's, so its clients count
-/// together too.
+/// Who a limit counts for: the address of the client
+/// ([`RequestContext::client`](crate::RequestContext::client)), an IPv6 one
+/// by its /64, which is one subscriber's. Requests without an address count
+/// together.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Client(Option<IpAddr>);
 
@@ -55,23 +55,25 @@ impl<K: Eq + Hash + Clone, T: Default> Windows<K, T> {
 
     /// Read or change the current window of `key`, with its start.
     pub(crate) fn with<R>(&self, key: &K, f: impl FnOnce(&mut T, Instant) -> R) -> R {
+        self.with_at(Instant::now(), key, f)
+    }
+
+    /// As [`with`](Self::with), at the time `now`.
+    fn with_at<R>(&self, now: Instant, key: &K, f: impl FnOnce(&mut T, Instant) -> R) -> R {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let inner = &mut *inner;
         let length = self.length;
+        let over = |start: &Instant| now.saturating_duration_since(*start) >= length;
         if inner.windows.len() >= inner.sweep_at && !inner.windows.contains_key(key) {
-            inner
-                .windows
-                .retain(|_, (start, _)| start.elapsed() < length);
+            inner.windows.retain(|_, (start, _)| !over(start));
             inner.sweep_at = (2 * inner.windows.len()).max(MIN_SWEEP);
         }
         let (start, value) = match inner.windows.get_mut(key) {
             Some(window) => window,
-            None => {
-                (inner.windows.entry(key.clone())).or_insert_with(|| (Instant::now(), T::default()))
-            }
+            None => (inner.windows.entry(key.clone())).or_insert_with(|| (now, T::default())),
         };
-        if start.elapsed() >= length {
-            *start = Instant::now();
+        if over(start) {
+            *start = now;
             *value = T::default();
         }
         f(value, *start)
@@ -94,21 +96,28 @@ mod tests {
 
     #[test]
     fn a_window_starts_anew_and_old_ones_are_removed() {
-        let windows: Windows<usize, u32> = Windows::new(Duration::from_millis(30));
-        let count = |key: usize| {
-            windows.with(&key, |count, _| {
+        let length = Duration::from_secs(60);
+        let windows: Windows<usize, u32> = Windows::new(length);
+        let start = Instant::now();
+        let count = |at: Instant, key: usize| {
+            windows.with_at(at, &key, |count, _| {
                 *count += 1;
                 *count
             })
         };
-        assert_eq!((count(0), count(0), count(1)), (1, 2, 1));
+        assert_eq!(
+            (count(start, 0), count(start, 0), count(start, 1)),
+            (1, 2, 1)
+        );
         for key in 2..MIN_SWEEP {
-            count(key);
+            count(start, key);
         }
-        std::thread::sleep(Duration::from_millis(40));
-        assert_eq!(count(0), 1);
+        let last = start + length - Duration::from_millis(1);
+        assert_eq!(count(last, 0), 3);
+        let next = start + length;
+        assert_eq!(count(next, 0), 1);
         // A new key at the limit removes those that are over.
-        assert_eq!(count(MIN_SWEEP), 1);
+        assert_eq!(count(next, MIN_SWEEP), 1);
         let kept = windows.inner.lock().unwrap().windows.len();
         assert_eq!(kept, 2);
     }

@@ -40,6 +40,7 @@ pub const UC_TOKEN_COOKIE: &str = "UC_TOKEN";
 pub async fn auth_layer(State(state): State<AppState>, req: Request<Body>, next: Next) -> Response {
     let required = state.authorization_enabled && requires_sign_in(req.uri().path());
     let (mut parts, body) = req.into_parts();
+    state.auth.proxies.mark(&mut parts);
     let caller = state.auth.authenticator.authenticate(&parts, &state).await;
     match (caller, required) {
         (Ok(identity), _) => {

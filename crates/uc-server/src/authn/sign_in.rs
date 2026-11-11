@@ -310,7 +310,7 @@ impl ForwardSignIn {
         let trusted_proxies = auth
             .forward_trusted_proxies
             .iter()
-            .map(|proxy| parse_cidr(proxy.trim()))
+            .map(|proxy| parse_cidr("auth.forward_trusted_proxies", proxy.trim()))
             .collect::<Result<Vec<_>, _>>()?;
         if trusted_proxies.is_empty() {
             return Err(format!(
@@ -354,16 +354,11 @@ impl ForwardSignIn {
 }
 
 /// A CIDR, or an address as a network of one.
-fn parse_cidr(text: &str) -> Result<ipnet::IpNet, String> {
+/// A CIDR or an address of setting `key`.
+pub(crate) fn parse_cidr(key: &str, text: &str) -> Result<ipnet::IpNet, String> {
     text.parse::<ipnet::IpNet>()
         .or_else(|_| text.parse::<IpAddr>().map(ipnet::IpNet::from))
-        .map_err(|_| {
-            settings::invalid(
-                "auth.forward_trusted_proxies",
-                text,
-                "Expected a CIDR or an address.",
-            )
-        })
+        .map_err(|_| settings::invalid(key, text, "Expected a CIDR or an address."))
 }
 
 /// The text of a setting, trimmed; none when empty.

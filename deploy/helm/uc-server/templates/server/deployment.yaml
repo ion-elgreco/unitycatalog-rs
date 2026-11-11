@@ -77,6 +77,10 @@ spec:
               value: {{ .Values.auth.cookieTimeout | quote }}
             - name: UC_AUTH_ACCESS_TOKEN_TIMEOUT
               value: {{ .Values.auth.accessTokenTimeout | quote }}
+            {{- with .Values.auth.trustedProxies }}
+            - name: UC_AUTH_TRUSTED_PROXIES
+              value: {{ . | quote }}
+            {{- end }}
             {{- end }}
             {{- with .Values.storage.tableStorageRoot }}
             - name: UC_STORAGE_TABLES_ROOT
