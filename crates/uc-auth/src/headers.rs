@@ -19,8 +19,7 @@ use crate::{Identity, RequestContext, Resolution, Resolver, TrustedProxies};
 /// proxy that adds its value to the client's would make it, or when its
 /// value has a `,`, which is two values in one line, or when its value is
 /// not UTF-8. The headers after it are not read. Requests from elsewhere, or
-/// without the headers, pass to
-/// the next resolver.
+/// without the headers, pass to the next resolver.
 ///
 /// Some proxies name users with a `,`, such as the subject of a client
 /// certificate (`CN=alice,OU=eng`). [`with_commas`](Self::with_commas)

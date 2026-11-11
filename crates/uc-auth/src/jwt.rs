@@ -7,11 +7,9 @@
 //! that failed or whose request went away, and its keys are kept while it
 //! cannot be reached, or while its key set has keys but none that is
 //! usable, for a day at most. A key set with no keys at all withdraws them.
-//! Encryption keys
-//! are left out. An ES512 key is kept, although `jsonwebtoken` does not
-//! know that `alg`.
-//! RS256/384/512 and ES256/384/512 are accepted, with [`DEFAULT_LEEWAY`] of
-//! clock skew.
+//! Encryption keys are left out. An ES512 key is kept, although
+//! `jsonwebtoken` does not know that `alg`. RS256/384/512 and ES256/384/512
+//! are accepted, with [`DEFAULT_LEEWAY`] of clock skew.
 //!
 //! A pattern with `*` matches issuers that anyone can make up. The number of
 //! its issuers without keys that are asked is limited for each client
@@ -27,7 +25,6 @@
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -40,6 +37,7 @@ use moka::future::Cache;
 use serde_json::{Map, Value};
 use tokio::sync::{Mutex, OwnedMutexGuard, OwnedSemaphorePermit, RwLock, Semaphore};
 
+use crate::http::no_answer;
 use crate::window::{Client, Windows};
 use crate::{
     Allowlist, AuthError, Direct, Identity, RequestContext, Resolution, Resolver, Transport,
@@ -340,10 +338,6 @@ struct IssuerKeys {
     /// it. It is kept here, not by the request that reserved it, as another
     /// request for the issuer may start that fetch.
     place: std::sync::Mutex<Option<OwnedSemaphorePermit>>,
-    /// Whether it ever answered with one key or more: it is no new issuer
-    /// then, also after it withdrew its keys, and it is kept with the
-    /// issuers that had keys.
-    known: AtomicBool,
 }
 
 /// Keep `keys` as the entry of `issuer` in `cache`, unless a newer entry
@@ -364,6 +358,10 @@ struct Fetched {
     tried: Option<Instant>,
     /// Why the last fetch failed, if it did.
     failure: Option<VerifyError>,
+    /// Whether it ever answered with one key or more: it is no new issuer
+    /// then, also after it withdrew its keys, and it is kept with the
+    /// issuers that had keys.
+    known: bool,
 }
 
 impl Fetched {
@@ -620,7 +618,7 @@ impl JwtKeys {
             if fetched.tried.is_some_and(|at| at.elapsed() < MIN_REFRESH) {
                 return fetched.answer(key_id, issuer);
             }
-            scope.filter(|_| !keys.known.load(Ordering::SeqCst))
+            scope.filter(|_| !fetched.known)
         };
         // An issuer that was kept before is counted again, and so is one
         // whose place is of a window that is over. The fetch lock is held
@@ -707,8 +705,9 @@ async fn refresh(
             fetched.failure = Some(error);
         }
     }
+    let first_keys = has_keys && !std::mem::replace(&mut fetched.known, true);
     drop(fetched);
-    if has_keys && !keys.known.swap(true, Ordering::SeqCst) {
+    if first_keys {
         keep(&issuers, &issuer, &keys).await;
     }
     if let Some((new_issuers, scope, place)) = counted
@@ -769,13 +768,8 @@ impl Fetcher {
                 "Could not get issuer configuration from {path}: HTTP {}",
                 status.as_u16()
             ));
-            // HTTP 407, 408 and 429 are of a proxy on the way, or of an
-            // issuer that has too much to do.
-            let no_issuer = status.is_client_error() && !matches!(status.as_u16(), 407 | 408 | 429);
-            return Err(match no_issuer {
-                true => FetchError::no_issuer(error),
-                false => FetchError::down(error),
-            });
+            let no_issuer = status.is_client_error() && !no_answer(status);
+            return Err(FetchError { error, no_issuer });
         }
         let config: Map<String, Value> = response.json().await.map_err(|_| {
             FetchError::no_issuer(VerifyError::Unavailable(format!(
@@ -1160,6 +1154,7 @@ mod tests {
             keys: Some((vec![jwk(Some("k1"))], Instant::now())),
             tried: Some(Instant::now()),
             failure: Some(VerifyError::Unavailable("down".into())),
+            known: true,
         };
         assert!(fetched.answer(Some("k1"), "https://x").is_ok());
         assert!(matches!(
@@ -1272,6 +1267,11 @@ mod tests {
     struct Serves(Arc<std::sync::Mutex<String>>);
 
     impl Serves {
+        /// Answer with `key_set` from now on.
+        fn set(&self, key_set: &str) {
+            *self.0.lock().unwrap() = key_set.to_string();
+        }
+
         fn new(key_set: &str) -> Self {
             Self(Arc::new(std::sync::Mutex::new(key_set.to_string())))
         }
@@ -1297,6 +1297,12 @@ mod tests {
 
     const KEY_SET: &str = r#"{"keys": [{"kty": "RSA", "kid": "k1", "n": "AQAB", "e": "AQAB"}]}"#;
 
+    /// Wait until the fetch of the keys of `issuer` ended.
+    async fn fetch_ended(keys: &JwtKeys, issuer: &str) {
+        let entry = keys.issuers.get(issuer).await.unwrap();
+        drop(entry.refresh.lock().await);
+    }
+
     /// Make the next request for `issuer` fetch its keys again.
     async fn expire(keys: &JwtKeys, issuer: &str) {
         let Some(old) = Instant::now().checked_sub(KEYS_TTL + Duration::from_secs(1)) else {
@@ -1319,8 +1325,7 @@ mod tests {
     ) -> Result<Jwk, VerifyError> {
         expire(keys, issuer).await;
         assert!(keys.key(issuer, Some("k1"), scope).await.is_ok());
-        let entry = keys.issuers.get(issuer).await.unwrap();
-        drop(entry.refresh.lock().await);
+        fetch_ended(keys, issuer).await;
         keys.key(issuer, Some("k1"), scope).await
     }
 
@@ -1330,12 +1335,12 @@ mod tests {
         let keys = JwtKeys::new(serves.clone());
         assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
         // An error page is no key set: the keys are kept.
-        *serves.0.lock().unwrap() = r#"{"error": "down"}"#.into();
+        serves.set(r#"{"error": "down"}"#);
         assert!(refetched(&keys, "https://a", None).await.is_ok());
         // So is a key set with keys of which none is usable.
-        *serves.0.lock().unwrap() = r#"{"keys": [{"kty": "EC", "crv": "secp256k1"}]}"#.into();
+        serves.set(r#"{"keys": [{"kty": "EC", "crv": "secp256k1"}]}"#);
         assert!(refetched(&keys, "https://a", None).await.is_ok());
-        *serves.0.lock().unwrap() = r#"{"keys": []}"#.into();
+        serves.set(r#"{"keys": []}"#);
         let key = refetched(&keys, "https://a", None).await;
         assert!(matches!(key, Err(VerifyError::Invalid(_))), "{key:?}");
     }
@@ -1347,7 +1352,7 @@ mod tests {
         let scope = scope("https://*.a");
         let pattern = Some(&scope);
         assert!(keys.key("https://t.a", Some("k1"), pattern).await.is_ok());
-        *serves.0.lock().unwrap() = r#"{"keys": []}"#.into();
+        serves.set(r#"{"keys": []}"#);
         let key = refetched(&keys, "https://t.a", pattern).await;
         assert!(matches!(key, Err(VerifyError::Invalid(_))), "{key:?}");
         // No kept key now: the request waits for the fetch.
@@ -1424,8 +1429,7 @@ mod tests {
         let asked = tokio::time::Instant::now();
         assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
         assert_eq!(asked.elapsed(), Duration::ZERO);
-        let entry = keys.issuers.get("https://a").await.unwrap();
-        drop(entry.refresh.lock().await);
+        fetch_ended(&keys, "https://a").await;
         assert_eq!(slow.calls(), 1);
     }
 
@@ -1446,7 +1450,7 @@ mod tests {
         assert!(new_issuers.log_refusal(&next));
         assert!(!new_issuers.log_refusal(&client(0)));
         // Another pattern has its own.
-        let other = ("https://*.b".to_string(), Client::of(None));
+        let other = scope("https://*.b");
         assert!(new_issuers.reserve(&other, deadline).await.is_some());
     }
 

@@ -50,19 +50,23 @@ impl TrustedProxies {
     /// `peer` itself, unless it is a proxy that names another address.
     pub fn client(&self, peer: IpAddr, headers: &HeaderMap) -> IpAddr {
         let peer = unmapped(peer);
-        if !self.trusts(peer) {
-            return peer;
+        match self.trusts(peer) {
+            true => self.forwarded(peer, headers),
+            false => peer,
         }
-        let lines = headers.get_all(X_FORWARDED_FOR).iter();
-        let forwarded: Vec<&str> = lines
+    }
+
+    /// The client that `headers` name on a connection from the proxy `peer`.
+    fn forwarded(&self, peer: IpAddr, headers: &HeaderMap) -> IpAddr {
+        let lines = headers.get_all(X_FORWARDED_FOR).iter().rev();
+        let forwarded = lines
             .filter_map(|line| line.to_str().ok())
-            .flat_map(|line| line.split(','))
-            .collect();
+            .flat_map(|line| line.rsplit(','));
         // The address that the last proxy saw, then the one before it, up
         // to the first that is no proxy. A value that is no address ends
         // the chain: what is before it cannot be trusted.
         let mut client = peer;
-        for value in forwarded.into_iter().rev() {
+        for value in forwarded {
             let Some(address) = address(value.trim()) else {
                 break;
             };
@@ -84,7 +88,7 @@ impl TrustedProxies {
             return;
         };
         if self.trusts(peer) {
-            let client = self.client(peer, &parts.headers);
+            let client = self.forwarded(peer, &parts.headers);
             parts.extensions.insert(ClientAddress(client));
         } else if parts.headers.contains_key(X_FORWARDED_FOR)
             && !LOGGED.swap(true, Ordering::Relaxed)
