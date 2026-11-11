@@ -78,8 +78,8 @@ impl Client {
 /// `length` after it was last read or changed ([`Windows::since_last`]).
 pub(crate) struct Windows<K, T> {
     length: Duration,
-    /// Whether `length` counts from the last [`with`](Self::with), not from
-    /// the first.
+    /// Whether `length` counts from the last [`with`](Self::with) or
+    /// [`read`](Self::read), not from the first.
     since_last: bool,
     inner: std::sync::Mutex<Inner<K, T>>,
 }
@@ -105,9 +105,10 @@ impl<K: Eq + Hash + Clone, T: Default> Windows<K, T> {
         }
     }
 
-    /// A `T` per key that is kept while [`with`](Self::with) reads or
-    /// changes it, and for `length` after the last time: for what counts
-    /// in a row, which the start of a new window must not end.
+    /// A `T` per key that is kept while [`with`](Self::with) or
+    /// [`read`](Self::read) reads or changes it, and for `length` after the
+    /// last time: for what counts in a row, which the start of a new window
+    /// must not end.
     pub(crate) fn since_last(length: Duration) -> Self {
         Self {
             since_last: true,
@@ -122,7 +123,11 @@ impl<K: Eq + Hash + Clone, T: Default> Windows<K, T> {
 
     /// Read the current window of `key`, if it has one. No window is made.
     pub(crate) fn read<R>(&self, key: &K, f: impl FnOnce(&T) -> R) -> Option<R> {
-        let now = Instant::now();
+        self.read_at(Instant::now(), key, f)
+    }
+
+    /// As [`read`](Self::read), at the time `now`.
+    fn read_at<R>(&self, now: Instant, key: &K, f: impl FnOnce(&T) -> R) -> Option<R> {
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let (start, value) = inner.windows.get_mut(key)?;
         if now.saturating_duration_since(*start) >= self.length {
@@ -262,6 +267,28 @@ mod tests {
             (1, 2, 3)
         );
         assert_eq!(count(start + 2 * step + length), 1);
+    }
+
+    #[test]
+    fn a_read_makes_no_window_and_keeps_one_since_the_last_time() {
+        let length = Duration::from_secs(60);
+        let start = Instant::now();
+        let step = length - Duration::from_millis(1);
+        let windows: Windows<u8, u32> = Windows::since_last(length);
+        let read = |at: Instant| windows.read_at(at, &0, |count| *count);
+        assert_eq!(read(start), None);
+        assert!(windows.inner.lock().unwrap().windows.is_empty());
+        windows.with_at(start, &0, |count, _| *count += 1);
+        assert_eq!(
+            (read(start + step), read(start + 2 * step)),
+            (Some(1), Some(1))
+        );
+        assert_eq!(read(start + 2 * step + length), None);
+        // A window that counts from its start is over a `length` after it.
+        let windows: Windows<u8, u32> = Windows::new(length);
+        windows.with_at(start, &0, |count, _| *count += 1);
+        let read = |at: Instant| windows.read_at(at, &0, |count| *count);
+        assert_eq!((read(start + step), read(start + length)), (Some(1), None));
     }
 
     #[test]
