@@ -592,10 +592,8 @@ impl AwsResolver {
             key: &key,
             ended: false,
         };
-        let named = match self.caller_identity(checked).await {
-            Ok(identity) => checked.named(identity),
-            Err(e) => Err(e),
-        };
+        let identity = self.caller_identity(checked).await;
+        let named = identity.and_then(|identity| checked.named(identity));
         running.end(&named);
         match named {
             Ok(named) => Ok(Ok(named)),
@@ -926,8 +924,10 @@ impl std::fmt::Display for Authorization<'_> {
 }
 
 /// A header value without spaces at its ends and with one space for each
-/// run of them, which is what its signature is of.
+/// run of them, which is what its signature is of. The tabs at its ends go
+/// too: HTTP does not carry them to STS.
 fn single_spaces(value: &str) -> String {
+    let value = value.trim_matches([' ', '\t']);
     let words: Vec<&str> = value.split(' ').filter(|w| !w.is_empty()).collect();
     words.join(" ")
 }
@@ -1505,6 +1505,7 @@ mod tests {
         // Spaces that the signature does not read.
         assert_eq!(key(token("x-server-id", None, "ab ", "")), one);
         assert_eq!(single_spaces("  a   b "), "a b");
+        assert_eq!(single_spaces("\t a b \t"), "a b");
         let written = "AWS4-HMAC-SHA256 Credential=A/x,SignedHeaders=host,  Signature=ab";
         assert_eq!(
             Authorization::parse(written).unwrap().to_string(),

@@ -26,7 +26,9 @@
 //! so the made-up issuers of a few clients leave the others theirs. An
 //! issuer that does not answer is not counted as made up, so an issuer that
 //! was down for a short time is asked again at once. One whose host has no
-//! address is counted: anyone can name such a host. An issuer of a pattern
+//! address is counted: anyone can name such a host. The keys that an issuer
+//! had are kept then, as while it cannot be reached: the name service of a
+//! machine without a network says the same. An issuer of a pattern
 //! that never had keys is forgotten `UNKNOWN_ISSUER_TTL` after it was last
 //! asked. It is kept apart from the issuers that had keys, so made-up
 //! issuers do not take their places.
@@ -800,8 +802,9 @@ impl JwtKeys {
 /// Fetch the keys of `issuer` and keep what it answered, then let the next
 /// fetch run (`guard`). `counted` is the scope of a new issuer and the
 /// place that it holds: one that answers with keys is a real one, and gives
-/// its place back, and so does one that does not answer. An issuer that
-/// answers with keys for the first time is kept in `issuers` from then on.
+/// its place back, and so does one that does not answer. One whose host has
+/// no address is made up. An issuer that answers with keys for the first
+/// time is kept in `issuers` from then on.
 async fn refresh(
     fetcher: Arc<Fetcher>,
     issuers: Cache<String, Arc<IssuerKeys>>,
@@ -825,6 +828,7 @@ async fn refresh(
         Err(FetchError {
             error,
             no_issuer: true,
+            ..
         }) => {
             if fetched.keys.take().is_some() {
                 tracing::warn!(%issuer, %error, "withdrawing the issuer's keys");
@@ -833,13 +837,13 @@ async fn refresh(
             fetched.down = false;
             (false, true)
         }
-        Err(FetchError { error, .. }) => {
+        Err(FetchError { error, no_host, .. }) => {
             if fetched.keys.is_some() {
                 tracing::warn!(%issuer, %error, "keeping the issuer's keys");
             }
             fetched.failure = Some(error);
             fetched.down = true;
-            (false, false)
+            (false, no_host)
         }
     };
     let first_keys = has_keys && !std::mem::replace(&mut fetched.known, true);
@@ -863,6 +867,10 @@ struct FetchError {
     /// Whether the answer says that there is no such issuer. Not so when
     /// the issuer, or the way to it, is down or broken.
     no_issuer: bool,
+    /// Whether the host of the issuer has no address. A new issuer is made
+    /// up then. The keys that an issuer had are kept: the name service may
+    /// say so for a time.
+    no_host: bool,
 }
 
 impl FetchError {
@@ -870,6 +878,7 @@ impl FetchError {
         Self {
             error,
             no_issuer: true,
+            no_host: false,
         }
     }
 
@@ -877,6 +886,7 @@ impl FetchError {
         Self {
             error,
             no_issuer: false,
+            no_host: false,
         }
     }
 }
@@ -898,11 +908,11 @@ impl Fetcher {
                 "Could not get issuer configuration from {path}"
             )))
         };
-        // A host without an address is no issuer: anyone can name one.
+        // A host without an address is no new issuer: anyone can name one.
         let response = (self.transport.send(self.http.get(&path)))
             .await
             .map_err(|e| FetchError {
-                no_issuer: no_such_host(&e),
+                no_host: no_such_host(&e),
                 ..unreachable(&e)
             })?;
         let status = response.status();
@@ -912,8 +922,10 @@ impl Fetcher {
             let error = VerifyError::Unavailable(format!(
                 "Could not get issuer configuration from {path}: HTTP {status}"
             ));
-            let no_issuer = refuses(response.status());
-            return Err(FetchError { error, no_issuer });
+            return Err(FetchError {
+                no_issuer: refuses(response.status()),
+                ..FetchError::down(error)
+            });
         }
         // An answer that ends early is of an issuer that is down.
         let body = response.bytes().await.map_err(|e| unreachable(&e))?;
@@ -1759,6 +1771,43 @@ mod tests {
             let counts = (keys.new_issuers).window(&scope, |w| (w.asked, w.without_keys));
             assert_eq!(counts, (1, without_keys));
         }
+    }
+
+    /// Answers as [`Serves`] while `gone` is not set, then as a name service
+    /// that knows no host.
+    struct Unnamed {
+        serves: Serves,
+        lookup: Lookup,
+        gone: Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    #[async_trait]
+    impl Transport for Unnamed {
+        async fn send(
+            &self,
+            request: reqwest::RequestBuilder,
+        ) -> reqwest::Result<reqwest::Response> {
+            match self.gone.load(std::sync::atomic::Ordering::SeqCst) {
+                true => self.lookup.send(request).await,
+                false => self.serves.send(request).await,
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn an_issuer_whose_host_has_no_address_keeps_its_keys() {
+        let gone = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let keys = JwtKeys::new(Unnamed {
+            serves: Serves::new(KEY_SET),
+            lookup: Lookup::new(true),
+            gone: gone.clone(),
+        });
+        let issuer = "http://t1.made-up.invalid";
+        assert!(keys.key(issuer, Some("k1"), None).await.is_ok());
+        // The name service may say so for a time: the issuer is not removed.
+        gone.store(true, std::sync::atomic::Ordering::SeqCst);
+        let key = refetched(&keys, issuer, None).await;
+        assert!(key.is_ok(), "{:?}", key.err());
     }
 
     #[test]
