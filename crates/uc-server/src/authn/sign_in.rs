@@ -37,8 +37,8 @@
 //! `UC_AUTH_*` variables: `mode` (`none`, `oidc` or `forward`); for `oidc`,
 //! `public_url`, `oidc_issuer`, `oidc_client_id`, `oidc_client_secret`,
 //! `oidc_scopes` and `oidc_end_session`; for `forward`,
-//! `forward_trusted_proxies`, `forward_email_header`, `forward_user_header`
-//! and `forward_logout_url`.
+//! `forward_trusted_proxies`, `forward_email_header`, `forward_user_header`,
+//! `forward_names_with_commas` and `forward_logout_url`.
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -325,7 +325,8 @@ impl ForwardSignIn {
             FORWARD_PROVIDER,
             trusted_proxies.iter().copied(),
             [email_header.clone(), user_header.clone()],
-        );
+        )
+        .with_commas(auth.forward_names_with_commas);
         Ok(Self {
             trusted_proxies,
             email_header,
@@ -627,7 +628,7 @@ pub async fn callback(
     if let Err(e) = state
         .auth
         .keys
-        .verify(&id_token, &decoded, &oidc.issuer, None)
+        .verify(&id_token, &decoded, &oidc.issuer, None, None)
         .await
     {
         return failed(Failure::Token, e.to_string());

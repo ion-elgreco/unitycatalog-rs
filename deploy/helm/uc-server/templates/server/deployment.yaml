@@ -101,6 +101,10 @@ spec:
               value: {{ .emailHeader | quote }}
             - name: UC_AUTH_FORWARD_USER_HEADER
               value: {{ .userHeader | quote }}
+            {{- if .namesWithCommas }}
+            - name: UC_AUTH_FORWARD_NAMES_WITH_COMMAS
+              value: "true"
+            {{- end }}
             {{- with .logoutUrl }}
             - name: UC_AUTH_FORWARD_LOGOUT_URL
               value: {{ . | quote }}

@@ -123,6 +123,9 @@ auth:
     emailHeader: Remote-Email
     # -- The header with the user, without the email header.
     userHeader: Remote-User
+    # -- A header value with a `,` is one name, such as the subject of a
+    # client certificate. Only for a proxy that replaces the client's headers.
+    namesWithCommas: false
     # -- The proxy's sign-out, where the UI's "Log out" goes.
     logoutUrl: ""
   cookieTimeout: 5d

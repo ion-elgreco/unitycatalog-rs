@@ -121,6 +121,7 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 | `forward_trusted_proxies` | `UC_AUTH_FORWARD_TRUSTED_PROXIES` | none | The auth proxies whose headers count: CIDRs or addresses. |
 | `forward_email_header` | `UC_AUTH_FORWARD_EMAIL_HEADER` | `Remote-Email` | The header with the user's email. |
 | `forward_user_header` | `UC_AUTH_FORWARD_USER_HEADER` | `Remote-User` | The header with the user, without the email header. |
+| `forward_names_with_commas` | `UC_AUTH_FORWARD_NAMES_WITH_COMMAS` | `false` | A header value with a `,` is one name, such as the subject of a client certificate (`CN=alice,OU=eng`). Without it, such a value names nobody, as it could be the client's value with the proxy's added. Set it only when the proxy replaces the client's headers. |
 | `forward_logout_url` | `UC_AUTH_FORWARD_LOGOUT_URL` | none | The proxy's sign-out, where the web UI's "Log out" goes. |
 
 ### `[[auth.issuers]]`

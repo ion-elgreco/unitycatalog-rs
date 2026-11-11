@@ -232,6 +232,11 @@ pub struct Auth {
     /// The header with the user, without the email header (default
     /// `Remote-User`).
     pub forward_user_header: Option<String>,
+    /// A header value with a `,` is one name, such as the subject of a
+    /// client certificate (default false: it names nobody, as it could be
+    /// the client's value with the proxy's added).
+    #[serde(deserialize_with = "scalar")]
+    pub forward_names_with_commas: bool,
     /// The proxy's sign-out, where the UI's "Log out" goes.
     pub forward_logout_url: Option<String>,
 }
@@ -258,6 +263,7 @@ impl Default for Auth {
             forward_trusted_proxies: Vec::new(),
             forward_email_header: None,
             forward_user_header: None,
+            forward_names_with_commas: false,
             forward_logout_url: None,
         }
     }

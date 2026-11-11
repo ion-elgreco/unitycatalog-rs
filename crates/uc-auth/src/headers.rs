@@ -21,11 +21,16 @@ use crate::{Identity, RequestContext, Resolution, Resolver};
 /// not UTF-8. The headers after it are not read. Requests from elsewhere, or
 /// without the headers, pass to
 /// the next resolver.
+///
+/// Some proxies name users with a `,`, such as the subject of a client
+/// certificate (`CN=alice,OU=eng`). [`with_commas`](Self::with_commas)
+/// takes such values.
 #[derive(Debug, Clone)]
 pub struct TrustedHeaders {
     provider: String,
     proxies: Vec<IpNet>,
     headers: Vec<String>,
+    commas: bool,
 }
 
 impl TrustedHeaders {
@@ -40,7 +45,16 @@ impl TrustedHeaders {
             provider: provider.into(),
             proxies: proxies.into_iter().collect(),
             headers: headers.into_iter().map(Into::into).collect(),
+            commas: false,
         }
+    }
+
+    /// A value with a `,` is one name. Only for a proxy that replaces the
+    /// client's header: one that adds its value to the client's in one line
+    /// would name a user that the client chose a part of.
+    pub fn with_commas(mut self, commas: bool) -> Self {
+        self.commas = commas;
+        self
     }
 
     /// Whether `peer`, the address of a connection, is one of the proxy's.
@@ -58,7 +72,8 @@ impl TrustedHeaders {
     /// The user the proxy names in `headers`, whatever their address: the
     /// value of the first of the proxy's headers that is there and not
     /// blank. `None` when that header is there more than once, in several
-    /// lines or as one value with a `,`, or when its value is not UTF-8.
+    /// lines or as one value with a `,` (unless
+    /// [`with_commas`](Self::with_commas)), or when its value is not UTF-8.
     pub fn user<'a>(&self, headers: &'a HeaderMap) -> Option<&'a str> {
         for header in &self.headers {
             let mut values = headers.get_all(header.as_str()).iter();
@@ -69,7 +84,7 @@ impl TrustedHeaders {
                 tracing::warn!(%header, "the auth proxy's header is not UTF-8; it names nobody");
                 return None;
             };
-            if values.next().is_some() || value.contains(',') {
+            if values.next().is_some() || (!self.commas && value.contains(',')) {
                 tracing::warn!(%header, "the auth proxy's header has more than one value; it names nobody");
                 return None;
             }
@@ -159,6 +174,14 @@ mod tests {
         assert_eq!(resolve(Some("10.0.0.1:1"), &twice).await, None);
         let joined = [("Remote-User", "admin, alice")];
         assert_eq!(resolve(Some("10.0.0.1:1"), &joined).await, None);
+        // A proxy whose names have a `,`: one line is one name, two are not.
+        let named = proxy.clone().with_commas(true);
+        let mut dn = HeaderMap::new();
+        dn.insert("Remote-User", "CN=alice,OU=eng".parse().unwrap());
+        assert_eq!(named.user(&dn), Some("CN=alice,OU=eng"));
+        assert_eq!(proxy.user(&dn), None);
+        dn.append("Remote-User", "admin".parse().unwrap());
+        assert_eq!(named.user(&dn), None);
         // A value that is not ASCII names the user. One that cannot be read
         // names nobody, and the next header is not read.
         let utf8 = [("Remote-Email", "jos\u{e9}@example.com"), both[0]];

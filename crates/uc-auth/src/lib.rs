@@ -64,6 +64,7 @@ mod identity;
 pub mod jwt;
 mod layer;
 mod resolver;
+mod window;
 
 pub use allowlist::{Allowlist, url_pattern_error};
 /// Re-exported for implementing [`Resolver`], [`Admission`] and [`Transport`].

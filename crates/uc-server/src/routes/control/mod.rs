@@ -7,12 +7,13 @@ pub mod scim_filter;
 pub mod scim_patch;
 pub mod scim_schema;
 
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use axum::{
-    Json,
+    Extension, Json,
     body::Bytes,
-    extract::State,
+    extract::{ConnectInfo, State},
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -86,9 +87,12 @@ fn parse_form(headers: &HeaderMap, body: &[u8]) -> Result<OAuthTokenExchangeForm
 pub async fn grant_token(
     State(state): State<AppState>,
     Query(params): Query<TokenParams>,
+    connection: Option<Extension<ConnectInfo<SocketAddr>>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Response> {
+    // The limits on new issuers count for the address of the connection.
+    let client = connection.map(|Extension(ConnectInfo(peer))| peer.ip());
     let cookie_requested = match params.ext.as_deref() {
         None => false,
         Some("cookie") => true,
@@ -143,7 +147,7 @@ pub async fn grant_token(
     }
     settings
         .keys
-        .verify(&subject_token, &decoded, iss, settings.pattern(iss))
+        .verify(&subject_token, &decoded, iss, settings.pattern(iss), client)
         .await
         .map_err(idp::verify_error)?;
     let Some(issuer) = settings.issuer_taking(iss, &decoded.claims) else {

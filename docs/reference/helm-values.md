@@ -69,6 +69,7 @@ The chart sets the server's settings as `UC_*` environment variables. For the
 | `auth.forward.trustedProxies` | `""` | The auth proxies' CIDRs or addresses. |
 | `auth.forward.emailHeader` | `Remote-Email` | The header with the user's email. |
 | `auth.forward.userHeader` | `Remote-User` | The header with the user, without the email header. |
+| `auth.forward.namesWithCommas` | `false` | A header value with a `,` is one name, such as the subject of a client certificate. Only for a proxy that replaces the client's headers. |
 | `auth.forward.logoutUrl` | `""` | The proxy's sign-out, for the web UI's "Log out". |
 | `auth.cookieTimeout` | `5d` | The life of the web UI's sign-in. |
 | `auth.accessTokenTimeout` | `24h` | The life of the server's tokens. |
