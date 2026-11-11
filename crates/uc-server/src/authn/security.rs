@@ -240,14 +240,8 @@ impl SecurityContext {
     /// has not passed.
     pub fn verify(&self, token: &str) -> Result<TokenClaims> {
         let unauthenticated = || Error::new(ErrorCode::Unauthenticated, "Invalid access token.");
-        let mut peek = Validation::new(Algorithm::RS512);
-        peek.insecure_disable_signature_validation();
-        peek.validate_exp = false;
-        peek.validate_aud = false;
-        peek.required_spec_claims.clear();
-        let unverified =
-            jsonwebtoken::decode::<serde_json::Value>(token, &self.decoding[0].1, &peek)
-                .map_err(|_| unauthenticated())?;
+        let unverified = jsonwebtoken::dangerous::insecure_decode::<serde_json::Value>(token)
+            .map_err(|_| unauthenticated())?;
         if unverified.claims.get("iss").and_then(|i| i.as_str()) != Some(INTERNAL_ISSUER) {
             return Err(Error::new(
                 ErrorCode::PermissionDenied,

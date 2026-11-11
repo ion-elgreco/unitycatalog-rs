@@ -43,7 +43,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use dns_lookup::{AddrInfoHints, LookupErrorKind, SockType};
 use jsonwebtoken::{
     Algorithm, DecodingKey, Validation,
-    jwk::{AlgorithmParameters, EllipticCurve, Jwk, PublicKeyUse},
+    jwk::{AlgorithmParameters, EllipticCurve, Jwk, KeyAlgorithm, PublicKeyUse},
 };
 use moka::future::Cache;
 use serde_json::{Map, Value};
@@ -640,6 +640,7 @@ impl JwtKeys {
             (AlgorithmParameters::OctetKeyPair(_), _) => {
                 return Err(unsupported("key type", "OKP"));
             }
+            (_, _) => return Err(unsupported("key type", "unknown")),
         };
         checked
             .and_then(|()| check_times(&decoded.claims, issuer, self.leeway))
@@ -1064,21 +1065,17 @@ fn addresses(host: &str) -> Result<Vec<SocketAddr>, Box<dyn std::error::Error + 
 }
 
 /// A key of a key set, `None` for a kind that is not known and for an
-/// encryption key (`"use": "enc"`). The `alg` ES512, which `jsonwebtoken`
-/// does not know, is left out: the algorithm is the token's, checked against
-/// the kind of the key. A key with any other unknown `alg` signs no token
-/// that is accepted.
+/// encryption key (`"use": "enc"`). A key with the `alg` ES512, which
+/// `jsonwebtoken` does not know, is kept: the algorithm is the token's,
+/// checked against the kind of the key. A key with any other unknown `alg`
+/// signs no token that is accepted.
 fn parse_jwk(key: &Value) -> Option<Jwk> {
-    let jwk: Jwk = match serde_json::from_value(key.clone()) {
-        Ok(jwk) => jwk,
-        Err(_) if key["alg"] == "ES512" => {
-            let mut key = key.as_object()?.clone();
-            key.remove("alg");
-            serde_json::from_value(Value::Object(key)).ok()?
-        }
-        Err(_) => return None,
-    };
-    (jwk.common.public_key_use != Some(PublicKeyUse::Encryption)).then_some(jwk)
+    let jwk: Jwk = serde_json::from_value(key.clone()).ok()?;
+    let unknown_alg = jwk.common.key_algorithm == Some(KeyAlgorithm::UNKNOWN_ALGORITHM);
+    let signs = !matches!(jwk.algorithm, AlgorithmParameters::Other(_))
+        && (!unknown_alg || key["alg"] == "ES512")
+        && jwk.common.public_key_use != Some(PublicKeyUse::Encryption);
+    signs.then_some(jwk)
 }
 
 /// An ES512 (P-521) signature, which `jsonwebtoken` does not verify.
