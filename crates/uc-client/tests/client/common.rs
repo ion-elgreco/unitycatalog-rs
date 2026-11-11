@@ -306,6 +306,37 @@ impl Sts {
     }
 }
 
+/// The SHA-256 of `data`, in hex.
+pub fn sha256_hex(data: &[u8]) -> String {
+    hex::encode(<sha2::Sha256 as sha2::Digest>::digest(data))
+}
+
+/// The Signature Version 4 signature of `canonical_request`, made at
+/// `amz_date` with `secret` for `scope` (`<day>/<region>/<service>/aws4_request`).
+pub fn sigv4_signature(
+    secret: &str,
+    scope: &str,
+    amz_date: &str,
+    canonical_request: &str,
+) -> String {
+    let string_to_sign = format!(
+        "AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{}",
+        sha256_hex(canonical_request.as_bytes())
+    );
+    let hmac = |key: &[u8], data: &str| {
+        use hmac::Mac;
+        let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(key).unwrap();
+        mac.update(data.as_bytes());
+        mac.finalize().into_bytes().to_vec()
+    };
+    let key = scope
+        .split('/')
+        .fold(format!("AWS4{secret}").into_bytes(), |key, part| {
+            hmac(&key, part)
+        });
+    hex::encode(hmac(&key, &string_to_sign))
+}
+
 async fn sts_answer(headers: axum::http::HeaderMap, body: String) -> (StatusCode, String) {
     let refused = |code: &str| {
         (
@@ -338,28 +369,12 @@ async fn sts_answer(headers: axum::http::HeaderMap, body: String) -> (StatusCode
         };
         canonical_headers.push_str(&format!("{name}:{}\n", value.trim()));
     }
-    let sha = |data: &[u8]| hex::encode(<sha2::Sha256 as sha2::Digest>::digest(data));
     let canonical_request = format!(
         "POST\n/\n\n{canonical_headers}\n{signed_headers}\n{}",
-        sha(body.as_bytes())
+        sha256_hex(body.as_bytes())
     );
     let amz_date = header("x-amz-date").unwrap_or_default();
-    let string_to_sign = format!(
-        "AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{}",
-        sha(canonical_request.as_bytes())
-    );
-    let hmac = |key: &[u8], data: &str| {
-        use hmac::Mac;
-        let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(key).unwrap();
-        mac.update(data.as_bytes());
-        mac.finalize().into_bytes().to_vec()
-    };
-    let key = scope
-        .split('/')
-        .fold(format!("AWS4{secret}").into_bytes(), |key, part| {
-            hmac(&key, part)
-        });
-    if hex::encode(hmac(&key, &string_to_sign)) != signature
+    if sigv4_signature(secret, scope, amz_date, &canonical_request) != signature
         || !scope.ends_with("/sts/aws4_request")
         || body != "Action=GetCallerIdentity&Version=2011-06-15"
     {

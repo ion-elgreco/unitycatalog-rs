@@ -134,6 +134,27 @@ jobs:
           UC_TEST_POSTGRES_URL: postgresql://postgres@localhost:5432/postgres?sslmode=disable
         run: just test-rust
 
+  # The AWS sign-in against AWS Emulator, a local STS that checks the
+  # signature of each request (crates/uc-client/tests/client/aws_emulator.rs).
+  # The emulator runs in Docker, from crates/uc-client/tests/aws-emulator.
+  aws-emulator:
+    name: AWS sign-in tests with AWS Emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-env
+
+      - name: Run the AWS Emulator tests
+        run: just test-aws-emulator
+
   # The image of deploy/docker/Dockerfile (amd64), with binaries of the dev
   # profile from cargo zigbuild, run as the Helm chart runs it. The release
   # workflow pushes both architectures on a tag.
