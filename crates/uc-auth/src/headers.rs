@@ -17,8 +17,9 @@ use crate::{Identity, RequestContext, Resolution, Resolver};
 /// them: a header that it lets through from the client names any user.
 /// That header names nobody when the request has it more than once, as a
 /// proxy that adds its value to the client's would make it, or when its
-/// value has a `,`, which is two values in one line. The headers after it
-/// are not read. Requests from elsewhere, or without the headers, pass to
+/// value has a `,`, which is two values in one line, or when its value is
+/// not UTF-8. The headers after it are not read. Requests from elsewhere, or
+/// without the headers, pass to
 /// the next resolver.
 #[derive(Debug, Clone)]
 pub struct TrustedHeaders {
@@ -57,14 +58,17 @@ impl TrustedHeaders {
     /// The user the proxy names in `headers`, whatever their address: the
     /// value of the first of the proxy's headers that is there and not
     /// blank. `None` when that header is there more than once, in several
-    /// lines or as one value with a `,`.
+    /// lines or as one value with a `,`, or when its value is not UTF-8.
     pub fn user<'a>(&self, headers: &'a HeaderMap) -> Option<&'a str> {
         for header in &self.headers {
             let mut values = headers.get_all(header.as_str()).iter();
             let Some(first) = values.next() else {
                 continue;
             };
-            let value = first.to_str().map(str::trim).unwrap_or_default();
+            let Ok(value) = std::str::from_utf8(first.as_bytes()).map(str::trim) else {
+                tracing::warn!(%header, "the auth proxy's header is not UTF-8; it names nobody");
+                return None;
+            };
             if values.next().is_some() || value.contains(',') {
                 tracing::warn!(%header, "the auth proxy's header has more than one value; it names nobody");
                 return None;
@@ -155,6 +159,18 @@ mod tests {
         assert_eq!(resolve(Some("10.0.0.1:1"), &twice).await, None);
         let joined = [("Remote-User", "admin, alice")];
         assert_eq!(resolve(Some("10.0.0.1:1"), &joined).await, None);
+        // A value that is not ASCII names the user. One that cannot be read
+        // names nobody, and the next header is not read.
+        let utf8 = [("Remote-Email", "jos\u{e9}@example.com"), both[0]];
+        assert_eq!(
+            resolve(Some("10.0.0.1:1"), &utf8).await.as_deref(),
+            Some("jos\u{e9}@example.com")
+        );
+        let mut latin1 = HeaderMap::new();
+        let value = axum::http::HeaderValue::from_bytes(b"jos\xe9@example.com").unwrap();
+        latin1.insert("Remote-Email", value);
+        latin1.insert("Remote-User", "alice".parse().unwrap());
+        assert_eq!(proxy.user(&latin1), None);
         let blank_twice = [("Remote-Email", ""), ("Remote-Email", ""), both[0]];
         assert_eq!(resolve(Some("10.0.0.1:1"), &blank_twice).await, None);
         // The header that names the user decides; those after it are not

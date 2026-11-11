@@ -24,7 +24,8 @@
 //! session is not a caller of its own. The identity is kept until the
 //! signed request expires. A request that STS refused, or whose caller no
 //! provider takes, is refused for [`REFUSED_TTL`] without a call, however
-//! the value writes it.
+//! the value writes it. An HTTP 4xx answer without an STS error code is of
+//! a proxy on the way, and is no refusal.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -226,16 +227,15 @@ impl AwsResolver {
             {
                 continue;
             }
-            let value =
-                HeaderValue::from_str(&value).map_err(|_| format!("not a value of header {name}"));
-            let name = HeaderName::from_bytes(name.as_bytes())
+            let header_name = HeaderName::from_bytes(name.as_bytes())
                 .map_err(|_| format!("not a header name: {name:?}"))?;
-            let value = value?;
-            for part in [name.as_str().as_bytes(), value.as_bytes()] {
+            let value = HeaderValue::from_str(&value)
+                .map_err(|_| format!("not a value of header {name}"))?;
+            for part in [name.as_bytes(), value.as_bytes()] {
                 hash.update(b"\n");
                 hash.update(part);
             }
-            sent.insert(name, value);
+            sent.insert(header_name, value);
         }
         Ok(Checked {
             providers,
@@ -248,8 +248,9 @@ impl AwsResolver {
 
     /// Send the signed request to STS, which names the caller or refuses
     /// the request. No answer, one of 5xx, STS's throttling (HTTP 400 or
-    /// 429), or a proxy's own answer (HTTP 407 or 408) is
-    /// [`StsError::Unavailable`], as the caller may well be signed in.
+    /// 429), or a proxy's own answer (HTTP 407 or 408, or another 4xx
+    /// without an STS error code) is [`StsError::Unavailable`], as the
+    /// caller may well be signed in.
     async fn caller_identity(&self, checked: &Checked<'_>) -> Result<CallerIdentity, StsError> {
         let request = (self.http.post(checked.url.clone()))
             .headers(checked.headers.clone())
@@ -270,13 +271,20 @@ impl AwsResolver {
             return Err(unreachable(&format!("HTTP {}", status.as_u16())));
         }
         if status.is_client_error() {
+            let Some(code) = element(&body, "Code") else {
+                return Err(unreachable(&format!(
+                    "HTTP {} without an STS error code",
+                    status.as_u16()
+                )));
+            };
             tracing::warn!(
                 status = status.as_u16(),
+                %code,
                 answer = %body.chars().take(300).collect::<String>(),
                 "AWS token refused by STS"
             );
             let reason = format!("STS refused it: HTTP {}", status.as_u16());
-            return Err(match not_yet_known(&body) {
+            return Err(match code == NOT_YET_KNOWN {
                 true => StsError::NotYet(reason),
                 false => StsError::Refused(reason),
             });
@@ -290,10 +298,15 @@ impl AwsResolver {
     /// Refuse the request `key` for `reason`, now and for [`REFUSED_TTL`]
     /// without a call.
     async fn refuse(&self, key: [u8; 32], reason: String) -> Resolution {
-        tracing::warn!(%reason, "AWS token refused");
         self.refused.insert(key, reason.clone()).await;
-        Resolution::Refused(AuthError::Invalid(reason))
+        refused(reason)
     }
+}
+
+/// Refuse a bearer value for `reason`.
+fn refused(reason: String) -> Resolution {
+    tracing::warn!(%reason, "AWS token refused");
+    Resolution::Refused(AuthError::Invalid(reason))
 }
 
 #[async_trait]
@@ -304,10 +317,7 @@ impl<S: Send + Sync> Resolver<S> for AwsResolver {
         };
         let checked = match self.check(token) {
             Ok(checked) => checked,
-            Err(reason) => {
-                tracing::warn!(%reason, "AWS token refused");
-                return Resolution::Refused(AuthError::Invalid(reason));
-            }
+            Err(reason) => return refused(reason),
         };
         let key = checked.key;
         if let Some(reason) = self.refused.get(&key).await {
@@ -427,12 +437,9 @@ fn throttled(xml: &str) -> bool {
     )
 }
 
-/// Whether the answer of STS is that it does not know the access key
-/// (`InvalidClientTokenId`), which it also says of a new key for some
-/// seconds.
-fn not_yet_known(xml: &str) -> bool {
-    element(xml, "Code").as_deref() == Some("InvalidClientTokenId")
-}
+/// The error code of STS for an access key that it does not know, which it
+/// also says of a new key for some seconds.
+const NOT_YET_KNOWN: &str = "InvalidClientTokenId";
 
 /// The text of the first element `name` of an STS answer.
 fn element(xml: &str, name: &str) -> Option<String> {
@@ -565,8 +572,6 @@ mod tests {
         };
         assert!(throttled(&answer("Throttling")));
         assert!(!throttled(&answer("InvalidClientTokenId")));
-        assert!(not_yet_known(&answer("InvalidClientTokenId")));
-        assert!(!not_yet_known(&answer("SignatureDoesNotMatch")));
         assert!(!throttled("not xml"));
     }
 

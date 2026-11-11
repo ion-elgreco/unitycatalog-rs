@@ -5,8 +5,10 @@
 //! ([`JwtKeys`]), which are cached per issuer and refetched when a key id is
 //! unknown. An issuer is asked at most once a minute, also after a fetch
 //! that failed or whose request went away, and its keys are kept while it
-//! cannot be reached. A key set without keys withdraws them. A key keeps
-//! its place when `jsonwebtoken` does not know its `alg`, as with ES512.
+//! cannot be reached, or while its key set has keys but none that is
+//! usable. A key set with no keys at all withdraws them. Encryption keys
+//! are left out. An ES512 key is kept, although `jsonwebtoken` does not
+//! know that `alg`.
 //! RS256/384/512 and ES256/384/512 are accepted, with [`DEFAULT_LEEWAY`] of
 //! clock skew.
 
@@ -18,7 +20,7 @@ use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use jsonwebtoken::{
     Algorithm, DecodingKey, Validation,
-    jwk::{AlgorithmParameters, EllipticCurve, Jwk},
+    jwk::{AlgorithmParameters, EllipticCurve, Jwk, PublicKeyUse},
 };
 use moka::future::Cache;
 use serde_json::{Map, Value};
@@ -40,8 +42,8 @@ const MAX_ISSUERS: u64 = 1_000;
 /// have none, for each pattern with `*`, so tokens that name made-up issuers
 /// of a pattern do not make a call each. An issuer that answers with keys is
 /// not counted, nor are issuers named exactly. It is also the most of them
-/// that are asked at a time: the others wait, as those asked may all have
-/// none.
+/// that are asked at a time: the others wait up to [`FETCH_TIMEOUT`], as
+/// those asked may all have none.
 const MAX_NEW_ISSUERS: u32 = 20;
 /// The most issuers without keys that are asked per [`MIN_REFRESH`] for each
 /// pattern with `*`, whatever they answer, so tokens that name real issuers
@@ -182,7 +184,10 @@ impl NewIssuers {
     /// Read or change the current window of `pattern`.
     fn window<T>(&self, pattern: &str, f: impl FnOnce(&mut Window) -> T) -> T {
         let mut windows = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        let window = (windows.entry(pattern.to_string())).or_insert_with(Window::new);
+        let window = match windows.get_mut(pattern) {
+            Some(window) => window,
+            None => (windows.entry(pattern.to_string())).or_insert_with(Window::new),
+        };
         if window.start.elapsed() >= MIN_REFRESH {
             *window = Window::new();
         }
@@ -191,13 +196,40 @@ impl NewIssuers {
 
     /// Count an issuer of `pattern` that is asked now, and give it a place
     /// to hold until it answered. It waits while [`MAX_NEW_ISSUERS`] others
-    /// are asked. `None` when no more issuers are asked in this window.
+    /// are asked, for [`FETCH_TIMEOUT`] at most, and moves to the next
+    /// window when that one starts. `None` when no more issuers are asked
+    /// in the window, or when the wait was too long.
     async fn reserve(&self, pattern: &str) -> Option<OwnedSemaphorePermit> {
-        let left = |window: &mut Window| window.asked < MAX_ASKED_ISSUERS;
-        let places = self.window(pattern, |w| left(w).then(|| w.places.clone()))?;
-        let place = places.acquire_owned().await.ok()?;
-        self.window(pattern, |w| left(w).then(|| w.asked += 1))?;
-        Some(place)
+        let deadline = tokio::time::Instant::now() + FETCH_TIMEOUT;
+        loop {
+            let (places, ends) = self.window(pattern, |window| {
+                (window.asked < MAX_ASKED_ISSUERS)
+                    .then(|| (window.places.clone(), window.start + MIN_REFRESH))
+            })?;
+            let until = deadline.min(ends.into());
+            let place = tokio::time::timeout_at(until, places.clone().acquire_owned()).await;
+            let Ok(place) = place else {
+                if tokio::time::Instant::now() >= deadline {
+                    return None;
+                }
+                continue;
+            };
+            // `None` when the window of `places` is over.
+            let counted = self.window(pattern, |window| {
+                Arc::ptr_eq(&window.places, &places).then(|| {
+                    let asked = place.is_ok() && window.asked < MAX_ASKED_ISSUERS;
+                    if asked {
+                        window.asked += 1;
+                    }
+                    asked
+                })
+            });
+            match counted {
+                Some(true) => return place.ok(),
+                Some(false) => return None,
+                None => {}
+            }
+        }
     }
 
     /// The issuer of `pattern` that held `place` had no keys.
@@ -230,6 +262,10 @@ struct IssuerKeys {
     fetched: RwLock<Fetched>,
     /// Held by the fetch that runs, if one does.
     refresh: Arc<Mutex<()>>,
+    /// The place of a new issuer of a pattern, until its first fetch takes
+    /// it. It is kept here, not by the request that reserved it, as another
+    /// request for the issuer may start that fetch.
+    place: std::sync::Mutex<Option<OwnedSemaphorePermit>>,
 }
 
 /// What an issuer last answered.
@@ -241,14 +277,12 @@ struct Fetched {
     tried: Option<Instant>,
     /// Why the last fetch failed, if it did.
     failure: Option<VerifyError>,
+    /// Whether it ever answered with one key or more: it is no new issuer
+    /// then, also after it withdrew its keys.
+    known: bool,
 }
 
 impl Fetched {
-    /// Whether the issuer last answered with one key or more.
-    fn has_keys(&self) -> bool {
-        (self.keys.as_ref()).is_some_and(|(set, _)| !set.is_empty())
-    }
-
     /// The key `key_id` among keys younger than [`KEYS_TTL`].
     fn fresh(&self, key_id: Option<&str>) -> Option<Jwk> {
         let (set, at) = self.keys.as_ref()?;
@@ -338,7 +372,8 @@ impl JwtKeys {
     }
 
     /// Check the token's signature with the issuer's key, and its issuer and
-    /// times. The audience is the caller's to check.
+    /// times. The audience is the caller's to check. The answer is the
+    /// token's `exp`, in seconds since the epoch.
     ///
     /// `pattern` is the pattern with `*` that `issuer` matched, `None` for an
     /// issuer named exactly: the issuers of a pattern that have no keys yet
@@ -354,7 +389,7 @@ impl JwtKeys {
         decoded: &UnverifiedJwt,
         issuer: &str,
         pattern: Option<&str>,
-    ) -> Result<(), VerifyError> {
+    ) -> Result<f64, VerifyError> {
         let jwk = (self.key(issuer, decoded.key_id.as_deref(), pattern)).await?;
         let failed = |e: String| VerifyError::Invalid(format!("Token verification failed: {e}"));
         let unsupported =
@@ -410,7 +445,6 @@ impl JwtKeys {
             tracing::warn!(%issuer, ?pattern, "too many new issuers; the token is refused for now");
             VerifyError::Unavailable(format!("Too many new issuers, try again later: {issuer}"))
         };
-        let mut reserved = None;
         let keys = match (self.issuers.get(issuer).await, pattern) {
             (Some(keys), _) => keys,
             (None, None) => {
@@ -422,8 +456,11 @@ impl JwtKeys {
             // nothing is kept for the issuers that are not asked.
             (None, Some(pattern)) => {
                 let counted = async {
-                    reserved = Some(self.new_issuers.reserve(pattern).await.ok_or(())?);
-                    Ok::<_, ()>(Arc::default())
+                    let place = self.new_issuers.reserve(pattern).await.ok_or(())?;
+                    Ok::<_, ()>(Arc::new(IssuerKeys {
+                        place: std::sync::Mutex::new(Some(place)),
+                        ..Default::default()
+                    }))
                 };
                 let kept = (self.issuers)
                     .try_get_with(issuer.to_string(), counted)
@@ -459,9 +496,11 @@ impl JwtKeys {
             if fetched.tried.is_some_and(|at| at.elapsed() < MIN_REFRESH) {
                 return fetched.answer(key_id, issuer);
             }
-            pattern.filter(|_| !fetched.has_keys())
+            pattern.filter(|_| !fetched.known)
         };
-        // An issuer that was kept before is counted again.
+        // An issuer that was kept before is counted again. The fetch lock
+        // is held here, so only this request takes or reserves a place.
+        let reserved = (keys.place.lock().unwrap_or_else(|e| e.into_inner())).take();
         let counted = match (new, reserved) {
             (None, _) => None,
             (Some(pattern), Some(place)) => Some((pattern, place)),
@@ -513,6 +552,7 @@ async fn refresh(
     let mut fetched = keys.fetched.write().await;
     match result {
         Ok(set) => {
+            fetched.known |= has_keys;
             fetched.keys = Some((set, Instant::now()));
             fetched.failure = None;
         }
@@ -596,25 +636,35 @@ impl Fetcher {
             )));
         };
         // Keys of kinds that do not parse are skipped, not fatal. A key set
-        // without keys withdraws the keys it had.
-        let keys: Vec<Jwk> = keys.iter().filter_map(parse_jwk).collect();
-        if keys.is_empty() {
+        // with no keys at all withdraws the keys it had. One with keys of
+        // which none is usable is a broken answer: the keys it had are kept.
+        let usable: Vec<Jwk> = keys.iter().filter_map(parse_jwk).collect();
+        if usable.is_empty() && !keys.is_empty() {
             tracing::warn!(%jwks_uri, "the issuer's key set has no usable keys");
+            return Err(VerifyError::Unavailable(format!(
+                "No usable keys from issuer {issuer}"
+            )));
         }
-        Ok(keys)
+        Ok(usable)
     }
 }
 
-/// A key of a key set, `None` for a kind that is not known. An `alg` that
-/// `jsonwebtoken` does not know, such as ES512, is left out: the algorithm
-/// is the token's, checked against the kind of the key.
+/// A key of a key set, `None` for a kind that is not known and for an
+/// encryption key (`"use": "enc"`). The `alg` ES512, which `jsonwebtoken`
+/// does not know, is left out: the algorithm is the token's, checked against
+/// the kind of the key. A key with any other unknown `alg` signs no token
+/// that is accepted.
 fn parse_jwk(key: &Value) -> Option<Jwk> {
-    if let Ok(jwk) = serde_json::from_value(key.clone()) {
-        return Some(jwk);
-    }
-    let mut key = key.as_object()?.clone();
-    key.remove("alg")?;
-    serde_json::from_value(Value::Object(key)).ok()
+    let jwk: Jwk = match serde_json::from_value(key.clone()) {
+        Ok(jwk) => jwk,
+        Err(_) if key["alg"] == "ES512" => {
+            let mut key = key.as_object()?.clone();
+            key.remove("alg");
+            serde_json::from_value(Value::Object(key)).ok()?
+        }
+        Err(_) => return None,
+    };
+    (jwk.common.public_key_use != Some(PublicKeyUse::Encryption)).then_some(jwk)
 }
 
 /// An ES512 (P-521) signature, which `jsonwebtoken` does not verify.
@@ -645,8 +695,8 @@ fn now_secs() -> i64 {
 }
 
 /// The issuer and time checks of a token whose signature checks out. A
-/// token must have an `exp`.
-fn check_times(claims: &Map<String, Value>, issuer: &str, leeway: Duration) -> Result<(), String> {
+/// token must have an `exp`, which is the answer.
+fn check_times(claims: &Map<String, Value>, issuer: &str, leeway: Duration) -> Result<f64, String> {
     if claims.get("iss").and_then(Value::as_str) != Some(issuer) {
         return Err("InvalidIssuer".into());
     }
@@ -659,7 +709,7 @@ fn check_times(claims: &Map<String, Value>, issuer: &str, leeway: Duration) -> R
     if time_claim(claims, "nbf")?.is_some_and(|nbf| nbf - leeway > now) {
         return Err("ImmatureSignature".into());
     }
-    Ok(())
+    Ok(exp)
 }
 
 /// The time claim `name` in seconds since the epoch, which may have a
@@ -803,14 +853,17 @@ impl<S: Send + Sync> Resolver<S> for JwtResolver {
             true => providers.first().and_then(|p| p.pattern(iss)),
             false => None,
         };
-        if let Err(e) = self.keys.verify(token, &decoded, iss, pattern).await {
-            tracing::warn!(%iss, reason = %e, "token refused");
-            return Resolution::Refused(match e {
-                // The caller may well be signed in.
-                VerifyError::Unavailable(reason) => AuthError::Unavailable(reason),
-                other => AuthError::invalid(other.to_string()),
-            });
-        }
+        let exp = match self.keys.verify(token, &decoded, iss, pattern).await {
+            Ok(exp) => exp,
+            Err(e) => {
+                tracing::warn!(%iss, reason = %e, "token refused");
+                return Resolution::Refused(match e {
+                    // The caller may well be signed in.
+                    VerifyError::Unavailable(reason) => AuthError::Unavailable(reason),
+                    other => AuthError::invalid(other.to_string()),
+                });
+            }
+        };
         let claims = decoded.claims;
         let Some(provider) = (providers.into_iter()).find(|p| p.audience_allowed(&claims)) else {
             tracing::warn!(
@@ -820,8 +873,6 @@ impl<S: Send + Sync> Resolver<S> for JwtResolver {
             );
             return Resolution::Refused(AuthError::invalid("audience not allowed"));
         };
-        // `verify` refuses a token without `exp`.
-        let exp = claims.get("exp").and_then(Value::as_f64).unwrap_or(0.0);
         let left = Duration::from_secs_f64((exp - now_secs() as f64).clamp(0.0, 1e9));
         let mut identity = Identity::new(
             &provider.name,
@@ -912,6 +963,7 @@ mod tests {
             keys: Some((vec![jwk(Some("k1"))], Instant::now())),
             tried: Some(Instant::now()),
             failure: Some(VerifyError::Unavailable("down".into())),
+            known: true,
         };
         assert!(fetched.answer(Some("k1"), "https://x").is_ok());
         assert!(matches!(
@@ -1022,10 +1074,70 @@ mod tests {
         *serves.0.lock().unwrap() = r#"{"error": "down"}"#.into();
         expire(&keys, "https://a").await;
         assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
+        // So is a key set with keys of which none is usable.
+        *serves.0.lock().unwrap() = r#"{"keys": [{"kty": "EC", "crv": "secp256k1"}]}"#.into();
+        expire(&keys, "https://a").await;
+        assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
         *serves.0.lock().unwrap() = r#"{"keys": []}"#.into();
         expire(&keys, "https://a").await;
         let key = keys.key("https://a", Some("k1"), None).await;
         assert!(matches!(key, Err(VerifyError::Invalid(_))), "{key:?}");
+    }
+
+    #[tokio::test]
+    async fn an_issuer_that_withdrew_its_keys_is_no_new_issuer() {
+        let serves = Serves::new(KEY_SET);
+        let keys = JwtKeys::new(serves.clone());
+        let pattern = Some("https://*.a");
+        assert!(keys.key("https://t.a", Some("k1"), pattern).await.is_ok());
+        *serves.0.lock().unwrap() = r#"{"keys": []}"#.into();
+        for _ in 0..2 {
+            expire(&keys, "https://t.a").await;
+            let key = keys.key("https://t.a", Some("k1"), pattern).await;
+            assert!(matches!(key, Err(VerifyError::Invalid(_))), "{key:?}");
+        }
+        let counts = (keys.new_issuers).window("https://*.a", |w| (w.asked, w.without_keys));
+        assert_eq!(counts, (1, 0));
+    }
+
+    /// Requests for one new issuer that arrive together when one place is
+    /// left: one of them reserves it, and any of them may start the fetch.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn one_new_issuer_takes_one_place() {
+        for _ in 0..50 {
+            let keys = Arc::new(JwtKeys::new(Serves::new(KEY_SET)));
+            let places = keys.new_issuers.window("https://*.a", |w| w.places.clone());
+            let _taken = (places.clone())
+                .acquire_many_owned(MAX_NEW_ISSUERS - 1)
+                .await
+                .unwrap();
+            let mut all = tokio::task::JoinSet::new();
+            for _ in 0..8 {
+                let keys = keys.clone();
+                all.spawn(async move {
+                    let key = keys.key("https://t.a", Some("k1"), Some("https://*.a"));
+                    tokio::time::timeout(Duration::from_secs(2), key).await
+                });
+            }
+            for key in all.join_all().await {
+                assert!(matches!(key, Ok(Ok(_))), "{key:?}");
+            }
+            assert_eq!(keys.new_issuers.window("https://*.a", |w| w.asked), 1);
+            assert_eq!(places.available_permits(), 1);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn new_issuers_wait_for_a_place_for_a_limited_time() {
+        let new_issuers = NewIssuers::default();
+        let places = new_issuers.window("https://*.a", |w| w.places.clone());
+        let taken = places.acquire_many_owned(MAX_NEW_ISSUERS).await.unwrap();
+        let waited = tokio::time::Instant::now();
+        assert!(new_issuers.reserve("https://*.a").await.is_none());
+        assert_eq!(waited.elapsed(), FETCH_TIMEOUT);
+        assert_eq!(new_issuers.window("https://*.a", |w| w.asked), 0);
+        drop(taken);
+        assert!(new_issuers.reserve("https://*.a").await.is_some());
     }
 
     #[tokio::test]
@@ -1054,6 +1166,14 @@ mod tests {
         };
         assert_eq!(key("ES512").unwrap().common.key_id.as_deref(), Some("k1"));
         assert!(key("ES384").unwrap().common.key_algorithm.is_some());
+        // A key that signs no token that is accepted, and an encryption key.
+        assert!(key("ECDH-ES").is_none());
+        assert!(
+            parse_jwk(&serde_json::json!({
+                "kty": "RSA", "use": "enc", "alg": "RSA-OAEP", "n": "AQAB", "e": "AQAB",
+            }))
+            .is_none()
+        );
         assert!(parse_jwk(&serde_json::json!({ "kty": "EC", "crv": "secp256k1" })).is_none());
         assert!(parse_jwk(&serde_json::json!("k1")).is_none());
     }

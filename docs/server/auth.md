@@ -441,13 +441,14 @@ keeps each provider to its own groups.
 - It checks the signature with the provider's keys, and the issuer, audience and times, with
   60 seconds of clock skew. A token without `exp` is refused.
 - It fetches a provider's keys once an hour, and never more than once a minute. When the provider
-  does not answer, or its answer is not a key set, it keeps the keys it has. A key set without
-  keys withdraws them.
+  does not answer, or its answer is not a key set or has no key that the server can use, it keeps
+  the keys it has. A key set with no keys at all withdraws them.
 - For an `issuer` with `*`, it fetches keys for new issuers until 20 of them had none in a
   minute, and for at most 200 new issuers in a minute. It fetches for 20 new issuers at a time;
-  the others wait. So tokens with made-up issuers cannot make it call out for each one. While
-  such tokens arrive, a new issuer can get HTTP 500 until the next minute.
-- It accepts a key whose `alg` is `ES512`, as it does a key without `alg`.
+  the others wait, for 4 seconds at most. So tokens with made-up issuers cannot make it call out
+  for each one. While such tokens arrive, a new issuer can get HTTP 500 until the next minute.
+- It accepts a key whose `alg` is `ES512`, as it does a key without `alg`. It does not use
+  encryption keys (`"use": "enc"`).
 - It keeps a token from a `direct` block until the token expires, for at most five minutes. A busy
   client then costs one check per token, not one per request. A user disabled in the server can
   still make requests for that time.
@@ -484,8 +485,8 @@ create_users = true
 
 A signed request is valid for 15 minutes. The server keeps the caller for five minutes, as it does
 for tokens. AWS identities are accepted on each request. They have no token exchange and no groups.
-When STS limits the server's requests, the server answers with HTTP 500, not "Invalid access
-token".
+When STS limits the server's requests, or a proxy on the way answers in its place, the server
+answers with HTTP 500, not "Invalid access token".
 
 ## Sign in to the web UI
 
@@ -523,7 +524,8 @@ The server reads the email from `Remote-Email`, else the user from `Remote-User`
 headers only on connections from `forward_trusted_proxies`. The first of these headers that has a
 value names the user. If it has more than one value, in several lines or with a `,` between, it
 names nobody: the proxy must replace the client's value, not add to it. So a name with a `,`,
-such as a certificate's distinguished name, cannot be the user's name.
+such as a certificate's distinguished name, cannot be the user's name. A value that is not UTF-8
+names nobody either.
 
 #### Envoy Gateway
 
