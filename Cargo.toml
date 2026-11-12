@@ -71,9 +71,9 @@ utoipa-swagger-ui = { version = "9", features = ["axum"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "query", "form"] }
 # The transport of uc-client on native targets, and the bearer tokens of cloud identities (its
 # `identity` feature).
-olai-http = { git = "https://github.com/ion-elgreco/trestle", branch = "feat/client-credential-provider" }
+olai-http = "0.0.11"
 # The transport of uc-client in the browser.
-olai-http-wasm = { git = "https://github.com/ion-elgreco/trestle", branch = "feat/client-credential-provider" }
+olai-http-wasm = "0.0.7"
 # The protobuf runtime of the generated models (`just generate`), with their JSON.
 buffa = { version = "0.7", features = ["json"] }
 buffa-types = { version = "0.7", features = ["json"] }
