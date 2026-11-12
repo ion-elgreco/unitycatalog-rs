@@ -462,9 +462,11 @@ impl Failure {
 }
 
 /// Log why the sign-in failed, and send the browser back to the web UI's
-/// login page, which tells the user.
+/// login page, which tells the user. The reason may hold text of the
+/// request, such as its `error_description`: the log has it with control
+/// characters escaped.
 fn back_to_login(failure: Failure, reason: &str) -> Response {
-    tracing::warn!(error = failure.code(), %reason, "sign-in failed");
+    tracing::warn!(error = failure.code(), ?reason, "sign-in failed");
     Redirect::to(&format!("{LOGIN_PAGE}?error={}", failure.code())).into_response()
 }
 

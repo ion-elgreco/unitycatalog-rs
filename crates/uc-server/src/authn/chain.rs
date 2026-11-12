@@ -25,7 +25,7 @@ use uc_auth::{
     Admission, AuthError, Authenticator, AwsResolver, Identity, JwtKeys, JwtResolver,
     RequestContext, Resolution, Resolver, Transport, async_trait,
 };
-use uc_common::{Error, ErrorCode};
+use uc_common::{API_BASE, Error, ErrorCode};
 
 use crate::{
     authn::{
@@ -37,7 +37,7 @@ use crate::{
         security::{ADMIN, INTERNAL_ISSUER},
         sign_in::ForwardSignIn,
     },
-    http::outbound::SendOnIo,
+    http::{error::mounted, outbound::SendOnIo},
     server::state::AppState,
 };
 
@@ -107,7 +107,7 @@ impl Resolver<AppState> for SharingRecipients {
         let Some(token) = cx.token().filter(|t| t.starts_with("dsr_")) else {
             return Resolution::Pass;
         };
-        if !cx.path().contains("/delta-sharing/") {
+        if !mounted(cx.path(), API_BASE, "/delta-sharing") {
             return Resolution::Pass;
         }
         match state.metastore.sharing().recipient_for_token(token).await {
@@ -116,7 +116,8 @@ impl Resolver<AppState> for SharingRecipients {
                 SHARING_RECIPIENT,
                 format!("recipient:{}", recipient.name),
             )),
-            _ => Resolution::Refused(AuthError::invalid("no recipient has the token")),
+            Ok(None) => Resolution::Refused(AuthError::invalid("no recipient has the token")),
+            Err(e) => Resolution::Refused(refused(e)),
         }
     }
 }
@@ -158,8 +159,10 @@ impl Resolver<AppState> for ServerTokens {
                         issuer = %issuer.name,
                         "token refused: the issuer's tokens are taken at the exchange only"
                     ),
+                    // The `iss` is the token's own text: the log has it
+                    // with control characters escaped.
                     None => {
-                        tracing::debug!(%iss, "token refused: no auth.issuers block has the issuer")
+                        tracing::debug!(?iss, "token refused: no auth.issuers block has the issuer")
                     }
                 }
                 Resolution::Refused(AuthError::Forbidden("Invalid access token.".into()))
@@ -182,7 +185,8 @@ impl Resolver<AppState> for PersonalAccessTokens {
             Ok(Some(principal)) => {
                 Resolution::Resolved(Identity::new("pat", PERSONAL_ACCESS_TOKEN, principal))
             }
-            _ => Resolution::Refused(AuthError::invalid("no personal access token")),
+            Ok(None) => Resolution::Refused(AuthError::invalid("no personal access token")),
+            Err(e) => Resolution::Refused(refused(e)),
         }
     }
 }

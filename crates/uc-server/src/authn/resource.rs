@@ -15,7 +15,7 @@
 use axum::{Json, Router, extract::State, http::header, response::IntoResponse, routing::get};
 use serde_json::json;
 
-use crate::{authn::sign_in::SignIn, server::state::AppState};
+use crate::server::state::AppState;
 
 pub const PATH: &str = "/.well-known/oauth-protected-resource";
 
@@ -46,8 +46,8 @@ async fn metadata(State(state): State<AppState>) -> impl IntoResponse {
         "resource_name": "Unity Catalog",
         "issuers": issuers,
     });
-    if let Some(SignIn::Oidc(oidc)) = auth.sign_in.as_ref() {
-        body["resource"] = json!(oidc.public_url);
+    if let Some(public_url) = &auth.public_url {
+        body["resource"] = json!(public_url);
     }
     ([(header::CACHE_CONTROL, "max-age=300")], Json(body))
 }

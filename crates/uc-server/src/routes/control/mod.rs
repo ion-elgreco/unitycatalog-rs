@@ -141,7 +141,9 @@ pub async fn grant_token(
     }
     let iss = idp::claim(&decoded.claims, "iss").unwrap_or_default();
     if settings.issuer(iss).is_none() {
-        tracing::warn!(issuer = %iss, "token rejected: issuer not allowed");
+        // The `iss` is the token's own text: the log has it with control
+        // characters escaped.
+        tracing::warn!(issuer = ?iss, "token rejected: issuer not allowed");
         return Err(Error::unauthenticated("Invalid issuer").into());
     }
     settings

@@ -67,18 +67,6 @@ pub struct IssuerSettings {
 
 impl IssuerSettings {
     pub fn new(issuer: &settings::Issuer) -> Self {
-        let names = |claims: &[String], default: &[&str]| -> Vec<String> {
-            let claims: Vec<String> = claims
-                .iter()
-                .map(|c| c.trim())
-                .filter(|c| !c.is_empty())
-                .map(str::to_string)
-                .collect();
-            match claims.is_empty() {
-                true => default.iter().map(|d| d.to_string()).collect(),
-                false => claims,
-            }
-        };
         let trimmed = |values: &[String]| -> Vec<String> {
             values
                 .iter()
@@ -86,6 +74,13 @@ impl IssuerSettings {
                 .filter(|a| !a.is_empty())
                 .map(str::to_string)
                 .collect()
+        };
+        let names = |claims: &[String], default: &[&str]| -> Vec<String> {
+            let claims = trimmed(claims);
+            match claims.is_empty() {
+                true => default.iter().map(|d| d.to_string()).collect(),
+                false => claims,
+            }
         };
         let name = issuer.name.trim().to_string();
         let audiences = trimmed(&issuer.audiences);
@@ -633,12 +628,12 @@ async fn create(
     };
     match scim.create_user_at_sign_in(user).await {
         Ok(Some(user)) => {
-            tracing::info!(%principal, issuer = %issuer.name, "made the user at its first request");
+            tracing::info!(?principal, issuer = %issuer.name, "made the user at its first request");
             assumable(user).ok_or_else(not_allowed)
         }
         Ok(None) => {
             tracing::info!(
-                %principal, issuer = %issuer.name,
+                ?principal, issuer = %issuer.name,
                 "user refused: it was deleted, and only an admin makes it again"
             );
             Err(not_allowed())

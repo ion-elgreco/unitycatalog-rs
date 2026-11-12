@@ -199,3 +199,28 @@ async fn recipient_without_share_grant_gets_403(#[future(awt)] app: Router) {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn a_recipient_token_signs_in_on_the_protocol_only() {
+    let (app, metastore) = common::signed_in_app().await;
+    let recipient = uc_api::sharing::CreateRecipient {
+        name: "partner-x".into(),
+        ..Default::default()
+    };
+    let recipient = (metastore.sharing().create_recipient(recipient, None).await).unwrap();
+    let token = recipient.bearer_token.unwrap();
+
+    let resp = app
+        .clone()
+        .oneshot(req_bearer(Method::GET, "/delta-sharing/shares", &token))
+        .await
+        .unwrap();
+    assert_status(resp, StatusCode::OK, "list shares").await;
+
+    // Another path with `/delta-sharing/` in it.
+    let resp = app
+        .oneshot(req_bearer(Method::GET, "/x/delta-sharing/shares", &token))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
