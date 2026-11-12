@@ -74,7 +74,7 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 | **Requests** |  |  | Limits on the requests that it serves. |
 | `max_request_length` | `UC_SERVER_MAX_REQUEST_LENGTH` | `10485760` | The largest request body, in bytes. A larger one gets 413. Not for uploads to the Files API, which stream to storage. |
 | `request_timeout` | `UC_SERVER_REQUEST_TIMEOUT` | `10s` | The time that a request can take; then the server answers 503. `0s` for no limit. Not for uploads and directory deletes of the Files API. |
-| `rate_limit_per_sec` | `UC_SERVER_RATE_LIMIT_PER_SEC` | `0` | Requests per second from one client address; more get 429. `0` for no limit. |
+| `rate_limit_per_sec` | `UC_SERVER_RATE_LIMIT_PER_SEC` | `0` | Requests per second from one client address; more get 429. `0` for no limit. Behind a proxy, set `auth.trusted_proxies`, else all callers are one client. |
 | `cors_allow_origins` | `UC_SERVER_CORS_ALLOW_ORIGINS` | all origins | The origins that browsers can call the API from. Empty or `*` allows every origin. |
 | **Health checks and metrics** |  |  | `/livez`, `/readyz` and `/metrics`. |
 | `obs_port` | `UC_SERVER_OBS_PORT` | none | The port of `/livez`, `/readyz` and `/metrics`, on all interfaces. Not the API's port. |
@@ -103,6 +103,7 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 | `users` | none | none | `[[auth.users]]`: the users that the server makes at each start when they are missing. Only in `uc.toml`. See [The first users](../server/auth.md#the-first-users). |
 | `cedar` | `UC_AUTH_CEDAR` | `false` | Check privileges with the Cedar policy engine. |
 | `cedar_policies` | `UC_AUTH_CEDAR_POLICIES` | none | Files of Cedar policies, on top of the default policies. |
+| `trusted_proxies` | `UC_AUTH_TRUSTED_PROXIES` | none | The proxies in front of the server that add the client's address to `X-Forwarded-For`, such as an ingress: CIDRs or addresses. The limits per client count by that address. See [Behind a proxy](../server/auth.md#behind-a-proxy). |
 | **Tokens** |  |  | The server's own tokens, and the identity providers whose tokens it takes. |
 | `signing_key_file` | `UC_AUTH_SIGNING_KEY_FILE` | none | The PEM file of the RSA keys of the server's tokens, newest first: the first signs. Without it, the server makes a key in memory at each start. See [The signing key](../server/auth.md#the-signing-key). |
 | `access_token_timeout` | `UC_AUTH_ACCESS_TOKEN_TIMEOUT` | `24h` | The life of the server's access tokens. |
@@ -121,6 +122,7 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 | `forward_trusted_proxies` | `UC_AUTH_FORWARD_TRUSTED_PROXIES` | none | The auth proxies whose headers count: CIDRs or addresses. |
 | `forward_email_header` | `UC_AUTH_FORWARD_EMAIL_HEADER` | `Remote-Email` | The header with the user's email. |
 | `forward_user_header` | `UC_AUTH_FORWARD_USER_HEADER` | `Remote-User` | The header with the user, without the email header. |
+| `forward_names_with_commas` | `UC_AUTH_FORWARD_NAMES_WITH_COMMAS` | `false` | A header value with a `,` is one name, such as the subject of a client certificate (`CN=alice,OU=eng`). Without it, such a value names nobody, as it could be the client's value with the proxy's added. Set it only when the proxy replaces the client's headers. |
 | `forward_logout_url` | `UC_AUTH_FORWARD_LOGOUT_URL` | none | The proxy's sign-out, where the web UI's "Log out" goes. |
 
 ### `[[auth.issuers]]`

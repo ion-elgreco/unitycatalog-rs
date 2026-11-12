@@ -15,7 +15,7 @@ use std::time::Duration;
 use serde_json::{Map, Value};
 use uc_auth::aws::STS_ENDPOINTS;
 use uc_auth::jwt::VerifyError;
-use uc_auth::{Authenticator, AwsProvider, JwtKeys, JwtProvider};
+use uc_auth::{Authenticator, AwsProvider, JwtKeys, JwtProvider, TrustedProxies};
 
 use uc_api::{ScimUser, scim::ScimEmail, scim::schema_uri};
 use uc_common::{Error, ErrorCode, Result, settings};
@@ -67,18 +67,6 @@ pub struct IssuerSettings {
 
 impl IssuerSettings {
     pub fn new(issuer: &settings::Issuer) -> Self {
-        let names = |claims: &[String], default: &[&str]| -> Vec<String> {
-            let claims: Vec<String> = claims
-                .iter()
-                .map(|c| c.trim())
-                .filter(|c| !c.is_empty())
-                .map(str::to_string)
-                .collect();
-            match claims.is_empty() {
-                true => default.iter().map(|d| d.to_string()).collect(),
-                false => claims,
-            }
-        };
         let trimmed = |values: &[String]| -> Vec<String> {
             values
                 .iter()
@@ -86,6 +74,13 @@ impl IssuerSettings {
                 .filter(|a| !a.is_empty())
                 .map(str::to_string)
                 .collect()
+        };
+        let names = |claims: &[String], default: &[&str]| -> Vec<String> {
+            let claims = trimmed(claims);
+            match claims.is_empty() {
+                true => default.iter().map(|d| d.to_string()).collect(),
+                false => claims,
+            }
         };
         let name = issuer.name.trim().to_string();
         let audiences = trimmed(&issuer.audiences);
@@ -327,6 +322,11 @@ pub struct AuthSettings {
     pub public_url: Option<String>,
     /// Who sent a request (`crate::authn::chain`).
     pub authenticator: Authenticator<AppState>,
+    /// `auth.trusted_proxies`: the proxies that name the client's address,
+    /// for the limits per client.
+    pub proxies: TrustedProxies,
+    /// Why `auth.trusted_proxies` is not usable, if it is not.
+    proxies_error: Option<String>,
     /// How long the authenticator keeps a caller by its token.
     keep: Duration,
 }
@@ -342,7 +342,15 @@ impl AuthSettings {
     pub fn new(auth: &settings::Auth) -> Self {
         let issuers: Vec<IssuerSettings> = auth.issuers.iter().map(IssuerSettings::new).collect();
         let keys = Arc::new(JwtKeys::new(crate::authn::chain::IoTransport));
+        let proxies =
+            crate::authn::sign_in::parse_cidrs("auth.trusted_proxies", &auth.trusted_proxies);
+        let (proxies, proxies_error) = match proxies {
+            Ok(proxies) => (TrustedProxies::new(proxies), None),
+            Err(e) => (TrustedProxies::default(), Some(e)),
+        };
         Self {
+            proxies,
+            proxies_error,
             authenticator: crate::authn::chain::authenticator(&issuers, &keys, None, ACCEPTED_TTL),
             issuers,
             access_token_timeout: auth.access_token_timeout,
@@ -385,11 +393,7 @@ impl AuthSettings {
     /// The pattern with `*` that `iss` matches, for [`JwtKeys::verify`]:
     /// `None` when a block names it exactly.
     pub fn pattern(&self, iss: &str) -> Option<&str> {
-        let mut patterns = (self.issuers.iter())
-            .filter(|issuer| issuer.matches(iss))
-            .map(|issuer| issuer.jwt.pattern(iss));
-        let first = patterns.next().flatten()?;
-        patterns.all(|p| p.is_some()).then_some(first)
+        uc_auth::jwt::issuer_pattern(self.issuers.iter().map(|issuer| &issuer.jwt), iss)
     }
 
     /// The first block that `iss` matches and that takes the audience of
@@ -400,6 +404,9 @@ impl AuthSettings {
 
     /// Upstream `validateAuthAllowlistConfiguration`, for each block.
     pub fn validate(&self) -> std::result::Result<(), String> {
+        if let Some(e) = &self.proxies_error {
+            return Err(e.clone());
+        }
         let mut names = HashSet::new();
         for (index, issuer) in self.issuers.iter().enumerate() {
             issuer.validate(index, &mut names)?;
@@ -621,12 +628,12 @@ async fn create(
     };
     match scim.create_user_at_sign_in(user).await {
         Ok(Some(user)) => {
-            tracing::info!(%principal, issuer = %issuer.name, "made the user at its first request");
+            tracing::info!(?principal, issuer = %issuer.name, "made the user at its first request");
             assumable(user).ok_or_else(not_allowed)
         }
         Ok(None) => {
             tracing::info!(
-                %principal, issuer = %issuer.name,
+                ?principal, issuer = %issuer.name,
                 "user refused: it was deleted, and only an admin makes it again"
             );
             Err(not_allowed())
@@ -705,6 +712,24 @@ mod tests {
             .auth
             .issuers
             .remove(0)
+    }
+
+    #[test]
+    fn trusted_proxies_are_cidrs_or_addresses() {
+        let settings = |proxies: &[&str]| {
+            AuthSettings::new(&settings::Auth {
+                trusted_proxies: proxies.iter().map(|p| p.to_string()).collect(),
+                ..Default::default()
+            })
+        };
+        let proxies = settings(&["10.42.0.0/16", " ::1 "]);
+        assert!(proxies.validate().is_ok());
+        assert!(proxies.proxies.trusts("10.42.3.4".parse().unwrap()));
+        assert!(!proxies.proxies.trusts("192.0.2.1".parse().unwrap()));
+        let error = settings(&["10.42.0.0/16", "ingress"])
+            .validate()
+            .unwrap_err();
+        assert!(error.contains("auth.trusted_proxies"), "{error}");
     }
 
     #[test]

@@ -167,6 +167,7 @@ passes on.
 | --- | --- |
 | `UC_AUTH_FORWARD_TRUSTED_PROXIES` | the proxies' CIDRs or addresses, comma-separated: the address of the connection, never `X-Forwarded-For` |
 | `UC_AUTH_FORWARD_EMAIL_HEADER`, `UC_AUTH_FORWARD_USER_HEADER` | the user: the email header (default `Remote-Email`), else the user header (default `Remote-User`) |
+| `UC_AUTH_FORWARD_NAMES_WITH_COMMAS` | `true` when the proxy's names have a `,` (`CN=alice,OU=eng`); default `false`: such a value names nobody |
 | `UC_AUTH_FORWARD_LOGOUT_URL` | the proxy's sign-out, where "Log out" goes; without it, the UI shows no "Log out", as the proxy would sign the user in again |
 
 In both modes, a user signs in when their email names an active user of

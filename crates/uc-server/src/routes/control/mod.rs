@@ -13,7 +13,7 @@ use axum::{
     Json,
     body::Bytes,
     extract::State,
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, StatusCode, header, request::Parts},
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
@@ -86,9 +86,12 @@ fn parse_form(headers: &HeaderMap, body: &[u8]) -> Result<OAuthTokenExchangeForm
 pub async fn grant_token(
     State(state): State<AppState>,
     Query(params): Query<TokenParams>,
-    headers: HeaderMap,
+    parts: Parts,
     body: Bytes,
 ) -> ApiResult<Response> {
+    // The limits on new issuers count for the client's address.
+    let client = uc_auth::RequestContext::new(&parts, None).client();
+    let headers = &parts.headers;
     let cookie_requested = match params.ext.as_deref() {
         None => false,
         Some("cookie") => true,
@@ -96,7 +99,7 @@ pub async fn grant_token(
             return Err(Error::invalid_argument(format!("Unsupported ext: {other}")).into());
         }
     };
-    let form = parse_form(&headers, &body)?;
+    let form = parse_form(headers, &body)?;
     let shown = |v: &Option<String>| v.clone().unwrap_or_else(|| "null".into());
     if form.grant_type.as_deref() != Some(TOKEN_EXCHANGE) {
         return Err(Error::invalid_argument(format!(
@@ -138,12 +141,14 @@ pub async fn grant_token(
     }
     let iss = idp::claim(&decoded.claims, "iss").unwrap_or_default();
     if settings.issuer(iss).is_none() {
-        tracing::warn!(issuer = %iss, "token rejected: issuer not allowed");
+        // The `iss` is the token's own text: the log has it with control
+        // characters escaped.
+        tracing::warn!(issuer = ?iss, "token rejected: issuer not allowed");
         return Err(Error::unauthenticated("Invalid issuer").into());
     }
     settings
         .keys
-        .verify(&subject_token, &decoded, iss, settings.pattern(iss))
+        .verify(&subject_token, &decoded, iss, settings.pattern(iss), client)
         .await
         .map_err(idp::verify_error)?;
     let Some(issuer) = settings.issuer_taking(iss, &decoded.claims) else {

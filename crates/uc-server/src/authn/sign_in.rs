@@ -37,8 +37,8 @@
 //! `UC_AUTH_*` variables: `mode` (`none`, `oidc` or `forward`); for `oidc`,
 //! `public_url`, `oidc_issuer`, `oidc_client_id`, `oidc_client_secret`,
 //! `oidc_scopes` and `oidc_end_session`; for `forward`,
-//! `forward_trusted_proxies`, `forward_email_header`, `forward_user_header`
-//! and `forward_logout_url`.
+//! `forward_trusted_proxies`, `forward_email_header`, `forward_user_header`,
+//! `forward_names_with_commas` and `forward_logout_url`.
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -307,11 +307,10 @@ pub struct ForwardSignIn {
 
 impl ForwardSignIn {
     fn new(auth: &settings::Auth) -> Result<Self, String> {
-        let trusted_proxies = auth
-            .forward_trusted_proxies
-            .iter()
-            .map(|proxy| parse_cidr(proxy.trim()))
-            .collect::<Result<Vec<_>, _>>()?;
+        let trusted_proxies = parse_cidrs(
+            "auth.forward_trusted_proxies",
+            &auth.forward_trusted_proxies,
+        )?;
         if trusted_proxies.is_empty() {
             return Err(format!(
                 "{} is required with auth.mode = \"forward\": the proxies' CIDRs or \
@@ -325,7 +324,8 @@ impl ForwardSignIn {
             FORWARD_PROVIDER,
             trusted_proxies.iter().copied(),
             [email_header.clone(), user_header.clone()],
-        );
+        )
+        .with_commas(auth.forward_names_with_commas);
         Ok(Self {
             trusted_proxies,
             email_header,
@@ -352,17 +352,19 @@ impl ForwardSignIn {
     }
 }
 
-/// A CIDR, or an address as a network of one.
-fn parse_cidr(text: &str) -> Result<ipnet::IpNet, String> {
+/// The CIDRs or addresses of the list setting `key`.
+pub(crate) fn parse_cidrs(key: &str, texts: &[String]) -> Result<Vec<ipnet::IpNet>, String> {
+    texts
+        .iter()
+        .map(|text| parse_cidr(key, text.trim()))
+        .collect()
+}
+
+/// A CIDR or an address of setting `key`.
+fn parse_cidr(key: &str, text: &str) -> Result<ipnet::IpNet, String> {
     text.parse::<ipnet::IpNet>()
         .or_else(|_| text.parse::<IpAddr>().map(ipnet::IpNet::from))
-        .map_err(|_| {
-            settings::invalid(
-                "auth.forward_trusted_proxies",
-                text,
-                "Expected a CIDR or an address.",
-            )
-        })
+        .map_err(|_| settings::invalid(key, text, "Expected a CIDR or an address."))
 }
 
 /// The text of a setting, trimmed; none when empty.
@@ -460,9 +462,11 @@ impl Failure {
 }
 
 /// Log why the sign-in failed, and send the browser back to the web UI's
-/// login page, which tells the user.
+/// login page, which tells the user. The reason may hold text of the
+/// request, such as its `error_description`: the log has it with control
+/// characters escaped.
 fn back_to_login(failure: Failure, reason: &str) -> Response {
-    tracing::warn!(error = failure.code(), %reason, "sign-in failed");
+    tracing::warn!(error = failure.code(), ?reason, "sign-in failed");
     Redirect::to(&format!("{LOGIN_PAGE}?error={}", failure.code())).into_response()
 }
 
@@ -627,7 +631,7 @@ pub async fn callback(
     if let Err(e) = state
         .auth
         .keys
-        .verify(&id_token, &decoded, &oidc.issuer, None)
+        .verify(&id_token, &decoded, &oidc.issuer, None, None)
         .await
     {
         return failed(Failure::Token, e.to_string());
@@ -678,7 +682,7 @@ pub async fn callback(
         Ok(token) => token,
         Err(e) => return failed(Failure::Server, e.message().to_string()),
     };
-    tracing::info!(principal = %user.principal, "signed in to the web UI");
+    tracing::info!(principal = ?user.principal, "signed in to the web UI");
     let mut response = Redirect::to(&login.rd).into_response();
     let cookies = response.headers_mut();
     if let Ok(cookie) = token_cookie(
@@ -835,6 +839,22 @@ mod tests {
             ])),
             Some("alice@example.com")
         );
+    }
+
+    #[test]
+    fn a_name_with_a_comma_needs_its_setting() {
+        let mut headers = HeaderMap::new();
+        headers.insert("remote-user", HeaderValue::from_static("CN=alice,OU=eng"));
+        let proxy = forward(r#"forward_trusted_proxies = "127.0.0.1""#).unwrap();
+        assert_eq!(proxy.user(&headers), None);
+        let proxy = forward(
+            r#"
+            forward_trusted_proxies = "127.0.0.1"
+            forward_names_with_commas = true
+            "#,
+        )
+        .unwrap();
+        assert_eq!(proxy.user(&headers), Some("CN=alice,OU=eng"));
     }
 
     #[test]

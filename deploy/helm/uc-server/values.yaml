@@ -112,6 +112,10 @@ auth:
   # provider returns the browser to `<publicUrl>/auth/callback`, and with
   # `oidc.endSession` to `<publicUrl>/` after "Log out".
   publicUrl: ""
+  # -- The proxies in front of the server that add the client's address to
+  # `X-Forwarded-For`, such as the ingress controller, as comma-separated
+  # CIDRs or addresses: the limits per client count by that address.
+  trustedProxies: ""
   # -- Sign-in through an auth proxy in front of the server, such as
   # oauth2-proxy or Authelia (`UC_AUTH_MODE=forward`): the proxy signs users
   # in and names the user in its headers. Not with `oidc`.
@@ -123,6 +127,9 @@ auth:
     emailHeader: Remote-Email
     # -- The header with the user, without the email header.
     userHeader: Remote-User
+    # -- A header value with a `,` is one name, such as the subject of a
+    # client certificate. Only for a proxy that replaces the client's headers.
+    namesWithCommas: false
     # -- The proxy's sign-out, where the UI's "Log out" goes.
     logoutUrl: ""
   cookieTimeout: 5d

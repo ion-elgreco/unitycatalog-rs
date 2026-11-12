@@ -39,6 +39,10 @@ olai-http-wasm.workspace = true
 
 [dev-dependencies]
 uc-server = { path = "../uc-server" }
+# The resolver of AWS identities, for the tests against AWS Emulator.
+uc-auth.workspace = true
+# The date of a request that a test signs for AWS Emulator.
+chrono.workspace = true
 uc-metastore.workspace = true
 axum.workspace = true
 tokio.workspace = true

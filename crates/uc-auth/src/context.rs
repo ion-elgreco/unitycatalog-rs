@@ -58,10 +58,16 @@ impl<'a> RequestContext<'a> {
             .get::<ConnectInfo<SocketAddr>>()?
             .0
             .ip();
-        Some(match peer {
-            IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(peer, IpAddr::V4),
-            IpAddr::V4(_) => peer,
-        })
+        Some(crate::proxies::unmapped(peer))
+    }
+
+    /// The address of the client, for limits per client: the host's
+    /// [`ClientAddress`](crate::ClientAddress) when the request has one,
+    /// else the address of the connection. Behind a proxy the address of
+    /// the connection is the proxy's, for all its clients.
+    pub fn client(&self) -> Option<IpAddr> {
+        let marked = self.parts.extensions.get::<crate::ClientAddress>();
+        marked.map(|client| client.0).or_else(|| self.peer())
     }
 
     /// The request's token, if it has one.
@@ -70,10 +76,15 @@ impl<'a> RequestContext<'a> {
     }
 }
 
-/// The token of an `Authorization: Bearer` header.
+/// The token of an `Authorization: Bearer` header. The scheme is in any
+/// case (RFC 9110).
 pub fn bearer_token(headers: &HeaderMap) -> Option<String> {
     let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
-    let token = value.strip_prefix("Bearer ")?.trim();
+    let (scheme, token) = value.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("Bearer") {
+        return None;
+    }
+    let token = token.trim();
     (!token.is_empty()).then(|| token.to_string())
 }
 
@@ -106,6 +117,15 @@ mod tests {
             .unwrap()
             .into_parts();
         assert_eq!(bearer_token(&parts.headers).as_deref(), Some("t1"));
+        for (value, token) in [
+            ("bearer t3", Some("t3")),
+            ("Basic t3", None),
+            ("Bearer", None),
+        ] {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::AUTHORIZATION, value.parse().unwrap());
+            assert_eq!(bearer_token(&headers).as_deref(), token, "{value}");
+        }
         assert_eq!(cookie(&parts.headers, "session").as_deref(), Some("t2"));
         assert_eq!(cookie(&parts.headers, "y"), None);
 

@@ -63,7 +63,9 @@ mod http;
 mod identity;
 pub mod jwt;
 mod layer;
+mod proxies;
 mod resolver;
+mod window;
 
 pub use allowlist::{Allowlist, url_pattern_error};
 /// Re-exported for implementing [`Resolver`], [`Admission`] and [`Transport`].
@@ -78,4 +80,5 @@ pub use identity::{Identity, MissingIdentity};
 pub use ipnet::IpNet;
 pub use jwt::{JwtKeys, JwtProvider, JwtResolver};
 pub use layer::auth_layer;
+pub use proxies::{ClientAddress, TrustedProxies};
 pub use resolver::{Admission, Resolution, Resolver};

@@ -24,6 +24,13 @@ pub use cedar::{CedarAuthorizer, CedarConfigError, EntityLoader, NoEntities};
 pub use http::HttpAuthorizer;
 pub use wire::{AuthorizeRequest, AuthorizeResponse, Decision, EntityRef};
 
+/// The answer of an authorizer that could not reach a decision, which the
+/// log has with its cause.
+fn failed_closed(error: String) -> AuthorizeResponse {
+    tracing::warn!(%error, "authorization failed closed");
+    AuthorizeResponse::deny(error)
+}
+
 /// Decides [`AuthorizeRequest`]s, wherever the policies are evaluated.
 ///
 /// It cannot fail: an implementation that can't reach a decision answers

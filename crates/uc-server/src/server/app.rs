@@ -6,7 +6,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use tower::ServiceExt;
-use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
+use tower_governor::{
+    GovernorError, GovernorLayer, governor::GovernorConfigBuilder, key_extractor::KeyExtractor,
+};
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     trace::TraceLayer,
@@ -17,10 +19,34 @@ use utoipa_axum::router::OpenApiRouter;
 use utoipa_swagger_ui::{Config, SwaggerUi};
 
 use crate::{
-    authn::middleware::auth_layer, observability::audit::layer::audit_layer,
-    observability::metrics::metrics_layer, routes, server::openapi::ApiDoc,
+    authn::middleware::{auth_layer, client_layer},
+    observability::audit::layer::audit_layer,
+    observability::metrics::metrics_layer,
+    routes,
+    server::openapi::ApiDoc,
     server::state::AppState,
 };
+
+/// The client of a request for the rate limit: the address that
+/// [`client_layer`] marked it with, else the address of the connection.
+#[derive(Clone)]
+struct ClientKey;
+
+impl KeyExtractor for ClientKey {
+    type Key = std::net::IpAddr;
+
+    fn extract<T>(&self, request: &axum::http::Request<T>) -> Result<Self::Key, GovernorError> {
+        let extensions = request.extensions();
+        let marked = extensions.get::<uc_auth::ClientAddress>().map(|c| c.0);
+        let peer = || {
+            let peer = extensions.get::<axum::extract::ConnectInfo<std::net::SocketAddr>>();
+            peer.map(|peer| peer.0.ip())
+        };
+        marked
+            .or_else(peer)
+            .ok_or(GovernorError::UnableToExtractKey)
+    }
+}
 
 /// What the API listener serves, and its limits (`[server]` and `[ui]`
 /// settings).
@@ -120,17 +146,18 @@ pub fn build_app(state: AppState) -> Router {
         .merge(routes::health::router())
         .split_for_parts();
 
-    // Per-IP token-bucket rate limiter: `server.rate_limit_per_sec`. Off by
-    // default: the layer needs the `ConnectInfo` extension, which requests
-    // sent to the router directly, such as in tests, do not have. A client
-    // gets one request back every `1s / rate`, and can send twice the rate
-    // at once.
+    // Token-bucket rate limiter per client address ([`ClientKey`]):
+    // `server.rate_limit_per_sec`. Off by default: the layer needs the
+    // `ConnectInfo` extension, which requests sent to the router directly,
+    // such as in tests, do not have. A client gets one request back every
+    // `1s / rate`, and can send twice the rate at once.
     let http = state.http.clone();
     let rate = http.rate_limit_per_sec;
     let governor_layer = (rate > 0).then(|| {
         let refill =
             (std::time::Duration::from_secs(1) / rate).max(std::time::Duration::from_nanos(1));
         let config = GovernorConfigBuilder::default()
+            .key_extractor(ClientKey)
             .period(refill)
             .burst_size(rate.saturating_mul(2))
             .finish()
@@ -165,6 +192,8 @@ pub fn build_app(state: AppState) -> Router {
         router = router.layer(governor);
     }
     let router = router
+        // Outside the rate limit and the sign-in, which count per client.
+        .layer(middleware::from_fn_with_state(state.clone(), client_layer))
         // Outside the timeout and the rate limit: their answers under
         // `/scim2` are SCIM errors too.
         .layer(middleware::from_fn(routes::control::scim::error_layer))

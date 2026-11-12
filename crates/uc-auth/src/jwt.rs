@@ -5,24 +5,52 @@
 //! ([`JwtKeys`]), which are cached per issuer and refetched when a key id is
 //! unknown. An issuer is asked at most once a minute, also after a fetch
 //! that failed or whose request went away, and its keys are kept while it
-//! cannot be reached.
-//! RS256/384/512 and ES256/384/512 are accepted, with [`DEFAULT_LEEWAY`] of
-//! clock skew.
+//! cannot be reached, or while its key set has keys but none that is
+//! usable, for a day at most. A key set with no keys at all withdraws them,
+//! and so does an answer that there is no such issuer (an HTTP 4xx of its
+//! own, or a discovery document that is not the issuer's).
+//! Keys are fetched again shortly before they are `KEYS_TTL` old, without a
+//! request that waits. A request whose key is older than that waits for the
+//! fetch, so a key that the issuer withdrew does not pass. Only while the
+//! issuer is down does the kept key serve at once.
+//! Encryption keys are left out. An ES512 key is kept, although
+//! `jsonwebtoken` does not know that `alg`. RS256/384/512 and ES256/384/512
+//! are accepted, with [`DEFAULT_LEEWAY`] of clock skew.
+//!
+//! A pattern with `*` matches issuers that anyone can make up. The number of
+//! its issuers without keys that are asked is limited for each client
+//! ([`RequestContext::client`]), so one client's made-up issuers do not keep
+//! the others from theirs, and for all clients together
+//! (`MAX_ASKED_ISSUERS_ALL`), so many clients do not make a call each. Half
+//! of that is for the clients whose issuers all answered with keys so far,
+//! so the made-up issuers of a few clients leave the others theirs. An
+//! issuer that does not answer is not counted as made up, so an issuer that
+//! was down for a short time is asked again at once. One whose host has no
+//! address is counted: anyone can name such a host. The keys that an issuer
+//! had are kept then, as while it cannot be reached: the name service of a
+//! machine without a network says the same. An issuer of a pattern
+//! that never had keys is forgotten `UNKNOWN_ISSUER_TTL` after it was last
+//! asked. It is kept apart from the issuers that had keys, so made-up
+//! issuers do not take their places.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use dns_lookup::{AddrInfoHints, LookupErrorKind, SockType};
 use jsonwebtoken::{
     Algorithm, DecodingKey, Validation,
-    jwk::{AlgorithmParameters, EllipticCurve, Jwk},
+    jwk::{AlgorithmParameters, EllipticCurve, Jwk, KeyAlgorithm, PublicKeyUse},
 };
 use moka::future::Cache;
 use serde_json::{Map, Value};
-use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
+use tokio::sync::{Mutex, OwnedMutexGuard, OwnedSemaphorePermit, RwLock, Semaphore};
 
+use crate::http::refuses;
+use crate::window::{Client, Windows, asked_once};
 use crate::{
     Allowlist, AuthError, Direct, Identity, RequestContext, Resolution, Resolver, Transport,
 };
@@ -33,18 +61,43 @@ pub const DEFAULT_LEEWAY: Duration = Duration::from_secs(60);
 /// issuer is asked at most [`MIN_REFRESH`] often.
 const KEYS_TTL: Duration = Duration::from_secs(60 * 60);
 const MIN_REFRESH: Duration = Duration::from_secs(60);
-/// The most issuers whose keys are kept. A pattern with `*` matches many.
+/// How long before keys are [`KEYS_TTL`] old the first request for them
+/// starts the next fetch, so the requests after it do not wait for one.
+const RENEW_BEFORE: Duration = Duration::from_secs(5 * 60);
+/// Keys serve this long after they were fetched while each fetch since
+/// failed. After that the tokens of the issuer are refused until it answers
+/// with keys, so a key that the issuer withdrew does not serve without end.
+const KEPT_KEYS_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+/// The most issuers whose keys are kept, and as many of a pattern that
+/// never had keys. A pattern with `*` matches many.
 const MAX_ISSUERS: u64 = 1_000;
-/// The most issuers without keys that are asked per [`MIN_REFRESH`], for
-/// each pattern with `*`, so tokens that name made-up issuers of a pattern
-/// do not make a call each. Issuers named exactly are not counted.
+/// How long an issuer of a pattern that never had keys is kept after it was
+/// last asked: longer than [`MIN_REFRESH`], so it is not asked sooner.
+const UNKNOWN_ISSUER_TTL: Duration = Duration::from_secs(2 * 60);
+/// The most issuers without keys that are asked per [`MIN_REFRESH`] and
+/// answer that they have none, for each client and pattern with `*`, so
+/// tokens that name made-up issuers of a pattern do not make a call each.
+/// An issuer that answers with keys is not counted, nor is one that does
+/// not answer, nor are issuers named exactly. It is also the most of them
+/// that are asked at a time: the others wait up to [`FETCH_TIMEOUT`], as
+/// those asked may all have none.
 const MAX_NEW_ISSUERS: u32 = 20;
+/// The most issuers without keys that are asked per [`MIN_REFRESH`] for each
+/// client and pattern with `*`, whatever they answer, so tokens that name
+/// real issuers of a pattern do not make a call each either.
+const MAX_ASKED_ISSUERS: u32 = 200;
+/// The most issuers without keys that are asked per [`MIN_REFRESH`] for each
+/// pattern with `*`, for all clients together, whatever they answer.
+const MAX_ASKED_ISSUERS_ALL: u32 = 400;
+/// The most of them that are asked for a client while another of its
+/// issuers, asked in the same [`MIN_REFRESH`], has not answered with keys.
+/// The rest is for the first issuer of each client, and for the next one
+/// after each that had keys, so a few clients with made-up issuers do not
+/// use up the pattern for all.
+const MAX_UNPROVEN_ISSUERS_ALL: u32 = MAX_ASKED_ISSUERS_ALL / 2;
 /// How long each call to an issuer may take: its discovery document and
 /// its keys fit in a request's time.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(4);
-/// How long the identity of a token without `exp` may be kept: as long as
-/// the [`Authenticator`](crate::Authenticator) keeps any.
-const NO_EXPIRY: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// The header and claims of a token, unverified.
 pub struct UnverifiedJwt {
@@ -99,14 +152,17 @@ pub fn looks_like_jwt(token: &str) -> bool {
 
 /// A JWT `aud`, which is a string or an array of strings.
 pub fn audiences(claims: &Map<String, Value>) -> Vec<String> {
-    match claims.get("aud") {
-        Some(Value::String(aud)) => vec![aud.clone()],
-        Some(Value::Array(auds)) => auds
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_string)
-            .collect(),
-        _ => vec![],
+    (strings(claims.get("aud")).into_iter())
+        .map(str::to_string)
+        .collect()
+}
+
+/// The strings of a claim that is a string or an array of strings.
+fn strings(value: Option<&Value>) -> Vec<&str> {
+    match value {
+        Some(Value::String(one)) => vec![one.as_str()],
+        Some(Value::Array(items)) => items.iter().filter_map(Value::as_str).collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -141,10 +197,211 @@ pub enum VerifyError {
 pub struct JwtKeys {
     fetcher: Arc<Fetcher>,
     leeway: Duration,
+    /// The issuers named exactly, and those of a pattern that had keys.
     issuers: Cache<String, Arc<IssuerKeys>>,
-    /// For each pattern with `*`: the start of the current [`MIN_REFRESH`],
-    /// and how many of its issuers without keys were asked since.
-    new_issuers: std::sync::Mutex<HashMap<String, (Instant, u32)>>,
+    /// The issuers of a pattern that never had keys, each for
+    /// [`UNKNOWN_ISSUER_TTL`] after it was last asked.
+    unknown: Cache<String, Arc<IssuerKeys>>,
+    new_issuers: Arc<NewIssuers>,
+}
+
+/// The issuers without keys that were asked in the current [`MIN_REFRESH`].
+struct NewIssuers {
+    /// For each client and pattern with `*`.
+    windows: Windows<Scope, Window>,
+    /// For each pattern with `*`, of all clients.
+    all: Windows<String, AllClients>,
+}
+
+/// The new issuers of a pattern, of all clients.
+#[derive(Default)]
+struct AllClients {
+    /// The issuers asked since the start.
+    asked: u32,
+    /// Those of them asked for a client while another of its issuers had
+    /// not answered with keys.
+    unproven: u32,
+    /// Whether the log says that tokens of the pattern are refused.
+    logged: bool,
+}
+
+impl AllClients {
+    /// Whether one more issuer may be asked: `proven` for a client whose
+    /// issuers all answered with keys so far.
+    fn takes(&self, proven: bool) -> bool {
+        self.asked < MAX_ASKED_ISSUERS_ALL && (proven || self.unproven < MAX_UNPROVEN_ISSUERS_ALL)
+    }
+}
+
+/// A pattern with `*`, and the client whose tokens name its issuers.
+type Scope = (String, Client);
+
+/// A new issuer that is asked: where it is counted, its scope and the place
+/// that it holds.
+type CountedIssuer = (Arc<NewIssuers>, Scope, OwnedSemaphorePermit);
+
+/// What the current window of a client says of an issuer that got a place.
+enum Counted {
+    /// No more issuers are asked in the window.
+    NotAsked,
+    /// The issuer is counted as asked. `proven` when each issuer of the
+    /// client before it answered with keys.
+    Asked { proven: bool },
+}
+
+struct Window {
+    /// The issuers asked since the start.
+    asked: u32,
+    /// Those of them that answered, and had no keys.
+    without_keys: u32,
+    /// Those of them that answered with keys.
+    with_keys: u32,
+    /// A place for each issuer that may still have no keys. An issuer holds
+    /// one while it is asked, and one that answers without keys does not
+    /// give it back. Closed when [`MAX_NEW_ISSUERS`] had none.
+    places: Arc<Semaphore>,
+}
+
+impl Window {
+    /// Whether `places` are this window's, not those of an older one.
+    fn has(&self, places: &Arc<Semaphore>) -> bool {
+        Arc::ptr_eq(&self.places, places)
+    }
+
+    /// Whether each issuer asked so far answered with keys.
+    fn proven(&self) -> bool {
+        self.asked == self.with_keys
+    }
+}
+
+impl Default for Window {
+    fn default() -> Self {
+        Self {
+            asked: 0,
+            without_keys: 0,
+            with_keys: 0,
+            places: Arc::new(Semaphore::new(MAX_NEW_ISSUERS as usize)),
+        }
+    }
+}
+
+impl Default for NewIssuers {
+    fn default() -> Self {
+        Self {
+            windows: Windows::new(MIN_REFRESH),
+            all: Windows::new(MIN_REFRESH),
+        }
+    }
+}
+
+impl NewIssuers {
+    /// Read or change the current window of `scope`.
+    fn window<T>(&self, scope: &Scope, f: impl FnOnce(&mut Window) -> T) -> T {
+        self.windows.with(scope, |window, _| f(window))
+    }
+
+    /// Whether the log is to say now that tokens of the pattern of `scope`
+    /// are refused: once per pattern and [`MIN_REFRESH`].
+    fn log_refusal(&self, scope: &Scope) -> bool {
+        (self.all).with(&scope.0, |all, _| !std::mem::replace(&mut all.logged, true))
+    }
+
+    /// Count an issuer of `scope` that is asked now, and give it a place
+    /// to hold until it answered. It waits while [`MAX_NEW_ISSUERS`] others
+    /// are asked, until `deadline` at most, and moves to the next window
+    /// when that one starts. `None` when no more issuers are asked in the
+    /// window, for the client or for all clients, or when no place was free
+    /// by `deadline`.
+    async fn reserve(
+        &self,
+        scope: &Scope,
+        deadline: tokio::time::Instant,
+    ) -> Option<OwnedSemaphorePermit> {
+        loop {
+            let proven = self.window(scope, |window| window.proven());
+            if !(self.all).with(&scope.0, |all, _| all.takes(proven)) {
+                return None;
+            }
+            let (places, ends) = self.windows.with(scope, |window, start| {
+                (window.asked < MAX_ASKED_ISSUERS)
+                    .then(|| (window.places.clone(), start + MIN_REFRESH))
+            })?;
+            let until = deadline.min(ends.into());
+            let place = tokio::time::timeout_at(until, places.clone().acquire_owned()).await;
+            let Ok(place) = place else {
+                if tokio::time::Instant::now() >= deadline {
+                    return None;
+                }
+                continue;
+            };
+            let counted = self.current(scope, &places, |window| {
+                if place.is_err() || window.asked >= MAX_ASKED_ISSUERS {
+                    return Counted::NotAsked;
+                }
+                let proven = window.proven();
+                window.asked += 1;
+                Counted::Asked { proven }
+            });
+            match counted {
+                Some(Counted::Asked { proven }) => {
+                    let asked = self.all.with(&scope.0, |all, _| {
+                        let asked = all.takes(proven);
+                        if asked {
+                            all.asked += 1;
+                            all.unproven += u32::from(!proven);
+                        }
+                        asked
+                    });
+                    if !asked {
+                        // Not asked after all: the client's window does not
+                        // count it.
+                        self.current(scope, &places, |window| {
+                            window.asked = window.asked.saturating_sub(1);
+                        });
+                    }
+                    return place.ok().filter(|_| asked);
+                }
+                Some(Counted::NotAsked) => return None,
+                // The place is of a window that is over.
+                None => {}
+            }
+        }
+    }
+
+    /// Read or change the window of `scope` that `places` are of; `None`
+    /// when a newer window took its place.
+    fn current<T>(
+        &self,
+        scope: &Scope,
+        places: &Arc<Semaphore>,
+        f: impl FnOnce(&mut Window) -> T,
+    ) -> Option<T> {
+        self.window(scope, |window| window.has(places).then(|| f(window)))
+    }
+
+    /// Whether `place` is of the current window of `scope`.
+    fn is_current(&self, scope: &Scope, place: &OwnedSemaphorePermit) -> bool {
+        self.current(scope, place.semaphore(), |_| ()).is_some()
+    }
+
+    /// The issuer of `scope` that held `place` answered with keys.
+    fn had_keys(&self, scope: &Scope, place: &OwnedSemaphorePermit) {
+        self.current(scope, place.semaphore(), |window| window.with_keys += 1);
+    }
+
+    /// The issuer of `scope` that held `place` answered, and had no keys.
+    fn had_no_keys(&self, scope: &Scope, place: OwnedSemaphorePermit) {
+        let counted = self.current(scope, place.semaphore(), |window| {
+            window.without_keys += 1;
+            if window.without_keys >= MAX_NEW_ISSUERS {
+                window.places.close();
+            }
+        });
+        // A place of an older window goes back to those who wait there.
+        if counted.is_some() {
+            place.forget();
+        }
+    }
 }
 
 /// The calls to issuers.
@@ -158,6 +415,30 @@ struct IssuerKeys {
     fetched: RwLock<Fetched>,
     /// Held by the fetch that runs, if one does.
     refresh: Arc<Mutex<()>>,
+    /// The place of a new issuer of a pattern, and the scope that it was
+    /// reserved for, until its first fetch takes it. It is kept here, not
+    /// by the request that reserved it, as another request for the issuer,
+    /// also one of another client, may start that fetch.
+    place: std::sync::Mutex<Option<(Scope, OwnedSemaphorePermit)>>,
+}
+
+impl IssuerKeys {
+    /// A new issuer of `scope` that holds `place` until its first fetch.
+    fn reserved(scope: Scope, place: OwnedSemaphorePermit) -> Arc<Self> {
+        Arc::new(Self {
+            place: std::sync::Mutex::new(Some((scope, place))),
+            ..Default::default()
+        })
+    }
+}
+
+/// Keep `keys` as the entry of `issuer` in `cache`, unless a newer entry
+/// took its place.
+async fn keep(cache: &Cache<String, Arc<IssuerKeys>>, issuer: &str, keys: &Arc<IssuerKeys>) {
+    let replaced = (cache.get(issuer).await).is_some_and(|now| !Arc::ptr_eq(&now, keys));
+    if !replaced {
+        cache.insert(issuer.to_string(), keys.clone()).await;
+    }
 }
 
 /// What an issuer last answered.
@@ -169,21 +450,44 @@ struct Fetched {
     tried: Option<Instant>,
     /// Why the last fetch failed, if it did.
     failure: Option<VerifyError>,
+    /// Whether the last fetch that ended found the issuer down: its kept
+    /// keys serve without a wait for the next fetch.
+    down: bool,
+    /// Whether it ever answered with one key or more: it is no new issuer
+    /// then, also after it withdrew its keys, and it is kept with the
+    /// issuers that had keys.
+    known: bool,
 }
 
 impl Fetched {
     /// The key `key_id` among keys younger than [`KEYS_TTL`].
     fn fresh(&self, key_id: Option<&str>) -> Option<Jwk> {
+        self.younger(KEYS_TTL, key_id)
+    }
+
+    /// The key `key_id` among keys younger than [`KEPT_KEYS_TTL`]: those
+    /// that serve while a fetch runs, and after one that failed.
+    fn kept(&self, key_id: Option<&str>) -> Option<Jwk> {
+        self.younger(KEPT_KEYS_TTL, key_id)
+    }
+
+    /// Whether the keys are [`KEYS_TTL`] old in [`RENEW_BEFORE`] or less,
+    /// and the issuer may be asked again.
+    fn ends_soon(&self) -> bool {
+        let old =
+            (self.keys.as_ref()).is_some_and(|(_, at)| at.elapsed() + RENEW_BEFORE >= KEYS_TTL);
+        old && (self.tried).is_none_or(|at| at.elapsed() >= MIN_REFRESH)
+    }
+
+    fn younger(&self, ttl: Duration, key_id: Option<&str>) -> Option<Jwk> {
         let (set, at) = self.keys.as_ref()?;
-        (at.elapsed() < KEYS_TTL)
-            .then(|| find(set, key_id))
-            .flatten()
+        (at.elapsed() < ttl).then(|| find(set, key_id)).flatten()
     }
 
     /// The key `key_id` after a fetch: from the keys just fetched, or from
-    /// older ones when the fetch failed.
+    /// older ones when the fetch failed, up to [`KEPT_KEYS_TTL`] old.
     fn answer(&self, key_id: Option<&str>, issuer: &str) -> Result<Jwk, VerifyError> {
-        if let Some(key) = (self.keys.as_ref()).and_then(|(set, _)| find(set, key_id)) {
+        if let Some(key) = self.kept(key_id) {
             return Ok(key);
         }
         if let Some(failure) = &self.failure {
@@ -191,7 +495,11 @@ impl Fetched {
         }
         // A key the issuer does not publish, or no longer does: the token
         // is refused, as a tampered one is.
+        let none = (self.keys.as_ref()).is_none_or(|(set, _)| set.is_empty());
         Err(VerifyError::Invalid(match key_id {
+            _ if none => {
+                format!("Token verification failed: issuer {issuer} has no signing keys")
+            }
             Some(key_id) => {
                 format!("Token verification failed: no signing key '{key_id}' at issuer {issuer}")
             }
@@ -227,6 +535,7 @@ impl JwtKeys {
     pub fn new(transport: impl Transport) -> Self {
         let http = reqwest::Client::builder()
             .timeout(FETCH_TIMEOUT)
+            .dns_resolver(Arc::new(SystemDns))
             .build()
             .unwrap_or_default();
         Self {
@@ -236,7 +545,11 @@ impl JwtKeys {
             }),
             leeway: DEFAULT_LEEWAY,
             issuers: Cache::builder().max_capacity(MAX_ISSUERS).build(),
-            new_issuers: std::sync::Mutex::new(HashMap::new()),
+            unknown: Cache::builder()
+                .max_capacity(MAX_ISSUERS)
+                .time_to_live(UNKNOWN_ISSUER_TTL)
+                .build(),
+            new_issuers: Arc::default(),
         }
     }
 
@@ -261,11 +574,15 @@ impl JwtKeys {
     }
 
     /// Check the token's signature with the issuer's key, and its issuer and
-    /// times. The audience is the caller's to check.
+    /// times. The audience is the caller's to check. The answer is the
+    /// token's `exp`, in seconds since the epoch.
     ///
     /// `pattern` is the pattern with `*` that `issuer` matched, `None` for an
     /// issuer named exactly: the issuers of a pattern that have no keys yet
-    /// are asked at most [`MAX_NEW_ISSUERS`] a minute, for each pattern.
+    /// are asked until `MAX_NEW_ISSUERS` of them had none in a minute, or
+    /// `MAX_ASKED_ISSUERS` were asked, for each pattern and `client`, the
+    /// address that sent the token ([`RequestContext::client`]), and until
+    /// `MAX_ASKED_ISSUERS_ALL` were asked for all clients of the pattern.
     ///
     /// # Errors
     ///
@@ -276,8 +593,16 @@ impl JwtKeys {
         decoded: &UnverifiedJwt,
         issuer: &str,
         pattern: Option<&str>,
-    ) -> Result<(), VerifyError> {
-        let jwk = (self.key(issuer, decoded.key_id.as_deref(), pattern)).await?;
+        client: Option<IpAddr>,
+    ) -> Result<f64, VerifyError> {
+        let key_id = decoded.key_id.as_deref();
+        let jwk = match self.fresh(issuer, key_id).await {
+            Some(jwk) => jwk,
+            None => {
+                let scope = pattern.map(|pattern| (pattern.to_string(), Client::of(client)));
+                self.key(issuer, key_id, scope.as_ref()).await?
+            }
+        };
         let failed = |e: String| VerifyError::Invalid(format!("Token verification failed: {e}"));
         let unsupported =
             |kind: &str, alg: &str| VerifyError::Unsupported(format!("Unsupported {kind}: {alg}"));
@@ -315,10 +640,59 @@ impl JwtKeys {
             (AlgorithmParameters::OctetKeyPair(_), _) => {
                 return Err(unsupported("key type", "OKP"));
             }
+            (_, _) => return Err(unsupported("key type", "unknown")),
         };
         checked
             .and_then(|()| check_times(&decoded.claims, issuer, self.leeway))
             .map_err(failed)
+    }
+
+    /// The key `key_id` of an issuer whose keys are fresh. Keys that are
+    /// soon not fresh are fetched again, and the request does not wait.
+    async fn fresh(&self, issuer: &str, key_id: Option<&str>) -> Option<Jwk> {
+        let keys = self.issuers.get(issuer).await?;
+        let (key, ends_soon) = {
+            let fetched = keys.fetched.read().await;
+            (fetched.fresh(key_id), fetched.ends_soon())
+        };
+        if key.is_some() && ends_soon {
+            self.renew(issuer, &keys).await;
+        }
+        key
+    }
+
+    /// Start a fetch of the keys of `issuer`, which are fresh still, unless
+    /// one runs.
+    async fn renew(&self, issuer: &str, keys: &Arc<IssuerKeys>) {
+        let Ok(guard) = keys.refresh.clone().try_lock_owned() else {
+            return;
+        };
+        {
+            let mut fetched = keys.fetched.write().await;
+            if !fetched.ends_soon() {
+                return;
+            }
+            fetched.tried = Some(Instant::now());
+        }
+        self.start_refresh(issuer, keys, None, guard);
+    }
+
+    /// Start the fetch of the keys of `issuer` as a task.
+    fn start_refresh(
+        &self,
+        issuer: &str,
+        keys: &Arc<IssuerKeys>,
+        counted: Option<CountedIssuer>,
+        guard: OwnedMutexGuard<()>,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(refresh(
+            self.fetcher.clone(),
+            self.issuers.clone(),
+            issuer.to_string(),
+            keys.clone(),
+            counted,
+            guard,
+        ))
     }
 
     /// The issuer's key `key_id`, fetched when unknown.
@@ -326,20 +700,53 @@ impl JwtKeys {
         &self,
         issuer: &str,
         key_id: Option<&str>,
-        pattern: Option<&str>,
+        scope: Option<&Scope>,
     ) -> Result<Jwk, VerifyError> {
-        let keys = (self.issuers)
-            .get_with(issuer.to_string(), async { Arc::default() })
-            .await;
+        let too_many = || {
+            if scope.is_some_and(|scope| self.new_issuers.log_refusal(scope)) {
+                tracing::warn!(
+                    %issuer,
+                    ?scope,
+                    "too many new issuers; tokens of new issuers of the pattern are refused for now"
+                );
+            }
+            VerifyError::Unavailable(format!("Too many new issuers, try again later: {issuer}"))
+        };
+        // The wait for a place ends here for all the requests for one
+        // issuer, also for those that wait for its fetch lock first.
+        let deadline = tokio::time::Instant::now() + FETCH_TIMEOUT;
+        let keys = match (self.issuers.get(issuer).await, scope) {
+            (Some(keys), _) => keys,
+            (None, None) => {
+                (self.issuers)
+                    .get_with_by_ref(issuer, async { Arc::default() })
+                    .await
+            }
+            // A new issuer of a pattern is counted before it is kept, so
+            // nothing is kept for the issuers that are not asked.
+            // A request that waited for the one of another client, which
+            // found no place for that client, reserves for itself.
+            (None, Some(scope)) => {
+                let entry = || async {
+                    let place = self.new_issuers.reserve(scope, deadline).await;
+                    Ok::<_, ()>(IssuerKeys::reserved(scope.clone(), place.ok_or(())?))
+                };
+                let kept = asked_once(&self.unknown, issuer, entry, |()| true).await;
+                kept.map_err(|_| too_many())?
+            }
+        };
         let stale = {
             let fetched = keys.fetched.read().await;
             if let Some(key) = fetched.fresh(key_id) {
                 return Ok(key);
             }
-            (fetched.keys.as_ref()).and_then(|(set, _)| find(set, key_id))
+            // A key older than [`KEYS_TTL`] waits for the fetch, which may
+            // find that the issuer withdrew it. Not so while the issuer is
+            // down: its fetches end with the kept keys.
+            fetched.kept(key_id).filter(|_| fetched.down)
         };
-        // One fetch at a time per issuer. While one runs, the keys that it
-        // is to replace serve.
+        // One fetch at a time per issuer. While one runs for an issuer that
+        // is down, its kept keys serve.
         let guard = match keys.refresh.clone().try_lock_owned() {
             Ok(guard) => guard,
             Err(_) => match stale {
@@ -348,7 +755,7 @@ impl JwtKeys {
             },
         };
         // What a recent fetch found, or why it failed, is reused.
-        {
+        let new = {
             let fetched = keys.fetched.read().await;
             if let Some(key) = fetched.fresh(key_id) {
                 return Ok(key);
@@ -356,19 +763,38 @@ impl JwtKeys {
             if fetched.tried.is_some_and(|at| at.elapsed() < MIN_REFRESH) {
                 return fetched.answer(key_id, issuer);
             }
-            if fetched.keys.is_none()
-                && let Some(pattern) = pattern
-                && !self.may_ask_new_issuer(pattern)
-            {
-                tracing::warn!(%issuer, %pattern, "too many new issuers; the token is refused for now");
-                return Err(VerifyError::Unavailable(format!(
-                    "Too many new issuers, try again later: {issuer}"
-                )));
+            scope.filter(|_| !fetched.known)
+        };
+        // An issuer that was kept before is counted again, and so is one
+        // whose place is of a window that is over. A place that is current
+        // counts for the client that reserved it. The fetch lock is held
+        // here, so only this request takes or reserves a place.
+        let reserved = (keys.place.lock().unwrap_or_else(|e| e.into_inner())).take();
+        let counted = match new {
+            None => None,
+            Some(scope) => {
+                let current = |(scope, place): &(Scope, OwnedSemaphorePermit)| {
+                    self.new_issuers.is_current(scope, place)
+                };
+                let (scope, place) = match reserved.filter(current) {
+                    Some(reserved) => reserved,
+                    None => {
+                        let place = self.new_issuers.reserve(scope, deadline).await;
+                        (scope.clone(), place.ok_or_else(too_many)?)
+                    }
+                };
+                Some((self.new_issuers.clone(), scope, place))
             }
+        };
+        if counted.is_some() {
+            // Kept for [`UNKNOWN_ISSUER_TTL`] from this fetch on, so the
+            // issuer is not asked again sooner.
+            keep(&self.unknown, issuer, &keys).await;
         }
         {
             // Asked now, also when this request goes away before the answer:
-            // the fetch runs on, and the requests until it ends get this.
+            // the fetch runs on. The fetch replaces this failure when it
+            // ends, so it shows only after a fetch that did not end.
             let mut fetched = keys.fetched.write().await;
             fetched.tried = Some(Instant::now());
             if fetched.failure.is_none() {
@@ -377,59 +803,122 @@ impl JwtKeys {
                 )));
             }
         }
-        let task = tokio::spawn(refresh(
-            self.fetcher.clone(),
-            issuer.to_string(),
-            keys.clone(),
-            guard,
-        ));
+        // The fetch is a task, so it runs on when this request goes away,
+        // and a request with a kept key of an issuer that is down does not
+        // wait for it.
+        let task = self.start_refresh(issuer, &keys, counted, guard);
+        if let Some(key) = stale {
+            return Ok(key);
+        }
         if let Err(e) = task.await {
             tracing::warn!(%issuer, error = %e, "the fetch of the issuer's keys failed");
         }
         keys.fetched.read().await.answer(key_id, issuer)
     }
-
-    /// Whether an issuer of `pattern` without keys may be asked now: at most
-    /// [`MAX_NEW_ISSUERS`] per [`MIN_REFRESH`] for each pattern.
-    fn may_ask_new_issuer(&self, pattern: &str) -> bool {
-        let mut windows = self.new_issuers.lock().unwrap_or_else(|e| e.into_inner());
-        let window = (windows.entry(pattern.to_string())).or_insert((Instant::now(), 0));
-        if window.0.elapsed() >= MIN_REFRESH {
-            *window = (Instant::now(), 0);
-        }
-        window.1 += 1;
-        window.1 <= MAX_NEW_ISSUERS
-    }
 }
 
 /// Fetch the keys of `issuer` and keep what it answered, then let the next
-/// fetch run (`guard`).
+/// fetch run (`guard`). `counted` is the scope of a new issuer and the
+/// place that it holds: one that answers with keys is a real one, and gives
+/// its place back, and so does one that does not answer. One whose host has
+/// no address is made up. An issuer that answers with keys for the first
+/// time is kept in `issuers` from then on.
 async fn refresh(
     fetcher: Arc<Fetcher>,
+    issuers: Cache<String, Arc<IssuerKeys>>,
     issuer: String,
     keys: Arc<IssuerKeys>,
+    counted: Option<CountedIssuer>,
     guard: OwnedMutexGuard<()>,
 ) {
     let result = fetcher.fetch_keys(&issuer).await;
     let mut fetched = keys.fetched.write().await;
-    match result {
+    let (has_keys, made_up) = match result {
         Ok(set) => {
+            let has_keys = !set.is_empty();
             fetched.keys = Some((set, Instant::now()));
             fetched.failure = None;
+            fetched.down = false;
+            (has_keys, !has_keys)
         }
-        Err(e) => {
-            if fetched.keys.is_some() {
-                tracing::warn!(%issuer, error = %e, "keeping the issuer's keys");
+        // No such issuer: the keys that it had are withdrawn, as the
+        // issuer may be removed.
+        Err(FetchError {
+            error,
+            cause: Cause::NoIssuer,
+        }) => {
+            if fetched.keys.take().is_some() {
+                tracing::warn!(%issuer, %error, "withdrawing the issuer's keys");
             }
-            fetched.failure = Some(e);
+            fetched.failure = Some(error);
+            fetched.down = false;
+            (false, true)
+        }
+        Err(FetchError { error, cause }) => {
+            if fetched.keys.is_some() {
+                tracing::warn!(%issuer, %error, "keeping the issuer's keys");
+            }
+            fetched.failure = Some(error);
+            fetched.down = true;
+            (false, matches!(cause, Cause::NoHost))
+        }
+    };
+    let first_keys = has_keys && !std::mem::replace(&mut fetched.known, true);
+    drop(fetched);
+    if first_keys {
+        keep(&issuers, &issuer, &keys).await;
+    }
+    if let Some((new_issuers, scope, place)) = counted {
+        if made_up {
+            new_issuers.had_no_keys(&scope, place);
+        } else if has_keys {
+            new_issuers.had_keys(&scope, &place);
         }
     }
     drop(guard);
 }
 
+/// Why the keys of an issuer were not fetched.
+struct FetchError {
+    error: VerifyError,
+    cause: Cause,
+}
+
+/// What a fetch that failed says of the issuer.
+enum Cause {
+    /// The answer says that there is no such issuer.
+    NoIssuer,
+    /// The host of the issuer has no address. A new issuer is made up then.
+    /// The keys that an issuer had are kept: the name service may say so
+    /// for a time.
+    NoHost,
+    /// The issuer, or the way to it, is down or broken.
+    Down,
+}
+
+impl FetchError {
+    fn no_issuer(error: VerifyError) -> Self {
+        let cause = Cause::NoIssuer;
+        Self { error, cause }
+    }
+
+    /// The issuer is down or broken: `message` is for the caller.
+    fn down(message: impl Into<String>) -> Self {
+        Self {
+            error: VerifyError::Unavailable(message.into()),
+            cause: Cause::Down,
+        }
+    }
+
+    /// The discovery document is not usable: `message` is for the caller.
+    fn misconfigured(message: impl Into<String>) -> Self {
+        Self::no_issuer(VerifyError::Misconfigured(message.into()))
+    }
+}
+
 impl Fetcher {
     /// The JWK set that the issuer's OIDC discovery document names.
-    async fn fetch_keys(&self, issuer: &str) -> Result<Vec<Jwk>, VerifyError> {
+    async fn fetch_keys(&self, issuer: &str) -> Result<Vec<Jwk>, FetchError> {
         let issuer = match issuer.starts_with("https://") || issuer.starts_with("http://") {
             true => issuer.to_string(),
             false => format!("https://{issuer}"),
@@ -440,25 +929,41 @@ impl Fetcher {
         );
         let unreachable = |e: &dyn std::fmt::Display| {
             tracing::warn!(%path, error = %e, "cannot fetch the issuer configuration");
-            VerifyError::Unavailable(format!("Could not get issuer configuration from {path}"))
+            FetchError::down(format!("Could not get issuer configuration from {path}"))
         };
+        // A host without an address is no new issuer: anyone can name one.
         let response = (self.transport.send(self.http.get(&path)))
             .await
-            .map_err(|e| unreachable(&e))?;
+            .map_err(|e| {
+                let cause = match no_such_host(&e) {
+                    true => Cause::NoHost,
+                    false => Cause::Down,
+                };
+                FetchError {
+                    cause,
+                    ..unreachable(&e)
+                }
+            })?;
         let status = response.status();
         if !status.is_success() {
-            return Err(VerifyError::Unavailable(format!(
-                "Could not get issuer configuration from {path}: HTTP {}",
-                status.as_u16()
-            )));
+            let status = status.as_u16();
+            tracing::warn!(%path, status, "cannot fetch the issuer configuration");
+            let message = format!("Could not get issuer configuration from {path}: HTTP {status}");
+            return Err(match refuses(response.status()) {
+                true => FetchError::no_issuer(VerifyError::Unavailable(message)),
+                false => FetchError::down(message),
+            });
         }
-        let config: Map<String, Value> = response.json().await.map_err(|_| {
-            VerifyError::Unavailable(format!(
+        // An answer that ends early is of an issuer that is down.
+        let body = response.bytes().await.map_err(|e| unreachable(&e))?;
+        let config: Map<String, Value> = serde_json::from_slice(&body).map_err(|e| {
+            tracing::warn!(%path, error = %e, "the issuer configuration is not valid JSON");
+            FetchError::no_issuer(VerifyError::Unavailable(format!(
                 "Issuer configuration from {path} is not valid JSON"
-            ))
+            )))
         })?;
         if config.is_empty() {
-            return Err(VerifyError::Misconfigured(format!(
+            return Err(FetchError::misconfigured(format!(
                 "Could not get issuer configuration from {path}"
             )));
         }
@@ -467,31 +972,110 @@ impl Fetcher {
             .and_then(Value::as_str)
             .unwrap_or_default();
         if config_issuer != issuer {
-            return Err(VerifyError::Misconfigured(format!(
+            return Err(FetchError::misconfigured(format!(
                 "Issuer '{issuer}' doesn't match configuration issuer '{config_issuer}' from {path}"
             )));
         }
         let jwks_uri = config
             .get("jwks_uri")
             .and_then(Value::as_str)
-            .ok_or_else(|| VerifyError::Misconfigured("JWKS configuration missing".into()))?;
+            .ok_or_else(|| FetchError::misconfigured("JWKS configuration missing"))?;
+        let no_key_set = |e: &dyn std::fmt::Display| {
+            tracing::warn!(%jwks_uri, error = %e, "cannot fetch the issuer's keys");
+            FetchError::down(format!("Could not get the keys of issuer {issuer}"))
+        };
         let set: Value = (self.transport.send(self.http.get(jwks_uri)))
             .await
             .and_then(|r| r.error_for_status())
-            .map_err(|e| unreachable(&e))?
+            .map_err(|e| no_key_set(&e))?
             .json()
             .await
-            .map_err(|e| unreachable(&e))?;
-        // Keys of kinds that do not parse are skipped, not fatal.
-        Ok(set["keys"]
-            .as_array()
-            .map(|keys| {
-                keys.iter()
-                    .filter_map(|k| serde_json::from_value(k.clone()).ok())
-                    .collect()
-            })
-            .unwrap_or_default())
+            .map_err(|e| no_key_set(&e))?;
+        // An answer that is no key set is an error page or a broken issuer:
+        // the keys it had are kept.
+        let Some(keys) = set["keys"].as_array() else {
+            tracing::warn!(%jwks_uri, "the issuer's answer is not a key set");
+            return Err(FetchError::down(format!("No key set from issuer {issuer}")));
+        };
+        // Keys of kinds that do not parse are skipped, not fatal. A key set
+        // with no keys at all withdraws the keys it had. One with keys of
+        // which none is usable is a broken answer: the keys it had are kept.
+        let usable: Vec<Jwk> = keys.iter().filter_map(parse_jwk).collect();
+        if usable.is_empty() && !keys.is_empty() {
+            tracing::warn!(%jwks_uri, "the issuer's key set has no usable keys");
+            return Err(FetchError::down(format!(
+                "No usable keys from issuer {issuer}"
+            )));
+        }
+        Ok(usable)
     }
+}
+
+/// Whether `error` is of a host name that has no address ([`NoSuchHost`]).
+fn no_such_host(error: &reqwest::Error) -> bool {
+    let mut cause = std::error::Error::source(error);
+    while let Some(error) = cause {
+        if error.is::<NoSuchHost>() {
+            return true;
+        }
+        cause = error.source();
+    }
+    false
+}
+
+/// The answer of the name service that a host name has no address. A
+/// lookup that failed, as when the name service is down, is not this.
+#[derive(Debug, thiserror::Error)]
+#[error("the host name has no address")]
+struct NoSuchHost;
+
+/// Finds the addresses of a host as the system does (`getaddrinfo`), and
+/// tells a name without an address ([`NoSuchHost`]) from a lookup that
+/// failed.
+struct SystemDns;
+
+impl reqwest::dns::Resolve for SystemDns {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        Box::pin(async move {
+            let lookup = tokio::task::spawn_blocking(move || addresses(name.as_str()));
+            let addresses = lookup.await??;
+            Ok(Box::new(addresses.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+/// The addresses of `host`, each with port 0: the caller sets the port.
+fn addresses(host: &str) -> Result<Vec<SocketAddr>, Box<dyn std::error::Error + Send + Sync>> {
+    let hints = AddrInfoHints {
+        socktype: SockType::Stream.into(),
+        ..Default::default()
+    };
+    let found = match dns_lookup::getaddrinfo(Some(host), None, Some(hints)) {
+        Ok(found) => found,
+        Err(e) if matches!(e.kind(), LookupErrorKind::NoName | LookupErrorKind::NoData) => {
+            return Err(NoSuchHost.into());
+        }
+        Err(e) => return Err(std::io::Error::from(e).into()),
+    };
+    let addresses: Vec<SocketAddr> = found.flatten().map(|info| info.sockaddr).collect();
+    match addresses.is_empty() {
+        true => Err(NoSuchHost.into()),
+        false => Ok(addresses),
+    }
+}
+
+/// A key of a key set, `None` for a kind that is not known and for an
+/// encryption key (`"use": "enc"`). A key with the `alg` ES512, which
+/// `jsonwebtoken` does not know, is kept: the algorithm is the token's,
+/// checked against the kind of the key. A key with any other unknown `alg`
+/// signs no token that is accepted.
+fn parse_jwk(key: &Value) -> Option<Jwk> {
+    let jwk: Jwk = serde_json::from_value(key.clone()).ok()?;
+    let unknown_alg = jwk.common.key_algorithm == Some(KeyAlgorithm::UNKNOWN_ALGORITHM);
+    let signs = !matches!(jwk.algorithm, AlgorithmParameters::Other(_))
+        && (!unknown_alg || key["alg"] == "ES512")
+        && jwk.common.public_key_use != Some(PublicKeyUse::Encryption);
+    signs.then_some(jwk)
 }
 
 /// An ES512 (P-521) signature, which `jsonwebtoken` does not verify.
@@ -521,20 +1105,22 @@ fn now_secs() -> i64 {
         .map_or(0, |d| d.as_secs() as i64)
 }
 
-/// The issuer and time checks of a token whose signature checks out.
-fn check_times(claims: &Map<String, Value>, issuer: &str, leeway: Duration) -> Result<(), String> {
+/// The issuer and time checks of a token whose signature checks out. A
+/// token must have an `exp`, which is the answer.
+fn check_times(claims: &Map<String, Value>, issuer: &str, leeway: Duration) -> Result<f64, String> {
     if claims.get("iss").and_then(Value::as_str) != Some(issuer) {
         return Err("InvalidIssuer".into());
     }
     let now = now_secs() as f64;
     let leeway = leeway.as_secs_f64();
-    if time_claim(claims, "exp")?.is_some_and(|exp| exp + leeway < now) {
+    let exp = time_claim(claims, "exp")?.ok_or("MissingRequiredClaim: exp")?;
+    if exp + leeway < now {
         return Err("ExpiredSignature".into());
     }
     if time_claim(claims, "nbf")?.is_some_and(|nbf| nbf - leeway > now) {
         return Err("ImmatureSignature".into());
     }
-    Ok(())
+    Ok(exp)
 }
 
 /// The time claim `name` in seconds since the epoch, which may have a
@@ -555,9 +1141,17 @@ pub struct JwtProvider {
     /// The name of the provider, the [`Identity::provider`] of its callers.
     pub name: String,
     issuers: Allowlist,
-    audiences: Vec<String>,
-    audience_allowlist: Allowlist,
+    audiences: Audiences,
     groups_claim: Option<String>,
+}
+
+/// The audiences that a provider accepts.
+#[derive(Debug, Clone)]
+enum Audiences {
+    /// `*` alone: any, also a token without `aud`.
+    Any,
+    /// Those that the list allows.
+    Listed(Allowlist),
 }
 
 impl JwtProvider {
@@ -568,8 +1162,7 @@ impl JwtProvider {
         Self {
             name: name.into(),
             issuers: Allowlist::new(issuers),
-            audiences: Vec::new(),
-            audience_allowlist: Allowlist::default(),
+            audiences: Audiences::Listed(Allowlist::default()),
             groups_claim: None,
         }
     }
@@ -577,12 +1170,13 @@ impl JwtProvider {
     /// Accepts tokens with one of `audiences` in their `aud`, exact or with
     /// `*` for one DNS label; `*` alone accepts any.
     pub fn with_audiences(mut self, audiences: &[impl AsRef<str>]) -> Self {
-        self.audiences = (audiences.iter())
+        let mut named = (audiences.iter())
             .map(|a| a.as_ref().trim())
-            .filter(|a| !a.is_empty())
-            .map(str::to_string)
-            .collect();
-        self.audience_allowlist = Allowlist::new(&self.audiences);
+            .filter(|a| !a.is_empty());
+        self.audiences = match (named.next(), named.next()) {
+            (Some("*"), None) => Audiences::Any,
+            _ => Audiences::Listed(Allowlist::new(audiences)),
+        };
         self
     }
 
@@ -601,16 +1195,18 @@ impl JwtProvider {
         self.issuers.is_allowed(iss)
     }
 
-    /// The pattern with `*` that `iss` matches, for [`JwtKeys::verify`];
-    /// `None` when the provider names it exactly, or does not have it.
+    /// The pattern with `*` that `iss` matches; `None` when the provider
+    /// names it exactly, or does not have it. See [`issuer_pattern`].
     pub fn pattern(&self, iss: &str) -> Option<&str> {
         self.issuers.matching(iss).flatten()
     }
 
     /// Whether one of the token's `aud` is accepted.
     pub fn audience_allowed(&self, claims: &Map<String, Value>) -> bool {
-        let any = self.audiences.len() == 1 && self.audiences[0] == "*";
-        any || self.audience_allowlist.is_any_allowed(&audiences(claims))
+        match &self.audiences {
+            Audiences::Any => true,
+            Audiences::Listed(allowed) => allowed.is_any_allowed(&audiences(claims)),
+        }
     }
 
     /// The caller's groups, each once, as `<provider>:<group>`: a provider
@@ -621,13 +1217,8 @@ impl JwtProvider {
         let Some(name) = &self.groups_claim else {
             return Vec::new();
         };
-        let names: Vec<&str> = match claims.get(name) {
-            Some(Value::Array(items)) => items.iter().filter_map(Value::as_str).collect(),
-            Some(Value::String(one)) => vec![one.as_str()],
-            _ => Vec::new(),
-        };
         let mut seen = HashSet::new();
-        names
+        strings(claims.get(name))
             .into_iter()
             .map(str::trim)
             .filter(|g| !g.is_empty() && seen.insert(*g))
@@ -636,12 +1227,29 @@ impl JwtProvider {
     }
 }
 
+/// The pattern with `*` that `iss` matches among `providers`, for
+/// [`JwtKeys::verify`]: the first one's that has `iss`. `None` when one of
+/// them names `iss` exactly, as it is no pattern's issuer then, or when none
+/// has it.
+pub fn issuer_pattern<'a>(
+    providers: impl IntoIterator<Item = &'a JwtProvider>,
+    iss: &str,
+) -> Option<&'a str> {
+    let mut patterns = (providers.into_iter())
+        .filter(|provider| provider.matches(iss))
+        .map(|provider| provider.pattern(iss));
+    let first = patterns.next().flatten()?;
+    patterns.all(|pattern| pattern.is_some()).then_some(first)
+}
+
 /// Takes the JWTs of its providers, checked with [`JwtKeys`].
 ///
 /// A token that is not a JWT, or whose `iss` is no provider's, passes. A
 /// token is the first provider's that has its `iss` and takes its `aud`;
 /// one that does not check out is refused. The caller is the token's `sub`,
-/// with its claims; the identity is kept until the token's `exp`.
+/// with its claims; the identity is kept until the token's `exp`. A token
+/// without `sub` has an empty subject: a host that takes such tokens names
+/// the caller from the claims in its admission.
 pub struct JwtResolver {
     providers: Vec<JwtProvider>,
     keys: Arc<JwtKeys>,
@@ -671,19 +1279,23 @@ impl<S: Send + Sync> Resolver<S> for JwtResolver {
         if providers.is_empty() {
             return Resolution::Pass;
         }
-        // An issuer that one of the providers names exactly is no pattern's.
-        let pattern = match providers.iter().all(|p| p.pattern(iss).is_some()) {
-            true => providers.first().and_then(|p| p.pattern(iss)),
-            false => None,
+        let pattern = issuer_pattern(providers.iter().copied(), iss);
+        let exp = match (self.keys.verify(token, &decoded, iss, pattern, cx.client())).await {
+            Ok(exp) => exp,
+            // The caller may well be signed in. The log has the cause from
+            // where it arose.
+            Err(VerifyError::Unavailable(reason)) => {
+                tracing::debug!(%iss, %reason, "token not checked");
+                return Resolution::Refused(AuthError::Unavailable(reason));
+            }
+            Err(e) => {
+                // The reason may hold text of the token, such as its key id
+                // or `alg`: the log has it with control characters escaped.
+                let reason = e.to_string();
+                tracing::warn!(%iss, ?reason, "token refused");
+                return Resolution::Refused(AuthError::invalid(reason));
+            }
         };
-        if let Err(e) = self.keys.verify(token, &decoded, iss, pattern).await {
-            tracing::warn!(%iss, reason = %e, "token refused");
-            return Resolution::Refused(match e {
-                // The caller may well be signed in.
-                VerifyError::Unavailable(reason) => AuthError::Unavailable(reason),
-                other => AuthError::invalid(other.to_string()),
-            });
-        }
         let claims = decoded.claims;
         let Some(provider) = (providers.into_iter()).find(|p| p.audience_allowed(&claims)) else {
             tracing::warn!(
@@ -693,10 +1305,7 @@ impl<S: Send + Sync> Resolver<S> for JwtResolver {
             );
             return Resolution::Refused(AuthError::invalid("audience not allowed"));
         };
-        let left = match claims.get("exp").and_then(Value::as_f64) {
-            Some(exp) => Duration::from_secs_f64((exp - now_secs() as f64).clamp(0.0, 1e9)),
-            None => NO_EXPIRY,
-        };
+        let left = Duration::from_secs_f64((exp - now_secs() as f64).clamp(0.0, 1e9));
         let mut identity = Identity::new(
             &provider.name,
             Identity::JWT,
@@ -715,6 +1324,8 @@ impl<S: Send + Sync> Resolver<S> for JwtResolver {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
     use super::*;
 
     #[test]
@@ -786,6 +1397,8 @@ mod tests {
             keys: Some((vec![jwk(Some("k1"))], Instant::now())),
             tried: Some(Instant::now()),
             failure: Some(VerifyError::Unavailable("down".into())),
+            down: true,
+            known: true,
         };
         assert!(fetched.answer(Some("k1"), "https://x").is_ok());
         assert!(matches!(
@@ -796,31 +1409,119 @@ mod tests {
             Fetched::default().answer(Some("k1"), "https://x"),
             Err(VerifyError::Invalid(_))
         ));
+        // Not without end: the issuer may have withdrawn them.
+        let Some(old) = Instant::now().checked_sub(KEPT_KEYS_TTL + Duration::from_secs(1)) else {
+            return;
+        };
+        let fetched = Fetched {
+            keys: Some((vec![jwk(Some("k1"))], old)),
+            ..fetched
+        };
+        assert!(fetched.kept(Some("k1")).is_none());
+        assert!(matches!(
+            fetched.answer(Some("k1"), "https://x"),
+            Err(VerifyError::Unavailable(_))
+        ));
     }
 
-    /// Answers every request with HTTP 500 after `delay`, and counts them.
+    /// Answers every request after `delay`, and counts them: with HTTP 500,
+    /// as an issuer that is down, or with HTTP 404, as a host that is no
+    /// issuer.
     #[derive(Clone, Default)]
-    struct Down(Arc<std::sync::atomic::AtomicUsize>, Duration);
+    struct Down {
+        calls: Arc<AtomicUsize>,
+        delay: Duration,
+        no_issuer: bool,
+    }
 
     impl Down {
+        fn after(delay: Duration) -> Self {
+            Self {
+                delay,
+                ..Default::default()
+            }
+        }
+
+        fn no_issuer(delay: Duration) -> Self {
+            Self {
+                delay,
+                no_issuer: true,
+                ..Default::default()
+            }
+        }
+
         fn calls(&self) -> usize {
-            self.0.load(std::sync::atomic::Ordering::SeqCst)
+            self.calls.load(Ordering::SeqCst)
         }
     }
 
     #[async_trait]
     impl Transport for Down {
         async fn send(&self, _: reqwest::RequestBuilder) -> reqwest::Result<reqwest::Response> {
-            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            tokio::time::sleep(self.1).await;
-            let response = axum::http::Response::builder().status(500).body("");
-            Ok(response.unwrap().into())
+            (self.calls).fetch_add(1, Ordering::SeqCst);
+            tokio::time::sleep(self.delay).await;
+            Ok(answer(if self.no_issuer { 404 } else { 500 }, ""))
         }
+    }
+
+    /// An answer with `status` and `body`.
+    fn answer(status: u16, body: impl Into<String>) -> reqwest::Response {
+        let response = axum::http::Response::builder().status(status);
+        response.body(body.into()).unwrap().into()
+    }
+
+    /// The discovery document of the issuer whose configuration `url` names.
+    fn discovery(url: &str) -> Option<String> {
+        let issuer = url.strip_suffix("/.well-known/openid-configuration")?;
+        Some(
+            serde_json::json!({ "issuer": issuer, "jwks_uri": format!("{issuer}/keys") })
+                .to_string(),
+        )
+    }
+
+    /// The scope of `pattern` and a client without an address.
+    fn scope(pattern: &str) -> Scope {
+        (pattern.to_string(), Client::of(None))
+    }
+
+    /// The scopes of `https://*.a` and two clients.
+    fn two_clients() -> (Scope, Scope) {
+        let scope = |peer: &str| ("https://*.a".to_string(), Client::of(peer.parse().ok()));
+        (scope("192.0.2.1"), scope("192.0.2.2"))
+    }
+
+    /// The scope of `https://*.a` and the client with address `n`.
+    fn client(n: u32) -> Scope {
+        let address = std::net::Ipv4Addr::from(n).into();
+        ("https://*.a".to_string(), Client::of(Some(address)))
+    }
+
+    /// Take `n` of the places of the current window of `scope`.
+    async fn take_places(new_issuers: &NewIssuers, scope: &Scope, n: u32) -> OwnedSemaphorePermit {
+        let places = new_issuers.window(scope, |w| w.places.clone());
+        places.acquire_many_owned(n).await.unwrap()
+    }
+
+    /// Ask for the key `k1` of each of `issuers`, of the pattern
+    /// `https://*.a`, all together.
+    async fn together(
+        keys: &Arc<JwtKeys>,
+        issuers: impl IntoIterator<Item = String>,
+    ) -> Vec<Result<Jwk, VerifyError>> {
+        let mut all = tokio::task::JoinSet::new();
+        for issuer in issuers {
+            let keys = keys.clone();
+            all.spawn(async move {
+                keys.key(&issuer, Some("k1"), Some(&scope("https://*.a")))
+                    .await
+            });
+        }
+        all.join_all().await
     }
 
     #[tokio::test]
     async fn issuers_are_asked_at_most_once_a_minute() {
-        let down = Down::default();
+        let down = Down::no_issuer(Duration::ZERO);
         let keys = JwtKeys::new(down.clone());
         for _ in 0..3 {
             let key = keys.key("https://a", Some("k1"), None).await;
@@ -829,21 +1530,690 @@ mod tests {
         assert_eq!(down.calls(), 1);
         // Made-up issuers of a pattern with `*`.
         for n in 0..2 * MAX_NEW_ISSUERS {
-            let key = (keys.key(&format!("https://t{n}.a"), Some("k1"), Some("https://*.a"))).await;
+            let key = (keys.key(
+                &format!("https://t{n}.a"),
+                Some("k1"),
+                Some(&scope("https://*.a")),
+            ))
+            .await;
             assert!(matches!(key, Err(VerifyError::Unavailable(_))));
         }
         assert_eq!(down.calls(), 1 + MAX_NEW_ISSUERS as usize);
+        // Nothing is kept for those that were not asked, and those that
+        // were are kept apart from the issuers named exactly.
+        keys.issuers.run_pending_tasks().await;
+        keys.unknown.run_pending_tasks().await;
+        assert_eq!(keys.issuers.entry_count(), 1);
+        assert_eq!(keys.unknown.entry_count(), u64::from(MAX_NEW_ISSUERS));
         // They take nothing from issuers named exactly, nor from another
         // pattern.
         assert!(keys.key("https://b", Some("k1"), None).await.is_err());
-        let other = keys.key("https://t.b", Some("k1"), Some("https://*.b"));
-        assert!(other.await.is_err());
+        let other = scope("https://*.b");
+        let other = keys.key("https://t.b", Some("k1"), Some(&other)).await;
+        assert!(other.is_err());
         assert_eq!(down.calls(), 3 + MAX_NEW_ISSUERS as usize);
+    }
+
+    /// Answers as every issuer, with the key set that it holds.
+    #[derive(Clone)]
+    struct Serves(Arc<std::sync::Mutex<String>>);
+
+    impl Serves {
+        /// Answer with `key_set` from now on.
+        fn set(&self, key_set: &str) {
+            *self.0.lock().unwrap() = key_set.to_string();
+        }
+
+        fn new(key_set: &str) -> Self {
+            Self(Arc::new(std::sync::Mutex::new(key_set.to_string())))
+        }
+    }
+
+    #[async_trait]
+    impl Transport for Serves {
+        async fn send(
+            &self,
+            request: reqwest::RequestBuilder,
+        ) -> reqwest::Result<reqwest::Response> {
+            let url = request.build()?.url().to_string();
+            let body = discovery(&url).unwrap_or_else(|| self.0.lock().unwrap().clone());
+            Ok(answer(200, body))
+        }
+    }
+
+    const KEY_SET: &str = r#"{"keys": [{"kty": "RSA", "kid": "k1", "n": "AQAB", "e": "AQAB"}]}"#;
+    const OTHER_KEY_SET: &str =
+        r#"{"keys": [{"kty": "RSA", "kid": "k2", "n": "AQAB", "e": "AQAB"}]}"#;
+
+    /// Wait until the fetch of the keys of `issuer` ended.
+    async fn fetch_ended(keys: &JwtKeys, issuer: &str) {
+        let entry = keys.issuers.get(issuer).await.unwrap();
+        drop(entry.refresh.lock().await);
+    }
+
+    /// Make the next request for `issuer` fetch its keys again.
+    async fn expire(keys: &JwtKeys, issuer: &str) {
+        let Some(old) = Instant::now().checked_sub(KEYS_TTL + Duration::from_secs(1)) else {
+            panic!("the clock is too young for this test");
+        };
+        let entry = keys.issuers.get(issuer).await.unwrap();
+        let mut fetched = entry.fetched.write().await;
+        fetched.tried = None;
+        if let Some((_, at)) = &mut fetched.keys {
+            *at = old;
+        }
+    }
+
+    /// The key `k1` of `issuer` once its keys were fetched again. The
+    /// request that starts the fetch waits for it, unless the issuer was
+    /// down the last time.
+    async fn refetched(
+        keys: &JwtKeys,
+        issuer: &str,
+        scope: Option<&Scope>,
+    ) -> Result<Jwk, VerifyError> {
+        expire(keys, issuer).await;
+        let _ = keys.key(issuer, Some("k1"), scope).await;
+        fetch_ended(keys, issuer).await;
+        keys.key(issuer, Some("k1"), scope).await
+    }
+
+    #[tokio::test]
+    async fn a_withdrawn_key_does_not_pass_while_the_keys_are_fetched_again() {
+        let serves = Serves::new(KEY_SET);
+        let keys = JwtKeys::new(serves.clone());
+        assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
+        serves.set(OTHER_KEY_SET);
+        expire(&keys, "https://a").await;
+        let key = keys.key("https://a", Some("k1"), None).await;
+        assert!(matches!(key, Err(VerifyError::Invalid(_))), "{key:?}");
+    }
+
+    #[tokio::test]
+    async fn an_empty_key_set_withdraws_the_keys() {
+        let serves = Serves::new(KEY_SET);
+        let keys = JwtKeys::new(serves.clone());
+        assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
+        // An error page is no key set: the keys are kept.
+        serves.set(r#"{"error": "down"}"#);
+        assert!(refetched(&keys, "https://a", None).await.is_ok());
+        // So is a key set with keys of which none is usable.
+        serves.set(r#"{"keys": [{"kty": "EC", "crv": "secp256k1"}]}"#);
+        assert!(refetched(&keys, "https://a", None).await.is_ok());
+        serves.set(r#"{"keys": []}"#);
+        let key = refetched(&keys, "https://a", None).await;
+        assert!(matches!(key, Err(VerifyError::Invalid(_))), "{key:?}");
+    }
+
+    /// Answers as [`Serves`] with [`KEY_SET`] while `gone` is not set, then
+    /// as `then`.
+    struct Then<T> {
+        serves: Serves,
+        then: T,
+        gone: Arc<AtomicBool>,
+    }
+
+    impl<T> Then<T> {
+        fn new(then: T) -> Self {
+            Self {
+                serves: Serves::new(KEY_SET),
+                then,
+                gone: Arc::default(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl<T: Transport> Transport for Then<T> {
+        async fn send(
+            &self,
+            request: reqwest::RequestBuilder,
+        ) -> reqwest::Result<reqwest::Response> {
+            match self.gone.load(Ordering::SeqCst) {
+                true => self.then.send(request).await,
+                false => self.serves.send(request).await,
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn an_issuer_that_is_removed_has_no_keys() {
+        let removed = Then::new(Down::no_issuer(Duration::ZERO));
+        let gone = removed.gone.clone();
+        let keys = JwtKeys::new(removed);
+        assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
+        gone.store(true, Ordering::SeqCst);
+        let key = refetched(&keys, "https://a", None).await;
+        assert!(
+            matches!(&key, Err(VerifyError::Unavailable(m)) if m.contains("HTTP 404")),
+            "{key:?}"
+        );
+        // It is back: its keys serve again.
+        gone.store(false, Ordering::SeqCst);
+        assert!(refetched(&keys, "https://a", None).await.is_ok());
+    }
+
+    /// Answers as an issuer whose key set is down: HTTP 500 for all but the
+    /// discovery document.
+    struct KeysDown;
+
+    #[async_trait]
+    impl Transport for KeysDown {
+        async fn send(
+            &self,
+            request: reqwest::RequestBuilder,
+        ) -> reqwest::Result<reqwest::Response> {
+            let url = request.build()?.url().to_string();
+            Ok(match discovery(&url) {
+                Some(document) => answer(200, document),
+                None => answer(500, ""),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_key_set_that_cannot_be_fetched_is_not_the_configuration() {
+        let keys = JwtKeys::new(KeysDown);
+        let key = keys.key("https://a", Some("k1"), None).await;
+        assert!(
+            matches!(&key, Err(VerifyError::Unavailable(m)) if m == "Could not get the keys of issuer https://a"),
+            "{key:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn keys_are_fetched_again_before_they_are_old() {
+        let serves = Serves::new(KEY_SET);
+        let keys = JwtKeys::new(serves.clone());
+        assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
+        assert!(keys.fresh("https://a", Some("k1")).await.is_some());
+        let age = KEYS_TTL - RENEW_BEFORE + Duration::from_secs(1);
+        let Some(old) = Instant::now().checked_sub(age) else {
+            return;
+        };
+        {
+            let entry = keys.issuers.get("https://a").await.unwrap();
+            let mut fetched = entry.fetched.write().await;
+            fetched.tried = Some(old);
+            fetched.keys.as_mut().unwrap().1 = old;
+        }
+        // The request has the key that is fresh still, and starts a fetch.
+        serves.set(OTHER_KEY_SET);
+        assert!(keys.fresh("https://a", Some("k1")).await.is_some());
+        fetch_ended(&keys, "https://a").await;
+        assert!(keys.fresh("https://a", Some("k1")).await.is_none());
+        assert!(keys.fresh("https://a", Some("k2")).await.is_some());
+    }
+
+    /// A new issuer whose place one client reserved, and whose fetch a
+    /// request of another client starts.
+    #[tokio::test]
+    async fn a_new_issuer_counts_for_the_client_that_reserved_its_place() {
+        let keys = JwtKeys::new(Serves::new(KEY_SET));
+        let (one, other) = two_clients();
+        let deadline = tokio::time::Instant::now() + FETCH_TIMEOUT;
+        let place = keys.new_issuers.reserve(&one, deadline).await.unwrap();
+        let entry = IssuerKeys::reserved(one.clone(), place);
+        keys.unknown
+            .insert("https://t.a".into(), entry.clone())
+            .await;
+        keys.issuers.insert("https://t.a".into(), entry).await;
+        let key = keys.key("https://t.a", Some("k1"), Some(&other)).await;
+        assert!(key.is_ok());
+        let counts = |scope: &Scope| (keys.new_issuers).window(scope, |w| (w.asked, w.with_keys));
+        assert_eq!((counts(&one), counts(&other)), ((1, 1), (0, 0)));
+        let all = keys.new_issuers.all.with(&one.0, |all, _| all.asked);
+        assert_eq!(all, 1);
+    }
+
+    #[tokio::test]
+    async fn an_issuer_that_is_not_asked_is_not_counted_for_its_client() {
+        let new_issuers = NewIssuers::default();
+        let deadline = tokio::time::Instant::now() + FETCH_TIMEOUT;
+        let scope = scope("https://*.a");
+        let place = new_issuers.reserve(&scope, deadline).await.unwrap();
+        new_issuers.had_keys(&scope, &place);
+        // The pattern is used up for all clients after the client's check
+        // of it.
+        let taken = take_places(&new_issuers, &scope, MAX_NEW_ISSUERS - 1).await;
+        let waits = new_issuers.reserve(&scope, deadline);
+        let full = async {
+            (new_issuers.all).with(&scope.0, |all, _| all.asked = MAX_ASKED_ISSUERS_ALL);
+            drop(taken);
+        };
+        let (place, ()) = tokio::join!(waits, full);
+        assert!(place.is_none());
+        let counts = new_issuers.window(&scope, |w| (w.asked, w.proven()));
+        assert_eq!(counts, (1, true));
+    }
+
+    #[tokio::test]
+    async fn an_issuer_that_withdrew_its_keys_is_no_new_issuer() {
+        let serves = Serves::new(KEY_SET);
+        let keys = JwtKeys::new(serves.clone());
+        let scope = scope("https://*.a");
+        let pattern = Some(&scope);
+        assert!(keys.key("https://t.a", Some("k1"), pattern).await.is_ok());
+        serves.set(r#"{"keys": []}"#);
+        let key = refetched(&keys, "https://t.a", pattern).await;
+        assert!(matches!(key, Err(VerifyError::Invalid(_))), "{key:?}");
+        // No kept key now: the request waits for the fetch.
+        expire(&keys, "https://t.a").await;
+        let key = keys.key("https://t.a", Some("k1"), pattern).await;
+        assert!(matches!(key, Err(VerifyError::Invalid(_))), "{key:?}");
+        let counts = (keys.new_issuers).window(&scope, |w| (w.asked, w.without_keys));
+        assert_eq!(counts, (1, 0));
+        // It is kept with the issuers that had keys.
+        assert!(keys.issuers.get("https://t.a").await.is_some());
+    }
+
+    #[tokio::test]
+    async fn issuers_that_do_not_answer_are_not_counted_as_made_up() {
+        let down = Down::default();
+        let keys = JwtKeys::new(down.clone());
+        let scope = scope("https://*.a");
+        for n in 0..2 * MAX_NEW_ISSUERS {
+            let issuer = format!("https://t{n}.a");
+            let key = keys.key(&issuer, Some("k1"), Some(&scope)).await;
+            assert!(matches!(key, Err(VerifyError::Unavailable(_))));
+        }
+        assert_eq!(down.calls(), 2 * MAX_NEW_ISSUERS as usize);
+        let counts = (keys.new_issuers).window(&scope, |w| (w.asked, w.without_keys));
+        assert_eq!(counts, (2 * MAX_NEW_ISSUERS, 0));
+        // They are not asked again within the minute.
+        assert!(
+            keys.key("https://t0.a", Some("k1"), Some(&scope))
+                .await
+                .is_err()
+        );
+        assert_eq!(down.calls(), 2 * MAX_NEW_ISSUERS as usize);
+    }
+
+    /// Sends each request with a name service that knows no host
+    /// (`no_host`), or that is down.
+    struct Lookup(reqwest::Client);
+
+    struct NameService {
+        no_host: bool,
+    }
+
+    impl reqwest::dns::Resolve for NameService {
+        fn resolve(&self, _: reqwest::dns::Name) -> reqwest::dns::Resolving {
+            let no_host = self.no_host;
+            Box::pin(async move {
+                Err(match no_host {
+                    true => NoSuchHost.into(),
+                    false => std::io::Error::other("the name service is down").into(),
+                })
+            })
+        }
+    }
+
+    impl Lookup {
+        fn new(no_host: bool) -> Self {
+            let client = reqwest::Client::builder().dns_resolver(Arc::new(NameService { no_host }));
+            Self(client.build().unwrap())
+        }
+    }
+
+    #[async_trait]
+    impl Transport for Lookup {
+        async fn send(
+            &self,
+            request: reqwest::RequestBuilder,
+        ) -> reqwest::Result<reqwest::Response> {
+            self.0.execute(request.build()?).await
+        }
+    }
+
+    #[tokio::test]
+    async fn an_issuer_whose_host_has_no_address_is_made_up() {
+        // A name without an address, then a name service that is down.
+        for (no_host, without_keys) in [(true, 1), (false, 0)] {
+            let keys = JwtKeys::new(Lookup::new(no_host));
+            let scope = scope("http://*.made-up.invalid");
+            let key = (keys.key("http://t1.made-up.invalid", Some("k1"), Some(&scope))).await;
+            assert!(matches!(key, Err(VerifyError::Unavailable(_))), "{key:?}");
+            let counts = (keys.new_issuers).window(&scope, |w| (w.asked, w.without_keys));
+            assert_eq!(counts, (1, without_keys));
+        }
+    }
+
+    #[tokio::test]
+    async fn an_issuer_whose_host_has_no_address_keeps_its_keys() {
+        let unnamed = Then::new(Lookup::new(true));
+        let gone = unnamed.gone.clone();
+        let keys = JwtKeys::new(unnamed);
+        let issuer = "http://t1.made-up.invalid";
+        assert!(keys.key(issuer, Some("k1"), None).await.is_ok());
+        // The name service may say so for a time: the issuer is not removed.
+        gone.store(true, Ordering::SeqCst);
+        let key = refetched(&keys, issuer, None).await;
+        assert!(key.is_ok(), "{:?}", key.err());
+    }
+
+    #[test]
+    #[ignore = "asks the name service of the machine"]
+    fn the_system_says_that_a_name_has_no_address() {
+        let error = addresses("t1.made-up.invalid").unwrap_err();
+        assert!(error.is::<NoSuchHost>(), "{error}");
+        assert!(addresses("localhost").is_ok());
+    }
+
+    #[tokio::test]
+    async fn an_answer_that_ends_early_is_of_no_made_up_issuer() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let issuer = format!("http://{}", listener.local_addr().unwrap());
+        // The headers and the start of a document, then the connection ends.
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let mut request = [0; 1024];
+                let _ = stream.read(&mut request).await;
+                let answer = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                              content-length: 100\r\n\r\n{\"issuer\":";
+                let _ = stream.write_all(answer.as_bytes()).await;
+            }
+        });
+        let keys = JwtKeys::default();
+        let scope = scope("http://*");
+        let key = keys.key(&issuer, Some("k1"), Some(&scope)).await;
+        let Err(VerifyError::Unavailable(reason)) = key else {
+            panic!("not unavailable");
+        };
+        assert!(
+            reason.starts_with("Could not get issuer configuration"),
+            "{reason}"
+        );
+        let counts = (keys.new_issuers).window(&scope, |w| (w.asked, w.without_keys));
+        assert_eq!(counts, (1, 0));
+    }
+
+    #[test]
+    fn an_issuer_without_keys_is_not_said_to_have_several() {
+        let withdrawn = Fetched {
+            keys: Some((Vec::new(), Instant::now())),
+            ..Default::default()
+        };
+        for key_id in [None, Some("k1")] {
+            let Err(VerifyError::Invalid(reason)) = withdrawn.answer(key_id, "https://x") else {
+                panic!("not refused");
+            };
+            assert!(
+                reason.ends_with("issuer https://x has no signing keys"),
+                "{reason}"
+            );
+        }
+        let two = Fetched {
+            keys: Some((vec![jwk(Some("k1")), jwk(Some("k2"))], Instant::now())),
+            ..Default::default()
+        };
+        let Err(VerifyError::Invalid(reason)) = two.answer(None, "https://x") else {
+            panic!("not refused");
+        };
+        assert!(reason.ends_with("has several"), "{reason}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_kept_key_of_an_issuer_that_is_down_serves_without_a_wait() {
+        let serves = Serves::new(KEY_SET);
+        let keys = JwtKeys::new(serves);
+        assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
+        let slow = Down::after(Duration::from_secs(3));
+        let keys = JwtKeys {
+            fetcher: Arc::new(Fetcher {
+                http: reqwest::Client::new(),
+                transport: Box::new(slow.clone()),
+            }),
+            ..keys
+        };
+        // The issuer answered the last time: the request waits for the
+        // fetch, which may find that the key is withdrawn.
+        expire(&keys, "https://a").await;
+        let asked = tokio::time::Instant::now();
+        assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
+        assert_eq!(asked.elapsed(), Duration::from_secs(3));
+        // It is down now: the next fetch runs without the request.
+        expire(&keys, "https://a").await;
+        let asked = tokio::time::Instant::now();
+        assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
+        assert_eq!(asked.elapsed(), Duration::ZERO);
+        fetch_ended(&keys, "https://a").await;
+        assert_eq!(slow.calls(), 2);
+    }
+
+    #[tokio::test]
+    async fn made_up_issuers_of_a_few_clients_leave_the_pattern_to_the_others() {
+        let new_issuers = NewIssuers::default();
+        let deadline = tokio::time::Instant::now() + FETCH_TIMEOUT;
+        // Each client asks as many issuers at a time as it may. All but its
+        // first are asked while another has not answered with keys.
+        let mut asked = Vec::new();
+        for n in 0..MAX_NEW_ISSUERS {
+            for _ in 0..MAX_NEW_ISSUERS {
+                asked.extend(new_issuers.reserve(&client(n), deadline).await);
+            }
+        }
+        let first = MAX_NEW_ISSUERS;
+        assert_eq!(asked.len() as u32, first + MAX_UNPROVEN_ISSUERS_ALL);
+        // Another client has its first issuer, and the next one after it
+        // answered with keys.
+        let real = client(MAX_NEW_ISSUERS);
+        for _ in 0..2 {
+            let place = new_issuers.reserve(&real, deadline).await.unwrap();
+            new_issuers.had_keys(&real, &place);
+        }
+        let place = new_issuers.reserve(&real, deadline).await;
+        assert!(place.is_some());
+        assert!(new_issuers.reserve(&real, deadline).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn new_issuers_of_all_clients_are_asked_up_to_a_limit() {
+        let new_issuers = NewIssuers::default();
+        let deadline = tokio::time::Instant::now() + FETCH_TIMEOUT;
+        for n in 0..MAX_ASKED_ISSUERS_ALL {
+            assert!(new_issuers.reserve(&client(n), deadline).await.is_some());
+        }
+        let next = client(MAX_ASKED_ISSUERS_ALL);
+        assert!(new_issuers.reserve(&next, deadline).await.is_none());
+        // The log says so once.
+        assert!(new_issuers.log_refusal(&next));
+        assert!(!new_issuers.log_refusal(&client(0)));
+        // Another pattern has its own.
+        let other = scope("https://*.b");
+        assert!(new_issuers.reserve(&other, deadline).await.is_some());
+    }
+
+    #[test]
+    fn an_issuer_that_a_provider_names_is_no_pattern_s() {
+        let pattern = JwtProvider::new("tenants", &["https://*.a"]);
+        let exact = JwtProvider::new("one", &["https://t.a"]);
+        let other = JwtProvider::new("other", &["https://b"]);
+        let iss = "https://t.a";
+        assert_eq!(issuer_pattern([&pattern, &other], iss), Some("https://*.a"));
+        assert_eq!(issuer_pattern([&pattern, &exact], iss), None);
+        assert_eq!(issuer_pattern([&exact, &pattern], iss), None);
+        assert_eq!(issuer_pattern([&other], iss), None);
+    }
+
+    /// Requests for one new issuer that arrive together when one place is
+    /// left: one of them reserves it, and any of them may start the fetch.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn one_new_issuer_takes_one_place() {
+        for _ in 0..50 {
+            let keys = Arc::new(JwtKeys::new(Serves::new(KEY_SET)));
+            let scope = scope("https://*.a");
+            let taken = take_places(&keys.new_issuers, &scope, MAX_NEW_ISSUERS - 1).await;
+            let all = together(&keys, (0..8).map(|_| "https://t.a".to_string()));
+            let all = tokio::time::timeout(Duration::from_secs(2), all).await;
+            for key in all.expect("a request did not end") {
+                assert!(key.is_ok(), "{:?}", key.err());
+            }
+            assert_eq!(keys.new_issuers.window(&scope, |w| w.asked), 1);
+            assert_eq!(taken.semaphore().available_permits(), 1);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn new_issuers_wait_for_a_place_for_a_limited_time() {
+        let new_issuers = NewIssuers::default();
+        let scope = scope("https://*.a");
+        let taken = take_places(&new_issuers, &scope, MAX_NEW_ISSUERS).await;
+        let waited = tokio::time::Instant::now();
+        let deadline = waited + FETCH_TIMEOUT;
+        assert!(new_issuers.reserve(&scope, deadline).await.is_none());
+        assert_eq!(waited.elapsed(), FETCH_TIMEOUT);
+        assert_eq!(new_issuers.window(&scope, |w| w.asked), 0);
+        drop(taken);
+        // A free place is taken also after the deadline.
+        assert!(new_issuers.reserve(&scope, deadline).await.is_some());
+    }
+
+    /// Requests for one issuer that is kept, when no place is free: they
+    /// wait together, not one after the other.
+    #[tokio::test(start_paused = true)]
+    async fn requests_for_one_issuer_wait_for_a_place_together() {
+        let keys = Arc::new(JwtKeys::new(Down::default()));
+        keys.issuers
+            .insert("https://t.a".into(), Arc::default())
+            .await;
+        let scope = scope("https://*.a");
+        let _taken = take_places(&keys.new_issuers, &scope, MAX_NEW_ISSUERS).await;
+        let waited = tokio::time::Instant::now();
+        for key in together(&keys, (0..10).map(|_| "https://t.a".to_string())).await {
+            assert!(matches!(key, Err(VerifyError::Unavailable(_))), "{key:?}");
+        }
+        assert_eq!(waited.elapsed(), FETCH_TIMEOUT);
+    }
+
+    /// Requests of two clients for one new issuer: the first client finds no
+    /// place. The other one waits for it, and then reserves for itself.
+    #[tokio::test(start_paused = true)]
+    async fn a_limit_of_one_client_is_not_the_answer_to_another() {
+        let keys = JwtKeys::new(Serves::new(KEY_SET));
+        let (one, other) = two_clients();
+        let _taken = take_places(&keys.new_issuers, &one, MAX_NEW_ISSUERS).await;
+        let (a, b) = tokio::join!(
+            keys.key("https://t.a", Some("k1"), Some(&one)),
+            keys.key("https://t.a", Some("k1"), Some(&other)),
+        );
+        assert!(matches!(a, Err(VerifyError::Unavailable(_))), "{a:?}");
+        assert!(b.is_ok(), "{:?}", b.err());
+        let asked = |scope: &Scope| keys.new_issuers.window(scope, |w| w.asked);
+        assert_eq!((asked(&one), asked(&other)), (0, 1));
+    }
+
+    /// The place of an issuer whose first fetch did not start in the window
+    /// of the place: the fetch is counted in the window that it runs in.
+    #[tokio::test]
+    async fn a_place_of_an_old_window_is_not_used() {
+        let keys = JwtKeys::new(Serves::new(KEY_SET));
+        let pattern = &scope("https://*.a");
+        let deadline = tokio::time::Instant::now() + FETCH_TIMEOUT;
+        let place = keys.new_issuers.reserve(pattern, deadline).await.unwrap();
+        let entry = IssuerKeys::reserved(pattern.clone(), place);
+        keys.issuers.insert("https://t.a".into(), entry).await;
+        keys.new_issuers.window(pattern, |w| *w = Window::default());
+        assert!(
+            keys.key("https://t.a", Some("k1"), Some(pattern))
+                .await
+                .is_ok()
+        );
+        assert_eq!(keys.new_issuers.window(pattern, |w| w.asked), 1);
+    }
+
+    #[tokio::test]
+    async fn made_up_issuers_of_one_client_leave_the_others_theirs() {
+        let down = Down::no_issuer(Duration::ZERO);
+        let keys = JwtKeys::new(down.clone());
+        let (one, other) = two_clients();
+        for n in 0..2 * MAX_NEW_ISSUERS {
+            let key = (keys.key(&format!("https://t{n}.a"), Some("k1"), Some(&one))).await;
+            assert!(key.is_err());
+        }
+        assert_eq!(down.calls(), MAX_NEW_ISSUERS as usize);
+        assert!(
+            keys.key("https://real.a", Some("k1"), Some(&other))
+                .await
+                .is_err()
+        );
+        assert_eq!(down.calls(), 1 + MAX_NEW_ISSUERS as usize);
+    }
+
+    #[tokio::test]
+    async fn real_issuers_of_a_pattern_are_asked_up_to_a_limit() {
+        let keys = JwtKeys::new(Serves::new(KEY_SET));
+        let key = |n: u32| {
+            let issuer = format!("https://t{n}.a");
+            let keys = &keys;
+            async move {
+                keys.key(&issuer, Some("k1"), Some(&scope("https://*.a")))
+                    .await
+            }
+        };
+        for n in 0..MAX_ASKED_ISSUERS {
+            assert!(key(n).await.is_ok(), "issuer {n}");
+        }
+        let refused = key(MAX_ASKED_ISSUERS).await;
+        assert!(matches!(refused, Err(VerifyError::Unavailable(_))));
+        // Those that have keys still serve.
+        assert!(key(0).await.is_ok());
+    }
+
+    #[test]
+    fn keys_with_an_unknown_alg_are_kept() {
+        let key = |alg: &str| {
+            parse_jwk(&serde_json::json!({
+                "kty": "EC", "crv": "P-521", "kid": "k1", "alg": alg, "x": "AQ", "y": "AQ",
+            }))
+        };
+        assert_eq!(key("ES512").unwrap().common.key_id.as_deref(), Some("k1"));
+        assert!(key("ES384").unwrap().common.key_algorithm.is_some());
+        // A key that signs no token that is accepted, and an encryption key.
+        assert!(key("ECDH-ES").is_none());
+        assert!(
+            parse_jwk(&serde_json::json!({
+                "kty": "RSA", "use": "enc", "alg": "RSA-OAEP", "n": "AQAB", "e": "AQAB",
+            }))
+            .is_none()
+        );
+        assert!(parse_jwk(&serde_json::json!({ "kty": "EC", "crv": "secp256k1" })).is_none());
+        assert!(parse_jwk(&serde_json::json!("k1")).is_none());
+    }
+
+    /// Requests that arrive together: the issuers over the limit wait for
+    /// those asked, and are refused when these had no keys.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn issuers_that_are_not_asked_leave_nothing() {
+        let down = Down::no_issuer(Duration::from_millis(20));
+        let keys = Arc::new(JwtKeys::new(down.clone()));
+        let issuers = (0..3 * MAX_NEW_ISSUERS).map(|n| format!("https://t{n}.a"));
+        for key in together(&keys, issuers).await {
+            assert!(matches!(key, Err(VerifyError::Unavailable(_))));
+        }
+        assert_eq!(down.calls(), MAX_NEW_ISSUERS as usize);
+        keys.unknown.run_pending_tasks().await;
+        assert_eq!(keys.unknown.entry_count(), u64::from(MAX_NEW_ISSUERS));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn real_issuers_that_arrive_together_are_all_asked() {
+        let keys = Arc::new(JwtKeys::new(Serves::new(KEY_SET)));
+        let issuers = (0..3 * MAX_NEW_ISSUERS).map(|n| format!("https://t{}.a", n / 2));
+        for key in together(&keys, issuers).await {
+            assert!(key.is_ok(), "{:?}", key.err());
+        }
+        keys.issuers.run_pending_tasks().await;
+        assert_eq!(
+            keys.issuers.entry_count(),
+            u64::from(3 * MAX_NEW_ISSUERS / 2)
+        );
     }
 
     #[tokio::test]
     async fn a_fetch_outlives_the_request_that_started_it() {
-        let down = Down(Default::default(), Duration::from_millis(200));
+        let down = Down::after(Duration::from_millis(200));
         let keys = JwtKeys::new(down.clone());
         let cancelled = tokio::time::timeout(
             Duration::from_millis(20),
@@ -863,7 +2233,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn old_keys_serve_while_a_fetch_runs() {
+    async fn old_keys_serve_while_a_fetch_runs_for_an_issuer_that_is_down() {
         let Some(old) = Instant::now().checked_sub(KEYS_TTL + Duration::from_secs(1)) else {
             return;
         };
@@ -879,6 +2249,14 @@ mod tests {
             .insert("https://a".into(), issuer.clone())
             .await;
         let _running = issuer.refresh.clone().lock_owned().await;
+        // The issuer answered the last time: the request waits for the
+        // fetch that runs.
+        let waits = tokio::time::timeout(
+            Duration::from_millis(20),
+            keys.key("https://a", Some("k1"), None),
+        );
+        assert!(waits.await.is_err());
+        issuer.fetched.write().await.down = true;
         assert!(keys.key("https://a", Some("k1"), None).await.is_ok());
     }
 
@@ -900,5 +2278,12 @@ mod tests {
         assert!(check_times(&claims(past.into()), "i", leeway).is_err());
         assert!(check_times(&claims((past + 240.0).into()), "i", leeway).is_ok());
         assert!(check_times(&claims("soon".into()), "i", leeway).is_err());
+        // A token without `exp` would never expire.
+        let no_exp: Map<String, Value> =
+            serde_json::from_value(serde_json::json!({ "iss": "i" })).unwrap();
+        assert_eq!(
+            check_times(&no_exp, "i", leeway).unwrap_err(),
+            "MissingRequiredClaim: exp"
+        );
     }
 }

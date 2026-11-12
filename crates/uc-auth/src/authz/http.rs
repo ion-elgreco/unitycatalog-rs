@@ -6,11 +6,11 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use super::Authorizer;
 use super::wire::{
     AUTHORIZE_BATCH_PATH, AUTHORIZE_PATH, AuthorizeRequest, AuthorizeResponse,
     BatchAuthorizeRequest, BatchAuthorizeResponse,
 };
+use super::{Authorizer, failed_closed};
 
 /// How long a decision may take unless configured otherwise: well above a cold PDP.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -113,10 +113,7 @@ impl Authorizer for HttpAuthorizer {
     async fn authorize(&self, request: &AuthorizeRequest) -> AuthorizeResponse {
         self.post(&self.single_url, request)
             .await
-            .unwrap_or_else(|error| {
-                tracing::warn!(%error, "authorization failed closed");
-                AuthorizeResponse::deny(error)
-            })
+            .unwrap_or_else(failed_closed)
     }
 
     async fn authorize_batch(&self, requests: &[AuthorizeRequest]) -> Vec<AuthorizeResponse> {
@@ -140,10 +137,7 @@ impl Authorizer for HttpAuthorizer {
                     ))
                 }
             });
-        answer.unwrap_or_else(|error| {
-            tracing::warn!(%error, "authorization failed closed");
-            vec![AuthorizeResponse::deny(error); requests.len()]
-        })
+        answer.unwrap_or_else(|error| vec![failed_closed(error); requests.len()])
     }
 }
 

@@ -376,3 +376,38 @@ async fn requests_over_the_rate_are_429() {
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     assert_eq!(get([10, 0, 0, 1]).await.unwrap().status(), StatusCode::OK);
 }
+
+/// Behind the proxies of `auth.trusted_proxies`, the rate counts for the
+/// client that `X-Forwarded-For` names, not for the proxy.
+#[tokio::test]
+async fn the_rate_counts_for_the_client_behind_a_proxy() {
+    let config = uc_metastore::MetastoreConfig::for_tests();
+    let metastore = uc_metastore::SqlMetastore::connect(config).await.unwrap();
+    let http = uc_server::server::app::HttpSettings {
+        rate_limit_per_sec: 10,
+        ..Default::default()
+    };
+    let auth = uc_server::authn::idp::AuthSettings::new(&uc_common::settings::Auth {
+        trusted_proxies: vec!["10.0.0.1".into()],
+        ..Default::default()
+    });
+    let state = uc_server::AppState::new(metastore)
+        .with_http(http)
+        .with_auth_settings(auth);
+    let app = uc_server::build_app(state);
+    let get = |client: &str| {
+        let mut request = req(Method::GET, "/catalogs");
+        let proxy = std::net::SocketAddr::from(([10, 0, 0, 1], 1234));
+        (request.headers_mut()).insert("x-forwarded-for", client.parse().unwrap());
+        (request.extensions_mut()).insert(axum::extract::ConnectInfo(proxy));
+        app.clone().oneshot(request)
+    };
+    for _ in 0..20 {
+        assert_eq!(get("192.0.2.1").await.unwrap().status(), StatusCode::OK);
+    }
+    assert_eq!(
+        get("192.0.2.1").await.unwrap().status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(get("192.0.2.2").await.unwrap().status(), StatusCode::OK);
+}

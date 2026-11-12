@@ -37,6 +37,19 @@ use crate::{
 /// The cookie upstream signs in with (`ext=cookie`).
 pub const UC_TOKEN_COOKIE: &str = "UC_TOKEN";
 
+/// Marks each request with the address of its client behind the proxies of
+/// `auth.trusted_proxies`. It runs before the layers that count per client:
+/// the rate limit and the sign-in.
+pub async fn client_layer(
+    State(state): State<AppState>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    let (mut parts, body) = req.into_parts();
+    state.auth.proxies.mark(&mut parts);
+    next.run(Request::from_parts(parts, body)).await
+}
+
 pub async fn auth_layer(State(state): State<AppState>, req: Request<Body>, next: Next) -> Response {
     let required = state.authorization_enabled && requires_sign_in(req.uri().path());
     let (mut parts, body) = req.into_parts();

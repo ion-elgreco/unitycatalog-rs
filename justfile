@@ -166,6 +166,27 @@ test-authentik:
     # In a subshell: the trap runs compose from here.
     (cd python/client && UC_TEST_SERVER_BIN='{{ uc_server }}' UC_TEST_AUTHENTIK_URL="$url" UC_TEST_AUTHENTIK_TOKEN="$AUTHENTIK_TOKEN" uv run --no-sync pytest tests/integrations/test_authentik.py)
 
+# Run the AWS sign-in tests of the client (crates/uc-client/tests/client/aws_emulator.rs) against AWS Emulator, a local STS that checks the signature of each request, in Docker (its Dockerfile in crates/uc-client/tests/aws-emulator)
+test-aws-emulator:
+    #!/usr/bin/env bash
+    # A new emulator at each run: it keeps its state in memory.
+    set -euo pipefail
+    case "$(uname -m)" in arm64 | aarch64) arch=aarch64 ;; *) arch=x86_64 ;; esac
+    docker build -q --build-arg ARCH="$arch" -t uc-aws-emulator crates/uc-client/tests/aws-emulator > /dev/null
+    # The emulator writes its endpoint and its key pair under its home, at
+    # the same path here as in the container. They are new at each start.
+    port=19297
+    home="$PWD/target/aws-emulator"
+    rm -rf "$home"
+    mkdir -p "$home/.aws/emulator"
+    id=$(docker run -d --user "$(id -u):$(id -g)" --memory=2g --memory-swap=2g \
+        -p "127.0.0.1:$port:$port" -e HOME="$home" -v "$home/.aws/emulator:$home/.aws/emulator" \
+        uc-aws-emulator -p "$port" --telemetry off)
+    trap 'status=$?; [ $status -eq 0 ] || docker logs "$id"; docker rm -f -v "$id" > /dev/null; exit $status' EXIT
+    # Its certificate is its own: no check of it here, nor in the tests.
+    curl -fsk -o /dev/null --retry 30 --retry-all-errors --retry-delay 1 "https://127.0.0.1:$port/__admin/health"
+    UC_TEST_AWS_EMULATOR="$home/.aws/emulator/$port" cargo test --profile {{ profile }} -p uc-client --features identity --test client aws_emulator
+
 # Run the Spark tests (python/client/tests/integrations/test_spark.py) with PySpark `spark`, 4.1.x or 4.2.x, against a uc-server of this repository; needs Java 17 or 21 and the client in .venv (just develop-client). Spark downloads its jars into ~/.ivy2.5.2
 test-spark spark="4.2.0":
     cargo build -p uc-server --profile {{ profile }}

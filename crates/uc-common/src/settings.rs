@@ -206,6 +206,11 @@ pub struct Auth {
     pub cedar: bool,
     #[serde(deserialize_with = "list")]
     pub cedar_policies: Vec<String>,
+    /// The proxies in front of the server, such as an ingress, that add
+    /// the client's address to `X-Forwarded-For`: CIDRs or addresses. The
+    /// limits per client count by that address then, not by the proxy's.
+    #[serde(deserialize_with = "list")]
+    pub trusted_proxies: Vec<String>,
     /// The web UI's sign-in: `none`, `oidc` or `forward`.
     pub mode: SignInMode,
     /// The server's external URL: the provider returns the browser to
@@ -232,6 +237,11 @@ pub struct Auth {
     /// The header with the user, without the email header (default
     /// `Remote-User`).
     pub forward_user_header: Option<String>,
+    /// A header value with a `,` is one name, such as the subject of a
+    /// client certificate (default false: it names nobody, as it could be
+    /// the client's value with the proxy's added).
+    #[serde(deserialize_with = "scalar")]
+    pub forward_names_with_commas: bool,
     /// The proxy's sign-out, where the UI's "Log out" goes.
     pub forward_logout_url: Option<String>,
 }
@@ -248,6 +258,7 @@ impl Default for Auth {
             admin_principals: Vec::new(),
             cedar: false,
             cedar_policies: Vec::new(),
+            trusted_proxies: Vec::new(),
             mode: SignInMode::None,
             public_url: None,
             oidc_issuer: None,
@@ -258,6 +269,7 @@ impl Default for Auth {
             forward_trusted_proxies: Vec::new(),
             forward_email_header: None,
             forward_user_header: None,
+            forward_names_with_commas: false,
             forward_logout_url: None,
         }
     }

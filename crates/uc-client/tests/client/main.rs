@@ -6,6 +6,7 @@ mod common;
 
 mod admin;
 mod auth;
+mod aws_emulator;
 mod catalogs;
 mod coverage;
 mod credentials;

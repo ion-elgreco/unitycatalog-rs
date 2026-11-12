@@ -18,3 +18,10 @@ impl Transport for Direct {
         request.send().await
     }
 }
+
+/// Whether `status` is the service's own no to the request: an HTTP 4xx,
+/// but not one of a proxy on the way (407, 408) or of a service that has
+/// too much to do (429).
+pub(crate) fn refuses(status: reqwest::StatusCode) -> bool {
+    status.is_client_error() && !matches!(status.as_u16(), 407 | 408 | 429)
+}
