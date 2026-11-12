@@ -19,11 +19,11 @@ use delta_kernel::committer::{
 use delta_kernel::engine::arrow_conversion::TryIntoArrow as _;
 use delta_kernel::engine::arrow_data::ArrowEngineData;
 use delta_kernel::schema::{DataType, PrimitiveType, StructField, StructType};
-use delta_kernel::transaction::CommitResult;
 use delta_kernel::transaction::create_table::create_table as kernel_create_table;
+use delta_kernel::transaction::{CommitResult, UpdateTableOperation};
 use delta_kernel::{
-    DeltaResult, DeltaResultIterator, Engine, Error as KernelError, FileMeta, FilteredEngineData,
-    LogPath, Snapshot, SnapshotRef,
+    Engine, FileMeta, FilteredEngineData, KernelError, KernelResult, KernelResultIterator, LogPath,
+    Snapshot, SnapshotRef,
 };
 use delta_kernel_default_engine::executor::tokio::TokioBackgroundExecutor;
 use delta_kernel_default_engine::{DefaultEngine, DefaultEngineBuilder};
@@ -259,7 +259,7 @@ fn create_delta_table(
         table_uri: url.clone(),
         handle,
     };
-    let result = kernel_create_table(url.as_str(), schema, ENGINE_INFO)
+    let result = kernel_create_table(url.as_str(), schema, ENGINE_INFO, true)
         .with_table_properties(table_properties)
         .build(&engine, Box::new(committer))?
         .commit(&engine)?;
@@ -292,7 +292,7 @@ fn create_if_missing(engine: &Kernel, url: &Url, schema: Arc<StructType>) -> any
         return Ok(false);
     }
     make_local_directory(url)?;
-    let result = kernel_create_table(url.as_str(), schema, ENGINE_INFO)
+    let result = kernel_create_table(url.as_str(), schema, ENGINE_INFO, true)
         .build(engine, Box::new(FileSystemCommitter::new()))?
         .commit(engine)?;
     match result {
@@ -367,7 +367,7 @@ fn load_snapshot(
     engine: &Kernel,
     url: &Url,
     catalog: Option<(u64, Vec<LogPath>)>,
-) -> DeltaResult<SnapshotRef> {
+) -> KernelResult<SnapshotRef> {
     let mut builder = Snapshot::builder_for(url.as_str());
     if let Some((latest, tail)) = catalog {
         builder = builder.with_max_catalog_version(latest).with_log_tail(tail);
@@ -523,8 +523,8 @@ fn write_rows(
     let snapshot = load_snapshot(&engine, &target.url, target.catalog)?;
     let table_schema = snapshot.schema();
     let mut txn = snapshot
-        .transaction(committer, &engine)?
-        .with_engine_info(ENGINE_INFO);
+        .update_table(UpdateTableOperation::Write, ENGINE_INFO, true)
+        .build(&engine, committer)?;
     let write_context = txn.write_state()?.write_context_builder().build()?;
     let arrow_schema = Arc::<ArrowSchema>::new(table_schema.as_ref().try_into_arrow()?);
     let mut rng = rand::thread_rng();
@@ -653,9 +653,9 @@ impl Committer for UcCommitter {
     fn commit(
         &self,
         engine: &dyn Engine,
-        actions: DeltaResultIterator<'_, FilteredEngineData>,
+        actions: KernelResultIterator<'_, FilteredEngineData>,
         metadata: CommitMetadata,
-    ) -> DeltaResult<CommitResponse> {
+    ) -> KernelResult<CommitResponse> {
         // Version 0 is a plain write to the Delta log.
         if metadata.commit_type() == CommitType::CatalogManagedCreate {
             return FileSystemCommitter::new().commit(engine, actions, metadata);
@@ -699,7 +699,7 @@ impl Committer for UcCommitter {
 
     /// Copy ratified commits into the Delta log; the server's next commit
     /// call learns of them as `latest_backfilled_version`.
-    fn publish(&self, engine: &dyn Engine, metadata: PublishMetadata) -> DeltaResult<()> {
+    fn publish(&self, engine: &dyn Engine, metadata: PublishMetadata) -> KernelResult<()> {
         for commit in metadata.commits_to_publish() {
             copy_file(engine, commit.location(), commit.published_location())?;
         }
@@ -708,7 +708,7 @@ impl Committer for UcCommitter {
 }
 
 /// Copy a log file without overwriting an existing one.
-fn copy_file(engine: &dyn Engine, from: &Url, to: &Url) -> DeltaResult<()> {
+fn copy_file(engine: &dyn Engine, from: &Url, to: &Url) -> KernelResult<()> {
     match engine.storage_handler().copy_atomic(from, to) {
         Ok(()) | Err(KernelError::FileAlreadyExists(_)) => Ok(()),
         Err(e) => Err(e),

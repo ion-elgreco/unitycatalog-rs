@@ -81,11 +81,9 @@ pub(crate) async fn verify_replay(
         .open(&location, VendOp::Read)
         .await
         .map_err(|e| unknown(e.0))?;
-    let log = root.child("_delta_log");
-    let published = log.child(format!("{version:020}.json"));
-    let staged = log
-        .child("_staged_commits")
-        .child(staged_file_name.as_str());
+    let log = root.join("_delta_log");
+    let published = log.clone().join(format!("{version:020}.json"));
+    let staged = log.join("_staged_commits").join(staged_file_name.as_str());
     match same_content(store.as_ref(), &published, &staged).await {
         Ok(true) => Ok(()),
         Ok(false) => Err(commits::published_by_other_writer(version)),

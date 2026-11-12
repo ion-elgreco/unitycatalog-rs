@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use flate2::read::GzDecoder;
 use iceberg::spec::TableMetadata;
-use object_store::{PutMode, PutOptions, PutPayload};
+use object_store::{ObjectStoreExt, PutMode, PutOptions, PutPayload};
 use tracing::warn;
 use uuid::Uuid;
 
