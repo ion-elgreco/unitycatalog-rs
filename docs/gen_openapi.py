@@ -8,6 +8,11 @@ its comment, grouped by API as the REST APIs page groups them; an operation per 
 and path from `google.api.http`, its path and query parameters, its request body and its
 response; and a schema per message and enum, with the comments of their fields and values.
 
+The sharing protocols (Delta Sharing and Open Sharing) are not in the protos: the server has
+them from the `opensharing-api` crate. Their operations and schemas come from the OpenAPI
+document in that crate's repository, at the commit that Cargo.lock pins, under the path of each
+protocol.
+
 The JSON names and the encodings are those of the generated clients, from the constants of
 crates/uc-codegen/src/main.rs: the packages whose JSON names are lowerCamelCase, the RPCs whose
 body is a form, and those whose body keeps the path values.
@@ -15,13 +20,16 @@ body is a form, and those whose body keeps the path values.
 
 from __future__ import annotations
 
+import copy
 import json
 import re
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
 from google.api import annotations_pb2, field_behavior_pb2
 from google.protobuf import descriptor_pb2, descriptor_pool
 
@@ -59,6 +67,25 @@ GROUPS = {
     "Health": ["HealthService"],
 }
 DEFAULT_GROUP = "Unity Catalog REST API"
+# The protocols that recipients of shares read with, which the server has from the
+# `opensharing-api` crate and not from the protos: where each is mounted, and its tag. Their
+# operations come from the OpenAPI document of that crate's repository.
+SHARING_GROUP = "Sharing protocols"
+SHARING = {
+    "Delta Sharing": (
+        "/api/v1/delta-sharing",
+        "The Delta Sharing protocol: a recipient of shares lists them and reads their tables.",
+    ),
+    "Open Sharing": (
+        "/api/1.0/opensharing",
+        (
+            "The Open Sharing protocol: the tables of Delta Sharing, and the volumes and agent "
+            "skills of a share with temporary credentials for their storage."
+        ),
+    ),
+}
+# The name of the security scheme of the recipient's token.
+RECIPIENT = "recipient"
 # The options of trestle (proto/olai/trestle/v1/annotations.proto): a field of a response that
 # comes from a response header, and a field that is the HTTP body as raw bytes.
 TRESTLE = "olai/trestle/v1/annotations.proto"
@@ -96,6 +123,64 @@ def tag_name(service: str) -> str:
     words = re.findall(r"[A-Z][a-z0-9]*", service.removesuffix("Service"))
     words = [WORDS.get(w, w) for w in words]
     return " ".join([words[0], *(w if w.isupper() else w.lower() for w in words[1:])])
+
+
+def sharing_document() -> dict:
+    """The OpenAPI document of the sharing protocols, at the commit of `opensharing-api` that
+    Cargo.lock pins: `openapi/sharing.yaml` in the checkout of its repository."""
+    metadata = subprocess.run(
+        ["cargo", "metadata", "--format-version", "1", "--locked"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    packages = json.loads(metadata.stdout)["packages"]
+    manifest = next(
+        (p["manifest_path"] for p in packages if p["name"] == "opensharing-api"), None
+    )
+    if manifest is None:
+        sys.exit("the workspace has no `opensharing-api` package")
+    path = Path(manifest).parents[2] / "openapi" / "sharing.yaml"
+    return yaml.safe_load(path.read_text())
+
+
+def sharing_schema(node):
+    """`node` of the sharing document, an OpenAPI 3.0 one, for this 3.1 document: its
+    references are to the names with `Sharing` in front, which keeps them apart from the
+    schemas of the protos, and `nullable` is a `null` type."""
+    if isinstance(node, list):
+        return [sharing_schema(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    out = {key: sharing_schema(value) for key, value in node.items()}
+    if isinstance(ref := out.get("$ref"), str):
+        out["$ref"] = re.sub(r"(#/components/\w+/)", r"\1Sharing", ref)
+    if out.pop("nullable", False) is True:
+        if isinstance(out.get("type"), str):
+            out["type"] = [out["type"], "null"]
+        else:
+            out = {"anyOf": [out, {"type": "null"}]}
+    return out
+
+
+def sharing_paths(document: dict) -> dict[str, dict]:
+    """The operations of the sharing document under the path of each protocol. Delta Sharing
+    has the operations of tables only."""
+    paths: dict[str, dict] = {}
+    for tag, (prefix, _) in SHARING.items():
+        for path, operations in document["paths"].items():
+            if tag == "Delta Sharing" and re.search(r"volumes|skills", path):
+                continue
+            for verb, operation in operations.items():
+                operation = sharing_schema(copy.deepcopy(operation))
+                operation["tags"] = [tag]
+                operation["operationId"] = (
+                    tag.replace(" ", "") + operation["operationId"]
+                )
+                operation["security"] = [{RECIPIENT: []}]
+                paths.setdefault(prefix + path, {})[verb] = operation
+    return paths
 
 
 @dataclass
@@ -475,7 +560,19 @@ class Api:
                         path,
                         binding.body or rule.body,
                     )
-        order = [DEFAULT_GROUP, *GROUPS]
+        sharing = sharing_document()
+        paths.update(sharing_paths(sharing))
+        tags += [
+            {"name": tag, "description": text} for tag, (_, text) in SHARING.items()
+        ]
+        groups[SHARING_GROUP] = list(SHARING)
+        components = {
+            kind: {
+                f"Sharing{name}": sharing_schema(item) for name, item in items.items()
+            }
+            for kind, items in sharing["components"].items()
+        }
+        order = [DEFAULT_GROUP, *GROUPS, SHARING_GROUP]
         return {
             "openapi": "3.1.0",
             "info": {
@@ -483,8 +580,9 @@ class Api:
                 "version": version,
                 "description": (
                     "The HTTP APIs of the server: the Unity Catalog REST API, the Delta REST API, "
-                    "the Iceberg REST catalog and the control plane. With "
-                    "authorization on, a request carries a token: `Authorization: Bearer <token>`."
+                    "the Iceberg REST catalog, the control plane and the sharing protocols. With "
+                    "authorization on, a request carries a token: `Authorization: Bearer <token>`. "
+                    "A request of a sharing protocol carries the token of a recipient."
                 ),
             },
             "servers": [
@@ -505,9 +603,15 @@ class Api:
                         "type": "http",
                         "scheme": "bearer",
                         "description": "A token of the server or a personal access token.",
-                    }
+                    },
+                    RECIPIENT: {
+                        "type": "http",
+                        "scheme": "bearer",
+                        "description": "The token of a recipient of shares.",
+                    },
                 },
-                "schemas": self.schemas(),
+                "schemas": {**self.schemas(), **components.pop("schemas", {})},
+                **components,
             },
         }
 
