@@ -682,7 +682,7 @@ pub async fn callback(
         Ok(token) => token,
         Err(e) => return failed(Failure::Server, e.message().to_string()),
     };
-    tracing::info!(principal = %user.principal, "signed in to the web UI");
+    tracing::info!(principal = ?user.principal, "signed in to the web UI");
     let mut response = Redirect::to(&login.rd).into_response();
     let cookies = response.headers_mut();
     if let Ok(cookie) = token_cookie(
