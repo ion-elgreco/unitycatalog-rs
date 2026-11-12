@@ -30,10 +30,10 @@ pub fn to_column_infos(schema: &Schema) -> Result<Vec<ColumnInfo>> {
     Ok(columns)
 }
 
-fn unsupported(primitive: &PrimitiveType) -> Error {
+fn unsupported(iceberg_type: &impl std::fmt::Display) -> Error {
     Error::invalid_argument(format!(
         "Iceberg type {} is not supported by Unity Catalog",
-        primitive.to_string().to_uppercase()
+        iceberg_type.to_string().to_uppercase()
     ))
 }
 
@@ -86,10 +86,16 @@ fn data_type(field_type: &Type) -> Result<DeltaDataType> {
                 precision: Some(i64::from(*precision)),
                 scale: Some(i64::from(*scale)),
             },
-            PrimitiveType::Time | PrimitiveType::TimestampNs | PrimitiveType::TimestamptzNs => {
+            PrimitiveType::Time
+            | PrimitiveType::TimestampNs
+            | PrimitiveType::TimestamptzNs
+            | PrimitiveType::Unknown
+            | PrimitiveType::Geometry(_)
+            | PrimitiveType::Geography(_) => {
                 return Err(unsupported(p));
             }
         },
+        Type::Variant(_) => return Err(unsupported(field_type)),
     })
 }
 

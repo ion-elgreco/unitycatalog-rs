@@ -162,7 +162,9 @@ impl AwsVendor {
             )
             .body(body.clone().into())
             .map_err(|e| e.to_string())?;
-        AwsAuthorizer::new(identity, "sts", region).authorize(&mut request, None);
+        AwsAuthorizer::new(identity, "sts", region)
+            .try_authorize(&mut request, None)
+            .map_err(|e| e.to_string())?;
         let response = self
             .http
             .post(&endpoint)

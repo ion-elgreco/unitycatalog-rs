@@ -245,10 +245,10 @@ fn same_ids(
             .iter()
             .zip(spec.fields())
             .all(|(fresh, sent)| {
-                fresh.source_id == sent.source_id
-                    && fresh.name == sent.name
-                    && fresh.transform == sent.transform
-                    && sent.field_id.is_none_or(|id| id == fresh.field_id)
+                sent.source_ids() == [fresh.source_id]
+                    && fresh.name == sent.name()
+                    && fresh.transform == sent.transform()
+                    && sent.field_id().is_none_or(|id| id == fresh.field_id)
             });
     let seed_order = seed.default_sort_order();
     seed.current_schema().as_struct() == schema.as_struct()

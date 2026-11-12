@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use object_store::{
-    ObjectStore, StaticCredentialProvider,
+    ObjectStore, ObjectStoreExt, StaticCredentialProvider,
     aws::AmazonS3Builder,
     azure::{AzureConfigKey, MicrosoftAzureBuilder},
     client::SpawnedReqwestConnector,

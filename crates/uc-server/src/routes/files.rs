@@ -25,7 +25,7 @@ use axum::{
 };
 use futures::StreamExt;
 use object_store::{
-    GetOptions, GetRange, ListResult, ObjectMeta, ObjectStore, buffered::BufWriter,
+    GetOptions, GetRange, ListResult, ObjectMeta, ObjectStore, ObjectStoreExt, buffered::BufWriter,
     list::PaginatedListOptions, local::LocalFileSystem, path::Path as ObjectPath,
 };
 use percent_encoding::percent_decode_str;
@@ -301,6 +301,7 @@ impl Target {
                 .skip(start.saturating_sub(dirs))
                 .take(end.saturating_sub(start.max(dirs)))
                 .collect(),
+            extensions: all.extensions,
         };
         Ok((page, (end < total).then(|| end.to_string())))
     }
@@ -418,7 +419,7 @@ async fn open(
     let key = path
         .rest
         .iter()
-        .fold(opened.root.clone(), |key, part| key.child(part.as_str()));
+        .fold(opened.root.clone(), |key, part| key.join(part.as_str()));
     Ok(Target { path, opened, key })
 }
 

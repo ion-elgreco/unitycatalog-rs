@@ -34,7 +34,7 @@ hex.workspace = true
 delta_kernel.workspace = true
 delta_kernel_default_engine.workspace = true
 # Arrow's table printer for `table read`; the kernel's arrow version.
-arrow = { version = "58", default-features = false, features = ["prettyprint"] }
+arrow = { version = "60", default-features = false, features = ["prettyprint"] }
 # The tables of `--output table`; arrow draws with it too.
 comfy-table = { version = "7", default-features = false }
 # `table write`'s random rows; uc-server has the same version.
