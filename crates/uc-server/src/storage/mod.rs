@@ -91,7 +91,12 @@ impl ServerStorage {
             });
         }
         let Some(credentials) = self.credentials(location, op).await? else {
-            let (store, pages) = build_store(location, None, self.vendor.s3_store())?;
+            let (store, pages) = build_store(
+                location,
+                None,
+                self.vendor.s3_store(),
+                self.vendor.azure_blob(),
+            )?;
             return Ok(Opened {
                 store,
                 pages,
@@ -99,7 +104,12 @@ impl ServerStorage {
                 expires_at: None,
             });
         };
-        let (store, pages) = build_store(location, Some(&credentials), self.vendor.s3_store())?;
+        let (store, pages) = build_store(
+            location,
+            Some(&credentials),
+            self.vendor.s3_store(),
+            self.vendor.azure_blob(),
+        )?;
         Ok(Opened {
             store,
             pages,
@@ -128,6 +138,11 @@ impl ServerStorage {
     /// The S3-compatible store of the settings, if not AWS.
     pub fn s3_store(&self) -> Option<&S3Store> {
         self.vendor.s3_store()
+    }
+
+    /// The blob endpoint of Azure locations, if not Azure's.
+    pub fn azure_blob(&self) -> Option<&str> {
+        self.vendor.azure_blob()
     }
 }
 
@@ -239,6 +254,7 @@ pub(crate) fn build_store(
     location: &NormalizedUrl,
     credentials: Option<&TemporaryCredentials>,
     s3_store: Option<&S3Store>,
+    azure_blob: Option<&str>,
 ) -> Result<Built, StorageError> {
     Ok(match location.scheme() {
         UriScheme::S3 => {
@@ -260,7 +276,7 @@ pub(crate) fn build_store(
             (store.clone(), Some(store))
         }
         UriScheme::Abfs | UriScheme::Abfss => {
-            let store = Arc::new(azure(location, credentials)?);
+            let store = Arc::new(azure(location, credentials, azure_blob)?);
             (store.clone(), Some(store))
         }
         UriScheme::File => (Arc::new(LocalFileSystem::new()), None),
@@ -296,14 +312,21 @@ pub(crate) fn s3(
     Ok(builder.build()?)
 }
 
-/// The Azure store of `location` with `credentials`.
+/// The Azure store of `location` with `credentials`, at the blob endpoint
+/// `blob` if it is not Azure's.
 pub(crate) fn azure(
     location: &NormalizedUrl,
     credentials: Option<&TemporaryCredentials>,
+    blob: Option<&str>,
 ) -> Result<MicrosoftAzure, StorageError> {
     let mut builder = MicrosoftAzureBuilder::from_env()
         .with_url(location.as_str())
         .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
+    if let Some(blob) = blob {
+        builder = builder
+            .with_endpoint(blob.to_string())
+            .with_allow_http(true);
+    }
     let sas = credentials
         .and_then(|c| c.azure_user_delegation_sas.as_ref())
         .and_then(|s| s.sas_token.clone());
@@ -437,7 +460,7 @@ mod tests {
             region: "us-east-1".into(),
         };
         let location = NormalizedUrl::parse("s3://bucket/tables/t1").unwrap();
-        let (s3, _) = build_store(&location, Some(&credentials), Some(&store)).unwrap();
+        let (s3, _) = build_store(&location, Some(&credentials), Some(&store), None).unwrap();
         let path = ObjectPath::from("tables/t1/part-0");
         s3.put(&path, PutPayload::from_static(b"x")).await.unwrap();
         assert_eq!(*seen.lock().unwrap(), ["PUT /bucket/tables/t1/part-0"]);

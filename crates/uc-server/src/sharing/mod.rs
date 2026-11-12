@@ -10,7 +10,7 @@
 //! granted. The protocol is read-only. An admin manages shares and
 //! recipients under the UC API (`crate::routes::sharing`).
 
-mod access;
+pub mod access;
 mod catalog;
 
 use std::sync::Arc;

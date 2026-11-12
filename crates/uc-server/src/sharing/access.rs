@@ -77,12 +77,17 @@ impl ServerAccess {
                 }
             }
             UriScheme::Abfs | UriScheme::Abfss => {
-                let store = Arc::new(azure(location, credentials).map_err(internal)?);
+                let blob = storage.azure_blob();
+                let store = Arc::new(azure(location, credentials, blob).map_err(internal)?);
                 let sas = credentials
                     .and_then(|c| c.azure_user_delegation_sas.as_ref())
                     .and_then(|s| s.sas_token.clone());
                 let signer: Arc<dyn FileSigner> = match sas {
-                    Some(sas) => Arc::new(WithSas { sas, expires_at }),
+                    Some(sas) => Arc::new(WithSas {
+                        sas,
+                        blob: blob.map(str::to_string),
+                        expires_at,
+                    }),
                     None => Arc::new(Presigned {
                         store: store.clone(),
                         expires_at,
@@ -95,8 +100,8 @@ impl ServerAccess {
                 }
             }
             UriScheme::Gs => {
-                let (store, _) =
-                    build_store(location, credentials, storage.s3_store()).map_err(internal)?;
+                let (store, _) = build_store(location, credentials, storage.s3_store(), None)
+                    .map_err(internal)?;
                 TableStorage {
                     store,
                     root,
@@ -234,6 +239,8 @@ impl<S: Signer> FileSigner for Presigned<S> {
 /// the shared object.
 struct WithSas {
     sas: String,
+    /// The blob endpoint, if not Azure's.
+    blob: Option<String>,
     expires_at: Option<i64>,
 }
 
@@ -244,7 +251,7 @@ impl FileSigner for WithSas {
             .iter()
             .map(|file| {
                 Ok(SignedFile {
-                    url: blob_url(file, &self.sas)?,
+                    url: blob_url(file, &self.sas, self.blob.as_deref())?,
                     expiration_timestamp: self.expires_at,
                 })
             })
@@ -253,15 +260,18 @@ impl FileSigner for WithSas {
 }
 
 /// `abfss://<container>@<account>.dfs.core.windows.net/<path>` as the URL
-/// of the blob with `sas`.
-fn blob_url(file: &Url, sas: &str) -> Result<String> {
+/// of the blob with `sas`, at the blob endpoint `blob` if it is not Azure's.
+fn blob_url(file: &Url, sas: &str, blob: Option<&str>) -> Result<String> {
     let (container, host) = (file.username(), file.host_str().unwrap_or_default());
     if container.is_empty() || host.is_empty() {
         return Err(internal(format!("not an Azure storage URL: {file}")));
     }
-    let host = host.replacen(".dfs.", ".blob.", 1);
+    let account = match blob {
+        Some(blob) => blob.trim_end_matches('/').to_string(),
+        None => format!("https://{}", host.replacen(".dfs.", ".blob.", 1)),
+    };
     let sas = sas.trim_start_matches('?');
-    Ok(format!("https://{host}/{container}{}?{sas}", file.path()))
+    Ok(format!("{account}/{container}{}?{sas}", file.path()))
 }
 
 /// An OAuth token cannot sign a URL: recipients read Google Cloud Storage
@@ -374,8 +384,12 @@ mod tests {
     fn blob_url_of_an_abfss_file() {
         let file = Url::parse("abfss://data@acct.dfs.core.windows.net/t/part-0.parquet").unwrap();
         assert_eq!(
-            blob_url(&file, "?sv=1&sig=x").unwrap(),
+            blob_url(&file, "?sv=1&sig=x", None).unwrap(),
             "https://acct.blob.core.windows.net/data/t/part-0.parquet?sv=1&sig=x"
+        );
+        assert_eq!(
+            blob_url(&file, "sv=1", Some("http://127.0.0.1:4577/acct/")).unwrap(),
+            "http://127.0.0.1:4577/acct/data/t/part-0.parquet?sv=1"
         );
     }
 

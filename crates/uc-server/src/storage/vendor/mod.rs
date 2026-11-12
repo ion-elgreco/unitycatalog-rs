@@ -112,6 +112,12 @@ pub trait CredentialVendor: Send + Sync + 'static {
         None
     }
 
+    /// The blob endpoint that vended Azure credentials are for, if not
+    /// Azure: an emulator, in tests.
+    fn azure_blob(&self) -> Option<&str> {
+        None
+    }
+
     /// Whether a location of the settings covers `path`.
     fn covers(&self, _path: &NormalizedUrl) -> bool {
         false
@@ -389,6 +395,10 @@ impl CredentialVendor for CloudVendor {
             }
             UriScheme::File => Ok(TemporaryCredentials::default()),
         }
+    }
+
+    fn azure_blob(&self) -> Option<&str> {
+        self.azure.blob_endpoint()
     }
 
     fn s3_store(&self) -> Option<&aws::S3Store> {
