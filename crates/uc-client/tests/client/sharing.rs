@@ -1,21 +1,23 @@
-//! Delta Sharing: shares and recipients, and the protocol that a recipient
-//! reads its shares with, signed in with its bearer token.
+//! Sharing: shares and recipients, and what a recipient reads with a Delta
+//! Sharing client, signed in with its bearer token.
 
 use futures::TryStreamExt;
+use olai_http::CloudClient;
+use opensharing_client::client::DeltaSharingClient;
 use url::Url;
 
 use uc_client::Client;
 use uc_client::models::recipients::v1::AuthenticationType;
-use uc_client::models::shares::v1::SharedDataObject;
-use uc_client::models::sharing::v1::SharingTable;
-use uc_client::models::tables::v1::TableInfo;
+use uc_client::models::shares::v1::{HistoryDataSharingStatus, SharedDataObject, SharedObjectType};
 
 use crate::common::{catalog_and_schema, client, external_table, rejected, server};
 
 /// The table `c.s.<name>`, as `default.<name>` of a share.
 fn shared(name: &str) -> SharedDataObject {
     SharedDataObject {
-        source_table_full_name: format!("c.s.{name}"),
+        source_full_name: format!("c.s.{name}"),
+        data_object_type: Some(SharedObjectType::Table.into()),
+        history_data_sharing_status: Some(HistoryDataSharingStatus::Disabled.into()),
         shared_as_schema: "default".into(),
         shared_as_name: name.into(),
         ..Default::default()
@@ -128,113 +130,134 @@ async fn recipients() {
     assert_eq!(left.len(), 1);
 }
 
-/// The share `analytics` with the table `c.s.events` as `default.events`,
-/// and its recipient `partner`: the client of the API, the root URL of the
-/// server, the bearer token of the recipient and the table.
-async fn shared_table() -> (Client, Url, String, TableInfo) {
+/// The recipient `partner` of the share `analytics`: the client of the API,
+/// the root URL of the server and the bearer token of the recipient.
+async fn partner() -> (Client, Url, String) {
     let url = server().await;
     let uc = Client::new_unauthenticated(url.clone());
-    let storage = catalog_and_schema(&uc).await;
-    let table = external_table(&uc, &storage, "events").await;
     uc.create_share("analytics").await.unwrap();
-    uc.share("analytics")
-        .update()
-        .with_add_objects([shared("events")])
-        .await
-        .unwrap();
     let recipient = uc.create_recipient("partner").await.unwrap();
     uc.recipient("partner")
         .update()
         .with_add_shares(["analytics".to_string()])
         .await
         .unwrap();
-    (uc, url, recipient.bearer_token.unwrap(), table)
+    (uc, url, recipient.bearer_token.unwrap())
 }
 
-/// What a recipient reads, signed in with its bearer token.
+fn reader(url: &Url, token: &str) -> DeltaSharingClient {
+    DeltaSharingClient::new(CloudClient::new_with_token(token), url.clone())
+}
+
+/// Whether the recipient's token `token` signs in.
+async fn signs_in(url: &Url, token: &str) -> bool {
+    let shares: Result<Vec<_>, _> = reader(url, token).list_shares(None).try_collect().await;
+    shares.is_ok()
+}
+
+/// A Delta table of two versions in `dir`: version 1 adds one file.
+fn delta_table(dir: &std::path::Path) {
+    let log = dir.join("_delta_log");
+    std::fs::create_dir_all(&log).unwrap();
+    let v0 = concat!(
+        r#"{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}"#,
+        "\n",
+        r#"{"metaData":{"id":"5fba94ed-9794-4965-ba6e-6ee3c0d22af9","format":{"provider":"parquet","options":{}},"#,
+        r#""schemaString":"{\"type\":\"struct\",\"fields\":[{\"name\":\"id\",\"type\":\"long\",\"nullable\":true,\"metadata\":{}}]}","#,
+        r#""partitionColumns":[],"configuration":{},"createdTime":1700000000000}}"#,
+        "\n",
+    );
+    let v1 = concat!(
+        r#"{"add":{"path":"part-0.parquet","partitionValues":{},"size":100,"modificationTime":1700000000000,"#,
+        r#""dataChange":true,"stats":"{\"numRecords\":3}"}}"#,
+        "\n",
+    );
+    std::fs::write(log.join("00000000000000000000.json"), v0).unwrap();
+    std::fs::write(log.join("00000000000000000001.json"), v1).unwrap();
+}
+
+/// What a recipient reads with a Delta Sharing client.
 #[tokio::test]
 async fn the_protocol() {
-    let (uc, url, token, table) = shared_table().await;
-    let partner = Client::new_with_token(url, token);
-    let shares = partner.sharing_list_shares().await.unwrap();
-    assert_eq!(shares.items.len(), 1);
-    assert_eq!(shares.items[0].name, "analytics");
-    let schemas = partner.sharing_list_schemas("analytics").await.unwrap();
-    let [schema] = schemas.items.as_slice() else {
-        panic!("one schema: {schemas:?}");
-    };
-    assert_eq!(
-        (schema.name.as_str(), schema.share.as_str()),
-        ("default", "analytics")
-    );
-    let events = SharingTable {
-        name: "events".into(),
-        schema: "default".into(),
-        share: "analytics".into(),
-        ..Default::default()
-    };
-    let tables = partner
-        .sharing_list_tables("analytics", "default")
+    let (uc, url, token) = partner().await;
+    let storage = catalog_and_schema(&uc).await;
+    delta_table(&storage.path().join("events"));
+    let table = external_table(&uc, &storage, "events").await;
+    uc.share("analytics")
+        .update()
+        .with_add_objects([shared("events")])
         .await
         .unwrap();
-    assert_eq!(tables.items, std::slice::from_ref(&events));
-    let all = partner.sharing_list_all_tables("analytics").await.unwrap();
-    assert_eq!(all.items, [events]);
 
-    let version = partner
-        .sharing_get_table_version("analytics", "default", "events")
-        .await
+    let partner = reader(&url, &token);
+    let shares: Vec<_> = partner.list_shares(None).try_collect().await.unwrap();
+    assert_eq!(shares.len(), 1);
+    assert_eq!(shares[0].name, "analytics");
+    let schemas: Vec<_> = (partner
+        .list_share_schemas("analytics", None)
+        .try_collect()
+        .await)
         .unwrap();
-    assert_eq!(version.version, 0);
-    let lines = partner
-        .sharing_get_table_metadata("analytics", "default", "events")
-        .await
+    assert_eq!(schemas.len(), 1);
+    assert_eq!(schemas[0].name, "default");
+    let tables: Vec<_> = (partner
+        .list_all_tables("analytics", None)
+        .try_collect()
+        .await)
         .unwrap();
-    let [protocol, metadata] = lines.as_slice() else {
-        panic!("a protocol and a metadata line: {lines:?}");
-    };
-    assert_eq!(protocol.protocol.as_option().unwrap().min_reader_version, 1);
-    let metadata = metadata.metadata.as_option().unwrap();
+    assert_eq!(tables.len(), 1);
     assert_eq!(
-        (metadata.id.as_str(), metadata.name.as_str()),
-        (table.table_id.as_str(), "events")
+        (tables[0].schema.as_str(), tables[0].name.as_str()),
+        ("default", "events")
     );
-    assert_eq!(metadata.format.provider, "parquet");
-    assert!(metadata.schema_string.contains("\"id\""));
-    let queried = partner
-        .sharing_query_table("analytics", "default", "events")
-        .await
+
+    let version = partner.get_table_version("analytics", "default", "events", None);
+    assert_eq!(version.await.unwrap(), 1);
+    let (protocol, metadata) = (partner
+        .get_table_metadata("analytics", "default", "events")
+        .await)
         .unwrap();
-    assert_eq!(queried, lines);
-    rejected(
+    assert_eq!(protocol.min_reader_version(), 1);
+    assert_eq!(metadata.id(), "5fba94ed-9794-4965-ba6e-6ee3c0d22af9");
+    let query = (partner
+        .query_table("analytics", "default", "events", &Default::default())
+        .await)
+        .unwrap();
+    let query = String::from_utf8(query).unwrap();
+    let file = format!("{}/part-0.parquet", table.storage_location.unwrap());
+    assert!(
+        query.lines().count() == 3 && query.contains(&file),
+        "{query}"
+    );
+
+    assert!(
         partner
-            .sharing_get_table_version("analytics", "default", "nope")
-            .await,
-        404,
-        "NOT_FOUND",
+            .get_table_version("analytics", "default", "nope", None)
+            .await
+            .is_err()
     );
-    // A share that the recipient may not read.
+    // A share that the recipient was not granted.
     uc.create_share("secret").await.unwrap();
-    rejected(
-        partner.sharing_list_schemas("secret").await,
-        403,
-        "PERMISSION_DENIED",
-    );
+    let secret: Result<Vec<_>, _> = partner
+        .list_share_schemas("secret", None)
+        .try_collect()
+        .await;
+    assert!(secret.is_err());
 }
 
 /// A new bearer token, or a profile with one, ends the token before.
 #[tokio::test]
 async fn new_tokens() {
-    let (uc, url, token, _) = shared_table().await;
-    let partner = Client::new_with_token(url.clone(), token);
+    let (uc, url, token) = partner().await;
+    assert!(signs_in(&url, &token).await);
     let rotated = uc
         .recipient("partner")
         .rotate_recipient_token()
         .await
         .unwrap();
-    rejected(partner.sharing_list_shares().await, 401, "UNAUTHENTICATED");
-    let partner = Client::new_with_token(url.clone(), rotated.bearer_token.unwrap());
-    partner.sharing_list_shares().await.unwrap();
+    assert!(!signs_in(&url, &token).await);
+    let token = rotated.bearer_token.unwrap();
+    assert!(signs_in(&url, &token).await);
 
     let profile = uc
         .recipient("partner")
@@ -242,10 +265,8 @@ async fn new_tokens() {
         .await
         .unwrap();
     assert_eq!(profile.share_credentials_version, 1);
-    let endpoint = format!("{url}api/2.1/unity-catalog/delta-sharing");
-    assert_eq!(profile.endpoint, endpoint);
+    assert_eq!(profile.endpoint, format!("{url}api/v1/delta-sharing"));
     assert_eq!(profile.expiration_time, None);
-    rejected(partner.sharing_list_shares().await, 401, "UNAUTHENTICATED");
-    let partner = Client::new_with_token(url, profile.bearer_token);
-    partner.sharing_list_shares().await.unwrap();
+    assert!(!signs_in(&url, &token).await);
+    assert!(signs_in(&url, &profile.bearer_token).await);
 }

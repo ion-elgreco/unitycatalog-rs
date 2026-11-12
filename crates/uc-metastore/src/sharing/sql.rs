@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use uc_api::{
-    CreateRecipient, CreateShare, RecipientInfo, ShareInfo, SharedDataObject, UpdateRecipient,
-    UpdateShare,
+    CreateRecipient, CreateShare, HistoryDataSharingStatus, RecipientInfo, ShareInfo,
+    SharedDataObject, SharedObjectType, UpdateRecipient, UpdateShare,
 };
 use uc_common::{Error, Pagination, Result, now_epoch_millis, validate_sql_object_name};
 
@@ -179,18 +179,18 @@ impl SharingOps for SqlMetastore {
             row.comment = Some(c);
         }
 
-        // Objects are unique by `source_table_full_name`.
+        // Objects are unique by type and source name: an object that the
+        // share holds already is replaced.
         let mut objs = row.objects.unwrap_or_default();
         for add in req.add_objects {
-            if !objs
-                .iter()
-                .any(|o| o.source_table_full_name == add.source_table_full_name)
-            {
-                objs.push(add);
+            validate_object(&add)?;
+            match objs.iter_mut().find(|o| same_object(o, &add)) {
+                Some(held) => *held = add,
+                None => objs.push(add),
             }
         }
         for rm in &req.remove_objects {
-            objs.retain(|o| o.source_table_full_name != rm.source_table_full_name);
+            objs.retain(|o| !same_object(o, rm));
         }
         row.objects = if objs.is_empty() { None } else { Some(objs) };
         touch_audit(&mut row.updated_at, &mut row.updated_by, updated_by);
@@ -334,5 +334,32 @@ impl SharingOps for SqlMetastore {
         )
         .await?;
         Ok(row.map(Into::into))
+    }
+}
+
+fn same_object(a: &SharedDataObject, b: &SharedDataObject) -> bool {
+    a.data_object_type == b.data_object_type && a.source_full_name == b.source_full_name
+}
+
+/// The history settings are of tables, and a lowest version needs the
+/// history shared.
+fn validate_object(object: &SharedDataObject) -> Result<()> {
+    let history = object.history_data_sharing_status == HistoryDataSharingStatus::Enabled;
+    if object.data_object_type != SharedObjectType::Table
+        && (history || object.start_version.is_some())
+    {
+        return Err(Error::invalid_argument(format!(
+            "'{}' is not a table: it has no history to share",
+            object.source_full_name
+        )));
+    }
+    match object.start_version {
+        Some(version) if version < 0 => {
+            Err(Error::invalid_argument("start_version cannot be negative"))
+        }
+        Some(_) if !history => Err(Error::invalid_argument(
+            "start_version needs history_data_sharing_status ENABLED",
+        )),
+        _ => Ok(()),
     }
 }

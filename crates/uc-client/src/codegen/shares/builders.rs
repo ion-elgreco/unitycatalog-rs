@@ -179,7 +179,8 @@ impl UpdateShareBuilder {
         self
     }
 
-    /// Tables to add to the share. A table that the share holds already is skipped.
+    /// Objects to add to the share. An object that the share holds already is replaced, which
+    /// changes its shared name and its history settings.
     pub fn with_add_objects<I>(mut self, add_objects: I) -> Self
     where
         I: IntoIterator<Item = SharedDataObject>,
@@ -188,7 +189,7 @@ impl UpdateShareBuilder {
         self
     }
 
-    /// Tables to remove from the share, matched by `source_table_full_name`.
+    /// Objects to remove from the share, matched by `source_full_name` and `data_object_type`.
     pub fn with_remove_objects<I>(mut self, remove_objects: I) -> Self
     where
         I: IntoIterator<Item = SharedDataObject>,

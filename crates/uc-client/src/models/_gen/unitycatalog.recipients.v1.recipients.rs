@@ -1958,6 +1958,265 @@ pub const __ROTATE_RECIPIENT_TOKEN_REQUEST_JSON_ANY: ::buffa::type_registry::Jso
         is_wkt: false,
     };
 
+/// A Delta Sharing profile file (`profile.json`): what a Delta Sharing client needs to connect to
+/// the server as a recipient. The JSON names are lowerCamelCase, as the protocol has them.
+#[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
+#[serde(default)]
+pub struct RecipientProfile {
+    /// Version of the profile file format. Always 1.
+    ///
+    /// Field 1: `share_credentials_version`
+    #[serde(
+        rename = "shareCredentialsVersion",
+        alias = "share_credentials_version",
+        with = "::buffa::json_helpers::int32",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
+    )]
+    pub share_credentials_version: i32,
+    /// URL of the Delta Sharing server: the URL the caller used, ending in
+    /// `/api/v1/delta-sharing`.
+    ///
+    /// Field 2: `endpoint`
+    #[serde(
+        rename = "endpoint",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub endpoint: ::buffa::alloc::string::String,
+    /// The bearer token of the recipient.
+    ///
+    /// Field 3: `bearer_token`
+    #[serde(
+        rename = "bearerToken",
+        alias = "bearer_token",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub bearer_token: ::buffa::alloc::string::String,
+    /// Time at which the token expires, as an ISO 8601 timestamp. The server sends `null`: the tokens
+    /// do not expire.
+    ///
+    /// Field 4: `expiration_time`
+    #[serde(
+        rename = "expirationTime",
+        alias = "expiration_time",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub expiration_time: ::core::option::Option<::buffa::alloc::string::String>,
+    #[serde(skip)]
+    #[doc(hidden)]
+    pub __buffa_unknown_fields: ::buffa::UnknownFields,
+}
+
+impl ::core::fmt::Debug for RecipientProfile {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+        f.debug_struct("RecipientProfile")
+            .field("share_credentials_version", &self.share_credentials_version)
+            .field("endpoint", &self.endpoint)
+            .field("bearer_token", &::core::format_args!("[REDACTED]"))
+            .field("expiration_time", &self.expiration_time)
+            .finish()
+    }
+}
+
+impl RecipientProfile {
+    /// Protobuf type URL for this message, for use with `Any::pack` and
+    /// `Any::unpack_if`.
+    ///
+    /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
+    pub const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.recipients.v1.RecipientProfile";
+}
+
+impl RecipientProfile {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::expiration_time`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_expiration_time(
+        mut self,
+        value: impl Into<::buffa::alloc::string::String>,
+    ) -> Self {
+        self.expiration_time = Some(value.into());
+        self
+    }
+}
+
+impl ::buffa::DefaultInstance for RecipientProfile {
+    fn default_instance() -> &'static Self {
+        static VALUE: ::buffa::__private::OnceBox<RecipientProfile> =
+            ::buffa::__private::OnceBox::new();
+        VALUE.get_or_init(|| ::buffa::alloc::boxed::Box::new(Self::default()))
+    }
+}
+
+impl ::buffa::MessageName for RecipientProfile {
+    const PACKAGE: &'static str = "unitycatalog.recipients.v1";
+    const NAME: &'static str = "RecipientProfile";
+    const FULL_NAME: &'static str = "unitycatalog.recipients.v1.RecipientProfile";
+    const TYPE_URL: &'static str =
+        "type.googleapis.com/unitycatalog.recipients.v1.RecipientProfile";
+}
+
+impl ::buffa::Message for RecipientProfile {
+    /// Returns the total encoded size in bytes.
+    ///
+    /// The result is a `u32`; the protobuf specification requires all
+    /// messages to fit within 2 GiB (2,147,483,647 bytes), so a
+    /// compliant message will never overflow this type.
+    #[allow(clippy::let_and_return)]
+    fn compute_size(&self, _cache: &mut ::buffa::SizeCache) -> u32 {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        let mut size = 0u32;
+        if self.share_credentials_version != 0i32 {
+            size += 1u32 + ::buffa::types::int32_encoded_len(self.share_credentials_version) as u32;
+        }
+        if !self.endpoint.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.endpoint) as u32;
+        }
+        if !self.bearer_token.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.bearer_token) as u32;
+        }
+        if let Some(ref v) = self.expiration_time {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
+        size += self.__buffa_unknown_fields.encoded_len() as u32;
+        size
+    }
+
+    fn write_to(&self, _cache: &mut ::buffa::SizeCache, buf: &mut impl ::buffa::bytes::BufMut) {
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        if self.share_credentials_version != 0i32 {
+            ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_int32(self.share_credentials_version, buf);
+        }
+        if !self.endpoint.is_empty() {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.endpoint, buf);
+        }
+        if !self.bearer_token.is_empty() {
+            ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(&self.bearer_token, buf);
+        }
+        if let Some(ref v) = self.expiration_time {
+            ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        self.__buffa_unknown_fields.write_to(buf);
+    }
+
+    fn merge_field(
+        &mut self,
+        tag: ::buffa::encoding::Tag,
+        buf: &mut impl ::buffa::bytes::Buf,
+        depth: u32,
+    ) -> ::core::result::Result<(), ::buffa::DecodeError> {
+        #[allow(unused_imports)]
+        use ::buffa::bytes::Buf as _;
+
+        #[allow(unused_imports)]
+        use ::buffa::Enumeration as _;
+        match tag.field_number() {
+            1u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 1u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.share_credentials_version = ::buffa::types::decode_int32(buf)?;
+            }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.endpoint, buf)?;
+            }
+            3u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 3u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.bearer_token, buf)?;
+            }
+            4u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 4u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.expiration_time
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
+            _ => {
+                self.__buffa_unknown_fields
+                    .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
+            }
+        }
+        ::core::result::Result::Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.share_credentials_version = 0i32;
+        self.endpoint.clear();
+        self.bearer_token.clear();
+        self.expiration_time = ::core::option::Option::None;
+        self.__buffa_unknown_fields.clear();
+    }
+}
+
+impl ::buffa::ExtensionSet for RecipientProfile {
+    const PROTO_FQN: &'static str = "unitycatalog.recipients.v1.RecipientProfile";
+    fn unknown_fields(&self) -> &::buffa::UnknownFields {
+        &self.__buffa_unknown_fields
+    }
+
+    fn unknown_fields_mut(&mut self) -> &mut ::buffa::UnknownFields {
+        &mut self.__buffa_unknown_fields
+    }
+}
+
+impl ::buffa::json_helpers::ProtoElemJson for RecipientProfile {
+    fn serialize_proto_json<S: ::serde::Serializer>(
+        v: &Self,
+        s: S,
+    ) -> ::core::result::Result<S::Ok, S::Error> {
+        ::serde::Serialize::serialize(v, s)
+    }
+
+    fn deserialize_proto_json<'de, D: ::serde::Deserializer<'de>>(
+        d: D,
+    ) -> ::core::result::Result<Self, D::Error> {
+        <Self as ::serde::Deserialize>::deserialize(d)
+    }
+}
+
+#[doc(hidden)]
+pub const __RECIPIENT_PROFILE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
+    ::buffa::type_registry::JsonAnyEntry {
+        type_url: "type.googleapis.com/unitycatalog.recipients.v1.RecipientProfile",
+        to_json: ::buffa::type_registry::any_to_json::<RecipientProfile>,
+        from_json: ::buffa::type_registry::any_from_json::<RecipientProfile>,
+        is_wkt: false,
+    };
+
 #[derive(Clone, PartialEq, Default, ::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct CreateRecipientProfileRequest {

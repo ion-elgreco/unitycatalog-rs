@@ -161,7 +161,7 @@ impl PyRecipientClient {
     /// Returns:
     ///     A Delta Sharing profile file (`profile.json`): what a Delta Sharing client needs to connect
     ///     to
-    ///     the server as a recipient.
+    ///     the server as a recipient. The JSON names are lowerCamelCase, as the protocol has them.
     pub fn create_recipient_profile(&self, py: Python) -> PyUnityCatalogResult<PyRecipientProfile> {
         let request = self.client.create_recipient_profile();
         #[allow(clippy::let_unit_value)]

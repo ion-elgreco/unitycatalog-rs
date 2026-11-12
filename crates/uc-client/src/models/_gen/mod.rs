@@ -143,12 +143,6 @@ pub mod shares {
     }
 }
 
-pub mod sharing {
-    pub mod v1 {
-        include!("./unitycatalog.sharing.v1.rs");
-    }
-}
-
 pub mod tables {
     pub mod v1 {
         include!("./unitycatalog.tables.v1.rs");

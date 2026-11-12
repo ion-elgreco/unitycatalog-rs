@@ -9,7 +9,6 @@ use crate::codegen::error::Result;
 #[cfg(target_arch = "wasm32")]
 use ::olai_http_wasm::WasmClient as Transport;
 use uc_client::models::recipients::v1::*;
-use uc_client::models::sharing::v1::*;
 use url::Url;
 
 /// HTTP client for service operations

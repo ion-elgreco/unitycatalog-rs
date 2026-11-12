@@ -1280,6 +1280,169 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyAuthenticationType {
     }
 }
 
+/// A member of `unitycatalog._enums.HistoryDataSharingStatus`, or its name.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct PyHistoryDataSharingStatus(pub super::shares::v1::HistoryDataSharingStatus);
+impl PyHistoryDataSharingStatus {
+    /// The name of the value, or `None` for a value without a Python member.
+    fn __name(&self) -> ::core::option::Option<&'static str> {
+        match <super::shares::v1::HistoryDataSharingStatus as ::buffa::Enumeration>::to_i32(&self.0)
+        {
+            1i32 => ::core::option::Option::Some("DISABLED"),
+            2i32 => ::core::option::Option::Some("ENABLED"),
+            _ => ::core::option::Option::None,
+        }
+    }
+}
+
+impl ::core::convert::From<super::shares::v1::HistoryDataSharingStatus>
+    for PyHistoryDataSharingStatus
+{
+    fn from(value: super::shares::v1::HistoryDataSharingStatus) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyHistoryDataSharingStatus>
+    for super::shares::v1::HistoryDataSharingStatus
+{
+    fn from(value: PyHistoryDataSharingStatus) -> Self {
+        value.0
+    }
+}
+
+impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyHistoryDataSharingStatus {
+    type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "HistoryDataSharingStatus"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
+    fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
+        let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
+        let n: i32 = match &*name {
+            "DISABLED" => 1i32,
+            "ENABLED" => 2i32,
+            other => {
+                return ::core::result::Result::Err(::pyo3::exceptions::PyValueError::new_err(
+                    ::std::format!(
+                        "invalid HistoryDataSharingStatus: {:?}; expected one of: DISABLED, ENABLED",
+                        other
+                    ),
+                ));
+            }
+        };
+        ::core::result::Result::Ok(Self(
+            <super::shares::v1::HistoryDataSharingStatus as ::buffa::Enumeration>::from_i32(n)
+                .unwrap_or_default(),
+        ))
+    }
+}
+
+impl<'py> ::pyo3::IntoPyObject<'py> for PyHistoryDataSharingStatus {
+    type Target = ::pyo3::PyAny;
+    type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
+    type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "HistoryDataSharingStatus");
+    fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
+        static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
+            ::pyo3::sync::PyOnceLock::new();
+        let class = CLASS.import(py, "unitycatalog._enums", "HistoryDataSharingStatus")?;
+        let name = self.__name().ok_or_else(|| {
+            ::pyo3::exceptions::PyValueError::new_err(::std::format!(
+                "HistoryDataSharingStatus value {} has no Python member",
+                <super::shares::v1::HistoryDataSharingStatus as ::buffa::Enumeration>::to_i32(
+                    &self.0
+                )
+            ))
+        })?;
+        ::pyo3::types::PyAnyMethods::getattr(class.as_any(), name)
+    }
+}
+
+/// A member of `unitycatalog._enums.SharedObjectType`, or its name.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct PySharedObjectType(pub super::shares::v1::SharedObjectType);
+impl PySharedObjectType {
+    /// The name of the value, or `None` for a value without a Python member.
+    fn __name(&self) -> ::core::option::Option<&'static str> {
+        match <super::shares::v1::SharedObjectType as ::buffa::Enumeration>::to_i32(&self.0) {
+            1i32 => ::core::option::Option::Some("TABLE"),
+            2i32 => ::core::option::Option::Some("VOLUME"),
+            3i32 => ::core::option::Option::Some("AGENT_SKILL"),
+            _ => ::core::option::Option::None,
+        }
+    }
+}
+
+impl ::core::convert::From<super::shares::v1::SharedObjectType> for PySharedObjectType {
+    fn from(value: super::shares::v1::SharedObjectType) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PySharedObjectType> for super::shares::v1::SharedObjectType {
+    fn from(value: PySharedObjectType) -> Self {
+        value.0
+    }
+}
+
+impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PySharedObjectType {
+    type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "SharedObjectType"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
+    fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
+        let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
+        let n: i32 = match &*name {
+            "TABLE" => 1i32,
+            "VOLUME" => 2i32,
+            "AGENT_SKILL" => 3i32,
+            other => {
+                return ::core::result::Result::Err(::pyo3::exceptions::PyValueError::new_err(
+                    ::std::format!(
+                        "invalid SharedObjectType: {:?}; expected one of: TABLE, VOLUME, AGENT_SKILL",
+                        other
+                    ),
+                ));
+            }
+        };
+        ::core::result::Result::Ok(Self(
+            <super::shares::v1::SharedObjectType as ::buffa::Enumeration>::from_i32(n)
+                .unwrap_or_default(),
+        ))
+    }
+}
+
+impl<'py> ::pyo3::IntoPyObject<'py> for PySharedObjectType {
+    type Target = ::pyo3::PyAny;
+    type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
+    type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "SharedObjectType");
+    fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
+        static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
+            ::pyo3::sync::PyOnceLock::new();
+        let class = CLASS.import(py, "unitycatalog._enums", "SharedObjectType")?;
+        let name = self.__name().ok_or_else(|| {
+            ::pyo3::exceptions::PyValueError::new_err(::std::format!(
+                "SharedObjectType value {} has no Python member",
+                <super::shares::v1::SharedObjectType as ::buffa::Enumeration>::to_i32(&self.0)
+            ))
+        })?;
+        ::pyo3::types::PyAnyMethods::getattr(class.as_any(), name)
+    }
+}
+
 /// A member of `unitycatalog._enums.ColumnTypeName`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PyColumnTypeName(pub super::tables::v1::ColumnTypeName);
@@ -10580,6 +10743,71 @@ impl ::core::convert::From<PyRecipientInfo> for super::recipients::v1::Recipient
     }
 }
 
+/// A Delta Sharing profile file (`profile.json`): what a Delta Sharing client needs to connect to
+/// the server as a recipient. The JSON names are lowerCamelCase, as the protocol has them.
+#[::pyo3::pyclass(
+    name = "RecipientProfile",
+    eq,
+    frozen,
+    module = "unitycatalog._core.recipients",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyRecipientProfile(pub super::recipients::v1::RecipientProfile);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3::pymethods]
+impl PyRecipientProfile {
+    /// Version of the profile file format. Always 1.
+    #[getter]
+    fn share_credentials_version(&self) -> i32 {
+        self.0.share_credentials_version
+    }
+
+    /// URL of the Delta Sharing server: the URL the caller used, ending in
+    /// `/api/v1/delta-sharing`.
+    #[getter]
+    fn endpoint(&self) -> ::std::string::String {
+        self.0.endpoint.clone()
+    }
+
+    /// The bearer token of the recipient.
+    #[getter]
+    fn bearer_token(&self) -> ::std::string::String {
+        self.0.bearer_token.clone()
+    }
+
+    /// Time at which the token expires, as an ISO 8601 timestamp. The server sends `null`: the tokens
+    /// do not expire.
+    #[getter]
+    fn expiration_time(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.expiration_time.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[
+                ("share_credentials_version", false),
+                ("endpoint", false),
+                ("bearer_token", true),
+                ("expiration_time", false),
+            ],
+        )
+    }
+}
+
+impl ::core::convert::From<super::recipients::v1::RecipientProfile> for PyRecipientProfile {
+    fn from(value: super::recipients::v1::RecipientProfile) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyRecipientProfile> for super::recipients::v1::RecipientProfile {
+    fn from(value: PyRecipientProfile) -> Self {
+        value.0
+    }
+}
+
 #[::pyo3::pyclass(
     name = "ListSchemasResponse",
     eq,
@@ -13020,7 +13248,7 @@ impl ::core::convert::From<PyListSharesResponse> for super::shares::v1::ListShar
     }
 }
 
-/// A share: a named set of tables that Delta Sharing recipients can read.
+/// A share: a named set of tables, volumes and agent skills that recipients can read.
 #[::pyo3::pyclass(
     name = "ShareInfo",
     eq,
@@ -13081,7 +13309,7 @@ impl PyShareInfo {
         self.0.updated_by.clone()
     }
 
-    /// The tables of the share.
+    /// The objects of the share.
     #[getter]
     fn objects(&self) -> ::std::vec::Vec<PySharedDataObject> {
         self.0
@@ -13122,7 +13350,8 @@ impl ::core::convert::From<PyShareInfo> for super::shares::v1::ShareInfo {
     }
 }
 
-/// A table of a share: a Unity Catalog table and the name under which the recipients see it.
+/// An object of a share: a Unity Catalog table or volume and the name under which the recipients
+/// see it.
 #[::pyo3::pyclass(
     name = "SharedDataObject",
     eq,
@@ -13136,17 +13365,30 @@ pub struct PySharedDataObject(pub super::shares::v1::SharedDataObject);
 #[::pyo3::pymethods]
 impl PySharedDataObject {
     #[new]
-    #[pyo3(signature = (source_table_full_name, shared_as_schema, shared_as_name))]
+    #[pyo3(
+        signature = (
+            source_full_name,
+            shared_as_schema,
+            shared_as_name,
+            *,
+            data_object_type = None,
+            history_data_sharing_status = None,
+            start_version = None
+        )
+    )]
     fn new(
-        source_table_full_name: ::std::string::String,
+        source_full_name: ::std::string::String,
         shared_as_schema: ::std::string::String,
         shared_as_name: ::std::string::String,
+        data_object_type: ::core::option::Option<PySharedObjectType>,
+        history_data_sharing_status: ::core::option::Option<PyHistoryDataSharingStatus>,
+        start_version: ::core::option::Option<i64>,
     ) -> Self {
         let mut inner =
             <super::shares::v1::SharedDataObject as ::core::default::Default>::default();
         {
-            let value = source_table_full_name;
-            inner.source_table_full_name = value;
+            let value = source_full_name;
+            inner.source_full_name = value;
         }
         {
             let value = shared_as_schema;
@@ -13156,35 +13398,94 @@ impl PySharedDataObject {
             let value = shared_as_name;
             inner.shared_as_name = value;
         }
+        {
+            let value = data_object_type;
+            inner.data_object_type = value.map(|e| {
+                ::buffa::EnumValue::Known(
+                    <super::shares::v1::SharedObjectType as ::core::convert::From<_>>::from(e),
+                )
+            });
+        }
+        {
+            let value = history_data_sharing_status;
+            inner.history_data_sharing_status = value.map(|e| {
+                ::buffa::EnumValue::Known(
+                    <super::shares::v1::HistoryDataSharingStatus as ::core::convert::From<_>>::from(
+                        e,
+                    ),
+                )
+            });
+        }
+        {
+            let value = start_version;
+            inner.start_version = value;
+        }
         Self(inner)
     }
 
-    /// Three-level name of the Unity Catalog table: `catalog.schema.table`. A share holds a table
-    /// once.
+    /// Three-level name of the Unity Catalog table or volume: `catalog.schema.name`. An agent skill
+    /// names the volume that holds it. A share holds an object once per type.
     #[getter]
-    fn source_table_full_name(&self) -> ::std::string::String {
-        self.0.source_table_full_name.clone()
+    fn source_full_name(&self) -> ::std::string::String {
+        self.0.source_full_name.clone()
     }
 
-    /// Schema under which the recipients see the table, such as `default`.
+    /// Schema under which the recipients see the object, such as `default`.
     #[getter]
     fn shared_as_schema(&self) -> ::std::string::String {
         self.0.shared_as_schema.clone()
     }
 
-    /// Name under which the recipients see the table.
+    /// Name under which the recipients see the object.
     #[getter]
     fn shared_as_name(&self) -> ::std::string::String {
         self.0.shared_as_name.clone()
+    }
+
+    /// What the object is. A table, if not set.
+    #[getter]
+    fn data_object_type(&self) -> ::core::option::Option<PySharedObjectType> {
+        self.0
+            .data_object_type
+            .as_ref()
+            .and_then(|e| e.as_known())
+            .filter(|e| {
+                <super::shares::v1::SharedObjectType as ::buffa::Enumeration>::to_i32(e) != 0
+            })
+            .map(PySharedObjectType::from)
+    }
+
+    /// Of a table: whether recipients read its history. `DISABLED`, if not set.
+    #[getter]
+    fn history_data_sharing_status(&self) -> ::core::option::Option<PyHistoryDataSharingStatus> {
+        self.0
+            .history_data_sharing_status
+            .as_ref()
+            .and_then(|e| e.as_known())
+            .filter(|e| {
+                <super::shares::v1::HistoryDataSharingStatus as ::buffa::Enumeration>::to_i32(e)
+                    != 0
+            })
+            .map(PyHistoryDataSharingStatus::from)
+    }
+
+    /// Of a table that shares its history: the lowest version that recipients read. Without it,
+    /// they read from version 0.
+    #[getter]
+    fn start_version(&self) -> ::core::option::Option<i64> {
+        self.0.start_version
     }
 
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
             &[
-                ("source_table_full_name", false),
+                ("source_full_name", false),
                 ("shared_as_schema", false),
                 ("shared_as_name", false),
+                ("data_object_type", false),
+                ("history_data_sharing_status", false),
+                ("start_version", false),
             ],
         )
     }
@@ -13198,624 +13499,6 @@ impl ::core::convert::From<super::shares::v1::SharedDataObject> for PySharedData
 
 impl ::core::convert::From<PySharedDataObject> for super::shares::v1::SharedDataObject {
     fn from(value: PySharedDataObject) -> Self {
-        value.0
-    }
-}
-
-/// A Delta Sharing profile file (`profile.json`): what a Delta Sharing client needs to connect to
-/// the server as a recipient.
-#[::pyo3::pyclass(
-    name = "RecipientProfile",
-    eq,
-    frozen,
-    module = "unitycatalog._core.sharing",
-    from_py_object
-)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PyRecipientProfile(pub super::sharing::v1::RecipientProfile);
-#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3::pymethods]
-impl PyRecipientProfile {
-    /// Version of the profile file format. Always 1.
-    #[getter]
-    fn share_credentials_version(&self) -> i32 {
-        self.0.share_credentials_version
-    }
-
-    /// URL of the Delta Sharing server: the URL the caller used, ending in
-    /// `/api/2.1/unity-catalog/delta-sharing`.
-    #[getter]
-    fn endpoint(&self) -> ::std::string::String {
-        self.0.endpoint.clone()
-    }
-
-    /// The bearer token of the recipient.
-    #[getter]
-    fn bearer_token(&self) -> ::std::string::String {
-        self.0.bearer_token.clone()
-    }
-
-    /// Time at which the token expires, as an ISO 8601 timestamp. The server sends `null`: the tokens
-    /// do not expire.
-    #[getter]
-    fn expiration_time(&self) -> ::core::option::Option<::std::string::String> {
-        self.0.expiration_time.clone()
-    }
-
-    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
-        __python_repr(
-            slf.as_any(),
-            &[
-                ("share_credentials_version", false),
-                ("endpoint", false),
-                ("bearer_token", true),
-                ("expiration_time", false),
-            ],
-        )
-    }
-}
-
-impl ::core::convert::From<super::sharing::v1::RecipientProfile> for PyRecipientProfile {
-    fn from(value: super::sharing::v1::RecipientProfile) -> Self {
-        Self(value)
-    }
-}
-
-impl ::core::convert::From<PyRecipientProfile> for super::sharing::v1::RecipientProfile {
-    fn from(value: PyRecipientProfile) -> Self {
-        value.0
-    }
-}
-
-/// The format of the data files of a table.
-#[::pyo3::pyclass(
-    name = "SharingFormat",
-    eq,
-    frozen,
-    module = "unitycatalog._core.sharing",
-    from_py_object
-)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PySharingFormat(pub super::sharing::v1::SharingFormat);
-#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3::pymethods]
-impl PySharingFormat {
-    /// Name of the file format. Always `parquet`.
-    #[getter]
-    fn provider(&self) -> ::std::string::String {
-        self.0.provider.clone()
-    }
-
-    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
-        __python_repr(slf.as_any(), &[("provider", false)])
-    }
-}
-
-impl ::core::convert::From<super::sharing::v1::SharingFormat> for PySharingFormat {
-    fn from(value: super::sharing::v1::SharingFormat) -> Self {
-        Self(value)
-    }
-}
-
-impl ::core::convert::From<PySharingFormat> for super::sharing::v1::SharingFormat {
-    fn from(value: PySharingFormat) -> Self {
-        value.0
-    }
-}
-
-/// The version of a table. The response has no body.
-#[::pyo3::pyclass(
-    name = "SharingGetTableVersionResponse",
-    eq,
-    frozen,
-    module = "unitycatalog._core.sharing",
-    from_py_object
-)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PySharingGetTableVersionResponse(pub super::sharing::v1::SharingGetTableVersionResponse);
-#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3::pymethods]
-impl PySharingGetTableVersionResponse {
-    /// Version of the table, from the `Delta-Table-Version` header. Always 0: the server does not
-    /// read the Delta log.
-    #[getter]
-    fn version(&self) -> i64 {
-        self.0.version
-    }
-
-    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
-        __python_repr(slf.as_any(), &[("version", false)])
-    }
-}
-
-impl ::core::convert::From<super::sharing::v1::SharingGetTableVersionResponse>
-    for PySharingGetTableVersionResponse
-{
-    fn from(value: super::sharing::v1::SharingGetTableVersionResponse) -> Self {
-        Self(value)
-    }
-}
-
-impl ::core::convert::From<PySharingGetTableVersionResponse>
-    for super::sharing::v1::SharingGetTableVersionResponse
-{
-    fn from(value: PySharingGetTableVersionResponse) -> Self {
-        value.0
-    }
-}
-
-#[::pyo3::pyclass(
-    name = "SharingListSchemasResponse",
-    eq,
-    frozen,
-    module = "unitycatalog._core.sharing",
-    from_py_object
-)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PySharingListSchemasResponse(pub super::sharing::v1::SharingListSchemasResponse);
-#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3::pymethods]
-impl PySharingListSchemasResponse {
-    /// The schemas, sorted by name.
-    #[getter]
-    fn items(&self) -> ::std::vec::Vec<PySharingSchema> {
-        self.0
-            .items
-            .iter()
-            .cloned()
-            .map(PySharingSchema::from)
-            .collect()
-    }
-
-    /// Opaque token of the next page. The server does not send it: the first page holds all
-    /// schemas.
-    #[getter]
-    fn next_page_token(&self) -> ::core::option::Option<::std::string::String> {
-        self.0.next_page_token.clone()
-    }
-
-    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
-        __python_repr(
-            slf.as_any(),
-            &[("items", false), ("next_page_token", false)],
-        )
-    }
-}
-
-impl ::core::convert::From<super::sharing::v1::SharingListSchemasResponse>
-    for PySharingListSchemasResponse
-{
-    fn from(value: super::sharing::v1::SharingListSchemasResponse) -> Self {
-        Self(value)
-    }
-}
-
-impl ::core::convert::From<PySharingListSchemasResponse>
-    for super::sharing::v1::SharingListSchemasResponse
-{
-    fn from(value: PySharingListSchemasResponse) -> Self {
-        value.0
-    }
-}
-
-#[::pyo3::pyclass(
-    name = "SharingListSharesResponse",
-    eq,
-    frozen,
-    module = "unitycatalog._core.sharing",
-    from_py_object
-)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PySharingListSharesResponse(pub super::sharing::v1::SharingListSharesResponse);
-#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3::pymethods]
-impl PySharingListSharesResponse {
-    /// The shares.
-    #[getter]
-    fn items(&self) -> ::std::vec::Vec<PySharingShare> {
-        self.0
-            .items
-            .iter()
-            .cloned()
-            .map(PySharingShare::from)
-            .collect()
-    }
-
-    /// Opaque token of the next page. The server does not send it: the first page holds all shares.
-    #[getter]
-    fn next_page_token(&self) -> ::core::option::Option<::std::string::String> {
-        self.0.next_page_token.clone()
-    }
-
-    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
-        __python_repr(
-            slf.as_any(),
-            &[("items", false), ("next_page_token", false)],
-        )
-    }
-}
-
-impl ::core::convert::From<super::sharing::v1::SharingListSharesResponse>
-    for PySharingListSharesResponse
-{
-    fn from(value: super::sharing::v1::SharingListSharesResponse) -> Self {
-        Self(value)
-    }
-}
-
-impl ::core::convert::From<PySharingListSharesResponse>
-    for super::sharing::v1::SharingListSharesResponse
-{
-    fn from(value: PySharingListSharesResponse) -> Self {
-        value.0
-    }
-}
-
-#[::pyo3::pyclass(
-    name = "SharingListTablesResponse",
-    eq,
-    frozen,
-    module = "unitycatalog._core.sharing",
-    from_py_object
-)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PySharingListTablesResponse(pub super::sharing::v1::SharingListTablesResponse);
-#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3::pymethods]
-impl PySharingListTablesResponse {
-    /// The tables.
-    #[getter]
-    fn items(&self) -> ::std::vec::Vec<PySharingTable> {
-        self.0
-            .items
-            .iter()
-            .cloned()
-            .map(PySharingTable::from)
-            .collect()
-    }
-
-    /// Opaque token of the next page. The server does not send it: the first page holds all tables.
-    #[getter]
-    fn next_page_token(&self) -> ::core::option::Option<::std::string::String> {
-        self.0.next_page_token.clone()
-    }
-
-    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
-        __python_repr(
-            slf.as_any(),
-            &[("items", false), ("next_page_token", false)],
-        )
-    }
-}
-
-impl ::core::convert::From<super::sharing::v1::SharingListTablesResponse>
-    for PySharingListTablesResponse
-{
-    fn from(value: super::sharing::v1::SharingListTablesResponse) -> Self {
-        Self(value)
-    }
-}
-
-impl ::core::convert::From<PySharingListTablesResponse>
-    for super::sharing::v1::SharingListTablesResponse
-{
-    fn from(value: PySharingListTablesResponse) -> Self {
-        value.0
-    }
-}
-
-/// The metadata of a table.
-#[::pyo3::pyclass(
-    name = "SharingMetadata",
-    eq,
-    frozen,
-    module = "unitycatalog._core.sharing",
-    from_py_object
-)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PySharingMetadata(pub super::sharing::v1::SharingMetadata);
-#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3::pymethods]
-impl PySharingMetadata {
-    /// Unique identifier of the table. Empty when the table has none.
-    #[getter]
-    fn id(&self) -> ::std::string::String {
-        self.0.id.clone()
-    }
-
-    /// Name of the Unity Catalog table.
-    #[getter]
-    fn name(&self) -> ::std::string::String {
-        self.0.name.clone()
-    }
-
-    /// Format of the data files of the table.
-    #[getter]
-    fn format(&self) -> ::core::option::Option<PySharingFormat> {
-        self.0
-            .format
-            .clone()
-            .into_option()
-            .map(PySharingFormat::from)
-    }
-
-    /// The columns of the Unity Catalog table: its `columns` as a JSON array in a string, not a Delta
-    /// schema. Empty when the table has no columns.
-    #[getter]
-    fn schema_string(&self) -> ::std::string::String {
-        self.0.schema_string.clone()
-    }
-
-    /// Names of the partition columns. Always empty.
-    #[getter]
-    fn partition_columns(&self) -> ::std::vec::Vec<::std::string::String> {
-        self.0.partition_columns.clone()
-    }
-
-    /// Configuration of the table. Always empty.
-    #[getter]
-    fn configuration(
-        &self,
-    ) -> ::std::collections::HashMap<::std::string::String, ::std::string::String> {
-        self.0.configuration.clone()
-    }
-
-    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
-        __python_repr(
-            slf.as_any(),
-            &[
-                ("id", false),
-                ("name", false),
-                ("format", false),
-                ("schema_string", false),
-                ("partition_columns", false),
-                ("configuration", false),
-            ],
-        )
-    }
-}
-
-impl ::core::convert::From<super::sharing::v1::SharingMetadata> for PySharingMetadata {
-    fn from(value: super::sharing::v1::SharingMetadata) -> Self {
-        Self(value)
-    }
-}
-
-impl ::core::convert::From<PySharingMetadata> for super::sharing::v1::SharingMetadata {
-    fn from(value: PySharingMetadata) -> Self {
-        value.0
-    }
-}
-
-/// The protocol of a table: the minimum version of the Delta Sharing reader that can read it.
-#[::pyo3::pyclass(
-    name = "SharingProtocol",
-    eq,
-    frozen,
-    module = "unitycatalog._core.sharing",
-    from_py_object
-)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PySharingProtocol(pub super::sharing::v1::SharingProtocol);
-#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3::pymethods]
-impl PySharingProtocol {
-    /// Minimum reader version. Always 1.
-    #[getter]
-    fn min_reader_version(&self) -> i32 {
-        self.0.min_reader_version
-    }
-
-    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
-        __python_repr(slf.as_any(), &[("min_reader_version", false)])
-    }
-}
-
-impl ::core::convert::From<super::sharing::v1::SharingProtocol> for PySharingProtocol {
-    fn from(value: super::sharing::v1::SharingProtocol) -> Self {
-        Self(value)
-    }
-}
-
-impl ::core::convert::From<PySharingProtocol> for super::sharing::v1::SharingProtocol {
-    fn from(value: PySharingProtocol) -> Self {
-        value.0
-    }
-}
-
-/// A schema of a share: the `shared_as_schema` of one or more of its tables.
-#[::pyo3::pyclass(
-    name = "SharingSchema",
-    eq,
-    frozen,
-    module = "unitycatalog._core.sharing",
-    from_py_object
-)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PySharingSchema(pub super::sharing::v1::SharingSchema);
-#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3::pymethods]
-impl PySharingSchema {
-    /// Name of the schema.
-    #[getter]
-    fn name(&self) -> ::std::string::String {
-        self.0.name.clone()
-    }
-
-    /// Name of the share.
-    #[getter]
-    fn share(&self) -> ::std::string::String {
-        self.0.share.clone()
-    }
-
-    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
-        __python_repr(slf.as_any(), &[("name", false), ("share", false)])
-    }
-}
-
-impl ::core::convert::From<super::sharing::v1::SharingSchema> for PySharingSchema {
-    fn from(value: super::sharing::v1::SharingSchema) -> Self {
-        Self(value)
-    }
-}
-
-impl ::core::convert::From<PySharingSchema> for super::sharing::v1::SharingSchema {
-    fn from(value: PySharingSchema) -> Self {
-        value.0
-    }
-}
-
-/// A share that the recipient can read.
-#[::pyo3::pyclass(
-    name = "SharingShare",
-    eq,
-    frozen,
-    module = "unitycatalog._core.sharing",
-    from_py_object
-)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PySharingShare(pub super::sharing::v1::SharingShare);
-#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3::pymethods]
-impl PySharingShare {
-    /// Name of the share.
-    #[getter]
-    fn name(&self) -> ::std::string::String {
-        self.0.name.clone()
-    }
-
-    /// Unique identifier of the share. The server does not send it.
-    #[getter]
-    fn id(&self) -> ::core::option::Option<::std::string::String> {
-        self.0.id.clone()
-    }
-
-    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
-        __python_repr(slf.as_any(), &[("name", false), ("id", false)])
-    }
-}
-
-impl ::core::convert::From<super::sharing::v1::SharingShare> for PySharingShare {
-    fn from(value: super::sharing::v1::SharingShare) -> Self {
-        Self(value)
-    }
-}
-
-impl ::core::convert::From<PySharingShare> for super::sharing::v1::SharingShare {
-    fn from(value: PySharingShare) -> Self {
-        value.0
-    }
-}
-
-/// A table of a share, by the name under which the recipient sees it.
-#[::pyo3::pyclass(
-    name = "SharingTable",
-    eq,
-    frozen,
-    module = "unitycatalog._core.sharing",
-    from_py_object
-)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PySharingTable(pub super::sharing::v1::SharingTable);
-#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3::pymethods]
-impl PySharingTable {
-    /// Name of the table.
-    #[getter]
-    fn name(&self) -> ::std::string::String {
-        self.0.name.clone()
-    }
-
-    /// Name of the schema of the table.
-    #[getter]
-    fn schema(&self) -> ::std::string::String {
-        self.0.schema.clone()
-    }
-
-    /// Name of the share.
-    #[getter]
-    fn share(&self) -> ::std::string::String {
-        self.0.share.clone()
-    }
-
-    /// Unique identifier of the table. The server does not send it.
-    #[getter]
-    fn id(&self) -> ::core::option::Option<::std::string::String> {
-        self.0.id.clone()
-    }
-
-    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
-        __python_repr(
-            slf.as_any(),
-            &[
-                ("name", false),
-                ("schema", false),
-                ("share", false),
-                ("id", false),
-            ],
-        )
-    }
-}
-
-impl ::core::convert::From<super::sharing::v1::SharingTable> for PySharingTable {
-    fn from(value: super::sharing::v1::SharingTable) -> Self {
-        Self(value)
-    }
-}
-
-impl ::core::convert::From<PySharingTable> for super::sharing::v1::SharingTable {
-    fn from(value: PySharingTable) -> Self {
-        value.0
-    }
-}
-
-/// One line of the NDJSON answer of `SharingGetTableMetadata` and `SharingQueryTable`: an object
-/// with one key. The first line holds `protocol`, the second `metaData`.
-#[::pyo3::pyclass(
-    name = "SharingTableLine",
-    eq,
-    frozen,
-    module = "unitycatalog._core.sharing",
-    from_py_object
-)]
-#[derive(Clone, Debug, PartialEq)]
-pub struct PySharingTableLine(pub super::sharing::v1::SharingTableLine);
-#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
-#[::pyo3::pymethods]
-impl PySharingTableLine {
-    /// The protocol of the table.
-    #[getter]
-    fn protocol(&self) -> ::core::option::Option<PySharingProtocol> {
-        self.0
-            .protocol
-            .clone()
-            .into_option()
-            .map(PySharingProtocol::from)
-    }
-
-    /// The metadata of the table.
-    #[getter]
-    fn metadata(&self) -> ::core::option::Option<PySharingMetadata> {
-        self.0
-            .metadata
-            .clone()
-            .into_option()
-            .map(PySharingMetadata::from)
-    }
-
-    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
-        __python_repr(slf.as_any(), &[("protocol", false), ("metadata", false)])
-    }
-}
-
-impl ::core::convert::From<super::sharing::v1::SharingTableLine> for PySharingTableLine {
-    fn from(value: super::sharing::v1::SharingTableLine) -> Self {
-        Self(value)
-    }
-}
-
-impl ::core::convert::From<PySharingTableLine> for super::sharing::v1::SharingTableLine {
-    fn from(value: PySharingTableLine) -> Self {
         value.0
     }
 }

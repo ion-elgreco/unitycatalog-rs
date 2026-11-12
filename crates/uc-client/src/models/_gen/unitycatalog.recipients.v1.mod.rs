@@ -26,6 +26,7 @@ pub mod __buffa {
         reg.register_json_any(super::__UPDATE_RECIPIENT_JSON_ANY);
         reg.register_json_any(super::__DELETE_RECIPIENT_REQUEST_JSON_ANY);
         reg.register_json_any(super::__ROTATE_RECIPIENT_TOKEN_REQUEST_JSON_ANY);
+        reg.register_json_any(super::__RECIPIENT_PROFILE_JSON_ANY);
         reg.register_json_any(super::__CREATE_RECIPIENT_PROFILE_REQUEST_JSON_ANY);
     }
 }

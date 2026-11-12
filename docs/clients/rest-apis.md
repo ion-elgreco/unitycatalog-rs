@@ -8,7 +8,8 @@ The server has upstream's REST APIs, so clients of upstream's server use it as t
 | `/api/2.1/unity-catalog` | Unity Catalog REST API | Catalogs, schemas, tables, volumes, functions, models, grants and credentials. |
 | `/api/2.1/unity-catalog/delta/v1` | Delta REST API | Managed Delta tables, from Delta 4.3 and delta-kernel-rs. |
 | `/api/2.1/unity-catalog/iceberg/v1` | Iceberg REST catalog | Iceberg clients, such as PyIceberg. |
-| `/api/2.1/unity-catalog/delta-sharing` | Delta Sharing | Recipients of shares. |
+| `/api/v1/delta-sharing` | Delta Sharing | Recipients of shares: tables. |
+| `/api/1.0/opensharing` | Open Sharing | Recipients of shares: tables, volumes and agent skills. |
 | `/api/1.0/unity-control` | Control plane | Token exchange, and SCIM users and groups. |
 | `/api/2.0/fs` | Files API | The files of volumes and, read-only, of tables, as the Databricks Files API has them. |
 
@@ -86,10 +87,30 @@ curl "$fs/directories/Tables/main/default/events/_delta_log"
   `disable_experimental_files_api_client=True` in the SDK's `Config`: it then sends each upload
   as one `PUT`.
 
-## Delta Sharing
+## Delta Sharing and Open Sharing
 
-`/shares` and `/recipients`, in the Unity Catalog REST API, make shares and recipients. A recipient
-reads the shares with its own token, through the Delta Sharing protocol.
+`/shares` and `/recipients`, in the Unity Catalog REST API, make shares and recipients. A share
+holds tables, volumes and agent skills. An agent skill is a volume with a `SKILL.md` file. A
+recipient reads its shares with its own token, which starts with `dsr_`:
 
-!!! warning "Not complete"
-    The protocol does not yet give the data: a query answers no files.
+- `/api/v1/delta-sharing` is the Delta Sharing protocol, for clients such as `delta-sharing` and
+  `deltalake`. It has the tables of a share. A query answers the files of a Delta table as URLs
+  that the recipient reads for one hour at most.
+- `/api/1.0/opensharing` is the Open Sharing protocol. It has the tables too, and the volumes and
+  agent skills, and it gives temporary read-only credentials for each.
+
+A table in a share gives its latest version only. With `history_data_sharing_status` `ENABLED`,
+recipients read older versions too, by version or by time; `start_version` is the lowest version
+they read. To change the settings or the shared name of an object, add it to the share again.
+
+`POST /recipients/{name}/profile` gives the profile file of a Delta Sharing client.
+
+A share that a recipient was not granted answers 404, as a share that does not exist.
+
+!!! warning "Limits"
+    - Delta tables only. A query has no change data feed (`/changes`) and no `delta` response
+      format.
+    - File URLs are for S3 and Azure. For Google Cloud Storage, recipients use the temporary
+      credentials of the Open Sharing protocol.
+    - A table under a local path answers `file://` URLs, which only a recipient on the same
+      machine can read.

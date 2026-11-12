@@ -23,7 +23,6 @@ from . import (
     scim as scim,
     search as search,
     shares as shares,
-    sharing as sharing,
     tables as tables,
     tokens as tokens,
     volumes as volumes,
@@ -108,13 +107,6 @@ from .scim import (
 )
 from .search import SearchObjectsResponse
 from .shares import ShareClient, ShareInfo
-from .sharing import (
-    SharingGetTableVersionResponse,
-    SharingListSchemasResponse,
-    SharingListSharesResponse,
-    SharingListTablesResponse,
-    SharingTableLine,
-)
 from .tables import ColumnInfo, DependencyList, StagingTableInfo, TableClient, TableInfo
 from .tokens import PatInfo, TokenClient
 from .volumes import VolumeClient, VolumeInfo
@@ -168,7 +160,6 @@ __all__ = [
     "scim",
     "search",
     "shares",
-    "sharing",
     "tables",
     "tokens",
     "volumes",
@@ -778,7 +769,7 @@ class Client:
             comment: User-provided free-form text description.
 
         Returns:
-            A share: a named set of tables that Delta Sharing recipients can read.
+            A share: a named set of tables, volumes and agent skills that recipients can read.
         """
     def create_share_async(
         self, /, name: str, *, comment: str | None = None
@@ -2767,109 +2758,6 @@ class Client:
     def share(self, /, share_name: str) -> ShareClient:
         """
         The requests on one `ShareInfo`. It sends no request itself.
-        """
-    def sharing_get_table_metadata(
-        self, /, share: str, schema: str, table: str
-    ) -> list[SharingTableLine]:
-        """
-        Get the protocol and the metadata of a table. The response also has the version of the table in the
-        `Delta-Table-Version` header (always 0).
-
-        Returns:
-            One line of the NDJSON answer of `SharingGetTableMetadata` and `SharingQueryTable`: an
-            object
-            with one key. The first line holds `protocol`, the second `metaData`.
-        """
-    def sharing_get_table_metadata_async(
-        self, /, share: str, schema: str, table: str
-    ) -> Future[list[SharingTableLine]]:
-        """
-        Like `sharing_get_table_metadata`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-        """
-    def sharing_get_table_version(
-        self, /, share: str, schema: str, table: str
-    ) -> SharingGetTableVersionResponse:
-        """
-        Get the version of a table.
-
-        Returns:
-            The version of a table. The response has no body.
-        """
-    def sharing_get_table_version_async(
-        self, /, share: str, schema: str, table: str
-    ) -> Future[SharingGetTableVersionResponse]:
-        """
-        Like `sharing_get_table_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-        """
-    def sharing_list_all_tables(self, /, share: str) -> SharingListTablesResponse:
-        """
-        List the tables of all schemas of a share.
-
-        Returns:
-            The requested resource
-        """
-    def sharing_list_all_tables_async(
-        self, /, share: str
-    ) -> Future[SharingListTablesResponse]:
-        """
-        Like `sharing_list_all_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-        """
-    def sharing_list_schemas(self, /, share: str) -> SharingListSchemasResponse:
-        """
-        List the schemas of a share.
-
-        Returns:
-            The requested resource
-        """
-    def sharing_list_schemas_async(
-        self, /, share: str
-    ) -> Future[SharingListSchemasResponse]:
-        """
-        Like `sharing_list_schemas`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-        """
-    def sharing_list_shares(self, /) -> SharingListSharesResponse:
-        """
-        List the shares that the recipient can read.
-
-        Returns:
-            The requested resource
-        """
-    def sharing_list_shares_async(self, /) -> Future[SharingListSharesResponse]:
-        """
-        Like `sharing_list_shares`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-        """
-    def sharing_list_tables(
-        self, /, share: str, schema: str
-    ) -> SharingListTablesResponse:
-        """
-        List the tables of a schema of a share.
-
-        Returns:
-            The requested resource
-        """
-    def sharing_list_tables_async(
-        self, /, share: str, schema: str
-    ) -> Future[SharingListTablesResponse]:
-        """
-        Like `sharing_list_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-        """
-    def sharing_query_table(
-        self, /, share: str, schema: str, table: str
-    ) -> list[SharingTableLine]:
-        """
-        Read a table. The server does not read the Delta log: the answer is that of
-        `SharingGetTableMetadata`, with no data files. The server ignores the request body.
-
-        Returns:
-            One line of the NDJSON answer of `SharingGetTableMetadata` and `SharingQueryTable`: an
-            object
-            with one key. The first line holds `protocol`, the second `metaData`.
-        """
-    def sharing_query_table_async(
-        self, /, share: str, schema: str, table: str
-    ) -> Future[list[SharingTableLine]]:
-        """
-        Like `sharing_query_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
     def table(self, /, table_name: str) -> TableClient:
         """

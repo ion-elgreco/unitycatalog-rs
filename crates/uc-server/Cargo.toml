@@ -28,6 +28,7 @@ uc-storage.workspace = true
 
 # Credential vending: the AWS STS request, and Azure SAS signing.
 http.workspace = true
+url.workspace = true
 hmac = "0.12"
 # The trusted proxies of the forward sign-in (`UC_AUTH_MODE=forward`).
 ipnet = "2"
@@ -72,6 +73,9 @@ bytes.workspace = true
 futures.workspace = true
 object_store.workspace = true
 iceberg.workspace = true
+opensharing-api.workspace = true
+opensharing-common.workspace = true
+opensharing-engine.workspace = true
 flate2.workspace = true
 uuid.workspace = true
 

@@ -55,7 +55,6 @@ WELL_KNOWN = {
 GROUPS = {
     "Delta REST API": ["DeltaApiService"],
     "Iceberg REST catalog": ["IcebergService"],
-    "Delta Sharing": ["SharingService"],
     "Control plane": ["AuthService", "ScimService"],
     "Health": ["HealthService"],
 }
@@ -484,7 +483,7 @@ class Api:
                 "version": version,
                 "description": (
                     "The HTTP APIs of the server: the Unity Catalog REST API, the Delta REST API, "
-                    "the Iceberg REST catalog, Delta Sharing and the control plane. With "
+                    "the Iceberg REST catalog and the control plane. With "
                     "authorization on, a request carries a token: `Authorization: Bearer <token>`."
                 ),
             },

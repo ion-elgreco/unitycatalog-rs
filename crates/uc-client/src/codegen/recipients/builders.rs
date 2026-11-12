@@ -16,7 +16,6 @@ use crate::codegen::error::Result;
 use futures::{StreamExt, TryStreamExt};
 use std::future::IntoFuture;
 use uc_client::models::recipients::v1::*;
-use uc_client::models::sharing::v1::*;
 
 /// Builder for listing recipients
 pub struct ListRecipientsBuilder {

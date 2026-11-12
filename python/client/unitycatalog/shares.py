@@ -7,10 +7,16 @@ from unitycatalog._core.shares import (
     SharedDataObject,
     ShareInfo,
 )
+from unitycatalog._enums import (
+    HistoryDataSharingStatus,
+    SharedObjectType,
+)
 
 __all__ = [
+    "HistoryDataSharingStatus",
     "ListSharesResponse",
     "ShareClient",
     "ShareInfo",
     "SharedDataObject",
+    "SharedObjectType",
 ]

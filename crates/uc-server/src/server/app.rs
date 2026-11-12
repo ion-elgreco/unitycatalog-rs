@@ -176,6 +176,8 @@ pub fn build_app(state: AppState) -> Router {
         .merge(crate::authn::sign_in::router())
         // What the server takes as a bearer token (`crate::authn::resource`).
         .merge(crate::authn::resource::router())
+        // What recipients of shares read (`crate::sharing`).
+        .merge(crate::sharing::router(&state))
         // Inside auth, so that the audit layer sees the resolved
         // `Principal` and records the status of the final response.
         .layer(middleware::from_fn_with_state(state.clone(), audit_layer))

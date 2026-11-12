@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import time
+import urllib.request
 
 import pytest
 from _helpers import Calls, unique
@@ -867,7 +868,7 @@ def test_delta_api(uc: Calls, schema: tuple[str, str]) -> None:
 
 
 def test_shares_recipients_and_delta_sharing(
-    uc: Calls, schema: tuple[str, str], server, mode: str
+    uc: Calls, schema: tuple[str, str]
 ) -> None:
     catalog, schema_name = schema
     staging = uc.create_staging_table("orders", catalog, schema_name)
@@ -883,7 +884,13 @@ def test_shares_recipients_and_delta_sharing(
     share_name, recipient_name = unique("share"), unique("recipient")
     share = uc.create_share(share_name, comment="for partners")
     assert (share.name, share.objects) == (share_name, [])
-    shared = SharedDataObject(f"{catalog}.{schema_name}.orders", "sales", "orders")
+    shared = SharedDataObject(
+        f"{catalog}.{schema_name}.orders",
+        "sales",
+        "orders",
+        data_object_type="TABLE",
+        history_data_sharing_status="DISABLED",
+    )
     assert uc.share(share_name).update(add_objects=[shared]).objects == [shared]
     assert share_name in [s.name for s in uc.list_shares()]
 
@@ -893,22 +900,19 @@ def test_shares_recipients_and_delta_sharing(
     assert (updated.shares, updated.bearer_token) == ([share_name], None)
     assert recipient_name in [r.name for r in uc.list_recipients()]
     profile = uc.recipient(recipient_name).create_recipient_profile()
-    assert profile.endpoint.endswith("/delta-sharing")
+    assert profile.endpoint.endswith("/api/v1/delta-sharing")
 
     # The Delta Sharing protocol, with the token of the recipient.
-    reader = Calls(Client(server.address, token=profile.bearer_token), mode)
-    assert [s.name for s in reader.sharing_list_shares().items] == [share_name]
-    assert [s.name for s in reader.sharing_list_schemas(share_name).items] == ["sales"]
-    [table] = reader.sharing_list_tables(share_name, "sales").items
-    assert (table.share, table.schema, table.name) == (share_name, "sales", "orders")
-    assert reader.sharing_list_all_tables(share_name).items == [table]
-    version = reader.sharing_get_table_version(share_name, "sales", "orders")
-    assert version.version == 0
-    protocol, metadata = reader.sharing_get_table_metadata(
-        share_name, "sales", "orders"
-    )
-    assert protocol.protocol and metadata.metadata
-    assert metadata.metadata.id == staging.id
+    def read(path: str):
+        request = urllib.request.Request(
+            f"{profile.endpoint}{path}",
+            headers={"Authorization": f"Bearer {profile.bearer_token}"},
+        )
+        return urllib.request.urlopen(request)
+
+    assert [s["name"] for s in json.load(read("/shares"))["items"]] == [share_name]
+    [table] = json.load(read(f"/shares/{share_name}/all-tables"))["items"]
+    assert (table["schema"], table["name"]) == ("sales", "orders")
 
     rotated = uc.recipient(recipient_name).rotate_recipient_token()
     assert rotated.bearer_token and rotated.bearer_token != profile.bearer_token

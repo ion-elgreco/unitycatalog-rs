@@ -4,7 +4,8 @@ The classes of the `shares` API.
 
 from _typeshed import SupportsGetItem
 from asyncio import Future
-from typing import final
+from typing import SupportsIndex, final
+from unitycatalog._enums import HistoryDataSharingStatus, SharedObjectType
 
 __all__ = ["ListSharesResponse", "ShareClient", "ShareInfo", "SharedDataObject"]
 
@@ -42,7 +43,7 @@ class ShareClient:
         Get a share.
 
         Returns:
-            A share: a named set of tables that Delta Sharing recipients can read.
+            A share: a named set of tables, volumes and agent skills that recipients can read.
         """
     def get_async(self, /) -> Future[ShareInfo]:
         """
@@ -63,11 +64,13 @@ class ShareClient:
         Args:
             comment: User-provided free-form text description.
             new_name: New name of the share.
-            add_objects: Tables to add to the share. A table that the share holds already is skipped.
-            remove_objects: Tables to remove from the share, matched by `source_table_full_name`.
+            add_objects: Objects to add to the share. An object that the share holds already is replaced,
+                         which changes its shared name and its history settings.
+            remove_objects: Objects to remove from the share, matched by `source_full_name` and
+                            `data_object_type`.
 
         Returns:
-            A share: a named set of tables that Delta Sharing recipients can read.
+            A share: a named set of tables, volumes and agent skills that recipients can read.
         """
     def update_async(
         self,
@@ -85,7 +88,7 @@ class ShareClient:
 @final
 class ShareInfo:
     """
-    A share: a named set of tables that Delta Sharing recipients can read.
+    A share: a named set of tables, volumes and agent skills that recipients can read.
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
@@ -118,7 +121,7 @@ class ShareInfo:
     @property
     def objects(self, /) -> list[SharedDataObject]:
         """
-        The tables of the share.
+        The objects of the share.
         """
     @property
     def owner(self, /) -> str | None:
@@ -139,27 +142,52 @@ class ShareInfo:
 @final
 class SharedDataObject:
     """
-    A table of a share: a Unity Catalog table and the name under which the recipients see it.
+    An object of a share: a Unity Catalog table or volume and the name under which the recipients
+    see it.
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
     def __new__(
-        cls, /, source_table_full_name: str, shared_as_schema: str, shared_as_name: str
+        cls,
+        /,
+        source_full_name: str,
+        shared_as_schema: str,
+        shared_as_name: str,
+        *,
+        data_object_type: SharedObjectType | str | None = None,
+        history_data_sharing_status: HistoryDataSharingStatus | str | None = None,
+        start_version: SupportsIndex | None = None,
     ) -> SharedDataObject: ...
     def __repr__(self, /) -> str: ...
     @property
+    def data_object_type(self, /) -> SharedObjectType | None:
+        """
+        What the object is. A table, if not set.
+        """
+    @property
+    def history_data_sharing_status(self, /) -> HistoryDataSharingStatus | None:
+        """
+        Of a table: whether recipients read its history. `DISABLED`, if not set.
+        """
+    @property
     def shared_as_name(self, /) -> str:
         """
-        Name under which the recipients see the table.
+        Name under which the recipients see the object.
         """
     @property
     def shared_as_schema(self, /) -> str:
         """
-        Schema under which the recipients see the table, such as `default`.
+        Schema under which the recipients see the object, such as `default`.
         """
     @property
-    def source_table_full_name(self, /) -> str:
+    def source_full_name(self, /) -> str:
         """
-        Three-level name of the Unity Catalog table: `catalog.schema.table`. A share holds a table
-        once.
+        Three-level name of the Unity Catalog table or volume: `catalog.schema.name`. An agent skill
+        names the volume that holds it. A share holds an object once per type.
+        """
+    @property
+    def start_version(self, /) -> int | None:
+        """
+        Of a table that shares its history: the lowest version that recipients read. Without it,
+        they read from version 0.
         """

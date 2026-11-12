@@ -20,7 +20,6 @@ pub mod schemas;
 pub mod scim;
 pub mod search;
 pub mod shares;
-pub mod sharing;
 pub mod staging_tables;
 pub mod tables;
 pub mod temporary_credentials;

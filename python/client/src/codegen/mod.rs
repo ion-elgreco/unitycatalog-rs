@@ -61,7 +61,6 @@ use uc_client::models::schemas::v1::*;
 use uc_client::models::scim::v1::*;
 use uc_client::models::search::v1::*;
 use uc_client::models::shares::v1::*;
-use uc_client::models::sharing::v1::*;
 use uc_client::models::tables::v1::*;
 use uc_client::models::tokens::v1::*;
 use uc_client::models::volumes::v1::*;
@@ -5412,7 +5411,7 @@ impl PyClient {
     ///     comment: User-provided free-form text description.
     ///
     /// Returns:
-    ///     A share: a named set of tables that Delta Sharing recipients can read.
+    ///     A share: a named set of tables, volumes and agent skills that recipients can read.
     #[pyo3(signature = (name, *, comment = None))]
     pub fn create_share(
         &self,
@@ -5442,277 +5441,6 @@ impl PyClient {
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
             Ok(PyShareInfo::from(result))
-        })
-    }
-
-    /// List the shares that the recipient can read.
-    ///
-    /// Returns:
-    ///     The requested resource
-    pub fn sharing_list_shares(
-        &self,
-        py: Python,
-    ) -> PyUnityCatalogResult<PySharingListSharesResponse> {
-        let request = self.client.sharing_list_shares();
-        #[allow(clippy::let_unit_value)]
-        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(PySharingListSharesResponse::from(result))
-    }
-
-    /// Like `sharing_list_shares`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    pub fn sharing_list_shares_async<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PySharingListSharesResponse>>
-    {
-        let request = self.client.sharing_list_shares();
-        crate::codegen::py_future::PyFuture::new(py, async move {
-            #[allow(clippy::let_unit_value, unused_variables)]
-            let result = request
-                .into_future()
-                .await
-                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(PySharingListSharesResponse::from(result))
-        })
-    }
-
-    /// List the schemas of a share.
-    ///
-    /// Returns:
-    ///     The requested resource
-    #[pyo3(signature = (share))]
-    pub fn sharing_list_schemas(
-        &self,
-        py: Python,
-        share: String,
-    ) -> PyUnityCatalogResult<PySharingListSchemasResponse> {
-        let request = self.client.sharing_list_schemas(share);
-        #[allow(clippy::let_unit_value)]
-        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(PySharingListSchemasResponse::from(result))
-    }
-
-    /// Like `sharing_list_schemas`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (share))]
-    pub fn sharing_list_schemas_async<'py>(
-        &self,
-        py: Python<'py>,
-        share: String,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PySharingListSchemasResponse>>
-    {
-        let request = self.client.sharing_list_schemas(share);
-        crate::codegen::py_future::PyFuture::new(py, async move {
-            #[allow(clippy::let_unit_value, unused_variables)]
-            let result = request
-                .into_future()
-                .await
-                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(PySharingListSchemasResponse::from(result))
-        })
-    }
-
-    /// List the tables of a schema of a share.
-    ///
-    /// Returns:
-    ///     The requested resource
-    #[pyo3(signature = (share, schema))]
-    pub fn sharing_list_tables(
-        &self,
-        py: Python,
-        share: String,
-        schema: String,
-    ) -> PyUnityCatalogResult<PySharingListTablesResponse> {
-        let request = self.client.sharing_list_tables(share, schema);
-        #[allow(clippy::let_unit_value)]
-        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(PySharingListTablesResponse::from(result))
-    }
-
-    /// Like `sharing_list_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (share, schema))]
-    pub fn sharing_list_tables_async<'py>(
-        &self,
-        py: Python<'py>,
-        share: String,
-        schema: String,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PySharingListTablesResponse>>
-    {
-        let request = self.client.sharing_list_tables(share, schema);
-        crate::codegen::py_future::PyFuture::new(py, async move {
-            #[allow(clippy::let_unit_value, unused_variables)]
-            let result = request
-                .into_future()
-                .await
-                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(PySharingListTablesResponse::from(result))
-        })
-    }
-
-    /// List the tables of all schemas of a share.
-    ///
-    /// Returns:
-    ///     The requested resource
-    #[pyo3(signature = (share))]
-    pub fn sharing_list_all_tables(
-        &self,
-        py: Python,
-        share: String,
-    ) -> PyUnityCatalogResult<PySharingListTablesResponse> {
-        let request = self.client.sharing_list_all_tables(share);
-        #[allow(clippy::let_unit_value)]
-        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(PySharingListTablesResponse::from(result))
-    }
-
-    /// Like `sharing_list_all_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (share))]
-    pub fn sharing_list_all_tables_async<'py>(
-        &self,
-        py: Python<'py>,
-        share: String,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PySharingListTablesResponse>>
-    {
-        let request = self.client.sharing_list_all_tables(share);
-        crate::codegen::py_future::PyFuture::new(py, async move {
-            #[allow(clippy::let_unit_value, unused_variables)]
-            let result = request
-                .into_future()
-                .await
-                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(PySharingListTablesResponse::from(result))
-        })
-    }
-
-    /// Get the version of a table.
-    ///
-    /// Returns:
-    ///     The version of a table. The response has no body.
-    #[pyo3(signature = (share, schema, table))]
-    pub fn sharing_get_table_version(
-        &self,
-        py: Python,
-        share: String,
-        schema: String,
-        table: String,
-    ) -> PyUnityCatalogResult<PySharingGetTableVersionResponse> {
-        let request = self.client.sharing_get_table_version(share, schema, table);
-        #[allow(clippy::let_unit_value)]
-        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(PySharingGetTableVersionResponse::from(result))
-    }
-
-    /// Like `sharing_get_table_version`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (share, schema, table))]
-    pub fn sharing_get_table_version_async<'py>(
-        &self,
-        py: Python<'py>,
-        share: String,
-        schema: String,
-        table: String,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PySharingGetTableVersionResponse>>
-    {
-        let request = self.client.sharing_get_table_version(share, schema, table);
-        crate::codegen::py_future::PyFuture::new(py, async move {
-            #[allow(clippy::let_unit_value, unused_variables)]
-            let result = request
-                .into_future()
-                .await
-                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(PySharingGetTableVersionResponse::from(result))
-        })
-    }
-
-    /// Get the protocol and the metadata of a table. The response also has the version of the table in the
-    /// `Delta-Table-Version` header (always 0).
-    ///
-    /// Returns:
-    ///     One line of the NDJSON answer of `SharingGetTableMetadata` and `SharingQueryTable`: an
-    ///     object
-    ///     with one key. The first line holds `protocol`, the second `metaData`.
-    #[pyo3(signature = (share, schema, table))]
-    pub fn sharing_get_table_metadata(
-        &self,
-        py: Python,
-        share: String,
-        schema: String,
-        table: String,
-    ) -> PyUnityCatalogResult<Vec<PySharingTableLine>> {
-        let request = self.client.sharing_get_table_metadata(share, schema, table);
-        #[allow(clippy::let_unit_value)]
-        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(result
-            .into_iter()
-            .map(PySharingTableLine::from)
-            .collect::<Vec<_>>())
-    }
-
-    /// Like `sharing_get_table_metadata`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (share, schema, table))]
-    pub fn sharing_get_table_metadata_async<'py>(
-        &self,
-        py: Python<'py>,
-        share: String,
-        schema: String,
-        table: String,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, Vec<PySharingTableLine>>> {
-        let request = self.client.sharing_get_table_metadata(share, schema, table);
-        crate::codegen::py_future::PyFuture::new(py, async move {
-            #[allow(clippy::let_unit_value, unused_variables)]
-            let result = request
-                .into_future()
-                .await
-                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(result
-                .into_iter()
-                .map(PySharingTableLine::from)
-                .collect::<Vec<_>>())
-        })
-    }
-
-    /// Read a table. The server does not read the Delta log: the answer is that of
-    /// `SharingGetTableMetadata`, with no data files. The server ignores the request body.
-    ///
-    /// Returns:
-    ///     One line of the NDJSON answer of `SharingGetTableMetadata` and `SharingQueryTable`: an
-    ///     object
-    ///     with one key. The first line holds `protocol`, the second `metaData`.
-    #[pyo3(signature = (share, schema, table))]
-    pub fn sharing_query_table(
-        &self,
-        py: Python,
-        share: String,
-        schema: String,
-        table: String,
-    ) -> PyUnityCatalogResult<Vec<PySharingTableLine>> {
-        let request = self.client.sharing_query_table(share, schema, table);
-        #[allow(clippy::let_unit_value)]
-        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(result
-            .into_iter()
-            .map(PySharingTableLine::from)
-            .collect::<Vec<_>>())
-    }
-
-    /// Like `sharing_query_table`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (share, schema, table))]
-    pub fn sharing_query_table_async<'py>(
-        &self,
-        py: Python<'py>,
-        share: String,
-        schema: String,
-        table: String,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, Vec<PySharingTableLine>>> {
-        let request = self.client.sharing_query_table(share, schema, table);
-        crate::codegen::py_future::PyFuture::new(py, async move {
-            #[allow(clippy::let_unit_value, unused_variables)]
-            let result = request
-                .into_future()
-                .await
-                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(result
-                .into_iter()
-                .map(PySharingTableLine::from)
-                .collect::<Vec<_>>())
         })
     }
 
@@ -6596,7 +6324,6 @@ const SUBMODULES: &[&str] = &[
     "scim",
     "search",
     "shares",
-    "sharing",
     "tables",
     "tokens",
     "volumes",
@@ -6764,7 +6491,9 @@ pub mod extension_module {
     #[pymodule]
     pub mod recipients {
         #[pymodule_export]
-        use super::super::{PyListRecipientsResponse, PyRecipientClient, PyRecipientInfo};
+        use super::super::{
+            PyListRecipientsResponse, PyRecipientClient, PyRecipientInfo, PyRecipientProfile,
+        };
     }
 
     /// The classes of the `schemas` API.
@@ -6800,18 +6529,6 @@ pub mod extension_module {
     pub mod shares {
         #[pymodule_export]
         use super::super::{PyListSharesResponse, PyShareClient, PyShareInfo, PySharedDataObject};
-    }
-
-    /// The classes of the `sharing` API.
-    #[pymodule]
-    pub mod sharing {
-        #[pymodule_export]
-        use super::super::{
-            PyRecipientProfile, PySharingFormat, PySharingGetTableVersionResponse,
-            PySharingListSchemasResponse, PySharingListSharesResponse, PySharingListTablesResponse,
-            PySharingMetadata, PySharingProtocol, PySharingSchema, PySharingShare, PySharingTable,
-            PySharingTableLine,
-        };
     }
 
     /// The classes of the `tables` API.

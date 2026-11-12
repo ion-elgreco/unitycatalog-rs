@@ -5,6 +5,7 @@ from unitycatalog._core.recipients import (
     ListRecipientsResponse,
     RecipientClient,
     RecipientInfo,
+    RecipientProfile,
 )
 from unitycatalog._enums import (
     AuthenticationType,
@@ -15,4 +16,5 @@ __all__ = [
     "ListRecipientsResponse",
     "RecipientClient",
     "RecipientInfo",
+    "RecipientProfile",
 ]

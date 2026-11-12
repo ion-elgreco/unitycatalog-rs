@@ -32,6 +32,7 @@ from unitycatalog.credentials import AwsIamRoleRequest
 from unitycatalog.delta import DeltaProtocol, DeltaStructField, DeltaStructType
 from unitycatalog.functions import CreateFunction, FunctionParameterInfo
 from unitycatalog.permissions import PermissionsChange
+from unitycatalog.shares import SharedDataObject
 from unitycatalog.tables import ColumnInfo
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -179,6 +180,9 @@ def _bad_value(name: str) -> typing.Callable[[], object]:
         "FunctionParameterType": lambda: FunctionParameterInfo(
             "x", "int", "INT", parameter_type=BOGUS
         ),
+        "HistoryDataSharingStatus": lambda: SharedDataObject(
+            "c.s.t", "s", "t", history_data_sharing_status=BOGUS
+        ),
         "ModelVersionOperation": (
             lambda: OFFLINE.generate_temporary_model_version_credentials(
                 "c", "s", "m", 1, BOGUS
@@ -192,6 +196,9 @@ def _bad_value(name: str) -> typing.Callable[[], object]:
         ),
         "RoutineBody": lambda: CreateFunction("f", "c", "s", BOGUS, "S", "DEFINER"),
         "SecurityType": lambda: CreateFunction("f", "c", "s", "SQL", "S", BOGUS),
+        "SharedObjectType": lambda: SharedDataObject(
+            "c.s.t", "s", "t", data_object_type=BOGUS
+        ),
         "SqlDataAccess": lambda: CreateFunction(
             "f", "c", "s", "SQL", "S", "DEFINER", sql_data_access=BOGUS
         ),

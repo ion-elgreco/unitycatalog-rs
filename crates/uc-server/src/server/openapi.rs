@@ -33,7 +33,7 @@ use uc_common::{ErrorCode, ErrorResponse, SecurableType};
         (name = "SCIM",                 description = "SCIM 2.0 user provisioning"),
         (name = "Health",               description = "Liveness, readiness, and generic health probes"),
         (name = "Admin",                description = "Operator endpoints — backup, restore"),
-        (name = "Sharing",              description = "Delta Sharing — shares, recipients, recipient-protocol reads"),
+        (name = "Sharing",              description = "Sharing: shares and recipients"),
         (name = "Files",                description = "Files of volumes and tables, as the Databricks Files API"),
     ),
 )]

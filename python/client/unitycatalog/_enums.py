@@ -172,6 +172,26 @@ class AuthenticationType(enum.StrEnum):
     """OAuth client credentials. Not implemented: the recipient gets a bearer token."""
 
 
+class HistoryDataSharingStatus(enum.StrEnum):
+    """Whether recipients read the history of a shared table."""
+
+    DISABLED = "DISABLED"
+    """Recipients read the latest version only."""
+    ENABLED = "ENABLED"
+    """Recipients read older versions too, by version or by time."""
+
+
+class SharedObjectType(enum.StrEnum):
+    """What a share object is."""
+
+    TABLE = "TABLE"
+    """A table."""
+    VOLUME = "VOLUME"
+    """A volume."""
+    AGENT_SKILL = "AGENT_SKILL"
+    """A volume that holds an agent skill: a `SKILL.md` and its files."""
+
+
 class ColumnTypeName(enum.StrEnum):
     """The name of the data type of a column."""
 

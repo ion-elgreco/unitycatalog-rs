@@ -1,13 +1,9 @@
-//! Delta Sharing protocol types.
+//! The admin types of sharing: shares and recipients, with the shape of
+//! upstream UC's sharing service. Their callers are UC principals.
 //!
-//! The admin types (`Share` and `Recipient` CRUD) have the shape of upstream
-//! UC's sharing service; their callers are UC principals. The protocol types
-//! (`/shares/{share}/...` reads) are for the recipient of a share. A
-//! recipient is not a UC principal: it authenticates with a bearer token
-//! bound to a recipient row.
-//!
-//! The Delta Sharing REST API spec:
-//! <https://github.com/delta-io/delta-sharing/blob/main/PROTOCOL.md>.
+//! A recipient is not a UC principal: it authenticates with a bearer token
+//! bound to a recipient row, and reads its shares with the Delta Sharing or
+//! Open Sharing protocol.
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -29,20 +25,52 @@ pub struct ShareInfo {
     pub updated_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_by: Option<String>,
-    /// The tables of the share: each UC table `<catalog>.<schema>.<table>`
-    /// and the `<share-schema>.<share-table>` name that recipients see.
+    /// The objects of the share: each UC table or volume and the
+    /// `<share-schema>.<name>` that recipients see.
     #[serde(default)]
     pub objects: Vec<SharedDataObject>,
 }
 
+/// What a share object is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SharedObjectType {
+    #[default]
+    Table,
+    Volume,
+    /// A volume that holds an agent skill: a `SKILL.md` and its files.
+    AgentSkill,
+}
+
+/// Whether recipients read the history of a shared table.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum HistoryDataSharingStatus {
+    /// Recipients read the latest version only.
+    #[default]
+    Disabled,
+    /// Recipients read older versions too, by version or by time.
+    Enabled,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SharedDataObject {
-    /// `<catalog>.<schema>.<table>` reference into UC.
-    pub source_table_full_name: String,
-    /// Schema the recipient sees this table under (e.g. `default`).
+    /// `<catalog>.<schema>.<name>` of the UC table or volume. An agent skill
+    /// names the volume that holds it.
+    pub source_full_name: String,
+    #[serde(default)]
+    pub data_object_type: SharedObjectType,
+    /// Schema the recipient sees the object under (e.g. `default`).
     pub shared_as_schema: String,
-    /// Table name the recipient sees (defaults to source's name).
+    /// Name the recipient sees.
     pub shared_as_name: String,
+    /// Of a table: whether recipients read its history.
+    #[serde(default)]
+    pub history_data_sharing_status: HistoryDataSharingStatus,
+    /// Of a table that shares its history: the lowest version recipients
+    /// read. Without it, they read from version 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_version: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
@@ -123,86 +151,4 @@ pub struct ListRecipientsResponse {
     pub items: Vec<RecipientInfo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_page_token: Option<String>,
-}
-
-// As the protocol, the page token is `nextPageToken`, and a table's version
-// travels in the `Delta-Table-Version` header, not in a body.
-
-/// `GET /shares` (recipient-side) — list of shares the recipient can see.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
-pub struct SharingListSharesResponse {
-    pub items: Vec<SharingShare>,
-    #[serde(
-        rename = "nextPageToken",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub next_page_token: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct SharingShare {
-    pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
-pub struct SharingListSchemasResponse {
-    pub items: Vec<SharingSchema>,
-    #[serde(
-        rename = "nextPageToken",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub next_page_token: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct SharingSchema {
-    pub name: String,
-    pub share: String,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
-pub struct SharingListTablesResponse {
-    pub items: Vec<SharingTable>,
-    #[serde(
-        rename = "nextPageToken",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub next_page_token: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct SharingTable {
-    pub name: String,
-    pub schema: String,
-    pub share: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_util::assert_round_trip;
-    use serde_json::json;
-
-    #[test]
-    fn protocol_lists_use_protocol_names() {
-        assert_round_trip::<SharingListSharesResponse>(json!({
-            "items": [{ "name": "analytics", "id": "1" }],
-            "nextPageToken": "p2",
-        }));
-        assert_round_trip::<SharingListSchemasResponse>(json!({
-            "items": [{ "name": "default", "share": "analytics" }],
-            "nextPageToken": "p2",
-        }));
-        assert_round_trip::<SharingListTablesResponse>(json!({
-            "items": [{ "name": "events", "schema": "default", "share": "analytics", "id": "2" }],
-            "nextPageToken": "p2",
-        }));
-    }
 }

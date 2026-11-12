@@ -35,9 +35,8 @@ use protobuf::descriptor::FileDescriptorSet;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-/// The proto packages whose JSON field names, and query keys, are lowerCamelCase: SCIM and the
-/// Delta Sharing protocol.
-const CAMEL_CASE_PACKAGES: &[&str] = &["unitycatalog.scim.v1", "unitycatalog.sharing.v1"];
+/// The proto packages whose JSON field names, and query keys, are lowerCamelCase: SCIM.
+const CAMEL_CASE_PACKAGES: &[&str] = &["unitycatalog.scim.v1"];
 
 /// The RPCs whose request body is a form: OAuth's token exchange and token request.
 const FORM_METHODS: &[&str] = &[

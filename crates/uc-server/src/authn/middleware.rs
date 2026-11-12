@@ -92,7 +92,7 @@ pub(crate) fn requires_sign_in(path: &str) -> bool {
     (under(API_BASE) || under(CONTROL_BASE) || under(FILES_BASE)) && !signs_in
 }
 
-pub(crate) use uc_auth::{bearer_token, cookie};
+pub(crate) use uc_auth::cookie;
 
 /// A `Set-Cookie` for the UC token: upstream's cookie on `/`, `Secure`
 /// when `secure` ([`AuthSettings::secure_cookies`](crate::authn::idp::AuthSettings::secure_cookies)).

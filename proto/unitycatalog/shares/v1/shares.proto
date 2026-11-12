@@ -7,18 +7,46 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/empty.proto";
 
-// A table of a share: a Unity Catalog table and the name under which the recipients see it.
-message SharedDataObject {
-  // Three-level name of the Unity Catalog table: `catalog.schema.table`. A share holds a table
-  // once.
-  string source_table_full_name = 1 [(google.api.field_behavior) = REQUIRED];
-  // Schema under which the recipients see the table, such as `default`.
-  string shared_as_schema = 2 [(google.api.field_behavior) = REQUIRED];
-  // Name under which the recipients see the table.
-  string shared_as_name = 3 [(google.api.field_behavior) = REQUIRED];
+// What a share object is.
+enum SharedObjectType {
+  SHARED_OBJECT_TYPE_UNSPECIFIED = 0;
+  // A table.
+  TABLE = 1;
+  // A volume.
+  VOLUME = 2;
+  // A volume that holds an agent skill: a `SKILL.md` and its files.
+  AGENT_SKILL = 3;
 }
 
-// A share: a named set of tables that Delta Sharing recipients can read.
+// Whether recipients read the history of a shared table.
+enum HistoryDataSharingStatus {
+  HISTORY_DATA_SHARING_STATUS_UNSPECIFIED = 0;
+  // Recipients read the latest version only.
+  DISABLED = 1;
+  // Recipients read older versions too, by version or by time.
+  ENABLED = 2;
+}
+
+// An object of a share: a Unity Catalog table or volume and the name under which the recipients
+// see it.
+message SharedDataObject {
+  // Three-level name of the Unity Catalog table or volume: `catalog.schema.name`. An agent skill
+  // names the volume that holds it. A share holds an object once per type.
+  string source_full_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Schema under which the recipients see the object, such as `default`.
+  string shared_as_schema = 2 [(google.api.field_behavior) = REQUIRED];
+  // Name under which the recipients see the object.
+  string shared_as_name = 3 [(google.api.field_behavior) = REQUIRED];
+  // What the object is. A table, if not set.
+  optional SharedObjectType data_object_type = 4;
+  // Of a table: whether recipients read its history. `DISABLED`, if not set.
+  optional HistoryDataSharingStatus history_data_sharing_status = 5;
+  // Of a table that shares its history: the lowest version that recipients read. Without it,
+  // they read from version 0.
+  optional int64 start_version = 6;
+}
+
+// A share: a named set of tables, volumes and agent skills that recipients can read.
 message ShareInfo {
   option (google.api.resource) = {
     type: "unitycatalog.io/Share"
@@ -43,7 +71,7 @@ message ShareInfo {
   int64 updated_at = 7;
   // Username of the user who last changed the share.
   optional string updated_by = 8;
-  // The tables of the share.
+  // The objects of the share.
   repeated SharedDataObject objects = 9;
 }
 
@@ -80,9 +108,10 @@ message UpdateShare {
   optional string comment = 2;
   // New name of the share.
   optional string new_name = 3;
-  // Tables to add to the share. A table that the share holds already is skipped.
+  // Objects to add to the share. An object that the share holds already is replaced, which
+  // changes its shared name and its history settings.
   repeated SharedDataObject add_objects = 4;
-  // Tables to remove from the share, matched by `source_table_full_name`.
+  // Objects to remove from the share, matched by `source_full_name` and `data_object_type`.
   repeated SharedDataObject remove_objects = 5;
 }
 

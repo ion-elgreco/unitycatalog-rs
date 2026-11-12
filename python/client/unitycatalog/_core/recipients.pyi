@@ -2,13 +2,17 @@
 The classes of the `recipients` API.
 """
 
-from .sharing import RecipientProfile
 from _typeshed import SupportsGetItem
 from asyncio import Future
 from typing import final
 from unitycatalog._enums import AuthenticationType
 
-__all__ = ["ListRecipientsResponse", "RecipientClient", "RecipientInfo"]
+__all__ = [
+    "ListRecipientsResponse",
+    "RecipientClient",
+    "RecipientInfo",
+    "RecipientProfile",
+]
 
 @final
 class ListRecipientsResponse:
@@ -39,7 +43,7 @@ class RecipientClient:
         Returns:
             A Delta Sharing profile file (`profile.json`): what a Delta Sharing client needs to connect
             to
-            the server as a recipient.
+            the server as a recipient. The JSON names are lowerCamelCase, as the protocol has them.
         """
     def create_recipient_profile_async(self, /) -> Future[RecipientProfile]:
         """
@@ -171,4 +175,36 @@ class RecipientInfo:
     def token_prefix(self, /) -> str:
         """
         The first 8 characters of the bearer token, for display only.
+        """
+
+@final
+class RecipientProfile:
+    """
+    A Delta Sharing profile file (`profile.json`): what a Delta Sharing client needs to connect to
+    the server as a recipient. The JSON names are lowerCamelCase, as the protocol has them.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def bearer_token(self, /) -> str:
+        """
+        The bearer token of the recipient.
+        """
+    @property
+    def endpoint(self, /) -> str:
+        """
+        URL of the Delta Sharing server: the URL the caller used, ending in
+        `/api/v1/delta-sharing`.
+        """
+    @property
+    def expiration_time(self, /) -> str | None:
+        """
+        Time at which the token expires, as an ISO 8601 timestamp. The server sends `null`: the tokens
+        do not expire.
+        """
+    @property
+    def share_credentials_version(self, /) -> int:
+        """
+        Version of the profile file format. Always 1.
         """

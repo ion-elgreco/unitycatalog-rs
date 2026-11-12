@@ -18,7 +18,7 @@ impl PyShareClient {
     /// Get a share.
     ///
     /// Returns:
-    ///     A share: a named set of tables that Delta Sharing recipients can read.
+    ///     A share: a named set of tables, volumes and agent skills that recipients can read.
     pub fn get(&self, py: Python) -> PyUnityCatalogResult<PyShareInfo> {
         let request = self.client.get();
         #[allow(clippy::let_unit_value)]
@@ -47,11 +47,13 @@ impl PyShareClient {
     /// Args:
     ///     comment: User-provided free-form text description.
     ///     new_name: New name of the share.
-    ///     add_objects: Tables to add to the share. A table that the share holds already is skipped.
-    ///     remove_objects: Tables to remove from the share, matched by `source_table_full_name`.
+    ///     add_objects: Objects to add to the share. An object that the share holds already is replaced,
+    ///                  which changes its shared name and its history settings.
+    ///     remove_objects: Objects to remove from the share, matched by `source_full_name` and
+    ///                     `data_object_type`.
     ///
     /// Returns:
-    ///     A share: a named set of tables that Delta Sharing recipients can read.
+    ///     A share: a named set of tables, volumes and agent skills that recipients can read.
     #[pyo3(
         signature = (
             *,
