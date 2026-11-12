@@ -13,6 +13,10 @@ them from the `opensharing-api` crate. Their operations and schemas come from th
 document in that crate's repository, at the commit that Cargo.lock pins, under the path of each
 protocol.
 
+It also writes crates/uc-server/src/server/sharing_openapi.json, which is in git: the operations
+of shares, recipients and the sharing protocols, which the server adds to its own OpenAPI document
+for its Swagger page (`/docs`).
+
 The JSON names and the encodings are those of the generated clients, from the constants of
 crates/uc-codegen/src/main.rs: the packages whose JSON names are lowerCamelCase, the RPCs whose
 body is a form, and those whose body keeps the path values.
@@ -35,6 +39,17 @@ from google.protobuf import descriptor_pb2, descriptor_pool
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "reference" / "openapi.json"
+# The operations of sharing for the server's Swagger page (`/docs`): the server does not have
+# their routes from utoipa, so it adds this document to the one of utoipa.
+SERVER_OUT = ROOT / "crates" / "uc-server" / "src" / "server" / "sharing_openapi.json"
+# The tags of those operations in the document of the protos, and their tag on the Swagger page.
+SERVER_TAGS = {
+    "Shares": "Sharing",
+    "Recipients": "Sharing",
+    "Activations": "Sharing",
+    "Delta Sharing": "Delta Sharing",
+    "Open Sharing": "Open Sharing",
+}
 
 FDP = descriptor_pb2.FieldDescriptorProto
 INTEGERS = {
@@ -616,11 +631,60 @@ class Api:
         }
 
 
+def references(node, found: set[tuple[str, str]]) -> None:
+    """The components that `node` refers to, as (kind, name), into `found`."""
+    if isinstance(node, list):
+        for item in node:
+            references(item, found)
+    elif isinstance(node, dict):
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/components/"):
+            kind, name = ref.removeprefix("#/components/").split("/", 1)
+            found.add((kind, name))
+        for value in node.values():
+            references(value, found)
+
+
+def server_document(document: dict) -> dict:
+    """The operations of `document` with the tags of SERVER_TAGS, and the components that
+    they use."""
+    paths: dict[str, dict] = {}
+    for path, operations in document["paths"].items():
+        for verb, operation in operations.items():
+            tag = SERVER_TAGS.get(operation["tags"][0])
+            if tag is not None:
+                paths.setdefault(path, {})[verb] = {**operation, "tags": [tag]}
+    used: set[tuple[str, str]] = set()
+    references(paths, used)
+    pending = list(used)
+    while pending:
+        kind, name = pending.pop()
+        more: set[tuple[str, str]] = set()
+        references(document["components"][kind][name], more)
+        pending += more - used
+        used |= more
+    components: dict[str, dict] = {}
+    for kind, name in sorted(used):
+        components.setdefault(kind, {})[name] = document["components"][kind][name]
+    components["securitySchemes"] = {
+        RECIPIENT: document["components"]["securitySchemes"][RECIPIENT]
+    }
+    tags = [{"name": tag, "description": text} for tag, (_, text) in SHARING.items()]
+    return {
+        "openapi": document["openapi"],
+        "info": {"title": "Sharing", "version": "1"},
+        "tags": tags,
+        "paths": paths,
+        "components": components,
+    }
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit("usage: gen_openapi.py <descriptor set>")
     document = Api(Path(sys.argv[1])).document()
     OUT.write_text(json.dumps(document, indent=2) + "\n")
+    SERVER_OUT.write_text(json.dumps(server_document(document), indent=2) + "\n")
     operations = sum(len(p) for p in document["paths"].values())
     print(
         f"wrote {OUT.relative_to(ROOT)}: {operations} operations, {len(document['components']['schemas'])} schemas"

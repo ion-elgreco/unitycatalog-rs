@@ -104,7 +104,8 @@ fn openapi_route<S: Clone + Send + Sync + 'static>(
     static JSON: std::sync::OnceLock<bytes::Bytes> = std::sync::OnceLock::new();
     let json = JSON
         .get_or_init(|| {
-            serde_json::to_vec(&api)
+            // The routes of sharing are not utoipa routes.
+            serde_json::to_vec(&crate::server::openapi::with_sharing(&api))
                 .expect("the OpenAPI document is JSON")
                 .into()
         })

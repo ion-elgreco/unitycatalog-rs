@@ -58,3 +58,13 @@ jobs:
       # A broken link or anchor fails the build.
       - name: Build the docs
         run: just docs-build
+
+      # The build writes the operations of sharing for the server's Swagger page, a file in git.
+      - name: The sharing operations of the Swagger page are up to date
+        run: |
+          file=crates/uc-server/src/server/sharing_openapi.json
+          if [ -n "$(git status --porcelain "$file")" ]; then
+            git diff --stat "$file"
+            echo "$file differs from the protos: run 'just docs-reference'." >&2
+            exit 1
+          fi
