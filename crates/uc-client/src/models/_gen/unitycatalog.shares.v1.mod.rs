@@ -18,14 +18,23 @@ pub mod __buffa {
 
     /// Register this package's `Any` type entries and extension entries.
     pub fn register_types(reg: &mut ::buffa::type_registry::TypeRegistry) {
-        reg.register_json_any(super::__SHARED_DATA_OBJECT_JSON_ANY);
-        reg.register_json_any(super::__SHARE_INFO_JSON_ANY);
-        reg.register_json_any(super::__CREATE_SHARE_JSON_ANY);
+        reg.register_json_any(super::__PARTITION_VALUE_JSON_ANY);
+        reg.register_json_any(super::__PARTITION_JSON_ANY);
+        reg.register_json_any(super::__DATA_OBJECT_JSON_ANY);
+        reg.register_json_any(super::__SHARE_JSON_ANY);
+        reg.register_json_any(super::__SHARE_PRIVILEGE_ASSIGNMENT_JSON_ANY);
+        reg.register_json_any(super::__SHARE_PERMISSIONS_CHANGE_JSON_ANY);
         reg.register_json_any(super::__LIST_SHARES_REQUEST_JSON_ANY);
         reg.register_json_any(super::__LIST_SHARES_RESPONSE_JSON_ANY);
+        reg.register_json_any(super::__CREATE_SHARE_REQUEST_JSON_ANY);
         reg.register_json_any(super::__GET_SHARE_REQUEST_JSON_ANY);
-        reg.register_json_any(super::__UPDATE_SHARE_JSON_ANY);
+        reg.register_json_any(super::__DATA_OBJECT_UPDATE_JSON_ANY);
+        reg.register_json_any(super::__UPDATE_SHARE_REQUEST_JSON_ANY);
         reg.register_json_any(super::__DELETE_SHARE_REQUEST_JSON_ANY);
+        reg.register_json_any(super::__GET_SHARE_PERMISSIONS_REQUEST_JSON_ANY);
+        reg.register_json_any(super::__GET_SHARE_PERMISSIONS_RESPONSE_JSON_ANY);
+        reg.register_json_any(super::__UPDATE_SHARE_PERMISSIONS_REQUEST_JSON_ANY);
+        reg.register_json_any(super::__UPDATE_SHARE_PERMISSIONS_RESPONSE_JSON_ANY);
     }
 }
 

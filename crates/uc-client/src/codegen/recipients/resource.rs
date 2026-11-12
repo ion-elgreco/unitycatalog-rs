@@ -31,12 +31,12 @@ impl RecipientClient {
         self.recipient_name.clone()
     }
 
-    /// Get a recipient. The response does not hold the bearer token.
+    /// Get a recipient by name.
     pub fn get(&self) -> GetRecipientBuilder {
         GetRecipientBuilder::new(self.client.clone(), &self.recipient_name)
     }
 
-    /// Change a recipient: its comment and the shares it can read.
+    /// Update a recipient.
     pub fn update(&self) -> UpdateRecipientBuilder {
         UpdateRecipientBuilder::new(self.client.clone(), &self.recipient_name)
     }
@@ -46,15 +46,9 @@ impl RecipientClient {
         DeleteRecipientBuilder::new(self.client.clone(), &self.recipient_name)
     }
 
-    /// Replace the bearer token of a recipient. The old token stops working. The response holds the
-    /// new token.
+    /// Rotate a recipient's token: issue a new token (and activation link) and
+    /// retire the existing one.
     pub fn rotate_recipient_token(&self) -> RotateRecipientTokenBuilder {
         RotateRecipientTokenBuilder::new(self.client.clone(), &self.recipient_name)
-    }
-
-    /// Replace the bearer token of a recipient and return a Delta Sharing profile with the new token.
-    /// The old token stops working.
-    pub fn create_recipient_profile(&self) -> CreateRecipientProfileBuilder {
-        CreateRecipientProfileBuilder::new(self.client.clone(), &self.recipient_name)
     }
 }

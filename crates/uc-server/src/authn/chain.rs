@@ -25,7 +25,7 @@ use uc_auth::{
     Admission, AuthError, Authenticator, AwsResolver, Identity, JwtKeys, JwtResolver,
     RequestContext, Resolution, Resolver, Transport, async_trait,
 };
-use uc_common::{API_BASE, Error, ErrorCode};
+use uc_common::{Error, ErrorCode};
 
 use crate::{
     authn::{
@@ -39,6 +39,7 @@ use crate::{
     },
     http::{error::mounted, outbound::SendOnIo},
     server::state::AppState,
+    sharing::{DELTA_SHARING_PREFIX, OPENSHARING_PREFIX},
 };
 
 /// The method of the server's own tokens.
@@ -107,7 +108,8 @@ impl Resolver<AppState> for SharingRecipients {
         let Some(token) = cx.token().filter(|t| t.starts_with("dsr_")) else {
             return Resolution::Pass;
         };
-        if !mounted(cx.path(), API_BASE, "/delta-sharing") {
+        let protocol = |prefix| mounted(cx.path(), prefix, "");
+        if !protocol(DELTA_SHARING_PREFIX) && !protocol(OPENSHARING_PREFIX) {
             return Resolution::Pass;
         }
         match state.metastore.sharing().recipient_for_token(token).await {

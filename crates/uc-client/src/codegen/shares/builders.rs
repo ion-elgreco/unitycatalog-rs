@@ -33,20 +33,22 @@ impl ListSharesBuilder {
         Self { client, request }
     }
 
-    /// The maximum number of shares to return.
+    /// The maximum number of results per page that should be returned.
+    ///
+    /// If unset or 0, the server's default page size is used. Negative values are rejected.
     pub fn with_max_results(mut self, max_results: impl Into<Option<i32>>) -> Self {
         self.request.max_results = max_results.into();
         self
     }
 
-    /// Opaque token of the page to return: the `next_page_token` of the page before.
+    /// Opaque pagination token to go to next page based on previous query.
     pub fn with_page_token(mut self, page_token: impl Into<Option<String>>) -> Self {
         self.request.page_token = page_token.into();
         self
     }
 
     /// Convert paginated request into stream of results
-    pub fn into_stream(self) -> BoxStr<'static, Result<ShareInfo>> {
+    pub fn into_stream(self) -> BoxStr<'static, Result<Share>> {
         let remaining = self.request.max_results;
         let stream = stream_paginated(
             (self, remaining),
@@ -57,8 +59,8 @@ impl ListSharesBuilder {
                 }
                 let mut res = builder.client.list_shares(&builder.request).await?;
                 if let Some(ref mut rem) = remaining {
-                    res.items.truncate((*rem).max(0) as usize);
-                    *rem -= res.items.len() as i32;
+                    res.shares.truncate((*rem).max(0) as usize);
+                    *rem -= res.shares.len() as i32;
                 }
                 let next_page_token = if remaining.is_some_and(|r| r <= 0) {
                     None
@@ -68,7 +70,7 @@ impl ListSharesBuilder {
                 Ok((res, (builder, remaining), next_page_token))
             },
         )
-        .map_ok(|resp| futures::stream::iter(resp.items.into_iter().map(Ok)))
+        .map_ok(|resp| futures::stream::iter(resp.shares.into_iter().map(Ok)))
         .try_flatten();
         #[cfg(not(target_arch = "wasm32"))]
         let stream = stream.boxed();
@@ -91,14 +93,14 @@ impl IntoFuture for ListSharesBuilder {
 /// Builder for creating a share
 pub struct CreateShareBuilder {
     client: ShareServiceClient,
-    request: CreateShare,
+    request: CreateShareRequest,
 }
 
 impl CreateShareBuilder {
     /// Create a new builder instance.
     /// Obtain via the corresponding method on `ShareServiceClient`.
     pub(crate) fn new(client: ShareServiceClient, name: impl Into<String>) -> Self {
-        let request = CreateShare {
+        let request = CreateShareRequest {
             name: name.into(),
             ..Default::default()
         };
@@ -110,10 +112,16 @@ impl CreateShareBuilder {
         self.request.comment = comment.into();
         self
     }
+
+    /// Storage root URL for the share.
+    pub fn with_storage_root(mut self, storage_root: impl Into<Option<String>>) -> Self {
+        self.request.storage_root = storage_root.into();
+        self
+    }
 }
 
 impl IntoFuture for CreateShareBuilder {
-    type Output = Result<ShareInfo>;
+    type Output = Result<Share>;
     type IntoFuture = BoxFut<'static, Self::Output>;
     fn into_future(self) -> Self::IntoFuture {
         let client = self.client;
@@ -138,10 +146,19 @@ impl GetShareBuilder {
         };
         Self { client, request }
     }
+
+    /// Query for data to include in the share.
+    pub fn with_include_shared_data(
+        mut self,
+        include_shared_data: impl Into<Option<bool>>,
+    ) -> Self {
+        self.request.include_shared_data = include_shared_data.into();
+        self
+    }
 }
 
 impl IntoFuture for GetShareBuilder {
-    type Output = Result<ShareInfo>;
+    type Output = Result<Share>;
     type IntoFuture = BoxFut<'static, Self::Output>;
     fn into_future(self) -> Self::IntoFuture {
         let client = self.client;
@@ -153,18 +170,41 @@ impl IntoFuture for GetShareBuilder {
 /// Builder for updating a share
 pub struct UpdateShareBuilder {
     client: ShareServiceClient,
-    request: UpdateShare,
+    request: UpdateShareRequest,
 }
 
 impl UpdateShareBuilder {
     /// Create a new builder instance.
     /// Obtain via the corresponding method on `ShareServiceClient`.
     pub(crate) fn new(client: ShareServiceClient, name: impl Into<String>) -> Self {
-        let request = UpdateShare {
+        let request = UpdateShareRequest {
             name: name.into(),
             ..Default::default()
         };
         Self { client, request }
+    }
+
+    /// Array of shared data object updates.
+    ///
+    /// At most 100 data objects may be updated per request.
+    pub fn with_updates<I>(mut self, updates: I) -> Self
+    where
+        I: IntoIterator<Item = DataObjectUpdate>,
+    {
+        self.request.updates = updates.into_iter().collect();
+        self
+    }
+
+    /// A new name for the share.
+    pub fn with_new_name(mut self, new_name: impl Into<Option<String>>) -> Self {
+        self.request.new_name = new_name.into();
+        self
+    }
+
+    /// Owner of the share.
+    pub fn with_owner(mut self, owner: impl Into<Option<String>>) -> Self {
+        self.request.owner = owner.into();
+        self
     }
 
     /// User-provided free-form text description.
@@ -172,34 +212,10 @@ impl UpdateShareBuilder {
         self.request.comment = comment.into();
         self
     }
-
-    /// New name of the share.
-    pub fn with_new_name(mut self, new_name: impl Into<Option<String>>) -> Self {
-        self.request.new_name = new_name.into();
-        self
-    }
-
-    /// Tables to add to the share. A table that the share holds already is skipped.
-    pub fn with_add_objects<I>(mut self, add_objects: I) -> Self
-    where
-        I: IntoIterator<Item = SharedDataObject>,
-    {
-        self.request.add_objects = add_objects.into_iter().collect();
-        self
-    }
-
-    /// Tables to remove from the share, matched by `source_table_full_name`.
-    pub fn with_remove_objects<I>(mut self, remove_objects: I) -> Self
-    where
-        I: IntoIterator<Item = SharedDataObject>,
-    {
-        self.request.remove_objects = remove_objects.into_iter().collect();
-        self
-    }
 }
 
 impl IntoFuture for UpdateShareBuilder {
-    type Output = Result<ShareInfo>;
+    type Output = Result<Share>;
     type IntoFuture = BoxFut<'static, Self::Output>;
     fn into_future(self) -> Self::IntoFuture {
         let client = self.client;
@@ -233,5 +249,93 @@ impl IntoFuture for DeleteShareBuilder {
         let client = self.client;
         let request = self.request;
         Box::pin(async move { client.delete_share(&request).await })
+    }
+}
+
+/// Builder for share permissions
+pub struct GetSharePermissionsBuilder {
+    client: ShareServiceClient,
+    request: GetSharePermissionsRequest,
+}
+
+impl GetSharePermissionsBuilder {
+    /// Create a new builder instance.
+    /// Obtain via the corresponding method on `ShareServiceClient`.
+    pub(crate) fn new(client: ShareServiceClient, name: impl Into<String>) -> Self {
+        let request = GetSharePermissionsRequest {
+            name: name.into(),
+            ..Default::default()
+        };
+        Self { client, request }
+    }
+
+    /// The maximum number of results per page that should be returned.
+    ///
+    /// If unset or 0, the server's default page size is used. Negative values are rejected.
+    pub fn with_max_results(mut self, max_results: impl Into<Option<i32>>) -> Self {
+        self.request.max_results = max_results.into();
+        self
+    }
+
+    /// Opaque pagination token to go to next page based on previous query.
+    pub fn with_page_token(mut self, page_token: impl Into<Option<String>>) -> Self {
+        self.request.page_token = page_token.into();
+        self
+    }
+}
+
+impl IntoFuture for GetSharePermissionsBuilder {
+    type Output = Result<GetSharePermissionsResponse>;
+    type IntoFuture = BoxFut<'static, Self::Output>;
+    fn into_future(self) -> Self::IntoFuture {
+        let client = self.client;
+        let request = self.request;
+        Box::pin(async move { client.get_share_permissions(&request).await })
+    }
+}
+
+/// Builder for share permissions
+pub struct UpdateSharePermissionsBuilder {
+    client: ShareServiceClient,
+    request: UpdateSharePermissionsRequest,
+}
+
+impl UpdateSharePermissionsBuilder {
+    /// Create a new builder instance.
+    /// Obtain via the corresponding method on `ShareServiceClient`.
+    pub(crate) fn new(client: ShareServiceClient, name: impl Into<String>) -> Self {
+        let request = UpdateSharePermissionsRequest {
+            name: name.into(),
+            ..Default::default()
+        };
+        Self { client, request }
+    }
+
+    /// Array of permissions change objects.
+    pub fn with_changes<I>(mut self, changes: I) -> Self
+    where
+        I: IntoIterator<Item = SharePermissionsChange>,
+    {
+        self.request.changes = changes.into_iter().collect();
+        self
+    }
+
+    /// Whether to return the latest permissions list of the share in the response.
+    pub fn with_omit_permissions_list(
+        mut self,
+        omit_permissions_list: impl Into<Option<bool>>,
+    ) -> Self {
+        self.request.omit_permissions_list = omit_permissions_list.into();
+        self
+    }
+}
+
+impl IntoFuture for UpdateSharePermissionsBuilder {
+    type Output = Result<UpdateSharePermissionsResponse>;
+    type IntoFuture = BoxFut<'static, Self::Output>;
+    fn into_future(self) -> Self::IntoFuture {
+        let client = self.client;
+        let request = self.request;
+        Box::pin(async move { client.update_share_permissions(&request).await })
     }
 }

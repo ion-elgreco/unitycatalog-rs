@@ -297,11 +297,11 @@ generate-stubs:
     cp -R "$out/unitycatalog/_core" python/client/unitycatalog/_core
     "{{ python }}" -m ruff format --quiet python/client/unitycatalog/_core
 
-# Write the references of the docs site, which docs-build and docs-serve include: the OpenAPI document of the HTTP APIs (docs/reference/openapi.json) from the protos in proto/, through a descriptor set that protoc writes with their comments; and the Python client's pages (docs/reference/python/) from the package's stubs
+# Write the references of the docs site, which docs-build and docs-serve include: the OpenAPI document of the HTTP APIs (docs/reference/openapi.json) from the protos in proto/, through a descriptor set that protoc writes with their comments, and for the sharing protocols from the OpenAPI document of the opensharing-api crate's repository, with the operations of sharing for the server's Swagger page (crates/uc-server/src/server/sharing_openapi.json, in git); and the Python client's pages (docs/reference/python/) from the package's stubs
 docs-reference:
     mkdir -p target/docs
     protoc --include_imports --include_source_info -I proto --descriptor_set_out=target/docs/api.binpb $(find proto/unitycatalog -name '*.proto' | sort)
-    uv run --no-project --with protobuf --with googleapis-common-protos python docs/gen_openapi.py target/docs/api.binpb
+    uv run --no-project --with protobuf --with googleapis-common-protos --with pyyaml python docs/gen_openapi.py target/docs/api.binpb
     uv run --no-project --with griffe python docs/gen_python_reference.py
 
 # Build the docs site (docs/, mkdocs.yml) into site/ with zensical; a warning, such as a broken link, fails the build

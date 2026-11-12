@@ -26,7 +26,7 @@ What upstream (Java) and this project (Rust) have.
 | Sign-in with an identity provider's tokens (token exchange) | X | X | |
 | SCIM users | X | X | Rust also has groups and bulk changes |
 | Personal access tokens, OAuth client credentials | | X | |
-| Delta Sharing server | | X | |
+| Delta Sharing and Open Sharing server | | X | Tables, volumes and agent skills |
 | Web UI | X | X | Java signs in in the browser (Google, Okta, Keycloak buttons); Rust on the server (OpenID Connect, or an auth proxy) |
 | `uc` CLI | X | X | Rust adds a terminal UI and `uc serve`, `uc dev`, `uc web` |
 | Python client | X | X | Different APIs: `unitycatalog-client` and `unitycatalog-rs` |

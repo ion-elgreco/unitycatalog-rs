@@ -281,6 +281,11 @@ impl AzureVendor {
         }
     }
 
+    /// The blob endpoint, if not Azure's.
+    pub fn blob_endpoint(&self) -> Option<&str> {
+        self.blob.as_deref()
+    }
+
     /// Entra ID, blob and instance metadata endpoints, for tests.
     pub fn with_endpoints(
         mut self,

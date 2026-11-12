@@ -315,15 +315,43 @@ CREATE TABLE recipient (
     authentication_type TEXT NOT NULL,
     comment             TEXT,
     owner               TEXT,
+    properties          TEXT,
+    -- When the tokens of the recipient end, if they do.
+    expiration_time     BIGINT,
     created_at          BIGINT NOT NULL,
     created_by          TEXT,
     updated_at          BIGINT,
-    updated_by          TEXT,
-    token_hash          TEXT UNIQUE,
-    token_prefix        TEXT,
-    shares              TEXT
+    updated_by          TEXT
 );
 CREATE INDEX recipient_by_owner ON recipient (owner);
+
+-- The bearer tokens of a recipient, by their sha256. Until the recipient
+-- opens the activation link of a token, `sealed_token` is the reference of
+-- the token in the secret store and `activation_hash` the sha256 of the
+-- code in the link.
+CREATE TABLE recipient_token (
+    id_string       TEXT PRIMARY KEY,
+    recipient_id    TEXT NOT NULL,
+    token_hash      TEXT NOT NULL UNIQUE,
+    activation_hash TEXT UNIQUE,
+    sealed_token    TEXT,
+    expiration_time BIGINT,
+    created_at      BIGINT NOT NULL,
+    created_by      TEXT,
+    updated_at      BIGINT NOT NULL,
+    updated_by      TEXT
+);
+CREATE INDEX recipient_token_by_recipient ON recipient_token (recipient_id);
+
+-- The shares that a recipient reads.
+CREATE TABLE share_grant (
+    share_id     TEXT NOT NULL,
+    recipient_id TEXT NOT NULL,
+    granted_at   BIGINT NOT NULL,
+    granted_by   TEXT,
+    PRIMARY KEY (share_id, recipient_id)
+);
+CREATE INDEX share_grant_by_recipient ON share_grant (recipient_id);
 
 -- Upstream `uc_storage_cleanup_tasks`: the files of a dropped managed
 -- table, volume, model or model version, still to delete. Times are epoch

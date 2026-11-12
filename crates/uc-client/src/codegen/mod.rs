@@ -1,4 +1,5 @@
 // @generated — do not edit by hand.
+pub mod activations;
 pub mod admin;
 pub mod audit;
 pub mod auth;
@@ -20,7 +21,6 @@ pub mod schemas;
 pub mod scim;
 pub mod search;
 pub mod shares;
-pub mod sharing;
 pub mod staging_tables;
 pub mod tables;
 pub mod temporary_credentials;

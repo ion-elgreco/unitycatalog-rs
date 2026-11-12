@@ -17,8 +17,8 @@ use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 use object_store::{
     ObjectStore, ObjectStoreExt, StaticCredentialProvider,
-    aws::AmazonS3Builder,
-    azure::{AzureConfigKey, MicrosoftAzureBuilder},
+    aws::{AmazonS3, AmazonS3Builder},
+    azure::{AzureConfigKey, MicrosoftAzure, MicrosoftAzureBuilder},
     client::SpawnedReqwestConnector,
     gcp::{GcpCredential, GoogleCloudStorageBuilder},
     list::PaginatedListStore,
@@ -90,27 +90,59 @@ impl ServerStorage {
                 expires_at: None,
             });
         }
-        let credential = credential_for_url(&self.metastore, location.as_str()).await?;
-        // Neither an external location nor a location of the settings: the
-        // environment's credentials.
-        if credential.is_none() && !self.vendor.covers(location) {
-            let (store, pages) = build_store(location, None, self.vendor.s3_store())?;
+        let Some(credentials) = self.credentials(location, op).await? else {
+            let (store, pages) = build_store(
+                location,
+                None,
+                self.vendor.s3_store(),
+                self.vendor.azure_blob(),
+            )?;
             return Ok(Opened {
                 store,
                 pages,
                 root,
                 expires_at: None,
             });
-        }
-        let ctx = CredentialContext::new(location.clone(), op.privileges(), credential);
-        let credentials = self.vendor.vend(&ctx).await?;
-        let (store, pages) = build_store(location, Some(&credentials), self.vendor.s3_store())?;
+        };
+        let (store, pages) = build_store(
+            location,
+            Some(&credentials),
+            self.vendor.s3_store(),
+            self.vendor.azure_blob(),
+        )?;
         Ok(Opened {
             store,
             pages,
             root,
             expires_at: credentials.expiration_time,
         })
+    }
+
+    /// Temporary credentials for `op` at the cloud location `location`.
+    /// `None` for a location that is neither under an external location
+    /// nor under a location of the settings: the environment's credentials
+    /// reach it.
+    pub async fn credentials(
+        &self,
+        location: &NormalizedUrl,
+        op: VendOp,
+    ) -> Result<Option<TemporaryCredentials>, StorageError> {
+        let credential = credential_for_url(&self.metastore, location.as_str()).await?;
+        if credential.is_none() && !self.vendor.covers(location) {
+            return Ok(None);
+        }
+        let ctx = CredentialContext::new(location.clone(), op.privileges(), credential);
+        Ok(Some(self.vendor.vend(&ctx).await?))
+    }
+
+    /// The S3-compatible store of the settings, if not AWS.
+    pub fn s3_store(&self) -> Option<&S3Store> {
+        self.vendor.s3_store()
+    }
+
+    /// The blob endpoint of Azure locations, if not Azure's.
+    pub fn azure_blob(&self) -> Option<&str> {
+        self.vendor.azure_blob()
     }
 }
 
@@ -140,16 +172,29 @@ const STORE_TTL: Duration = Duration::from_secs(5 * 60);
 /// How long before its credentials expire a store is dropped.
 const EXPIRY_MARGIN: Duration = Duration::from_secs(2 * 60);
 
-struct StoreExpiry;
+/// What is kept until shortly before its credentials expire.
+pub(crate) trait Expires {
+    /// When the credentials expire, in epoch milliseconds; `None` without
+    /// vended credentials.
+    fn expires_at(&self) -> Option<i64>;
+}
 
-impl moka::Expiry<(String, VendOp), Arc<Opened>> for StoreExpiry {
+impl Expires for Opened {
+    fn expires_at(&self) -> Option<i64> {
+        self.expires_at
+    }
+}
+
+struct UntilExpiry;
+
+impl<K, V: Expires> moka::Expiry<K, Arc<V>> for UntilExpiry {
     fn expire_after_create(
         &self,
-        _key: &(String, VendOp),
-        opened: &Arc<Opened>,
+        _key: &K,
+        value: &Arc<V>,
         _created_at: Instant,
     ) -> Option<Duration> {
-        let Some(expires_at) = opened.expires_at else {
+        let Some(expires_at) = value.expires_at() else {
             return Some(STORE_TTL);
         };
         let left = u64::try_from(expires_at - now_epoch_millis()).unwrap_or(0);
@@ -161,14 +206,22 @@ impl moka::Expiry<(String, VendOp), Arc<Opened>> for StoreExpiry {
     }
 }
 
+/// A cache whose values leave [`STORE_TTL`] after they came, or
+/// [`EXPIRY_MARGIN`] before their credentials expire, if that is sooner.
+pub(crate) fn expiring_cache<K, V>() -> moka::future::Cache<K, Arc<V>>
+where
+    K: std::hash::Hash + Eq + Send + Sync + 'static,
+    V: Expires + Send + Sync + 'static,
+{
+    moka::future::Cache::builder()
+        .max_capacity(1_000)
+        .expire_after(UntilExpiry)
+        .build()
+}
+
 impl Default for StoreCache {
     fn default() -> Self {
-        Self(
-            moka::future::Cache::builder()
-                .max_capacity(1_000)
-                .expire_after(StoreExpiry)
-                .build(),
-        )
+        Self(expiring_cache())
     }
 }
 
@@ -197,40 +250,20 @@ impl StoreCache {
 /// The store of `location` with `credentials`, and its paged listing.
 type Built = (Arc<dyn ObjectStore>, Option<Arc<dyn PaginatedListStore>>);
 
-fn build_store(
+pub(crate) fn build_store(
     location: &NormalizedUrl,
     credentials: Option<&TemporaryCredentials>,
     s3_store: Option<&S3Store>,
+    azure_blob: Option<&str>,
 ) -> Result<Built, StorageError> {
-    let url = location.as_str();
     Ok(match location.scheme() {
         UriScheme::S3 => {
-            let mut builder = AmazonS3Builder::from_env()
-                .with_url(url)
-                .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
-            if let Some(store) = s3_store {
-                builder = builder
-                    .with_endpoint(&store.endpoint)
-                    .with_region(&store.region)
-                    .with_allow_http(true);
-            }
-            if let Some(aws) = credentials.and_then(|c| c.aws_temp_credentials.as_ref()) {
-                if let Some(key) = &aws.access_key_id {
-                    builder = builder.with_access_key_id(key);
-                }
-                if let Some(secret) = &aws.secret_access_key {
-                    builder = builder.with_secret_access_key(secret);
-                }
-                if let Some(token) = &aws.session_token {
-                    builder = builder.with_token(token);
-                }
-            }
-            let store = Arc::new(builder.build()?);
+            let store = Arc::new(s3(location, credentials, s3_store)?);
             (store.clone(), Some(store))
         }
         UriScheme::Gs => {
             let mut builder = GoogleCloudStorageBuilder::from_env()
-                .with_url(url)
+                .with_url(location.as_str())
                 .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
             let token = credentials
                 .and_then(|c| c.gcp_oauth_token.as_ref())
@@ -243,20 +276,64 @@ fn build_store(
             (store.clone(), Some(store))
         }
         UriScheme::Abfs | UriScheme::Abfss => {
-            let mut builder = MicrosoftAzureBuilder::from_env()
-                .with_url(url)
-                .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
-            let sas = credentials
-                .and_then(|c| c.azure_user_delegation_sas.as_ref())
-                .and_then(|s| s.sas_token.clone());
-            if let Some(sas) = sas {
-                builder = builder.with_config(AzureConfigKey::SasKey, sas);
-            }
-            let store = Arc::new(builder.build()?);
+            let store = Arc::new(azure(location, credentials, azure_blob)?);
             (store.clone(), Some(store))
         }
         UriScheme::File => (Arc::new(LocalFileSystem::new()), None),
     })
+}
+
+/// The S3 store of `location` with `credentials`.
+pub(crate) fn s3(
+    location: &NormalizedUrl,
+    credentials: Option<&TemporaryCredentials>,
+    s3_store: Option<&S3Store>,
+) -> Result<AmazonS3, StorageError> {
+    let mut builder = AmazonS3Builder::from_env()
+        .with_url(location.as_str())
+        .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
+    if let Some(store) = s3_store {
+        builder = builder
+            .with_endpoint(&store.endpoint)
+            .with_region(&store.region)
+            .with_allow_http(true);
+    }
+    if let Some(aws) = credentials.and_then(|c| c.aws_temp_credentials.as_ref()) {
+        if let Some(key) = &aws.access_key_id {
+            builder = builder.with_access_key_id(key);
+        }
+        if let Some(secret) = &aws.secret_access_key {
+            builder = builder.with_secret_access_key(secret);
+        }
+        if let Some(token) = &aws.session_token {
+            builder = builder.with_token(token);
+        }
+    }
+    Ok(builder.build()?)
+}
+
+/// The Azure store of `location` with `credentials`, at the blob endpoint
+/// `blob` if it is not Azure's.
+pub(crate) fn azure(
+    location: &NormalizedUrl,
+    credentials: Option<&TemporaryCredentials>,
+    blob: Option<&str>,
+) -> Result<MicrosoftAzure, StorageError> {
+    let mut builder = MicrosoftAzureBuilder::from_env()
+        .with_url(location.as_str())
+        .with_http_connector(SpawnedReqwestConnector::new(io_handle()));
+    if let Some(blob) = blob {
+        builder = builder
+            .with_endpoint(blob.to_string())
+            .with_allow_http(true);
+    }
+    let sas = credentials
+        .and_then(|c| c.azure_user_delegation_sas.as_ref())
+        .and_then(|s| s.sas_token.clone());
+    if let Some(sas) = sas {
+        builder = builder.with_config(AzureConfigKey::SasKey, sas);
+    }
+    Ok(builder.build()?)
 }
 
 /// Delete every object under `prefix`, in batches where the store has
@@ -383,7 +460,7 @@ mod tests {
             region: "us-east-1".into(),
         };
         let location = NormalizedUrl::parse("s3://bucket/tables/t1").unwrap();
-        let (s3, _) = build_store(&location, Some(&credentials), Some(&store)).unwrap();
+        let (s3, _) = build_store(&location, Some(&credentials), Some(&store), None).unwrap();
         let path = ObjectPath::from("tables/t1/part-0");
         s3.put(&path, PutPayload::from_static(b"x")).await.unwrap();
         assert_eq!(*seen.lock().unwrap(), ["PUT /bucket/tables/t1/part-0"]);

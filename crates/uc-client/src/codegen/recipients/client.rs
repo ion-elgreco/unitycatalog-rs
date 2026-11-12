@@ -9,7 +9,6 @@ use crate::codegen::error::Result;
 #[cfg(target_arch = "wasm32")]
 use ::olai_http_wasm::WasmClient as Transport;
 use uc_client::models::recipients::v1::*;
-use uc_client::models::sharing::v1::*;
 use url::Url;
 
 /// HTTP client for service operations
@@ -28,7 +27,7 @@ impl RecipientServiceClient {
         Self { client, base_url }
     }
 
-    /// List the recipients.
+    /// List recipients.
     pub async fn list_recipients(
         &self,
         request: &ListRecipientsRequest,
@@ -53,8 +52,8 @@ impl RecipientServiceClient {
         })?)
     }
 
-    /// Create a recipient. The response holds its bearer token, which no later response shows.
-    pub async fn create_recipient(&self, request: &CreateRecipient) -> Result<RecipientInfo> {
+    /// Create a new recipient.
+    pub async fn create_recipient(&self, request: &CreateRecipientRequest) -> Result<Recipient> {
         let url = self.base_url.join("api/2.1/unity-catalog/recipients")?;
         let response = self.client.post(url).json(request).send_unchecked().await?;
         if !response.status().is_success() {
@@ -67,8 +66,8 @@ impl RecipientServiceClient {
         })?)
     }
 
-    /// Get a recipient. The response does not hold the bearer token.
-    pub async fn get_recipient(&self, request: &GetRecipientRequest) -> Result<RecipientInfo> {
+    /// Get a recipient by name.
+    pub async fn get_recipient(&self, request: &GetRecipientRequest) -> Result<Recipient> {
         let formatted_path = format!(
             "api/2.1/unity-catalog/recipients/{}",
             encode_path_value(&request.name, false)
@@ -85,8 +84,8 @@ impl RecipientServiceClient {
         })?)
     }
 
-    /// Change a recipient: its comment and the shares it can read.
-    pub async fn update_recipient(&self, request: &UpdateRecipient) -> Result<RecipientInfo> {
+    /// Update a recipient.
+    pub async fn update_recipient(&self, request: &UpdateRecipientRequest) -> Result<Recipient> {
         let formatted_path = format!(
             "api/2.1/unity-catalog/recipients/{}",
             encode_path_value(&request.name, false)
@@ -119,38 +118,14 @@ impl RecipientServiceClient {
         Ok(())
     }
 
-    /// Replace the bearer token of a recipient. The old token stops working. The response holds the
-    /// new token.
+    /// Rotate a recipient's token: issue a new token (and activation link) and
+    /// retire the existing one.
     pub async fn rotate_recipient_token(
         &self,
         request: &RotateRecipientTokenRequest,
-    ) -> Result<RecipientInfo> {
+    ) -> Result<Recipient> {
         let formatted_path = format!(
             "api/2.1/unity-catalog/recipients/{}/rotate-token",
-            encode_path_value(&request.name, false)
-        );
-        let url = self.base_url.join(&formatted_path)?;
-        let mut body = request.clone();
-        body.name = Default::default();
-        let response = self.client.post(url).json(&body).send_unchecked().await?;
-        if !response.status().is_success() {
-            return Err(crate::codegen::error::parse_error_response(response).await);
-        }
-        let result = response.bytes().await?;
-        let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
-        Ok(::buffa::json::with_json_parse_options(&options, || {
-            serde_json::from_slice(&result)
-        })?)
-    }
-
-    /// Replace the bearer token of a recipient and return a Delta Sharing profile with the new token.
-    /// The old token stops working.
-    pub async fn create_recipient_profile(
-        &self,
-        request: &CreateRecipientProfileRequest,
-    ) -> Result<RecipientProfile> {
-        let formatted_path = format!(
-            "api/2.1/unity-catalog/recipients/{}/profile",
             encode_path_value(&request.name, false)
         );
         let url = self.base_url.join(&formatted_path)?;

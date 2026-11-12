@@ -46,7 +46,10 @@ pub use schema::{PropertyChanges, SchemaOps};
 pub use scim::{ADMIN, Edit, Page, ScimKey, ScimOps, SeedReport, SeedUser};
 pub use search::{SearchHit, SearchOps};
 pub use secrets::{CachedStore, DatabaseStore, OpenError, SecretRef, SecretStore, SecretValue};
-pub use sharing::SharingOps;
+pub use sharing::{
+    Activated, NewRecipient, ObjectChange, Recipient, RecipientToken, RecipientUpdate, Share,
+    ShareObject, ShareObjectType, ShareUpdate, SharingOps, TokenRecipient,
+};
 pub use sql::SqlMetastore;
 pub use table::TableOps;
 pub use token::TokenOps;

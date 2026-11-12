@@ -27,7 +27,7 @@ impl ShareServiceClient {
         Self { client, base_url }
     }
 
-    /// List the shares.
+    /// List shares.
     pub async fn list_shares(&self, request: &ListSharesRequest) -> Result<ListSharesResponse> {
         let mut url = self.base_url.join("api/2.1/unity-catalog/shares")?;
         if let Some(ref value) = request.max_results {
@@ -49,8 +49,8 @@ impl ShareServiceClient {
         })?)
     }
 
-    /// Create a share. It holds no tables: add them with `UpdateShare`.
-    pub async fn create_share(&self, request: &CreateShare) -> Result<ShareInfo> {
+    /// Create a new share.
+    pub async fn create_share(&self, request: &CreateShareRequest) -> Result<Share> {
         let url = self.base_url.join("api/2.1/unity-catalog/shares")?;
         let response = self.client.post(url).json(request).send_unchecked().await?;
         if !response.status().is_success() {
@@ -63,13 +63,17 @@ impl ShareServiceClient {
         })?)
     }
 
-    /// Get a share.
-    pub async fn get_share(&self, request: &GetShareRequest) -> Result<ShareInfo> {
+    /// Get a share by name.
+    pub async fn get_share(&self, request: &GetShareRequest) -> Result<Share> {
         let formatted_path = format!(
             "api/2.1/unity-catalog/shares/{}",
             encode_path_value(&request.name, false)
         );
-        let url = self.base_url.join(&formatted_path)?;
+        let mut url = self.base_url.join(&formatted_path)?;
+        if let Some(ref value) = request.include_shared_data {
+            url.query_pairs_mut()
+                .append_pair("include_shared_data", &value.to_string());
+        }
         let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
@@ -81,8 +85,8 @@ impl ShareServiceClient {
         })?)
     }
 
-    /// Change a share: its comment, its name and its tables.
-    pub async fn update_share(&self, request: &UpdateShare) -> Result<ShareInfo> {
+    /// Update a share.
+    pub async fn update_share(&self, request: &UpdateShareRequest) -> Result<Share> {
         let formatted_path = format!(
             "api/2.1/unity-catalog/shares/{}",
             encode_path_value(&request.name, false)
@@ -101,7 +105,7 @@ impl ShareServiceClient {
         })?)
     }
 
-    /// Delete a share.
+    /// Deletes a share.
     pub async fn delete_share(&self, request: &DeleteShareRequest) -> Result<()> {
         let formatted_path = format!(
             "api/2.1/unity-catalog/shares/{}",
@@ -113,5 +117,57 @@ impl ShareServiceClient {
             return Err(crate::codegen::error::parse_error_response(response).await);
         }
         Ok(())
+    }
+
+    /// Gets the permissions for a data share from the metastore.
+    pub async fn get_share_permissions(
+        &self,
+        request: &GetSharePermissionsRequest,
+    ) -> Result<GetSharePermissionsResponse> {
+        let formatted_path = format!(
+            "api/2.1/unity-catalog/shares/{}/permissions",
+            encode_path_value(&request.name, false)
+        );
+        let mut url = self.base_url.join(&formatted_path)?;
+        if let Some(ref value) = request.max_results {
+            url.query_pairs_mut()
+                .append_pair("max_results", &value.to_string());
+        }
+        if let Some(ref value) = request.page_token {
+            url.query_pairs_mut()
+                .append_pair("page_token", &value.to_string());
+        }
+        let response = self.client.get(url).send_unchecked().await?;
+        if !response.status().is_success() {
+            return Err(crate::codegen::error::parse_error_response(response).await);
+        }
+        let result = response.bytes().await?;
+        let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
+    }
+
+    /// Updates the permissions for a data share in the metastore.
+    pub async fn update_share_permissions(
+        &self,
+        request: &UpdateSharePermissionsRequest,
+    ) -> Result<UpdateSharePermissionsResponse> {
+        let formatted_path = format!(
+            "api/2.1/unity-catalog/shares/{}/permissions",
+            encode_path_value(&request.name, false)
+        );
+        let url = self.base_url.join(&formatted_path)?;
+        let mut body = request.clone();
+        body.name = Default::default();
+        let response = self.client.patch(url).json(&body).send_unchecked().await?;
+        if !response.status().is_success() {
+            return Err(crate::codegen::error::parse_error_response(response).await);
+        }
+        let result = response.bytes().await?;
+        let options = ::buffa::json::JsonParseOptions::new().ignore_unknown_enum_values(true);
+        Ok(::buffa::json::with_json_parse_options(&options, || {
+            serde_json::from_slice(&result)
+        })?)
     }
 }

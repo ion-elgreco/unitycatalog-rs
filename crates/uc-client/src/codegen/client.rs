@@ -4,6 +4,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 use ::olai_http::CloudClient as Transport;
 
+use crate::codegen::activations::*;
 use crate::codegen::admin::*;
 use crate::codegen::audit::*;
 use crate::codegen::auth::*;
@@ -25,7 +26,6 @@ use crate::codegen::schemas::*;
 use crate::codegen::scim::*;
 use crate::codegen::search::*;
 use crate::codegen::shares::*;
-use crate::codegen::sharing::*;
 use crate::codegen::staging_tables::*;
 use crate::codegen::tables::*;
 use crate::codegen::temporary_credentials::*;
@@ -52,7 +52,6 @@ use uc_client::models::schemas::v1::*;
 use uc_client::models::scim::v1::*;
 use uc_client::models::search::v1::*;
 use uc_client::models::shares::v1::*;
-use uc_client::models::sharing::v1::*;
 use uc_client::models::tables::v1::*;
 use uc_client::models::tokens::v1::*;
 use uc_client::models::volumes::v1::*;
@@ -156,6 +155,14 @@ impl Client {
     /// (cookies / forwarded auth) on each request.
     pub fn new_in_browser(base_url: Url) -> Self {
         Self::new(Transport::new(), base_url)
+    }
+
+    ///Low-level `activations` client exposing request/response passthrough methods.
+    pub fn activations_client(&self) -> crate::codegen::activations::ActivationClient {
+        crate::codegen::activations::ActivationClient::new(
+            self.client.clone(),
+            self.base_url.clone(),
+        )
     }
 
     ///Low-level `admin` client exposing request/response passthrough methods.
@@ -299,11 +306,6 @@ impl Client {
         crate::codegen::shares::ShareServiceClient::new(self.client.clone(), self.base_url.clone())
     }
 
-    ///Low-level `sharing` client exposing request/response passthrough methods.
-    pub fn sharing_client(&self) -> crate::codegen::sharing::SharingClient {
-        crate::codegen::sharing::SharingClient::new(self.client.clone(), self.base_url.clone())
-    }
-
     ///Low-level `staging_tables` client exposing request/response passthrough methods.
     pub fn staging_tables_client(&self) -> crate::codegen::staging_tables::StagingTableClient {
         crate::codegen::staging_tables::StagingTableClient::new(
@@ -337,6 +339,26 @@ impl Client {
         crate::codegen::volumes::VolumeServiceClient::new(
             self.client.clone(),
             self.base_url.clone(),
+        )
+    }
+
+    /// Open the activation link of a token: the Delta Sharing profile with the bearer token. A link
+    /// works once, and the request needs no sign-in: the code is the secret. The server keeps a hash
+    /// of the token only after this.
+    ///
+    /// # Arguments
+    ///
+    /// * `code` - The code of the activation link.
+    pub fn activate_recipient_token(
+        &self,
+        code: impl Into<String>,
+    ) -> ActivateRecipientTokenBuilder {
+        ActivateRecipientTokenBuilder::new(
+            crate::codegen::activations::ActivationClient::new(
+                self.client.clone(),
+                self.base_url.clone(),
+            ),
+            code,
         )
     }
 
@@ -1603,7 +1625,7 @@ impl Client {
         )
     }
 
-    /// List the recipients.
+    /// List recipients.
     pub fn list_recipients(&self) -> ListRecipientsBuilder {
         ListRecipientsBuilder::new(crate::codegen::recipients::RecipientServiceClient::new(
             self.client.clone(),
@@ -1611,7 +1633,7 @@ impl Client {
         ))
     }
 
-    /// Create a recipient. The response holds its bearer token, which no later response shows.
+    /// Create a new recipient.
     ///
     /// # Arguments
     ///
@@ -2005,7 +2027,7 @@ impl Client {
         )
     }
 
-    /// List the shares.
+    /// List shares.
     pub fn list_shares(&self) -> ListSharesBuilder {
         ListSharesBuilder::new(crate::codegen::shares::ShareServiceClient::new(
             self.client.clone(),
@@ -2013,7 +2035,7 @@ impl Client {
         ))
     }
 
-    /// Create a share. It holds no tables: add them with `UpdateShare`.
+    /// Create a new share.
     ///
     /// # Arguments
     ///
@@ -2036,121 +2058,6 @@ impl Client {
                 self.client.clone(),
                 self.base_url.clone(),
             ),
-        )
-    }
-
-    /// List the shares that the recipient can read.
-    pub fn sharing_list_shares(&self) -> SharingListSharesBuilder {
-        SharingListSharesBuilder::new(crate::codegen::sharing::SharingClient::new(
-            self.client.clone(),
-            self.base_url.clone(),
-        ))
-    }
-
-    /// List the schemas of a share.
-    ///
-    /// # Arguments
-    ///
-    /// * `share` - Name of the share.
-    pub fn sharing_list_schemas(&self, share: impl Into<String>) -> SharingListSchemasBuilder {
-        SharingListSchemasBuilder::new(
-            crate::codegen::sharing::SharingClient::new(self.client.clone(), self.base_url.clone()),
-            share,
-        )
-    }
-
-    /// List the tables of a schema of a share.
-    ///
-    /// # Arguments
-    ///
-    /// * `share` - Name of the share.
-    /// * `schema` - Name of the schema.
-    pub fn sharing_list_tables(
-        &self,
-        share: impl Into<String>,
-        schema: impl Into<String>,
-    ) -> SharingListTablesBuilder {
-        SharingListTablesBuilder::new(
-            crate::codegen::sharing::SharingClient::new(self.client.clone(), self.base_url.clone()),
-            share,
-            schema,
-        )
-    }
-
-    /// List the tables of all schemas of a share.
-    ///
-    /// # Arguments
-    ///
-    /// * `share` - Name of the share.
-    pub fn sharing_list_all_tables(&self, share: impl Into<String>) -> SharingListAllTablesBuilder {
-        SharingListAllTablesBuilder::new(
-            crate::codegen::sharing::SharingClient::new(self.client.clone(), self.base_url.clone()),
-            share,
-        )
-    }
-
-    /// Get the version of a table.
-    ///
-    /// # Arguments
-    ///
-    /// * `share` - Name of the share.
-    /// * `schema` - Name of the schema.
-    /// * `table` - Name of the table.
-    pub fn sharing_get_table_version(
-        &self,
-        share: impl Into<String>,
-        schema: impl Into<String>,
-        table: impl Into<String>,
-    ) -> SharingGetTableVersionBuilder {
-        SharingGetTableVersionBuilder::new(
-            crate::codegen::sharing::SharingClient::new(self.client.clone(), self.base_url.clone()),
-            share,
-            schema,
-            table,
-        )
-    }
-
-    /// Get the protocol and the metadata of a table. The response also has the version of the table
-    /// in the `Delta-Table-Version` header (always 0).
-    ///
-    /// # Arguments
-    ///
-    /// * `share` - Name of the share.
-    /// * `schema` - Name of the schema.
-    /// * `table` - Name of the table.
-    pub fn sharing_get_table_metadata(
-        &self,
-        share: impl Into<String>,
-        schema: impl Into<String>,
-        table: impl Into<String>,
-    ) -> SharingGetTableMetadataBuilder {
-        SharingGetTableMetadataBuilder::new(
-            crate::codegen::sharing::SharingClient::new(self.client.clone(), self.base_url.clone()),
-            share,
-            schema,
-            table,
-        )
-    }
-
-    /// Read a table. The server does not read the Delta log: the answer is that of
-    /// `SharingGetTableMetadata`, with no data files. The server ignores the request body.
-    ///
-    /// # Arguments
-    ///
-    /// * `share` - Name of the share.
-    /// * `schema` - Name of the schema.
-    /// * `table` - Name of the table.
-    pub fn sharing_query_table(
-        &self,
-        share: impl Into<String>,
-        schema: impl Into<String>,
-        table: impl Into<String>,
-    ) -> SharingQueryTableBuilder {
-        SharingQueryTableBuilder::new(
-            crate::codegen::sharing::SharingClient::new(self.client.clone(), self.base_url.clone()),
-            share,
-            schema,
-            table,
         )
     }
 

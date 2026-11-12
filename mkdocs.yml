@@ -103,7 +103,6 @@ nav:
           - unitycatalog.scim: reference/python/scim.md
           - unitycatalog.search: reference/python/search.md
           - unitycatalog.shares: reference/python/shares.md
-          - unitycatalog.sharing: reference/python/sharing.md
           - unitycatalog.tables: reference/python/tables.md
           - unitycatalog.tokens: reference/python/tokens.md
           - unitycatalog.volumes: reference/python/volumes.md

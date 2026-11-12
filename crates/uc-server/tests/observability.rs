@@ -256,3 +256,38 @@ async fn operation_ids_are_unique() {
     }
     assert!(seen.contains_key("iceberg_load_table"));
 }
+
+/// The routes of sharing are not utoipa routes: their operations and
+/// schemas come from a document of their own.
+#[tokio::test]
+async fn the_document_has_the_operations_of_sharing() {
+    let metastore = SqlMetastore::connect(MetastoreConfig::for_tests())
+        .await
+        .unwrap();
+    let api = build_app(AppState::new(metastore));
+    let (_, doc) = json(&api, "/api-docs/openapi.json").await;
+    let operations = [
+        ("/api/2.1/unity-catalog/shares/{name}/permissions", "patch"),
+        (
+            "/api/2.1/unity-catalog/recipients/{name}/rotate-token",
+            "post",
+        ),
+        ("/api/1.0/opensharing/activations/{code}", "get"),
+        (
+            "/api/v1/delta-sharing/shares/{share}/schemas/{schema}/tables/{table}/query",
+            "post",
+        ),
+        (
+            "/api/1.0/opensharing/shares/{share}/schemas/{schema}/volumes/{name}",
+            "get",
+        ),
+    ];
+    for (path, method) in operations {
+        assert!(doc["paths"][path][method].is_object(), "{method} {path}");
+    }
+
+    let sharing = uc_server::server::openapi::sharing();
+    for (name, schema) in sharing["components"]["schemas"].as_object().unwrap() {
+        assert_eq!(&doc["components"]["schemas"][name], schema, "{name}");
+    }
+}

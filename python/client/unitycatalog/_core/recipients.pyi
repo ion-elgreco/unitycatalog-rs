@@ -2,49 +2,104 @@
 The classes of the `recipients` API.
 """
 
-from .sharing import RecipientProfile
-from _typeshed import SupportsGetItem
 from asyncio import Future
-from typing import final
+from typing import SupportsIndex, final
 from unitycatalog._enums import AuthenticationType
 
-__all__ = ["ListRecipientsResponse", "RecipientClient", "RecipientInfo"]
+__all__ = [
+    "ListRecipientsResponse",
+    "Recipient",
+    "RecipientClient",
+    "RecipientProfile",
+    "RecipientToken",
+    "SecurablePropertiesKvPairs",
+]
 
 @final
 class ListRecipientsResponse:
+    """
+    Response to list recipients.
+    """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
     def __repr__(self, /) -> str: ...
     @property
-    def items(self, /) -> list[RecipientInfo]:
-        """
-        The recipients.
-        """
-    @property
     def next_page_token(self, /) -> str | None:
         """
-        Opaque token of the next page. Absent on the last page.
+        Opaque pagination token to go to next page based on previous query.
+        """
+    @property
+    def recipients(self, /) -> list[Recipient]:
+        """
+        List of recipients.
+        """
+
+@final
+class Recipient:
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def authentication_type(self, /) -> AuthenticationType | None:
+        """
+        The delta sharing authentication type.
+        """
+    @property
+    def comment(self, /) -> str | None:
+        """
+        Description about the recipient.
+        """
+    @property
+    def created_at(self, /) -> int | None:
+        """
+        Time at which this recipient was created, in epoch milliseconds.
+        """
+    @property
+    def created_by(self, /) -> str | None:
+        """
+        Username of recipient creator.
+        """
+    @property
+    def id(self, /) -> str | None:
+        """
+        Unique ID of the recipient.
+        """
+    @property
+    def name(self, /) -> str:
+        """
+        The name of the recipient.
+        """
+    @property
+    def owner(self, /) -> str | None:
+        """
+        Username of the recipient owner.
+        """
+    @property
+    def properties_kvpairs(self, /) -> SecurablePropertiesKvPairs | None:
+        """
+        Recipient properties as map of string key-value pairs.
+        """
+    @property
+    def tokens(self, /) -> list[RecipientToken]:
+        """
+        This field is only present when the authentication_type is TOKEN.
+        """
+    @property
+    def updated_at(self, /) -> int | None:
+        """
+        Time at which this recipient was updated, in epoch milliseconds.
+        """
+    @property
+    def updated_by(self, /) -> str | None:
+        """
+        Username of recipient updater.
         """
 
 @final
 class RecipientClient:
     """
-    The requests on one `RecipientInfo`.
+    The requests on one `Recipient`.
     """
-    def create_recipient_profile(self, /) -> RecipientProfile:
-        """
-        Replace the bearer token of a recipient and return a Delta Sharing profile with the new token. The
-        old token stops working.
-
-        Returns:
-            A Delta Sharing profile file (`profile.json`): what a Delta Sharing client needs to connect
-            to
-            the server as a recipient.
-        """
-    def create_recipient_profile_async(self, /) -> Future[RecipientProfile]:
-        """
-        Like `create_recipient_profile`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-        """
     def delete(self, /) -> None:
         """
         Delete a recipient.
@@ -53,30 +108,34 @@ class RecipientClient:
         """
         Like `delete`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def get(self, /) -> RecipientInfo:
+    def get(self, /) -> Recipient:
         """
-        Get a recipient. The response does not hold the bearer token.
+        Get a recipient by name.
 
         Returns:
-            A Delta Sharing recipient: an organization or user outside Unity Catalog that reads shares
-            with
-            a bearer token. The server keeps a hash of the token only.
+            The requested resource
         """
-    def get_async(self, /) -> Future[RecipientInfo]:
+    def get_async(self, /) -> Future[Recipient]:
         """
         Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def rotate_recipient_token(self, /) -> RecipientInfo:
+    def rotate_recipient_token(
+        self, /, *, existing_token_expire_in_seconds: SupportsIndex | None = None
+    ) -> Recipient:
         """
-        Replace the bearer token of a recipient. The old token stops working. The response holds the new
-        token.
+        Rotate a recipient's token: issue a new token (and activation link) and retire the existing one.
+
+        Args:
+            existing_token_expire_in_seconds: Seconds until the existing token expires. It can only shorten
+                                              the existing token's lifetime, never extend it; 0 expires
+                                              it immediately.
 
         Returns:
-            A Delta Sharing recipient: an organization or user outside Unity Catalog that reads shares
-            with
-            a bearer token. The server keeps a hash of the token only.
+            The requested resource
         """
-    def rotate_recipient_token_async(self, /) -> Future[RecipientInfo]:
+    def rotate_recipient_token_async(
+        self, /, *, existing_token_expire_in_seconds: SupportsIndex | None = None
+    ) -> Future[Recipient]:
         """
         Like `rotate_recipient_token`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -84,91 +143,126 @@ class RecipientClient:
         self,
         /,
         *,
+        new_name: str | None = None,
+        owner: str | None = None,
         comment: str | None = None,
-        add_shares: SupportsGetItem[int, str] | None = None,
-        remove_shares: SupportsGetItem[int, str] | None = None,
-    ) -> RecipientInfo:
+        properties_kvpairs: SecurablePropertiesKvPairs | None = None,
+        expiration_time: SupportsIndex | None = None,
+    ) -> Recipient:
         """
-        Change a recipient: its comment and the shares it can read.
+        Update a recipient.
 
         Args:
-            comment: User-provided free-form text description.
-            add_shares: Names of the shares to give the recipient access to.
-            remove_shares: Names of the shares to take the recipient's access away from.
+            new_name: New name for the recipient
+            owner: Username of the recipient owner.
+            comment: Description about the recipient.
+            properties_kvpairs: Recipient properties as map of string key-value pairs. When provided
+                                in update request, the specified properties will override the existing
+                                properties. To add and remove properties, one would need to perform a read-
+                                modify-write.
+            expiration_time: Expiration timestamp of the token, in epoch milliseconds.
 
         Returns:
-            A Delta Sharing recipient: an organization or user outside Unity Catalog that reads shares
-            with
-            a bearer token. The server keeps a hash of the token only.
+            The requested resource
         """
     def update_async(
         self,
         /,
         *,
+        new_name: str | None = None,
+        owner: str | None = None,
         comment: str | None = None,
-        add_shares: SupportsGetItem[int, str] | None = None,
-        remove_shares: SupportsGetItem[int, str] | None = None,
-    ) -> Future[RecipientInfo]:
+        properties_kvpairs: SecurablePropertiesKvPairs | None = None,
+        expiration_time: SupportsIndex | None = None,
+    ) -> Future[Recipient]:
         """
         Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
 
 @final
-class RecipientInfo:
+class RecipientProfile:
     """
-    A Delta Sharing recipient: an organization or user outside Unity Catalog that reads shares with
-    a bearer token. The server keeps a hash of the token only.
+    A Delta Sharing profile file (`profile.json`): what a Delta Sharing client needs to connect to
+    the server as a recipient. The JSON names are lowerCamelCase, as the protocol has them.
     """
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
     def __repr__(self, /) -> str: ...
     @property
-    def authentication_type(self, /) -> AuthenticationType | None:
+    def bearer_token(self, /) -> str:
         """
-        How the recipient signs in.
-        """
-    @property
-    def bearer_token(self, /) -> str | None:
-        """
-        The bearer token. Set only in the responses of `CreateRecipient` and `RotateRecipientToken`.
+        The bearer token of the recipient.
         """
     @property
-    def comment(self, /) -> str | None:
+    def endpoint(self, /) -> str:
         """
-        User-provided free-form text description.
+        URL of the Delta Sharing server: the URL the caller used, ending in
+        `/api/v1/delta-sharing`.
+        """
+    @property
+    def expiration_time(self, /) -> str | None:
+        """
+        Time at which the token expires, as an ISO 8601 timestamp. Not set for a token that does not
+        expire.
+        """
+    @property
+    def share_credentials_version(self, /) -> int:
+        """
+        Version of the profile file format. Always 1.
+        """
+
+@final
+class RecipientToken:
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def activation_url(self, /) -> str:
+        """
+        Full activation URL to retrieve the access token. It will be empty if the token is already retrieved.
         """
     @property
     def created_at(self, /) -> int:
         """
-        Time at which the recipient was created, in epoch milliseconds.
+        Time at which this recipient token was created, in epoch milliseconds.
         """
     @property
-    def created_by(self, /) -> str | None:
+    def created_by(self, /) -> str:
         """
-        Username of the creator of the recipient.
+        Username of recipient token creator.
+        """
+    @property
+    def expiration_time(self, /) -> int:
+        """
+        Expiration timestamp of the token in epoch milliseconds.
         """
     @property
     def id(self, /) -> str:
         """
-        Unique identifier of the recipient.
+        Unique ID of the recipient token.
         """
     @property
-    def name(self, /) -> str:
+    def updated_at(self, /) -> int:
         """
-        Name of the recipient.
-        """
-    @property
-    def owner(self, /) -> str | None:
-        """
-        Username of the owner of the recipient.
+        Time at which this recipient token was updated, in epoch milliseconds.
         """
     @property
-    def shares(self, /) -> list[str]:
+    def updated_by(self, /) -> str:
         """
-        Names of the shares that the recipient can read.
+        Username of recipient token updater.
         """
+
+@final
+class SecurablePropertiesKvPairs:
+    """
+    An object with the properties of a securable as key-value pairs.
+    """
+    def __eq__(self, value: object, /) -> bool: ...
+    def __ne__(self, value: object, /) -> bool: ...
+    def __new__(cls, /, properties: dict[str, str]) -> SecurablePropertiesKvPairs: ...
+    def __repr__(self, /) -> str: ...
     @property
-    def token_prefix(self, /) -> str:
+    def properties(self, /) -> dict[str, str]:
         """
-        The first 8 characters of the bearer token, for display only.
+        A map of key-value properties attached to the securable.
         """

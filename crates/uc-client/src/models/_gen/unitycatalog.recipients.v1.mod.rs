@@ -18,15 +18,18 @@ pub mod __buffa {
 
     /// Register this package's `Any` type entries and extension entries.
     pub fn register_types(reg: &mut ::buffa::type_registry::TypeRegistry) {
-        reg.register_json_any(super::__RECIPIENT_INFO_JSON_ANY);
-        reg.register_json_any(super::__CREATE_RECIPIENT_JSON_ANY);
+        reg.register_json_any(super::__SECURABLE_PROPERTIES_KV_PAIRS_JSON_ANY);
+        reg.register_json_any(super::__RECIPIENT_TOKEN_JSON_ANY);
+        reg.register_json_any(super::__RECIPIENT_JSON_ANY);
         reg.register_json_any(super::__LIST_RECIPIENTS_REQUEST_JSON_ANY);
         reg.register_json_any(super::__LIST_RECIPIENTS_RESPONSE_JSON_ANY);
+        reg.register_json_any(super::__CREATE_RECIPIENT_REQUEST_JSON_ANY);
         reg.register_json_any(super::__GET_RECIPIENT_REQUEST_JSON_ANY);
-        reg.register_json_any(super::__UPDATE_RECIPIENT_JSON_ANY);
+        reg.register_json_any(super::__UPDATE_RECIPIENT_REQUEST_JSON_ANY);
         reg.register_json_any(super::__DELETE_RECIPIENT_REQUEST_JSON_ANY);
         reg.register_json_any(super::__ROTATE_RECIPIENT_TOKEN_REQUEST_JSON_ANY);
-        reg.register_json_any(super::__CREATE_RECIPIENT_PROFILE_REQUEST_JSON_ANY);
+        reg.register_json_any(super::__RECIPIENT_PROFILE_JSON_ANY);
+        reg.register_json_any(super::__ACTIVATE_RECIPIENT_TOKEN_REQUEST_JSON_ANY);
     }
 }
 

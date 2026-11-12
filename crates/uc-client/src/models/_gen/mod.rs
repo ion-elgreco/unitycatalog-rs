@@ -21,9 +21,9 @@ pub use models::v1::ModelVersionInfo;
 pub use models::v1::RegisteredModelInfo;
 #[cfg(feature = "python")]
 pub use pyo3_impls::*;
-pub use recipients::v1::RecipientInfo;
+pub use recipients::v1::Recipient;
 pub use schemas::v1::SchemaInfo;
-pub use shares::v1::ShareInfo;
+pub use shares::v1::Share;
 pub use tables::v1::TableInfo;
 pub use tokens::v1::PatInfo;
 pub use volumes::v1::VolumeInfo;
@@ -140,12 +140,6 @@ pub mod search {
 pub mod shares {
     pub mod v1 {
         include!("./unitycatalog.shares.v1.rs");
-    }
-}
-
-pub mod sharing {
-    pub mod v1 {
-        include!("./unitycatalog.sharing.v1.rs");
     }
 }
 

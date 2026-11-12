@@ -117,6 +117,14 @@ object_store = { version = "0.14", default-features = false, features = ["aws", 
 delta_kernel = { package = "buoyant_kernel", version = "0.30.1", default-features = false, features = ["arrow-60", "internal-api"] }
 delta_kernel_default_engine = { package = "buoyant_kernel_engine", version = "0.30.1", default-features = false, features = ["arrow-60", "rustls"] }
 
+# Open Sharing / Delta Sharing: the protocol routes and the engine that
+# serves them, with the kernel, arrow and object_store versions above.
+opensharing-admin-api = { git = "https://github.com/ion-elgreco/distributary", rev = "83ce08e6a75eaa635565271d9c9c96d7e58cc741" }
+opensharing-api = { git = "https://github.com/ion-elgreco/distributary", rev = "83ce08e6a75eaa635565271d9c9c96d7e58cc741", default-features = false, features = ["axum"] }
+opensharing-client = { git = "https://github.com/ion-elgreco/distributary", rev = "83ce08e6a75eaa635565271d9c9c96d7e58cc741" }
+opensharing-common = { git = "https://github.com/ion-elgreco/distributary", rev = "83ce08e6a75eaa635565271d9c9c96d7e58cc741" }
+opensharing-engine = { git = "https://github.com/ion-elgreco/distributary", rev = "83ce08e6a75eaa635565271d9c9c96d7e58cc741", default-features = false, features = ["delta"] }
+
 # Errors / logging
 thiserror = "2"
 anyhow = "1"

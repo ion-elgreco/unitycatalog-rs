@@ -2,8 +2,9 @@
 //! local Azure emulator with ADLS Gen2: the server signs in at its Entra ID
 //! or instance metadata service, gets a user delegation key from its blob
 //! service and signs a directory SAS. The emulator checks the SAS: its
-//! signature, path and permissions. Skipped without `UC_TEST_FLOCI_AZ_URL`,
-//! such as `http://127.0.0.1:4577`.
+//! signature, path and permissions. The file URLs of a shared table carry
+//! such a SAS. Skipped without `UC_TEST_FLOCI_AZ_URL`, such as
+//! `http://127.0.0.1:4577`.
 
 mod common;
 
@@ -11,12 +12,19 @@ use axum::{
     Router,
     http::{Method, StatusCode},
 };
+use object_store::{ObjectStoreExt, path::Path as ObjectPath};
+use opensharing_engine::{
+    StorageAccess,
+    catalog::{AssetRef, ResolvedLocation, SharedAsset},
+};
 use serde_json::{Value, json};
 use tower::ServiceExt;
+use url::Url;
 
 use uc_metastore::{MetastoreConfig, SqlMetastore};
 use uc_server::{
     AppState, build_app,
+    sharing::{Recipient, access::ServerAccess},
     storage::vendor::{CloudVendor, Endpoints, StorageConfig},
 };
 
@@ -38,6 +46,11 @@ fn emulator() -> Option<String> {
 /// The app with the emulator in place of Azure, and the settings
 /// `settings` (uc.toml).
 async fn app(url: &str, settings: &str) -> Router {
+    build_app(state(url, settings).await)
+}
+
+/// The state of [`app`].
+async fn state(url: &str, settings: &str) -> AppState {
     let metastore = SqlMetastore::connect(MetastoreConfig::for_tests())
         .await
         .unwrap();
@@ -50,7 +63,7 @@ async fn app(url: &str, settings: &str) -> Router {
     let settings = uc_common::settings::Settings::from_toml(settings).unwrap();
     let config = StorageConfig::from_settings(&settings).unwrap();
     let vendor = CloudVendor::new(config).with_endpoints(endpoints);
-    build_app(AppState::new(metastore).with_vendor(vendor))
+    AppState::new(metastore).with_vendor(vendor)
 }
 
 async fn post(app: &Router, path: &str, body: Value) -> Value {
@@ -219,4 +232,63 @@ async fn managed_identities_vend_a_sas() {
             StatusCode::FORBIDDEN
         );
     }
+}
+
+/// A recipient's file URL of a shared table: the server vends a read-only
+/// SAS to itself, reads the table's files with it, and puts it in the URLs
+/// that a recipient gets. The emulator checks the SAS. It does not list
+/// blobs with a directory SAS, so no query runs here.
+#[tokio::test]
+async fn a_shared_table_has_file_urls_with_a_read_sas() {
+    let Some(url) = emulator() else { return };
+    let state = state(&url, "").await;
+    let access = ServerAccess::new(state.metastore.clone(), state.vendor.clone());
+    let app = build_app(state);
+    let principal = json!({ "azure_service_principal": {
+        "directory_id": TENANT, "application_id": CLIENT, "client_secret": "secret" } });
+    let (container, location) = lake(&url, &app, principal).await;
+    let sas = vend(&app, &location, "PATH_READ_WRITE").await;
+    for file in ["lake/events/part-0.parquet", "lake/other/part-0.parquet"] {
+        assert_eq!(put(&url, &container, file, &sas).await, StatusCode::CREATED);
+    }
+
+    let table = SharedAsset::delta_table(
+        AssetRef::table("analytics", "public", "events"),
+        ResolvedLocation::parse(format!("{location}/events")).unwrap(),
+    );
+    let recipient = Recipient {
+        name: "partner".into(),
+        shares: Vec::new(),
+    };
+    let storage = access.table_storage(&table, &recipient).await.unwrap();
+
+    // The server reads a file of the table.
+    let part = ObjectPath::from("lake/events/part-0.parquet");
+    let data = storage.store.get(&part).await.unwrap().bytes().await;
+    assert_eq!(data.unwrap().as_ref(), b"data");
+
+    // The recipient reads the file from its URL, before the URL expires.
+    let file = Url::parse(&format!("{location}/events/part-0.parquet")).unwrap();
+    let signed = storage.signer.sign(&[file]).await.unwrap().remove(0);
+    let path = format!("{url}/{ACCOUNT}/{container}/lake/events/part-0.parquet?");
+    assert!(signed.url.starts_with(&path), "{}", signed.url);
+    assert!(signed.expiration_timestamp.is_some());
+    let resp = reqwest::get(&signed.url).await.unwrap();
+    assert_eq!(
+        (resp.status(), resp.text().await.unwrap()),
+        (StatusCode::OK, "data".to_string())
+    );
+
+    // The SAS of the URL reads the table only, and does not write.
+    let read = signed.url.split_once('?').unwrap().1;
+    assert_eq!(
+        get(&url, &container, "lake/other/part-0.parquet", read)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        put(&url, &container, "lake/events/part-1.parquet", read).await,
+        StatusCode::FORBIDDEN
+    );
 }

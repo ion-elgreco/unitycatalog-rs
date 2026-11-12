@@ -16,7 +16,6 @@ use crate::codegen::error::Result;
 use futures::{StreamExt, TryStreamExt};
 use std::future::IntoFuture;
 use uc_client::models::recipients::v1::*;
-use uc_client::models::sharing::v1::*;
 
 /// Builder for listing recipients
 pub struct ListRecipientsBuilder {
@@ -34,20 +33,22 @@ impl ListRecipientsBuilder {
         Self { client, request }
     }
 
-    /// The maximum number of recipients to return.
+    /// The maximum number of results per page that should be returned.
+    ///
+    /// If unset or 0, the server's default page size is used. Negative values are rejected.
     pub fn with_max_results(mut self, max_results: impl Into<Option<i32>>) -> Self {
         self.request.max_results = max_results.into();
         self
     }
 
-    /// Opaque token of the page to return: the `next_page_token` of the page before.
+    /// Opaque pagination token to go to next page based on previous query.
     pub fn with_page_token(mut self, page_token: impl Into<Option<String>>) -> Self {
         self.request.page_token = page_token.into();
         self
     }
 
     /// Convert paginated request into stream of results
-    pub fn into_stream(self) -> BoxStr<'static, Result<RecipientInfo>> {
+    pub fn into_stream(self) -> BoxStr<'static, Result<Recipient>> {
         let remaining = self.request.max_results;
         let stream = stream_paginated(
             (self, remaining),
@@ -58,8 +59,8 @@ impl ListRecipientsBuilder {
                 }
                 let mut res = builder.client.list_recipients(&builder.request).await?;
                 if let Some(ref mut rem) = remaining {
-                    res.items.truncate((*rem).max(0) as usize);
-                    *rem -= res.items.len() as i32;
+                    res.recipients.truncate((*rem).max(0) as usize);
+                    *rem -= res.recipients.len() as i32;
                 }
                 let next_page_token = if remaining.is_some_and(|r| r <= 0) {
                     None
@@ -69,7 +70,7 @@ impl ListRecipientsBuilder {
                 Ok((res, (builder, remaining), next_page_token))
             },
         )
-        .map_ok(|resp| futures::stream::iter(resp.items.into_iter().map(Ok)))
+        .map_ok(|resp| futures::stream::iter(resp.recipients.into_iter().map(Ok)))
         .try_flatten();
         #[cfg(not(target_arch = "wasm32"))]
         let stream = stream.boxed();
@@ -92,21 +93,21 @@ impl IntoFuture for ListRecipientsBuilder {
 /// Builder for creating a recipient
 pub struct CreateRecipientBuilder {
     client: RecipientServiceClient,
-    request: CreateRecipient,
+    request: CreateRecipientRequest,
 }
 
 impl CreateRecipientBuilder {
     /// Create a new builder instance.
     /// Obtain via the corresponding method on `RecipientServiceClient`.
     pub(crate) fn new(client: RecipientServiceClient, name: impl Into<String>) -> Self {
-        let request = CreateRecipient {
+        let request = CreateRecipientRequest {
             name: name.into(),
             ..Default::default()
         };
         Self { client, request }
     }
 
-    /// How the recipient signs in. Default: `TOKEN`.
+    /// The delta sharing authentication type. The server has `TOKEN` only, which is the default.
     pub fn with_authentication_type(
         mut self,
         authentication_type: impl Into<Option<AuthenticationType>>,
@@ -115,15 +116,42 @@ impl CreateRecipientBuilder {
         self
     }
 
-    /// User-provided free-form text description.
+    /// Username of the recipient owner. The default is the caller.
+    pub fn with_owner(mut self, owner: impl Into<Option<String>>) -> Self {
+        self.request.owner = owner.into();
+        self
+    }
+
+    /// Description about the recipient.
     pub fn with_comment(mut self, comment: impl Into<Option<String>>) -> Self {
         self.request.comment = comment.into();
+        self
+    }
+
+    /// Recipient properties as map of string key-value pairs.
+    ///
+    /// When provided in update request, the specified properties will override the existing properties.
+    /// To add and remove properties, one would need to perform a read-modify-write.
+    pub fn with_properties_kvpairs(
+        mut self,
+        properties_kvpairs: impl Into<Option<SecurablePropertiesKvPairs>>,
+    ) -> Self {
+        self.request.properties_kvpairs = {
+            let properties_kvpairs: ::core::option::Option<_> = properties_kvpairs.into();
+            buffa::MessageField::from(properties_kvpairs)
+        };
+        self
+    }
+
+    /// Expiration timestamp of the token, in epoch milliseconds.
+    pub fn with_expiration_time(mut self, expiration_time: impl Into<Option<i64>>) -> Self {
+        self.request.expiration_time = expiration_time.into();
         self
     }
 }
 
 impl IntoFuture for CreateRecipientBuilder {
-    type Output = Result<RecipientInfo>;
+    type Output = Result<Recipient>;
     type IntoFuture = BoxFut<'static, Self::Output>;
     fn into_future(self) -> Self::IntoFuture {
         let client = self.client;
@@ -151,7 +179,7 @@ impl GetRecipientBuilder {
 }
 
 impl IntoFuture for GetRecipientBuilder {
-    type Output = Result<RecipientInfo>;
+    type Output = Result<Recipient>;
     type IntoFuture = BoxFut<'static, Self::Output>;
     fn into_future(self) -> Self::IntoFuture {
         let client = self.client;
@@ -163,47 +191,62 @@ impl IntoFuture for GetRecipientBuilder {
 /// Builder for updating a recipient
 pub struct UpdateRecipientBuilder {
     client: RecipientServiceClient,
-    request: UpdateRecipient,
+    request: UpdateRecipientRequest,
 }
 
 impl UpdateRecipientBuilder {
     /// Create a new builder instance.
     /// Obtain via the corresponding method on `RecipientServiceClient`.
     pub(crate) fn new(client: RecipientServiceClient, name: impl Into<String>) -> Self {
-        let request = UpdateRecipient {
+        let request = UpdateRecipientRequest {
             name: name.into(),
             ..Default::default()
         };
         Self { client, request }
     }
 
-    /// User-provided free-form text description.
+    /// New name for the recipient
+    pub fn with_new_name(mut self, new_name: impl Into<Option<String>>) -> Self {
+        self.request.new_name = new_name.into();
+        self
+    }
+
+    /// Username of the recipient owner.
+    pub fn with_owner(mut self, owner: impl Into<Option<String>>) -> Self {
+        self.request.owner = owner.into();
+        self
+    }
+
+    /// Description about the recipient.
     pub fn with_comment(mut self, comment: impl Into<Option<String>>) -> Self {
         self.request.comment = comment.into();
         self
     }
 
-    /// Names of the shares to give the recipient access to.
-    pub fn with_add_shares<I>(mut self, add_shares: I) -> Self
-    where
-        I: IntoIterator<Item = String>,
-    {
-        self.request.add_shares = add_shares.into_iter().collect();
+    /// Recipient properties as map of string key-value pairs.
+    ///
+    /// When provided in update request, the specified properties will override the existing properties.
+    /// To add and remove properties, one would need to perform a read-modify-write.
+    pub fn with_properties_kvpairs(
+        mut self,
+        properties_kvpairs: impl Into<Option<SecurablePropertiesKvPairs>>,
+    ) -> Self {
+        self.request.properties_kvpairs = {
+            let properties_kvpairs: ::core::option::Option<_> = properties_kvpairs.into();
+            buffa::MessageField::from(properties_kvpairs)
+        };
         self
     }
 
-    /// Names of the shares to take the recipient's access away from.
-    pub fn with_remove_shares<I>(mut self, remove_shares: I) -> Self
-    where
-        I: IntoIterator<Item = String>,
-    {
-        self.request.remove_shares = remove_shares.into_iter().collect();
+    /// Expiration timestamp of the token, in epoch milliseconds.
+    pub fn with_expiration_time(mut self, expiration_time: impl Into<Option<i64>>) -> Self {
+        self.request.expiration_time = expiration_time.into();
         self
     }
 }
 
 impl IntoFuture for UpdateRecipientBuilder {
-    type Output = Result<RecipientInfo>;
+    type Output = Result<Recipient>;
     type IntoFuture = BoxFut<'static, Self::Output>;
     fn into_future(self) -> Self::IntoFuture {
         let client = self.client;
@@ -256,42 +299,24 @@ impl RotateRecipientTokenBuilder {
         };
         Self { client, request }
     }
+
+    /// Seconds until the existing token expires. It can only shorten the
+    /// existing token's lifetime, never extend it; 0 expires it immediately.
+    pub fn with_existing_token_expire_in_seconds(
+        mut self,
+        existing_token_expire_in_seconds: impl Into<Option<i64>>,
+    ) -> Self {
+        self.request.existing_token_expire_in_seconds = existing_token_expire_in_seconds.into();
+        self
+    }
 }
 
 impl IntoFuture for RotateRecipientTokenBuilder {
-    type Output = Result<RecipientInfo>;
+    type Output = Result<Recipient>;
     type IntoFuture = BoxFut<'static, Self::Output>;
     fn into_future(self) -> Self::IntoFuture {
         let client = self.client;
         let request = self.request;
         Box::pin(async move { client.rotate_recipient_token(&request).await })
-    }
-}
-
-/// Builder for recipient profile
-pub struct CreateRecipientProfileBuilder {
-    client: RecipientServiceClient,
-    request: CreateRecipientProfileRequest,
-}
-
-impl CreateRecipientProfileBuilder {
-    /// Create a new builder instance.
-    /// Obtain via the corresponding method on `RecipientServiceClient`.
-    pub(crate) fn new(client: RecipientServiceClient, name: impl Into<String>) -> Self {
-        let request = CreateRecipientProfileRequest {
-            name: name.into(),
-            ..Default::default()
-        };
-        Self { client, request }
-    }
-}
-
-impl IntoFuture for CreateRecipientProfileBuilder {
-    type Output = Result<RecipientProfile>;
-    type IntoFuture = BoxFut<'static, Self::Output>;
-    fn into_future(self) -> Self::IntoFuture {
-        let client = self.client;
-        let request = self.request;
-        Box::pin(async move { client.create_recipient_profile(&request).await })
     }
 }
