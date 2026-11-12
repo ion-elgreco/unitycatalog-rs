@@ -347,9 +347,8 @@ impl AuthSettings {
     pub fn new(auth: &settings::Auth) -> Self {
         let issuers: Vec<IssuerSettings> = auth.issuers.iter().map(IssuerSettings::new).collect();
         let keys = Arc::new(JwtKeys::new(crate::authn::chain::IoTransport));
-        let proxies: std::result::Result<Vec<_>, String> = (auth.trusted_proxies.iter())
-            .map(|proxy| crate::authn::sign_in::parse_cidr("auth.trusted_proxies", proxy.trim()))
-            .collect();
+        let proxies =
+            crate::authn::sign_in::parse_cidrs("auth.trusted_proxies", &auth.trusted_proxies);
         let (proxies, proxies_error) = match proxies {
             Ok(proxies) => (TrustedProxies::new(proxies), None),
             Err(e) => (TrustedProxies::default(), Some(e)),

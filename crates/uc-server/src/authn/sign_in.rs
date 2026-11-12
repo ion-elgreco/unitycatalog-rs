@@ -307,11 +307,10 @@ pub struct ForwardSignIn {
 
 impl ForwardSignIn {
     fn new(auth: &settings::Auth) -> Result<Self, String> {
-        let trusted_proxies = auth
-            .forward_trusted_proxies
-            .iter()
-            .map(|proxy| parse_cidr("auth.forward_trusted_proxies", proxy.trim()))
-            .collect::<Result<Vec<_>, _>>()?;
+        let trusted_proxies = parse_cidrs(
+            "auth.forward_trusted_proxies",
+            &auth.forward_trusted_proxies,
+        )?;
         if trusted_proxies.is_empty() {
             return Err(format!(
                 "{} is required with auth.mode = \"forward\": the proxies' CIDRs or \
@@ -353,8 +352,16 @@ impl ForwardSignIn {
     }
 }
 
+/// The CIDRs or addresses of the list setting `key`.
+pub(crate) fn parse_cidrs(key: &str, texts: &[String]) -> Result<Vec<ipnet::IpNet>, String> {
+    texts
+        .iter()
+        .map(|text| parse_cidr(key, text.trim()))
+        .collect()
+}
+
 /// A CIDR or an address of setting `key`.
-pub(crate) fn parse_cidr(key: &str, text: &str) -> Result<ipnet::IpNet, String> {
+fn parse_cidr(key: &str, text: &str) -> Result<ipnet::IpNet, String> {
     text.parse::<ipnet::IpNet>()
         .or_else(|_| text.parse::<IpAddr>().map(ipnet::IpNet::from))
         .map_err(|_| settings::invalid(key, text, "Expected a CIDR or an address."))
@@ -830,6 +837,22 @@ mod tests {
             ])),
             Some("alice@example.com")
         );
+    }
+
+    #[test]
+    fn a_name_with_a_comma_needs_its_setting() {
+        let mut headers = HeaderMap::new();
+        headers.insert("remote-user", HeaderValue::from_static("CN=alice,OU=eng"));
+        let proxy = forward(r#"forward_trusted_proxies = "127.0.0.1""#).unwrap();
+        assert_eq!(proxy.user(&headers), None);
+        let proxy = forward(
+            r#"
+            forward_trusted_proxies = "127.0.0.1"
+            forward_names_with_commas = true
+            "#,
+        )
+        .unwrap();
+        assert_eq!(proxy.user(&headers), Some("CN=alice,OU=eng"));
     }
 
     #[test]
