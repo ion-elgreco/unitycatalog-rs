@@ -48,6 +48,8 @@ ROUTINE = {
     "Task is being processed",
     "Task finished processing without errors",
 }
+# The states of a task of authentik that ended.
+ENDED = {"done", "rejected"}
 
 
 def request(
@@ -89,6 +91,16 @@ class Authentik:
         their managed names."""
         found = self("GET", "propertymappings/provider/scim/")["results"]
         return {mapping["managed"]: mapping["pk"] for mapping in found}
+
+    def open_tasks(self, provider: str) -> list[str]:
+        """The tasks of the provider of that name that did not end, with their
+        states."""
+        query = urllib.parse.urlencode({"search": provider, "page_size": 100})
+        return [
+            f"{task['actor_name']}: {task['state']}"
+            for task in self("GET", f"tasks/tasks/?{query}")["results"]
+            if task["state"] not in ENDED
+        ]
 
     def sync_log(self, provider: str) -> str:
         """The latest tasks of the provider of that name, with their messages:
@@ -341,6 +353,15 @@ def pushed(server: typing.Any, scim_url: str, authentik: Authentik) -> Pushed:
         FULL_SYNC,
     )
     assert user_ids.keys() == pks, "authentik pushed users outside the group"
+    # Two full syncs run, the one of the saved provider too. One that is
+    # still in progress deletes a user that a test takes out of the group.
+    wait_until(
+        "authentik ended its full syncs",
+        lambda: (not (tasks := authentik.open_tasks(name)), tasks),
+        authentik,
+        name,
+        FULL_SYNC,
+    )
     accounts = {
         key: Account(people(tag)[key], user["pk"], user["uid"], user_ids[user["pk"]])
         for key, user in users.items()
@@ -444,7 +465,8 @@ def test_a_member_removed_from_the_group_leaves_it(
     )
     assert status == 200, group
     assert ids == {a.id for key, a in pushed.accounts.items() if key != "bob"}, group
-    # authentik deletes bob at the server only in its next full sync.
+    # authentik deletes bob at the server only in its next full sync, which
+    # is hours away: `pushed` waited for the ones of the new provider.
     assert user_at_server(server, bob).get("active") is True
 
 
