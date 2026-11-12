@@ -2,21 +2,41 @@
 """The classes of the `shares` API."""
 
 from unitycatalog._core.shares import (
+    DataObject,
+    DataObjectUpdate,
+    GetSharePermissionsResponse,
     ListSharesResponse,
+    Partition,
+    PartitionValue,
+    Share,
     ShareClient,
-    SharedDataObject,
-    ShareInfo,
+    SharePermissionsChange,
+    SharePrivilegeAssignment,
+    UpdateSharePermissionsResponse,
 )
 from unitycatalog._enums import (
-    HistoryDataSharingStatus,
-    SharedObjectType,
+    Action,
+    DataObjectStatus,
+    DataObjectType,
+    HistoryStatus,
+    PartitionValueOp,
 )
 
 __all__ = [
-    "HistoryDataSharingStatus",
+    "Action",
+    "DataObject",
+    "DataObjectStatus",
+    "DataObjectType",
+    "DataObjectUpdate",
+    "GetSharePermissionsResponse",
+    "HistoryStatus",
     "ListSharesResponse",
+    "Partition",
+    "PartitionValue",
+    "PartitionValueOp",
+    "Share",
     "ShareClient",
-    "ShareInfo",
-    "SharedDataObject",
-    "SharedObjectType",
+    "SharePermissionsChange",
+    "SharePrivilegeAssignment",
+    "UpdateSharePermissionsResponse",
 ]

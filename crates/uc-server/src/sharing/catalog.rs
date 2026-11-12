@@ -10,10 +10,8 @@ use opensharing_engine::{
     },
     service::paginate,
 };
-use uc_api::{
-    DataSourceFormat, HistoryDataSharingStatus, ShareInfo, SharedDataObject, SharedObjectType,
-};
-use uc_metastore::DynMetastore;
+use uc_api::DataSourceFormat;
+use uc_metastore::{DynMetastore, ShareObject, ShareObjectType};
 
 use super::{Recipient, internal, metastore_error};
 
@@ -26,23 +24,23 @@ impl MetastoreShares {
         Self { metastore }
     }
 
-    async fn share(&self, name: &str) -> Result<ShareInfo> {
+    async fn share(&self, name: &str) -> Result<uc_metastore::Share> {
         (self.metastore.sharing().get_share(name).await).map_err(metastore_error)
     }
 }
 
-fn kind(object: &SharedDataObject) -> AssetKind {
-    match object.data_object_type {
-        SharedObjectType::Table => AssetKind::Table,
-        SharedObjectType::Volume => AssetKind::Volume,
-        SharedObjectType::AgentSkill => AssetKind::AgentSkill,
+fn kind(object: &ShareObject) -> AssetKind {
+    match object.object_type {
+        ShareObjectType::Table => AssetKind::Table,
+        ShareObjectType::Volume => AssetKind::Volume,
+        ShareObjectType::AgentSkill => AssetKind::AgentSkill,
     }
 }
 
-fn share(info: ShareInfo) -> Share {
+fn share(info: uc_metastore::Share) -> Share {
     Share {
         name: info.name,
-        id: info.id,
+        id: Some(info.id),
         comment: info.comment,
         ..Default::default()
     }
@@ -115,8 +113,7 @@ impl ShareCatalog<Recipient> for MetastoreShares {
                     id: table.table_id,
                     location: location(table.storage_location, source)?,
                     format: Some(format),
-                    history_shared: object.history_data_sharing_status
-                        == HistoryDataSharingStatus::Enabled,
+                    history_shared: object.history_shared,
                     start_version: object.start_version.and_then(|v| u64::try_from(v).ok()),
                     source_name: Some(source.clone()),
                 }

@@ -8,9 +8,10 @@
 //!
 //! A recipient signs in with its bearer token and reads the shares it was
 //! granted. The protocol is read-only. An admin manages shares and
-//! recipients under the UC API (`crate::routes::sharing`).
+//! recipients under the UC API ([`admin`]).
 
 pub mod access;
+pub mod admin;
 mod catalog;
 
 use std::sync::Arc;

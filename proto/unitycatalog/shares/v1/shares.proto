@@ -7,47 +7,148 @@ import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/empty.proto";
 
-// What a share object is.
-enum SharedObjectType {
-  SHARED_OBJECT_TYPE_UNSPECIFIED = 0;
-  // A table.
+// The server shares `TABLE`, `VOLUME` and `AGENT_SKILL` objects, and refuses the other types.
+enum DataObjectType {
+  // Unknown data object type.
+  DATA_OBJECT_TYPE_UNSPECIFIED = 0;
+
   TABLE = 1;
-  // A volume.
-  VOLUME = 2;
-  // A volume that holds an agent skill: a `SKILL.md` and its files.
-  AGENT_SKILL = 3;
+
+  SCHEMA = 2;
+
+  VIEW = 3;
+
+  MATERIALIZED_VIEW = 4;
+
+  STREAMING_TABLE = 5;
+
+  MODEL = 6;
+
+  FUNCTION = 8;
+
+  // A Unity Catalog volume shared as a storage-backed asset (OpenSharing).
+  VOLUME = 10;
+
+  // An agent skill (a directory of SKILL.md + scripts/assets) shared as a
+  // storage-backed asset on top of a volume (OpenSharing).
+  AGENT_SKILL = 11;
 }
 
-// Whether recipients read the history of a shared table.
-enum HistoryDataSharingStatus {
-  HISTORY_DATA_SHARING_STATUS_UNSPECIFIED = 0;
-  // Recipients read the latest version only.
-  DISABLED = 1;
-  // Recipients read older versions too, by version or by time.
-  ENABLED = 2;
+// Whether a shared data object is still accessible to the share.
+enum DataObjectStatus {
+  DATA_OBJECT_STATUS_UNSPECIFIED = 0;
+
+  // The data object is accessible.
+  ACTIVE = 1;
+
+  // The share owner lost access to the data object.
+  PERMISSION_DENIED = 2;
 }
 
-// An object of a share: a Unity Catalog table or volume and the name under which the recipients
-// see it.
-message SharedDataObject {
-  // Three-level name of the Unity Catalog table or volume: `catalog.schema.name`. An agent skill
-  // names the volume that holds it. A share holds an object once per type.
-  string source_full_name = 1 [(google.api.field_behavior) = REQUIRED];
-  // Schema under which the recipients see the object, such as `default`.
-  string shared_as_schema = 2 [(google.api.field_behavior) = REQUIRED];
-  // Name under which the recipients see the object.
-  string shared_as_name = 3 [(google.api.field_behavior) = REQUIRED];
-  // What the object is. A table, if not set.
-  optional SharedObjectType data_object_type = 4;
-  // Of a table: whether recipients read its history. `DISABLED`, if not set.
-  optional HistoryDataSharingStatus history_data_sharing_status = 5;
-  // Of a table that shares its history: the lowest version that recipients read. Without it,
-  // they read from version 0.
-  optional int64 start_version = 6;
+// The operator a partition value is matched with.
+enum PartitionValueOp {
+  PARTITION_VALUE_OP_UNSPECIFIED = 0;
+
+  // The partition column equals the value.
+  EQUAL = 1;
+
+  // The partition column matches the value as a SQL LIKE pattern.
+  LIKE = 2;
 }
 
-// A share: a named set of tables, volumes and agent skills that recipients can read.
-message ShareInfo {
+// A partition column value a shared table is restricted to.
+message PartitionValue {
+  // The name of the partition column.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The value of the partition column; unset means a `null` value.
+  //
+  // Mutually exclusive with recipient_property_key.
+  optional string value = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // The key of a Delta Sharing recipient property whose value the partition column is
+  // matched against, e.g. "databricks-account-id".
+  //
+  // Mutually exclusive with value.
+  optional string recipient_property_key = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // The operator to apply for the value.
+  PartitionValueOp op = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A partition specification: the conjunction of its partition values.
+message Partition {
+  // An array of partition values.
+  repeated PartitionValue values = 1 [(google.api.field_behavior) = OPTIONAL];
+}
+
+enum HistoryStatus {
+  // Data history sharing is disabled.
+  DISABLED = 0;
+
+  // Data history sharing is enabled.
+  ENABLED = 1;
+}
+
+message DataObject {
+  // A fully qualified name that uniquely identifies a data object.
+  //
+  // For example, a table's fully qualified name is in the format of <catalog>.<schema>.<table>,
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Type of the data object.
+  DataObjectType data_object_type = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // The time when this data object is added to the share, in epoch milliseconds.
+  optional int64 added_at = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Username of the sharer.
+  optional string added_by = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // A user-provided comment when adding the data object to the share.
+  optional string comment = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // A user-provided new name for the data object within the share.
+  //
+  // If this new name is not provided, the object's original name will be used as the shared_as name.
+  // The shared_as name must be unique within a share.
+  // For tables, the new name must follow the format of <schema>.<table>: two parts, each
+  // consisting only of alphanumeric characters and underscores, without the catalog part.
+  // Do not set it for non-table data objects; use string_shared_as instead.
+  optional string shared_as = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Array of partitions for the shared data.
+  repeated Partition partitions = 7 [(google.api.field_behavior) = OPTIONAL];
+
+  // Whether to enable cdf or indicate if cdf is enabled on the shared object.
+  optional bool cdf_enabled = 8 [(google.api.field_behavior) = OPTIONAL];
+
+  // Whether to enable or disable sharing of data history. If not specified, the default is DISABLED.
+  optional HistoryStatus history_data_sharing_status = 9 [(google.api.field_behavior) = OPTIONAL];
+
+  // The start version associated with the object.
+  //
+  // This allows data providers to control the lowest object version that is accessible by clients.
+  // If specified, clients can query snapshots or changes for versions >= start_version.
+  // If not specified, clients can only query starting from the version of the object at the time it was added to the share.
+  //
+  // NOTE: The start_version should be <= the current version of the object.
+  optional int64 start_version = 10 [(google.api.field_behavior) = OPTIONAL];
+
+  // A user-provided alias for a non-table data object (e.g. a volume) within the share.
+  //
+  // For volumes, functions and models it is a two-part name <schema>.<name>, each part
+  // consisting only of alphanumeric characters and underscores. If not provided, the
+  // object's original name minus its catalog is used. It must be unique among objects of
+  // the same type within the share. Do not set it for table-like data objects; use
+  // shared_as instead.
+  optional string string_shared_as = 11 [(google.api.field_behavior) = OPTIONAL];
+
+  // Whether the data object is still accessible to the share.
+  optional DataObjectStatus status = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+message Share {
   option (google.api.resource) = {
     type: "unitycatalog.io/Share"
     pattern: "shares/{share}"
@@ -55,101 +156,240 @@ message ShareInfo {
     singular: "share"
   };
 
-  // Name of the share.
-  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
-  // Unique identifier of the share.
-  string id = 2;
-  // User-provided free-form text description.
-  optional string comment = 3;
-  // Username of the owner of the share.
-  optional string owner = 4;
-  // Time at which the share was created, in epoch milliseconds.
-  int64 created_at = 5;
-  // Username of the creator of the share.
-  optional string created_by = 6;
-  // Time at which the share was last changed, in epoch milliseconds.
-  int64 updated_at = 7;
-  // Username of the user who last changed the share.
-  optional string updated_by = 8;
-  // The objects of the share.
-  repeated SharedDataObject objects = 9;
-}
+  // Unique ID of the share.
+  optional string id = 100 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.field_behavior) = IDENTIFIER
+  ];
 
-message CreateShare {
   // Name of the share.
   string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // A list of shared data objects within the share.
+  repeated DataObject objects = 6 [(google.api.field_behavior) = OPTIONAL];
+
+  // Username of current owner of share.
+  optional string owner = 2 [(google.api.field_behavior) = OPTIONAL];
+
   // User-provided free-form text description.
-  optional string comment = 2;
+  optional string comment = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Storage Location URL (full path) for the share.
+  optional string storage_location = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Storage root URL for the share.
+  optional string storage_root = 5 [(google.api.field_behavior) = OPTIONAL];
+
+  // Time at which this share was created, in epoch milliseconds.
+  optional int64 created_at = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Username of the creator of the share.
+  optional string created_by = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Time at which this share was updated, in epoch milliseconds.
+  optional int64 updated_at = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Username of share updater.
+  optional string updated_by = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
+message SharePrivilegeAssignment {
+  // The principal (user email address or group name).
+  //
+  // For deleted principals, principal is empty while principal_id is populated.
+  string principal = 1;
+
+  // The privileges assigned to the principal.
+  repeated string privileges = 2;
+}
+
+message SharePermissionsChange {
+  // The principal (user email address or group name).
+  string principal = 1;
+
+  // The set of privileges to add.
+  repeated string add = 2;
+
+  // The set of privileges to remove.
+  repeated string remove = 3;
+}
+
+// Request to list shares.
 message ListSharesRequest {
-  // The maximum number of shares to return.
-  optional int32 max_results = 1;
-  // Opaque token of the page to return: the `next_page_token` of the page before.
-  optional string page_token = 2;
+  // The maximum number of results per page that should be returned.
+  //
+  // If unset or 0, the server's default page size is used. Negative values are rejected.
+  optional int32 max_results = 1 [(google.api.field_behavior) = OPTIONAL];
+
+  // Opaque pagination token to go to next page based on previous query.
+  optional string page_token = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
+// Response to list shares.
 message ListSharesResponse {
-  // The shares.
-  repeated ShareInfo items = 1;
-  // Opaque token of the next page. Absent on the last page.
+  // List of shares.
+  repeated Share shares = 1;
+
+  // Opaque pagination token to go to next page based on previous query.
   optional string next_page_token = 2;
 }
 
+// Creates a new share for data objects.
+//
+// Data objects can be added after creation with update.
+// The caller must be a metastore admin or have the CREATE_SHARE privilege on the metastore.
+message CreateShareRequest {
+  // Name of the share.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // User-provided free-form text description.
+  optional string comment = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Storage root URL for the share.
+  optional string storage_root = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Get a share by name.
 message GetShareRequest {
   // Name of the share.
   string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Query for data to include in the share.
+  optional bool include_shared_data = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
-message UpdateShare {
+enum Action {
+  // Unspecified action.
+  ACTION_UNSPECIFIED = 0;
+
+  ADD = 1;
+
+  REMOVE = 2;
+
+  UPDATE = 3;
+}
+
+// Data object update.
+message DataObjectUpdate {
+  // The action to perform on the data object.
+  Action action = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The data object that is being added, removed, or updated.
+  DataObject data_object = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// Update a share.
+//
+// The caller must be a metastore admin or have the UPDATE_SHARE privilege on the metastore.
+message UpdateShareRequest {
   // Name of the share.
   string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Array of shared data object updates.
+  //
+  // At most 100 data objects may be updated per request.
+  repeated DataObjectUpdate updates = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // A new name for the share.
+  optional string new_name = 3 [(google.api.field_behavior) = OPTIONAL];
+
+  // Owner of the share.
+  optional string owner = 4 [(google.api.field_behavior) = OPTIONAL];
+
   // User-provided free-form text description.
-  optional string comment = 2;
-  // New name of the share.
-  optional string new_name = 3;
-  // Objects to add to the share. An object that the share holds already is replaced, which
-  // changes its shared name and its history settings.
-  repeated SharedDataObject add_objects = 4;
-  // Objects to remove from the share, matched by `source_full_name` and `data_object_type`.
-  repeated SharedDataObject remove_objects = 5;
+  optional string comment = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
+// Delete a share.
+//
+// The caller must be a metastore admin or have the DELETE_SHARE privilege on the metastore.
 message DeleteShareRequest {
   // Name of the share.
   string name = 1 [(google.api.field_behavior) = REQUIRED];
 }
 
-// Shares: named sets of tables for Delta Sharing recipients. Only admins can manage them.
+// Get permissions for a data share.
+message GetSharePermissionsRequest {
+  // Name of the share.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // The maximum number of results per page that should be returned.
+  //
+  // If unset or 0, the server's default page size is used. Negative values are rejected.
+  optional int32 max_results = 2 [(google.api.field_behavior) = OPTIONAL];
+
+  // Opaque pagination token to go to next page based on previous query.
+  optional string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response to list shares.
+message GetSharePermissionsResponse {
+  // The privileges assigned to each principal
+  repeated SharePrivilegeAssignment privilege_assignments = 1;
+
+  // Opaque pagination token to go to next page based on previous query.
+  optional string next_page_token = 2;
+}
+
+message UpdateSharePermissionsRequest {
+  // Name of the share.
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+
+  // Array of permissions change objects.
+  repeated SharePermissionsChange changes = 2;
+
+  // Whether to return the latest permissions list of the share in the response.
+  optional bool omit_permissions_list = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message UpdateSharePermissionsResponse {
+  // The privileges assigned to each principal
+  repeated SharePrivilegeAssignment privilege_assignments = 1;
+}
+
+// Service for managing shares
 service SharesService {
-  // List the shares.
+  // List shares.
   rpc ListShares(ListSharesRequest) returns (ListSharesResponse) {
     option (google.api.http) = {get: "/api/2.1/unity-catalog/shares"};
   }
 
-  // Create a share. It holds no tables: add them with `UpdateShare`.
-  rpc CreateShare(.unitycatalog.shares.v1.CreateShare) returns (ShareInfo) {
+  // Create a new share.
+  rpc CreateShare(CreateShareRequest) returns (Share) {
     option (google.api.http) = {
       post: "/api/2.1/unity-catalog/shares"
       body: "*"
     };
   }
 
-  // Get a share.
-  rpc GetShare(GetShareRequest) returns (ShareInfo) {
+  // Get a share by name.
+  rpc GetShare(GetShareRequest) returns (Share) {
     option (google.api.http) = {get: "/api/2.1/unity-catalog/shares/{name}"};
   }
 
-  // Change a share: its comment, its name and its tables.
-  rpc UpdateShare(.unitycatalog.shares.v1.UpdateShare) returns (ShareInfo) {
+  // Update a share.
+  rpc UpdateShare(UpdateShareRequest) returns (Share) {
     option (google.api.http) = {
       patch: "/api/2.1/unity-catalog/shares/{name}"
       body: "*"
     };
   }
 
-  // Delete a share.
+  // Deletes a share.
   rpc DeleteShare(DeleteShareRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {delete: "/api/2.1/unity-catalog/shares/{name}"};
+  }
+
+  // Gets the permissions for a data share from the metastore.
+  rpc GetSharePermissions(GetSharePermissionsRequest) returns (GetSharePermissionsResponse) {
+    option (google.api.http) = {get: "/api/2.1/unity-catalog/shares/{name}/permissions"};
+  }
+
+  // Updates the permissions for a data share in the metastore.
+  rpc UpdateSharePermissions(UpdateSharePermissionsRequest) returns (UpdateSharePermissionsResponse) {
+    option (google.api.http) = {
+      patch: "/api/2.1/unity-catalog/shares/{name}/permissions"
+      body: "*"
+    };
   }
 }

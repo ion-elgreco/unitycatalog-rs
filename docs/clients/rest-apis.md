@@ -89,9 +89,10 @@ curl "$fs/directories/Tables/main/default/events/_delta_log"
 
 ## Delta Sharing and Open Sharing
 
-`/shares` and `/recipients`, in the Unity Catalog REST API, make shares and recipients. A share
-holds tables, volumes and agent skills. An agent skill is a volume with a `SKILL.md` file. A
-recipient reads its shares with its own token, which starts with `dsr_`:
+`/shares` and `/recipients`, in the Unity Catalog REST API, make shares and recipients, in the
+shape of the Databricks sharing API. A share holds tables, volumes and agent skills. An agent
+skill is a volume with a `SKILL.md` file. A recipient reads its shares with its own token, which
+starts with `dsr_`:
 
 - `/api/v1/delta-sharing` is the Delta Sharing protocol, for clients such as `delta-sharing` and
   `deltalake`. It has the tables of a share. A query answers the files of a Delta table as URLs
@@ -99,11 +100,28 @@ recipient reads its shares with its own token, which starts with `dsr_`:
 - `/api/1.0/opensharing` is the Open Sharing protocol. It has the tables too, and the volumes and
   agent skills, and it gives temporary read-only credentials for each.
 
+An admin does these steps:
+
+1. `POST /shares` makes a share.
+2. `PATCH /shares/{name}` changes its objects, with `updates`: each has an `action` (`ADD`,
+   `UPDATE` or `REMOVE`) and a `data_object`. The `name` of an object is its full name in the
+   catalog, and `shared_as` (`<schema>.<name>`) is what the recipient sees. For a volume or an
+   agent skill, the field is `string_shared_as`.
+3. `POST /recipients` makes a recipient. The answer has no token. It has an activation link, in
+   `tokens[].activation_url`.
+4. `PATCH /shares/{name}/permissions` lets the recipient read the share: a change with the
+   recipient as `principal` and `SELECT` in `add`, or in `remove` to end it.
+5. The admin sends the activation link to the recipient.
+
+The recipient opens the link once, without sign-in, and gets the profile file of a Delta Sharing
+client, with the token. The link then stops working, and the server keeps a hash of the token
+only. `POST /recipients/{name}/rotate-token` makes a new token and a new link. The older tokens
+end at once, or after `existing_token_expire_in_seconds`. `expiration_time` of a recipient is
+when its tokens end.
+
 A table in a share gives its latest version only. With `history_data_sharing_status` `ENABLED`,
 recipients read older versions too, by version or by time; `start_version` is the lowest version
-they read. To change the settings or the shared name of an object, add it to the share again.
-
-`POST /recipients/{name}/profile` gives the profile file of a Delta Sharing client.
+they read.
 
 A share that a recipient was not granted answers 404, as a share that does not exist.
 
@@ -114,3 +132,7 @@ A share that a recipient was not granted answers 404, as a share that does not e
       credentials of the Open Sharing protocol.
     - A table under a local path answers `file://` URLs, which only a recipient on the same
       machine can read.
+    - A share object is a table, a volume or an agent skill. Partitions and `cdf_enabled` of an
+      object, `storage_root` of a share and OAuth recipients are refused.
+    - The answers of `/shares` and `/recipients` have their 64-bit numbers, such as
+      `created_at`, as text.

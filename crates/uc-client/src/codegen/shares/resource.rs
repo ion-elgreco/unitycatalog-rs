@@ -31,18 +31,28 @@ impl ShareClient {
         self.share_name.clone()
     }
 
-    /// Get a share.
+    /// Get a share by name.
     pub fn get(&self) -> GetShareBuilder {
         GetShareBuilder::new(self.client.clone(), &self.share_name)
     }
 
-    /// Change a share: its comment, its name and its tables.
+    /// Update a share.
     pub fn update(&self) -> UpdateShareBuilder {
         UpdateShareBuilder::new(self.client.clone(), &self.share_name)
     }
 
-    /// Delete a share.
+    /// Deletes a share.
     pub fn delete(&self) -> DeleteShareBuilder {
         DeleteShareBuilder::new(self.client.clone(), &self.share_name)
+    }
+
+    /// Gets the permissions for a data share from the metastore.
+    pub fn get_share_permissions(&self) -> GetSharePermissionsBuilder {
+        GetSharePermissionsBuilder::new(self.client.clone(), &self.share_name)
+    }
+
+    /// Updates the permissions for a data share in the metastore.
+    pub fn update_share_permissions(&self) -> UpdateSharePermissionsBuilder {
+        UpdateSharePermissionsBuilder::new(self.client.clone(), &self.share_name)
     }
 }

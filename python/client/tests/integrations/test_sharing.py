@@ -13,7 +13,7 @@ from _helpers import unique
 from test_tables import create_managed_table
 
 from unitycatalog import Client
-from unitycatalog.shares import SharedDataObject
+from unitycatalog.shares import DataObject, DataObjectUpdate, SharePermissionsChange
 
 pl = pytest.importorskip("polars")
 deltalake = pytest.importorskip("deltalake")
@@ -58,11 +58,13 @@ def test_a_recipient_reads_a_shared_table_on_s3(s3: str, s3_server) -> None:
 
     share, recipient = unique("share"), unique("recipient")
     client.create_share(share)
-    shared = SharedDataObject(f"{catalog}.default.orders", "sales", "orders")
-    client.share(share).update(add_objects=[shared])
-    client.create_recipient(recipient)
-    client.recipient(recipient).update(add_shares=[share])
-    profile = client.recipient(recipient).create_recipient_profile()
+    shared = DataObject(f"{catalog}.default.orders", "TABLE", shared_as="sales.orders")
+    client.share(share).update(updates=[DataObjectUpdate("ADD", shared)])
+    created = client.create_recipient(recipient)
+    grant = SharePermissionsChange(principal=recipient, add=["SELECT"])
+    client.share(share).update_share_permissions(changes=[grant])
+    code = created.tokens[0].activation_url.rsplit("/", 1)[1]
+    profile = client.activate_recipient_token(code)
     token = profile.bearer_token
 
     # Delta Sharing: the files of the table, as URLs that need no credentials.

@@ -137,6 +137,44 @@ impl PyClient {
         })
     }
 
+    /// Open the activation link of a token: the Delta Sharing profile with the bearer token. A link works
+    /// once, and the request needs no sign-in: the code is the secret. The server keeps a hash of the token
+    /// only after this.
+    ///
+    /// Returns:
+    ///     A Delta Sharing profile file (`profile.json`): what a Delta Sharing client needs to connect
+    ///     to
+    ///     the server as a recipient. The JSON names are lowerCamelCase, as the protocol has them.
+    #[pyo3(signature = (code))]
+    pub fn activate_recipient_token(
+        &self,
+        py: Python,
+        code: String,
+    ) -> PyUnityCatalogResult<PyRecipientProfile> {
+        let request = self.client.activate_recipient_token(code);
+        #[allow(clippy::let_unit_value)]
+        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
+        Ok(PyRecipientProfile::from(result))
+    }
+
+    /// Like `activate_recipient_token`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (code))]
+    pub fn activate_recipient_token_async<'py>(
+        &self,
+        py: Python<'py>,
+        code: String,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRecipientProfile>> {
+        let request = self.client.activate_recipient_token(code);
+        crate::codegen::py_future::PyFuture::new(py, async move {
+            #[allow(clippy::let_unit_value, unused_variables)]
+            let result = request
+                .into_future()
+                .await
+                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
+            Ok(PyRecipientProfile::from(result))
+        })
+    }
+
     /// Get a snapshot of the whole catalog, in one answer.
     ///
     /// Returns:
@@ -3532,19 +3570,20 @@ impl PyClient {
         })
     }
 
-    /// List the recipients.
+    /// List recipients.
     ///
     /// Args:
-    ///     max_results: The maximum number of recipients to return.
+    ///     max_results: The maximum number of results per page that should be returned. If unset or 0, the
+    ///                  server's default page size is used. Negative values are rejected.
     ///
     /// Returns:
-    ///     The recipients.
+    ///     List of recipients.
     #[pyo3(signature = (*, max_results = None))]
     pub fn list_recipients(
         &self,
         py: Python,
         max_results: Option<i32>,
-    ) -> PyUnityCatalogResult<::std::vec::Vec<PyRecipientInfo>> {
+    ) -> PyUnityCatalogResult<::std::vec::Vec<PyRecipient>> {
         let request = self.client.list_recipients().with_max_results(max_results);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, async move {
@@ -3555,7 +3594,7 @@ impl PyClient {
         })??;
         Ok(result
             .into_iter()
-            .map(PyRecipientInfo::from)
+            .map(PyRecipient::from)
             .collect::<::std::vec::Vec<_>>())
     }
 
@@ -3565,7 +3604,7 @@ impl PyClient {
         &self,
         py: Python<'py>,
         max_results: Option<i32>,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyRecipientInfo>>>
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyRecipient>>>
     {
         let request = self.client.list_recipients().with_max_results(max_results);
         crate::codegen::py_future::PyFuture::new(py, async move {
@@ -3580,61 +3619,98 @@ impl PyClient {
             .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
             Ok(result
                 .into_iter()
-                .map(PyRecipientInfo::from)
+                .map(PyRecipient::from)
                 .collect::<::std::vec::Vec<_>>())
         })
     }
 
-    /// Create a recipient. The response holds its bearer token, which no later response shows.
+    /// Create a new recipient.
     ///
     /// Args:
     ///     name: Name of the recipient.
-    ///     authentication_type: How the recipient signs in. Default: `TOKEN`.
-    ///     comment: User-provided free-form text description.
+    ///     authentication_type: The delta sharing authentication type. The server has `TOKEN` only, which
+    ///                          is the default.
+    ///     owner: Username of the recipient owner. The default is the caller.
+    ///     comment: Description about the recipient.
+    ///     properties_kvpairs: Recipient properties as map of string key-value pairs. When provided
+    ///                         in update request, the specified properties will override the existing
+    ///                         properties. To add and remove properties, one would need to perform a read-
+    ///                         modify-write.
+    ///     expiration_time: Expiration timestamp of the token, in epoch milliseconds.
     ///
     /// Returns:
-    ///     A Delta Sharing recipient: an organization or user outside Unity Catalog that reads shares
-    ///     with
-    ///     a bearer token. The server keeps a hash of the token only.
-    #[pyo3(signature = (name, *, authentication_type = None, comment = None))]
+    ///     The requested resource
+    #[pyo3(
+        signature = (
+            name,
+            *,
+            authentication_type = None,
+            owner = None,
+            comment = None,
+            properties_kvpairs = None,
+            expiration_time = None
+        )
+    )]
     pub fn create_recipient(
         &self,
         py: Python,
         name: String,
         authentication_type: ::core::option::Option<PyAuthenticationType>,
+        owner: Option<String>,
         comment: Option<String>,
-    ) -> PyUnityCatalogResult<PyRecipientInfo> {
+        properties_kvpairs: ::core::option::Option<PySecurablePropertiesKvPairs>,
+        expiration_time: Option<i64>,
+    ) -> PyUnityCatalogResult<PyRecipient> {
         let request = self
             .client
             .create_recipient(name)
             .with_authentication_type(authentication_type.map(::core::convert::Into::into))
-            .with_comment(comment);
+            .with_owner(owner)
+            .with_comment(comment)
+            .with_properties_kvpairs(properties_kvpairs.map(::core::convert::Into::into))
+            .with_expiration_time(expiration_time);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(PyRecipientInfo::from(result))
+        Ok(PyRecipient::from(result))
     }
 
     /// Like `create_recipient`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (name, *, authentication_type = None, comment = None))]
+    #[pyo3(
+        signature = (
+            name,
+            *,
+            authentication_type = None,
+            owner = None,
+            comment = None,
+            properties_kvpairs = None,
+            expiration_time = None
+        )
+    )]
     pub fn create_recipient_async<'py>(
         &self,
         py: Python<'py>,
         name: String,
         authentication_type: ::core::option::Option<PyAuthenticationType>,
+        owner: Option<String>,
         comment: Option<String>,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRecipientInfo>> {
+        properties_kvpairs: ::core::option::Option<PySecurablePropertiesKvPairs>,
+        expiration_time: Option<i64>,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRecipient>> {
         let request = self
             .client
             .create_recipient(name)
             .with_authentication_type(authentication_type.map(::core::convert::Into::into))
-            .with_comment(comment);
+            .with_owner(owner)
+            .with_comment(comment)
+            .with_properties_kvpairs(properties_kvpairs.map(::core::convert::Into::into))
+            .with_expiration_time(expiration_time);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
                 .into_future()
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(PyRecipientInfo::from(result))
+            Ok(PyRecipient::from(result))
         })
     }
 
@@ -5351,19 +5427,20 @@ impl PyClient {
         })
     }
 
-    /// List the shares.
+    /// List shares.
     ///
     /// Args:
-    ///     max_results: The maximum number of shares to return.
+    ///     max_results: The maximum number of results per page that should be returned. If unset or 0, the
+    ///                  server's default page size is used. Negative values are rejected.
     ///
     /// Returns:
-    ///     The shares.
+    ///     List of shares.
     #[pyo3(signature = (*, max_results = None))]
     pub fn list_shares(
         &self,
         py: Python,
         max_results: Option<i32>,
-    ) -> PyUnityCatalogResult<::std::vec::Vec<PyShareInfo>> {
+    ) -> PyUnityCatalogResult<::std::vec::Vec<PyShare>> {
         let request = self.client.list_shares().with_max_results(max_results);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, async move {
@@ -5374,7 +5451,7 @@ impl PyClient {
         })??;
         Ok(result
             .into_iter()
-            .map(PyShareInfo::from)
+            .map(PyShare::from)
             .collect::<::std::vec::Vec<_>>())
     }
 
@@ -5384,8 +5461,7 @@ impl PyClient {
         &self,
         py: Python<'py>,
         max_results: Option<i32>,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyShareInfo>>>
-    {
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyShare>>> {
         let request = self.client.list_shares().with_max_results(max_results);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
@@ -5399,48 +5475,59 @@ impl PyClient {
             .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
             Ok(result
                 .into_iter()
-                .map(PyShareInfo::from)
+                .map(PyShare::from)
                 .collect::<::std::vec::Vec<_>>())
         })
     }
 
-    /// Create a share. It holds no tables: add them with `UpdateShare`.
+    /// Create a new share.
     ///
     /// Args:
     ///     name: Name of the share.
     ///     comment: User-provided free-form text description.
+    ///     storage_root: Storage root URL for the share.
     ///
     /// Returns:
-    ///     A share: a named set of tables, volumes and agent skills that recipients can read.
-    #[pyo3(signature = (name, *, comment = None))]
+    ///     The requested resource
+    #[pyo3(signature = (name, *, comment = None, storage_root = None))]
     pub fn create_share(
         &self,
         py: Python,
         name: String,
         comment: Option<String>,
-    ) -> PyUnityCatalogResult<PyShareInfo> {
-        let request = self.client.create_share(name).with_comment(comment);
+        storage_root: Option<String>,
+    ) -> PyUnityCatalogResult<PyShare> {
+        let request = self
+            .client
+            .create_share(name)
+            .with_comment(comment)
+            .with_storage_root(storage_root);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(PyShareInfo::from(result))
+        Ok(PyShare::from(result))
     }
 
     /// Like `create_share`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (name, *, comment = None))]
+    #[pyo3(signature = (name, *, comment = None, storage_root = None))]
     pub fn create_share_async<'py>(
         &self,
         py: Python<'py>,
         name: String,
         comment: Option<String>,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyShareInfo>> {
-        let request = self.client.create_share(name).with_comment(comment);
+        storage_root: Option<String>,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyShare>> {
+        let request = self
+            .client
+            .create_share(name)
+            .with_comment(comment)
+            .with_storage_root(storage_root);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
                 .into_future()
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(PyShareInfo::from(result))
+            Ok(PyShare::from(result))
         })
     }
 
@@ -6154,7 +6241,7 @@ impl PyClient {
         }
     }
 
-    /// The requests on one `RecipientInfo`. It sends no request itself.
+    /// The requests on one `Recipient`. It sends no request itself.
     pub fn recipient(&self, recipient_name: String) -> PyRecipientClient {
         PyRecipientClient {
             client: self.client.recipient(recipient_name),
@@ -6175,7 +6262,7 @@ impl PyClient {
         }
     }
 
-    /// The requests on one `ShareInfo`. It sends no request itself.
+    /// The requests on one `Share`. It sends no request itself.
     pub fn share(&self, share_name: String) -> PyShareClient {
         PyShareClient {
             client: self.client.share(share_name),
@@ -6492,7 +6579,8 @@ pub mod extension_module {
     pub mod recipients {
         #[pymodule_export]
         use super::super::{
-            PyListRecipientsResponse, PyRecipientClient, PyRecipientInfo, PyRecipientProfile,
+            PyListRecipientsResponse, PyRecipient, PyRecipientClient, PyRecipientProfile,
+            PyRecipientToken, PySecurablePropertiesKvPairs,
         };
     }
 
@@ -6528,7 +6616,11 @@ pub mod extension_module {
     #[pymodule]
     pub mod shares {
         #[pymodule_export]
-        use super::super::{PyListSharesResponse, PyShareClient, PyShareInfo, PySharedDataObject};
+        use super::super::{
+            PyDataObject, PyDataObjectUpdate, PyGetSharePermissionsResponse, PyListSharesResponse,
+            PyPartition, PyPartitionValue, PyShare, PyShareClient, PySharePermissionsChange,
+            PySharePrivilegeAssignment, PyUpdateSharePermissionsResponse,
+        };
     }
 
     /// The classes of the `tables` API.

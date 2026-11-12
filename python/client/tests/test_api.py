@@ -32,7 +32,7 @@ from unitycatalog.credentials import AwsIamRoleRequest
 from unitycatalog.delta import DeltaProtocol, DeltaStructField, DeltaStructType
 from unitycatalog.functions import CreateFunction, FunctionParameterInfo
 from unitycatalog.permissions import PermissionsChange
-from unitycatalog.shares import SharedDataObject
+from unitycatalog.shares import DataObject, DataObjectUpdate, PartitionValue
 from unitycatalog.tables import ColumnInfo
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -158,6 +158,7 @@ def _bad_value(name: str) -> typing.Callable[[], object]:
     role = AwsIamRoleRequest("arn:aws:iam::123456789012:role/uc")
     columns = DeltaStructType([DeltaStructField("id", "long", False, {})])
     calls: dict[str, typing.Callable[[], object]] = {
+        "Action": lambda: DataObjectUpdate(BOGUS, DataObject("c.s.t", "TABLE")),
         "AuthenticationType": lambda: OFFLINE.create_recipient(
             "r", authentication_type=BOGUS
         ),
@@ -165,6 +166,8 @@ def _bad_value(name: str) -> typing.Callable[[], object]:
         "CredentialPurpose": lambda: OFFLINE.create_credential(
             "c", aws_iam_role=role, purpose=BOGUS
         ),
+        "DataObjectStatus": lambda: DataObject("c.s.t", "TABLE", status=BOGUS),
+        "DataObjectType": lambda: DataObject("c.s.t", BOGUS),
         "DataSourceFormat": lambda: OFFLINE.create_table(
             "t", "c", "s", "MANAGED", data_source_format=BOGUS
         ),
@@ -180,8 +183,8 @@ def _bad_value(name: str) -> typing.Callable[[], object]:
         "FunctionParameterType": lambda: FunctionParameterInfo(
             "x", "int", "INT", parameter_type=BOGUS
         ),
-        "HistoryDataSharingStatus": lambda: SharedDataObject(
-            "c.s.t", "s", "t", history_data_sharing_status=BOGUS
+        "HistoryStatus": lambda: DataObject(
+            "c.s.t", "TABLE", history_data_sharing_status=BOGUS
         ),
         "ModelVersionOperation": (
             lambda: OFFLINE.generate_temporary_model_version_credentials(
@@ -191,14 +194,12 @@ def _bad_value(name: str) -> typing.Callable[[], object]:
         "ParameterStyle": lambda: CreateFunction(
             "f", "c", "s", "SQL", BOGUS, "DEFINER"
         ),
+        "PartitionValueOp": lambda: PartitionValue("p", op=BOGUS),
         "PathOperation": lambda: OFFLINE.generate_temporary_path_credentials(
             "s3://bucket/p", BOGUS
         ),
         "RoutineBody": lambda: CreateFunction("f", "c", "s", BOGUS, "S", "DEFINER"),
         "SecurityType": lambda: CreateFunction("f", "c", "s", "SQL", "S", BOGUS),
-        "SharedObjectType": lambda: SharedDataObject(
-            "c.s.t", "s", "t", data_object_type=BOGUS
-        ),
         "SqlDataAccess": lambda: CreateFunction(
             "f", "c", "s", "SQL", "S", "DEFINER", sql_data_access=BOGUS
         ),

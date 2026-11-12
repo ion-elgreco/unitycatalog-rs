@@ -1,4 +1,5 @@
 // @generated — do not edit by hand.
+pub mod activations;
 pub mod admin;
 pub mod audit;
 pub mod auth;

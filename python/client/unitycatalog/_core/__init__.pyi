@@ -84,7 +84,12 @@ from .iceberg import (
 from .metastore import GetMetastoreSummaryResponse
 from .models import ModelVersionInfo, RegisteredModelClient, RegisteredModelInfo
 from .permissions import PermissionsChange, PermissionsList
-from .recipients import RecipientClient, RecipientInfo
+from .recipients import (
+    Recipient,
+    RecipientClient,
+    RecipientProfile,
+    SecurablePropertiesKvPairs,
+)
 from .schemas import SchemaClient, SchemaInfo
 from .scim import (
     ListScimGroupsResponse,
@@ -106,7 +111,7 @@ from .scim import (
     ScimUser,
 )
 from .search import SearchObjectsResponse
-from .shares import ShareClient, ShareInfo
+from .shares import Share, ShareClient
 from .tables import ColumnInfo, DependencyList, StagingTableInfo, TableClient, TableInfo
 from .tokens import PatInfo, TokenClient
 from .volumes import VolumeClient, VolumeInfo
@@ -202,6 +207,21 @@ class Client:
         `TokenProvider`, or a callable that returns the token, or a pair of the token
         and the time it expires, in seconds since the epoch; a token with its expiry is
         kept until a minute before it, a bare token is asked for at every request.
+        """
+    def activate_recipient_token(self, /, code: str) -> RecipientProfile:
+        """
+        Open the activation link of a token: the Delta Sharing profile with the bearer token. A link works
+        once, and the request needs no sign-in: the code is the secret. The server keeps a hash of the token
+        only after this.
+
+        Returns:
+            A Delta Sharing profile file (`profile.json`): what a Delta Sharing client needs to connect
+            to
+            the server as a recipient. The JSON names are lowerCamelCase, as the protocol has them.
+        """
+    def activate_recipient_token_async(self, /, code: str) -> Future[RecipientProfile]:
+        """
+        Like `activate_recipient_token`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
     def catalog(self, /, catalog_name: str) -> CatalogClient:
         """
@@ -662,20 +682,28 @@ class Client:
         name: str,
         *,
         authentication_type: AuthenticationType | str | None = None,
+        owner: str | None = None,
         comment: str | None = None,
-    ) -> RecipientInfo:
+        properties_kvpairs: SecurablePropertiesKvPairs | None = None,
+        expiration_time: SupportsIndex | None = None,
+    ) -> Recipient:
         """
-        Create a recipient. The response holds its bearer token, which no later response shows.
+        Create a new recipient.
 
         Args:
             name: Name of the recipient.
-            authentication_type: How the recipient signs in. Default: `TOKEN`.
-            comment: User-provided free-form text description.
+            authentication_type: The delta sharing authentication type. The server has `TOKEN` only, which
+                                 is the default.
+            owner: Username of the recipient owner. The default is the caller.
+            comment: Description about the recipient.
+            properties_kvpairs: Recipient properties as map of string key-value pairs. When provided
+                                in update request, the specified properties will override the existing
+                                properties. To add and remove properties, one would need to perform a read-
+                                modify-write.
+            expiration_time: Expiration timestamp of the token, in epoch milliseconds.
 
         Returns:
-            A Delta Sharing recipient: an organization or user outside Unity Catalog that reads shares
-            with
-            a bearer token. The server keeps a hash of the token only.
+            The requested resource
         """
     def create_recipient_async(
         self,
@@ -683,8 +711,11 @@ class Client:
         name: str,
         *,
         authentication_type: AuthenticationType | str | None = None,
+        owner: str | None = None,
         comment: str | None = None,
-    ) -> Future[RecipientInfo]:
+        properties_kvpairs: SecurablePropertiesKvPairs | None = None,
+        expiration_time: SupportsIndex | None = None,
+    ) -> Future[Recipient]:
         """
         Like `create_recipient`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -760,20 +791,33 @@ class Client:
         """
         Like `create_schema`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def create_share(self, /, name: str, *, comment: str | None = None) -> ShareInfo:
+    def create_share(
+        self,
+        /,
+        name: str,
+        *,
+        comment: str | None = None,
+        storage_root: str | None = None,
+    ) -> Share:
         """
-        Create a share. It holds no tables: add them with `UpdateShare`.
+        Create a new share.
 
         Args:
             name: Name of the share.
             comment: User-provided free-form text description.
+            storage_root: Storage root URL for the share.
 
         Returns:
-            A share: a named set of tables, volumes and agent skills that recipients can read.
+            The requested resource
         """
     def create_share_async(
-        self, /, name: str, *, comment: str | None = None
-    ) -> Future[ShareInfo]:
+        self,
+        /,
+        name: str,
+        *,
+        comment: str | None = None,
+        storage_root: str | None = None,
+    ) -> Future[Share]:
         """
         Like `create_share`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -1909,19 +1953,20 @@ class Client:
         """
     def list_recipients(
         self, /, *, max_results: SupportsIndex | None = None
-    ) -> list[RecipientInfo]:
+    ) -> list[Recipient]:
         """
-        List the recipients.
+        List recipients.
 
         Args:
-            max_results: The maximum number of recipients to return.
+            max_results: The maximum number of results per page that should be returned. If unset or 0, the
+                         server's default page size is used. Negative values are rejected.
 
         Returns:
-            The recipients.
+            List of recipients.
         """
     def list_recipients_async(
         self, /, *, max_results: SupportsIndex | None = None
-    ) -> Future[list[RecipientInfo]]:
+    ) -> Future[list[Recipient]]:
         """
         Like `list_recipients`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -2000,19 +2045,20 @@ class Client:
         """
     def list_shares(
         self, /, *, max_results: SupportsIndex | None = None
-    ) -> list[ShareInfo]:
+    ) -> list[Share]:
         """
-        List the shares.
+        List shares.
 
         Args:
-            max_results: The maximum number of shares to return.
+            max_results: The maximum number of results per page that should be returned. If unset or 0, the
+                         server's default page size is used. Negative values are rejected.
 
         Returns:
-            The shares.
+            List of shares.
         """
     def list_shares_async(
         self, /, *, max_results: SupportsIndex | None = None
-    ) -> Future[list[ShareInfo]]:
+    ) -> Future[list[Share]]:
         """
         Like `list_shares`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -2291,7 +2337,7 @@ class Client:
         """
     def recipient(self, /, recipient_name: str) -> RecipientClient:
         """
-        The requests on one `RecipientInfo`. It sends no request itself.
+        The requests on one `Recipient`. It sends no request itself.
         """
     def registered_model(self, /, registered_model_name: str) -> RegisteredModelClient:
         """
@@ -2757,7 +2803,7 @@ class Client:
         """
     def share(self, /, share_name: str) -> ShareClient:
         """
-        The requests on one `ShareInfo`. It sends no request itself.
+        The requests on one `Share`. It sends no request itself.
         """
     def table(self, /, table_name: str) -> TableClient:
         """

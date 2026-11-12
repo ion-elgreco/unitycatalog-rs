@@ -7,7 +7,7 @@ use uc_client::RecipientClient;
 use uc_client::models::recipients::v1::*;
 use uc_client::models::*;
 
-/// The requests on one `RecipientInfo`.
+/// The requests on one `Recipient`.
 #[pyclass(name = "RecipientClient", module = "unitycatalog._core.recipients")]
 pub struct PyRecipientClient {
     pub(crate) client: RecipientClient,
@@ -15,24 +15,22 @@ pub struct PyRecipientClient {
 
 #[pymethods]
 impl PyRecipientClient {
-    /// Get a recipient. The response does not hold the bearer token.
+    /// Get a recipient by name.
     ///
     /// Returns:
-    ///     A Delta Sharing recipient: an organization or user outside Unity Catalog that reads shares
-    ///     with
-    ///     a bearer token. The server keeps a hash of the token only.
-    pub fn get(&self, py: Python) -> PyUnityCatalogResult<PyRecipientInfo> {
+    ///     The requested resource
+    pub fn get(&self, py: Python) -> PyUnityCatalogResult<PyRecipient> {
         let request = self.client.get();
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(PyRecipientInfo::from(result))
+        Ok(PyRecipient::from(result))
     }
 
     /// Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
     pub fn get_async<'py>(
         &self,
         py: Python<'py>,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRecipientInfo>> {
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRecipient>> {
         let request = self.client.get();
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
@@ -40,62 +38,91 @@ impl PyRecipientClient {
                 .into_future()
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(PyRecipientInfo::from(result))
+            Ok(PyRecipient::from(result))
         })
     }
 
-    /// Change a recipient: its comment and the shares it can read.
+    /// Update a recipient.
     ///
     /// Args:
-    ///     comment: User-provided free-form text description.
-    ///     add_shares: Names of the shares to give the recipient access to.
-    ///     remove_shares: Names of the shares to take the recipient's access away from.
+    ///     new_name: New name for the recipient
+    ///     owner: Username of the recipient owner.
+    ///     comment: Description about the recipient.
+    ///     properties_kvpairs: Recipient properties as map of string key-value pairs. When provided
+    ///                         in update request, the specified properties will override the existing
+    ///                         properties. To add and remove properties, one would need to perform a read-
+    ///                         modify-write.
+    ///     expiration_time: Expiration timestamp of the token, in epoch milliseconds.
     ///
     /// Returns:
-    ///     A Delta Sharing recipient: an organization or user outside Unity Catalog that reads shares
-    ///     with
-    ///     a bearer token. The server keeps a hash of the token only.
-    #[pyo3(signature = (*, comment = None, add_shares = None, remove_shares = None))]
+    ///     The requested resource
+    #[pyo3(
+        signature = (
+            *,
+            new_name = None,
+            owner = None,
+            comment = None,
+            properties_kvpairs = None,
+            expiration_time = None
+        )
+    )]
     pub fn update(
         &self,
         py: Python,
+        new_name: Option<String>,
+        owner: Option<String>,
         comment: Option<String>,
-        add_shares: Option<Vec<String>>,
-        remove_shares: Option<Vec<String>>,
-    ) -> PyUnityCatalogResult<PyRecipientInfo> {
+        properties_kvpairs: ::core::option::Option<PySecurablePropertiesKvPairs>,
+        expiration_time: Option<i64>,
+    ) -> PyUnityCatalogResult<PyRecipient> {
         let request = self
             .client
             .update()
+            .with_new_name(new_name)
+            .with_owner(owner)
             .with_comment(comment)
-            .with_add_shares(add_shares.unwrap_or_default())
-            .with_remove_shares(remove_shares.unwrap_or_default());
+            .with_properties_kvpairs(properties_kvpairs.map(::core::convert::Into::into))
+            .with_expiration_time(expiration_time);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(PyRecipientInfo::from(result))
+        Ok(PyRecipient::from(result))
     }
 
     /// Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (*, comment = None, add_shares = None, remove_shares = None))]
+    #[pyo3(
+        signature = (
+            *,
+            new_name = None,
+            owner = None,
+            comment = None,
+            properties_kvpairs = None,
+            expiration_time = None
+        )
+    )]
     pub fn update_async<'py>(
         &self,
         py: Python<'py>,
+        new_name: Option<String>,
+        owner: Option<String>,
         comment: Option<String>,
-        add_shares: Option<Vec<String>>,
-        remove_shares: Option<Vec<String>>,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRecipientInfo>> {
+        properties_kvpairs: ::core::option::Option<PySecurablePropertiesKvPairs>,
+        expiration_time: Option<i64>,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRecipient>> {
         let request = self
             .client
             .update()
+            .with_new_name(new_name)
+            .with_owner(owner)
             .with_comment(comment)
-            .with_add_shares(add_shares.unwrap_or_default())
-            .with_remove_shares(remove_shares.unwrap_or_default());
+            .with_properties_kvpairs(properties_kvpairs.map(::core::convert::Into::into))
+            .with_expiration_time(expiration_time);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
                 .into_future()
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(PyRecipientInfo::from(result))
+            Ok(PyRecipient::from(result))
         })
     }
 
@@ -125,63 +152,48 @@ impl PyRecipientClient {
         })
     }
 
-    /// Replace the bearer token of a recipient. The old token stops working. The response holds the new
-    /// token.
+    /// Rotate a recipient's token: issue a new token (and activation link) and retire the existing one.
+    ///
+    /// Args:
+    ///     existing_token_expire_in_seconds: Seconds until the existing token expires. It can only shorten
+    ///                                       the existing token's lifetime, never extend it; 0 expires
+    ///                                       it immediately.
     ///
     /// Returns:
-    ///     A Delta Sharing recipient: an organization or user outside Unity Catalog that reads shares
-    ///     with
-    ///     a bearer token. The server keeps a hash of the token only.
-    pub fn rotate_recipient_token(&self, py: Python) -> PyUnityCatalogResult<PyRecipientInfo> {
-        let request = self.client.rotate_recipient_token();
+    ///     The requested resource
+    #[pyo3(signature = (*, existing_token_expire_in_seconds = None))]
+    pub fn rotate_recipient_token(
+        &self,
+        py: Python,
+        existing_token_expire_in_seconds: Option<i64>,
+    ) -> PyUnityCatalogResult<PyRecipient> {
+        let request = self
+            .client
+            .rotate_recipient_token()
+            .with_existing_token_expire_in_seconds(existing_token_expire_in_seconds);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(PyRecipientInfo::from(result))
+        Ok(PyRecipient::from(result))
     }
 
     /// Like `rotate_recipient_token`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (*, existing_token_expire_in_seconds = None))]
     pub fn rotate_recipient_token_async<'py>(
         &self,
         py: Python<'py>,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRecipientInfo>> {
-        let request = self.client.rotate_recipient_token();
+        existing_token_expire_in_seconds: Option<i64>,
+    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRecipient>> {
+        let request = self
+            .client
+            .rotate_recipient_token()
+            .with_existing_token_expire_in_seconds(existing_token_expire_in_seconds);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request
                 .into_future()
                 .await
                 .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(PyRecipientInfo::from(result))
-        })
-    }
-
-    /// Replace the bearer token of a recipient and return a Delta Sharing profile with the new token. The
-    /// old token stops working.
-    ///
-    /// Returns:
-    ///     A Delta Sharing profile file (`profile.json`): what a Delta Sharing client needs to connect
-    ///     to
-    ///     the server as a recipient. The JSON names are lowerCamelCase, as the protocol has them.
-    pub fn create_recipient_profile(&self, py: Python) -> PyUnityCatalogResult<PyRecipientProfile> {
-        let request = self.client.create_recipient_profile();
-        #[allow(clippy::let_unit_value)]
-        let result = crate::codegen::runtime::block_on(py, request.into_future())??;
-        Ok(PyRecipientProfile::from(result))
-    }
-
-    /// Like `create_recipient_profile`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    pub fn create_recipient_profile_async<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRecipientProfile>> {
-        let request = self.client.create_recipient_profile();
-        crate::codegen::py_future::PyFuture::new(py, async move {
-            #[allow(clippy::let_unit_value, unused_variables)]
-            let result = request
-                .into_future()
-                .await
-                .map_err(|e| ::pyo3::PyErr::from(PyUnityCatalogError::from(e)))?;
-            Ok(PyRecipientProfile::from(result))
+            Ok(PyRecipient::from(result))
         })
     }
 }

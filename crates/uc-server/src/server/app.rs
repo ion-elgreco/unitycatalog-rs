@@ -139,7 +139,6 @@ pub fn build_app(state: AppState) -> Router {
         .nest(API_BASE, routes::unity::search::router())
         .nest(API_BASE, routes::iceberg_rest::router())
         .nest(API_BASE, routes::admin::router())
-        .nest(API_BASE, routes::sharing::router())
         .nest(CONTROL_BASE, routes::control::router())
         .nest(CONTROL_BASE, routes::control::scim::router())
         .nest(FILES_BASE, routes::files::router())
@@ -176,8 +175,10 @@ pub fn build_app(state: AppState) -> Router {
         .merge(crate::authn::sign_in::router())
         // What the server takes as a bearer token (`crate::authn::resource`).
         .merge(crate::authn::resource::router())
-        // What recipients of shares read (`crate::sharing`).
+        // What recipients of shares read (`crate::sharing`), and the admin
+        // routes of shares and recipients.
         .merge(crate::sharing::router(&state))
+        .merge(crate::sharing::admin::router(&state, API_BASE))
         // Inside auth, so that the audit layer sees the resolved
         // `Principal` and records the status of the final response.
         .layer(middleware::from_fn_with_state(state.clone(), audit_layer))

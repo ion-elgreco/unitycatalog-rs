@@ -61,12 +61,41 @@ async fn admin(app: &Router, method: Method, path: &str, body: Value) -> Value {
     json_body(assert_status(resp, StatusCode::OK, path).await).await
 }
 
-/// A recipient with the shares `shares`; its token.
+/// The path of the activation link of the newest token of `recipient`.
+fn activation(recipient: &Value) -> String {
+    let tokens = recipient["tokens"].as_array().unwrap();
+    let url = tokens.last().unwrap()["activation_url"].as_str().unwrap();
+    let at = url.find("/api/").unwrap_or_else(|| panic!("{recipient}"));
+    url[at..].to_string()
+}
+
+/// The profile that the activation link at `path` gives.
+async fn activate(app: &Router, path: &str) -> Value {
+    let resp = call(app, Method::GET, path, None).await;
+    json_body(assert_status(resp, StatusCode::OK, path).await).await
+}
+
+/// Let `recipient` read `share`, or with `remove` not any more.
+async fn permission(app: &Router, share: &str, recipient: &str, change: &str) -> Value {
+    let path = format!("/shares/{share}/permissions");
+    let changes = json!({ "changes": [{ "principal": recipient, change: ["SELECT"] }] });
+    admin(app, Method::PATCH, &path, changes).await
+}
+
+/// A recipient with the shares `shares`; its token, from its activation
+/// link.
 async fn recipient(app: &Router, name: &str, shares: &[&str]) -> String {
     let created = admin(app, Method::POST, "/recipients", json!({ "name": name })).await;
-    let path = format!("/recipients/{name}");
-    admin(app, Method::PATCH, &path, json!({ "add_shares": shares })).await;
-    created["bearer_token"].as_str().unwrap().to_string()
+    for share in shares {
+        permission(app, share, name, "add").await;
+    }
+    let profile = activate(app, &activation(&created)).await;
+    profile["bearerToken"].as_str().unwrap().to_string()
+}
+
+/// The change `action` of the share `share` with the object `object`.
+fn update(action: &str, object: Value) -> Value {
+    json!({ "updates": [{ "action": action, "data_object": object }] })
 }
 
 /// A Delta table of two versions in `dir`: version 1 adds one file.
@@ -121,13 +150,13 @@ async fn a_recipient_reads_a_shared_table(#[future(awt)] seeded: Router) {
         json!({ "name": "analytics" }),
     )
     .await;
-    let objects = json!({ "add_objects": [{
-        "source_full_name": "main.default.events",
-        "shared_as_schema": "public",
-        "shared_as_name": "events",
-    }] });
+    let object = json!({
+        "name": "main.default.events", "data_object_type": "TABLE", "shared_as": "public.events",
+    });
+    let objects = update("ADD", object);
     let share = admin(&app, Method::PATCH, "/shares/analytics", objects).await;
     assert_eq!(share["objects"][0]["data_object_type"], "TABLE");
+    assert_eq!(share["objects"][0]["shared_as"], "public.events");
     let token = recipient(&app, "partner-x", &["analytics"]).await;
     assert!(token.starts_with("dsr_"));
 
@@ -191,20 +220,23 @@ async fn shared_events(app: &Router, dir: &std::path::Path, history: Value) -> V
     });
     admin(app, Method::POST, "/tables", table).await;
     admin(app, Method::POST, "/shares", json!({ "name": "analytics" })).await;
-    share_events(app, history).await
+    share_events(app, "ADD", history).await
 }
 
-async fn share_events(app: &Router, history: Value) -> Value {
+/// The table `main.default.events` as `public.events`, with `history`.
+fn events(history: Value) -> Value {
     let mut object = json!({
-        "source_full_name": "main.default.events",
-        "shared_as_schema": "public",
-        "shared_as_name": "events",
+        "name": "main.default.events", "data_object_type": "TABLE", "shared_as": "public.events",
     });
     object
         .as_object_mut()
         .unwrap()
         .extend(history.as_object().unwrap().clone());
-    let objects = json!({ "add_objects": [object] });
+    object
+}
+
+async fn share_events(app: &Router, action: &str, history: Value) -> Value {
+    let objects = update(action, events(history));
     admin(app, Method::PATCH, "/shares/analytics", objects).await
 }
 
@@ -235,16 +267,16 @@ async fn history_is_shared_when_the_share_says_so(#[future(awt)] seeded: Router)
     assert_status(resp, StatusCode::OK, "latest").await;
     assert_eq!(query_at(&app, &token, 0).await, StatusCode::BAD_REQUEST);
 
-    // The same object again replaces its settings.
+    // An update replaces the settings of the object.
     let history = json!({ "history_data_sharing_status": "ENABLED" });
-    let share = share_events(&app, history).await;
+    let share = share_events(&app, "UPDATE", history).await;
     assert_eq!(share["objects"].as_array().unwrap().len(), 1);
     assert_eq!(query_at(&app, &token, 0).await, StatusCode::OK);
     assert_eq!(query_at(&app, &token, 1).await, StatusCode::OK);
 
     // From version 1 on.
     let history = json!({ "history_data_sharing_status": "ENABLED", "start_version": 1 });
-    share_events(&app, history).await;
+    share_events(&app, "UPDATE", history).await;
     assert_eq!(query_at(&app, &token, 0).await, StatusCode::BAD_REQUEST);
     assert_eq!(query_at(&app, &token, 1).await, StatusCode::OK);
 }
@@ -261,27 +293,40 @@ async fn history_settings_are_checked(#[future(awt)] seeded: Router) {
     )
     .await;
     let refused = [
-        json!({ "start_version": 1 }),
-        json!({ "history_data_sharing_status": "ENABLED", "start_version": -1 }),
-        json!({ "data_object_type": "VOLUME", "history_data_sharing_status": "ENABLED" }),
+        (json!({ "start_version": 1 }), "start_version needs"),
+        (
+            json!({ "history_data_sharing_status": "ENABLED", "start_version": -1 }),
+            "cannot be negative",
+        ),
+        (
+            json!({ "data_object_type": "VOLUME", "history_data_sharing_status": "ENABLED" }),
+            "is not a table",
+        ),
+        (
+            json!({ "data_object_type": "MODEL" }),
+            "data_object_type must be",
+        ),
+        (json!({ "shared_as": "events" }), "must be <schema>.<name>"),
+        (
+            json!({ "cdf_enabled": true }),
+            "cdf_enabled is not supported",
+        ),
     ];
-    for history in refused {
-        let mut object = json!({
-            "source_full_name": "main.default.events",
-            "shared_as_schema": "public",
-            "shared_as_name": "events",
-        });
-        object
-            .as_object_mut()
-            .unwrap()
-            .extend(history.as_object().unwrap().clone());
+    for (history, message) in refused {
         let request = req_json(
             Method::PATCH,
             "/shares/analytics",
-            json!({ "add_objects": [object] }),
+            update("ADD", events(history.clone())),
         );
         let resp = app.clone().oneshot(request).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "{history}");
+        let resp = assert_status(resp, StatusCode::BAD_REQUEST, "refused").await;
+        // The answer says what is wrong, as the other routes of the API do.
+        let error = json_body(resp).await;
+        assert_eq!(error["error_code"], "INVALID_ARGUMENT", "{history}");
+        assert!(
+            error["message"].as_str().unwrap().contains(message),
+            "{error}"
+        );
     }
 }
 
@@ -299,22 +344,30 @@ async fn a_recipient_reads_a_shared_volume_and_skill(#[future(awt)] seeded: Rout
     });
     admin(&app, Method::POST, "/volumes", volume).await;
     admin(&app, Method::POST, "/shares", json!({ "name": "tools" })).await;
-    // A volume is in a share once per type: the same type again replaces it.
+    // A volume is in a share once per type.
     let object = |kind: &str, name: &str| {
         json!({
-            "source_full_name": "main.default.lookup",
+            "name": "main.default.lookup",
             "data_object_type": kind,
-            "shared_as_schema": "public",
-            "shared_as_name": name,
+            "string_shared_as": format!("public.{name}"),
         })
     };
-    let objects = json!({ "add_objects": [
-        object("VOLUME", "first"),
-        object("AGENT_SKILL", "lookup"),
-        object("VOLUME", "files"),
+    let change = |action: &str, kind: &str, name: &str| json!({ "action": action, "data_object": object(kind, name) });
+    let objects = json!({ "updates": [
+        change("ADD", "VOLUME", "first"),
+        change("ADD", "AGENT_SKILL", "lookup"),
+        change("UPDATE", "VOLUME", "files"),
     ] });
     let share = admin(&app, Method::PATCH, "/shares/tools", objects).await;
     assert_eq!(share["objects"].as_array().unwrap().len(), 2);
+    assert_eq!(share["objects"][0]["string_shared_as"], "public.files");
+    let again = req_json(
+        Method::PATCH,
+        "/shares/tools",
+        update("ADD", object("VOLUME", "again")),
+    );
+    let resp = app.clone().oneshot(again).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
     let token = recipient(&app, "partner-x", &["tools"]).await;
 
     let share = format!("{OPEN}/shares/tools");
@@ -385,12 +438,14 @@ async fn a_share_that_was_not_granted_is_not_found(#[future(awt)] app: Router) {
 #[tokio::test]
 async fn a_recipient_token_signs_in_on_the_protocols_only() {
     let (app, metastore) = common::signed_in_app().await;
-    let recipient = uc_api::sharing::CreateRecipient {
+    let recipient = uc_metastore::NewRecipient {
         name: "partner-x".into(),
         ..Default::default()
     };
-    let recipient = (metastore.sharing().create_recipient(recipient, None).await).unwrap();
-    let token = recipient.bearer_token.unwrap();
+    let sharing = metastore.sharing();
+    let recipient = sharing.create_recipient(recipient, None).await.unwrap();
+    let code = recipient.tokens[0].activation_code.clone().unwrap();
+    let token = sharing.activate(&code).await.unwrap().bearer_token;
 
     for prefix in [DELTA, OPEN] {
         let resp = call(&app, Method::GET, &format!("{prefix}/shares"), Some(&token)).await;
@@ -404,24 +459,199 @@ async fn a_recipient_token_signs_in_on_the_protocols_only() {
 
 #[rstest]
 #[tokio::test]
-async fn a_recipient_profile_names_the_delta_sharing_endpoint(#[future(awt)] app: Router) {
-    admin(
+async fn an_activation_link_gives_the_profile_once(#[future(awt)] app: Router) {
+    let body =
+        json!({ "name": "partner-x", "properties_kvpairs": { "properties": { "team": "x" } } });
+    let created = admin(&app, Method::POST, "/recipients", body).await;
+    assert_eq!(created["authentication_type"], "TOKEN");
+    assert_eq!(created["properties_kvpairs"]["properties"]["team"], "x");
+    // The admin gets the link, and no token.
+    assert!(!created.to_string().contains("dsr_"), "{created}");
+    let link = activation(&created);
+    assert!(link.starts_with("/api/1.0/opensharing/activations/"));
+
+    let profile = activate(&app, &link).await;
+    assert_eq!(profile["shareCredentialsVersion"], 1);
+    assert!(
+        profile["endpoint"].as_str().unwrap().ends_with(DELTA),
+        "{profile}"
+    );
+    let token = profile["bearerToken"].as_str().unwrap();
+    get_json(&app, &format!("{DELTA}/shares"), token).await;
+
+    // The link is used up, and the recipient shows none.
+    let resp = call(&app, Method::GET, &link, None).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let found = admin(&app, Method::GET, "/recipients/partner-x", json!({})).await;
+    assert_eq!(found["tokens"].as_array().unwrap().len(), 1);
+    assert!(
+        found["tokens"][0].get("activation_url").is_none(),
+        "{found}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_rotated_token_can_overlap_the_new_one(#[future(awt)] app: Router) {
+    let created = admin(
         &app,
         Method::POST,
         "/recipients",
         json!({ "name": "partner-x" }),
     )
     .await;
-    let profile = admin(
+    let first = activate(&app, &activation(&created)).await;
+    let first = first["bearerToken"].as_str().unwrap();
+    let shares = format!("{DELTA}/shares");
+
+    // With an overlap, both tokens work.
+    let rotate = "/recipients/partner-x/rotate-token";
+    let body = json!({ "existing_token_expire_in_seconds": 3600 });
+    let rotated = admin(&app, Method::POST, rotate, body).await;
+    assert_eq!(rotated["tokens"].as_array().unwrap().len(), 2, "{rotated}");
+    // The models write 64-bit numbers as text, as proto3 JSON does.
+    let end = rotated["tokens"][0]["expiration_time"].as_str().unwrap();
+    assert!(end.parse::<i64>().unwrap() > 0);
+    let second = activate(&app, &activation(&rotated)).await;
+    let second = second["bearerToken"].as_str().unwrap();
+    assert_ne!(first, second);
+    for token in [first, second] {
+        get_json(&app, &shares, token).await;
+    }
+
+    // Without one, the older tokens end at once.
+    let rotated = admin(&app, Method::POST, rotate, json!({})).await;
+    assert_eq!(rotated["tokens"].as_array().unwrap().len(), 1, "{rotated}");
+    for token in [first, second] {
+        let resp = call(&app, Method::GET, &shares, Some(token)).await;
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+    let third = activate(&app, &activation(&rotated)).await;
+    get_json(&app, &shares, third["bearerToken"].as_str().unwrap()).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn permissions_grant_a_share_to_recipients(#[future(awt)] app: Router) {
+    admin(
         &app,
         Method::POST,
-        "/recipients/partner-x/profile",
+        "/shares",
+        json!({ "name": "analytics" }),
+    )
+    .await;
+    let token = recipient(&app, "partner-x", &[]).await;
+    let shares = format!("{DELTA}/shares");
+    let names = |listed: &Value| listed["items"].as_array().map_or(0, Vec::len);
+    assert_eq!(names(&get_json(&app, &shares, &token).await), 0);
+
+    let granted = permission(&app, "analytics", "partner-x", "add").await;
+    let expected = json!([{ "principal": "partner-x", "privileges": ["SELECT"] }]);
+    assert_eq!(granted["privilege_assignments"], expected);
+    let read = admin(
+        &app,
+        Method::GET,
+        "/shares/analytics/permissions",
         json!({}),
     )
     .await;
-    assert!(
-        profile["endpoint"].as_str().unwrap().ends_with(DELTA),
-        "{profile}"
+    assert_eq!(read["privilege_assignments"], expected);
+    assert_eq!(names(&get_json(&app, &shares, &token).await), 1);
+
+    // A share with the same name later is another share.
+    let resp = (app.clone())
+        .oneshot(req_json(Method::DELETE, "/shares/analytics", json!({})))
+        .await
+        .unwrap();
+    assert_status(resp, StatusCode::OK, "delete").await;
+    admin(
+        &app,
+        Method::POST,
+        "/shares",
+        json!({ "name": "analytics" }),
+    )
+    .await;
+    assert_eq!(names(&get_json(&app, &shares, &token).await), 0);
+
+    permission(&app, "analytics", "partner-x", "add").await;
+    let revoked = permission(&app, "analytics", "partner-x", "remove").await;
+    assert!(revoked.get("privilege_assignments").is_none(), "{revoked}");
+    assert_eq!(names(&get_json(&app, &shares, &token).await), 0);
+
+    // A recipient has SELECT only, and an unknown recipient is not found.
+    let path = "/shares/analytics/permissions";
+    let other = json!({ "changes": [{ "principal": "partner-x", "add": ["MODIFY"] }] });
+    let resp = (app
+        .clone()
+        .oneshot(req_json(Method::PATCH, path, other))
+        .await)
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    let unknown = json!({ "changes": [{ "principal": "nobody", "add": ["SELECT"] }] });
+    let resp = (app
+        .clone()
+        .oneshot(req_json(Method::PATCH, path, unknown))
+        .await)
+        .unwrap();
+    let error = json_body(assert_status(resp, StatusCode::NOT_FOUND, "unknown").await).await;
+    assert_eq!(error["message"], "recipient 'nobody' not found");
+}
+
+#[rstest]
+#[tokio::test]
+async fn shares_are_listed_without_their_objects(#[future(awt)] app: Router) {
+    admin(
+        &app,
+        Method::POST,
+        "/shares",
+        json!({ "name": "analytics" }),
+    )
+    .await;
+    let object = json!({ "name": "main.default.events", "data_object_type": "TABLE" });
+    let share = admin(
+        &app,
+        Method::PATCH,
+        "/shares/analytics",
+        update("ADD", object),
+    )
+    .await;
+    // Without `shared_as`, the schema and name of the catalog.
+    assert_eq!(share["objects"][0]["shared_as"], "default.events");
+
+    let listed = admin(&app, Method::GET, "/shares", json!({})).await;
+    assert_eq!(listed["shares"][0]["name"], "analytics");
+    assert!(listed["shares"][0].get("objects").is_none(), "{listed}");
+    let bare = admin(&app, Method::GET, "/shares/analytics", json!({})).await;
+    assert!(bare.get("objects").is_none(), "{bare}");
+    let path = "/shares/analytics?include_shared_data=true";
+    let full = admin(&app, Method::GET, path, json!({})).await;
+    assert_eq!(full["objects"][0]["name"], "main.default.events");
+
+    let renamed = json!({ "new_name": "reports", "comment": "weekly" });
+    let share = admin(&app, Method::PATCH, "/shares/analytics", renamed).await;
+    assert_eq!(
+        (share["name"].as_str(), share["comment"].as_str()),
+        (Some("reports"), Some("weekly"))
     );
-    assert!(profile["bearerToken"].as_str().unwrap().starts_with("dsr_"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn a_bad_request_body_gets_the_error_body_of_the_api(#[future(awt)] app: Router) {
+    let path = format!("{}/shares", common::BASE);
+    for body in ["{", r#"{"name": 1}"#] {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri(&path)
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.clone().oneshot(request).await.unwrap();
+        let error = json_body(assert_status(resp, StatusCode::BAD_REQUEST, body).await).await;
+        assert_eq!(error["error_code"], "INVALID_ARGUMENT", "{body}");
+        assert!(
+            error["message"].as_str().unwrap().contains("JSON"),
+            "{error}"
+        );
+    }
 }

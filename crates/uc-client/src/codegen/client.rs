@@ -4,6 +4,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 use ::olai_http::CloudClient as Transport;
 
+use crate::codegen::activations::*;
 use crate::codegen::admin::*;
 use crate::codegen::audit::*;
 use crate::codegen::auth::*;
@@ -154,6 +155,14 @@ impl Client {
     /// (cookies / forwarded auth) on each request.
     pub fn new_in_browser(base_url: Url) -> Self {
         Self::new(Transport::new(), base_url)
+    }
+
+    ///Low-level `activations` client exposing request/response passthrough methods.
+    pub fn activations_client(&self) -> crate::codegen::activations::ActivationClient {
+        crate::codegen::activations::ActivationClient::new(
+            self.client.clone(),
+            self.base_url.clone(),
+        )
     }
 
     ///Low-level `admin` client exposing request/response passthrough methods.
@@ -330,6 +339,26 @@ impl Client {
         crate::codegen::volumes::VolumeServiceClient::new(
             self.client.clone(),
             self.base_url.clone(),
+        )
+    }
+
+    /// Open the activation link of a token: the Delta Sharing profile with the bearer token. A link
+    /// works once, and the request needs no sign-in: the code is the secret. The server keeps a hash
+    /// of the token only after this.
+    ///
+    /// # Arguments
+    ///
+    /// * `code` - The code of the activation link.
+    pub fn activate_recipient_token(
+        &self,
+        code: impl Into<String>,
+    ) -> ActivateRecipientTokenBuilder {
+        ActivateRecipientTokenBuilder::new(
+            crate::codegen::activations::ActivationClient::new(
+                self.client.clone(),
+                self.base_url.clone(),
+            ),
+            code,
         )
     }
 
@@ -1596,7 +1625,7 @@ impl Client {
         )
     }
 
-    /// List the recipients.
+    /// List recipients.
     pub fn list_recipients(&self) -> ListRecipientsBuilder {
         ListRecipientsBuilder::new(crate::codegen::recipients::RecipientServiceClient::new(
             self.client.clone(),
@@ -1604,7 +1633,7 @@ impl Client {
         ))
     }
 
-    /// Create a recipient. The response holds its bearer token, which no later response shows.
+    /// Create a new recipient.
     ///
     /// # Arguments
     ///
@@ -1998,7 +2027,7 @@ impl Client {
         )
     }
 
-    /// List the shares.
+    /// List shares.
     pub fn list_shares(&self) -> ListSharesBuilder {
         ListSharesBuilder::new(crate::codegen::shares::ShareServiceClient::new(
             self.client.clone(),
@@ -2006,7 +2035,7 @@ impl Client {
         ))
     }
 
-    /// Create a share. It holds no tables: add them with `UpdateShare`.
+    /// Create a new share.
     ///
     /// # Arguments
     ///

@@ -4045,7 +4045,7 @@ dependencies = [
  "ena",
  "itertools 0.14.0",
  "lalrpop-util",
- "petgraph",
+ "petgraph 0.7.1",
  "pico-args",
  "regex",
  "regex-syntax",
@@ -4720,6 +4720,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "multimap"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
+
+[[package]]
 name = "murmur3"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5077,6 +5083,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "olai-uc-common"
+version = "0.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0dec5fedbd83e4e7f6b3d95520dd59d4710d5652398e1ea497787bba40e91389"
+dependencies = [
+ "aes-gcm 0.10.3",
+ "async-trait",
+ "axum",
+ "axum-extra",
+ "buffa",
+ "buffa-types",
+ "bytes",
+ "chrono",
+ "http",
+ "itertools 0.14.0",
+ "pbjson",
+ "pbjson-types",
+ "percent-encoding",
+ "prost",
+ "serde",
+ "serde_json",
+ "strum 0.27.2",
+ "thiserror 2.0.18",
+ "tracing",
+ "url",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "olai-uc-handlers"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8167cfd8c06a62288af038d7345d3ca38a7057ebe133c47fbd8b3be0e677cb17"
+dependencies = [
+ "async-trait",
+ "axum",
+ "olai-uc-common",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5101,9 +5152,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
+name = "opensharing-admin-api"
+version = "0.0.1"
+source = "git+https://github.com/ion-elgreco/distributary?rev=83ce08e6a75eaa635565271d9c9c96d7e58cc741#83ce08e6a75eaa635565271d9c9c96d7e58cc741"
+dependencies = [
+ "async-trait",
+ "axum",
+ "olai-uc-common",
+ "olai-uc-handlers",
+]
+
+[[package]]
 name = "opensharing-api"
 version = "0.0.1"
-source = "git+https://github.com/ion-elgreco/distributary?rev=ec5bc3373d88465402a7c8efe1d9041c1f22d664#ec5bc3373d88465402a7c8efe1d9041c1f22d664"
+source = "git+https://github.com/ion-elgreco/distributary?rev=83ce08e6a75eaa635565271d9c9c96d7e58cc741#83ce08e6a75eaa635565271d9c9c96d7e58cc741"
 dependencies = [
  "async-trait",
  "axum",
@@ -5120,7 +5182,7 @@ dependencies = [
 [[package]]
 name = "opensharing-client"
 version = "0.0.1"
-source = "git+https://github.com/ion-elgreco/distributary?rev=ec5bc3373d88465402a7c8efe1d9041c1f22d664#ec5bc3373d88465402a7c8efe1d9041c1f22d664"
+source = "git+https://github.com/ion-elgreco/distributary?rev=83ce08e6a75eaa635565271d9c9c96d7e58cc741#83ce08e6a75eaa635565271d9c9c96d7e58cc741"
 dependencies = [
  "chrono",
  "futures",
@@ -5136,7 +5198,7 @@ dependencies = [
 [[package]]
 name = "opensharing-common"
 version = "0.0.1"
-source = "git+https://github.com/ion-elgreco/distributary?rev=ec5bc3373d88465402a7c8efe1d9041c1f22d664#ec5bc3373d88465402a7c8efe1d9041c1f22d664"
+source = "git+https://github.com/ion-elgreco/distributary?rev=83ce08e6a75eaa635565271d9c9c96d7e58cc741#83ce08e6a75eaa635565271d9c9c96d7e58cc741"
 dependencies = [
  "axum",
  "axum-extra",
@@ -5149,7 +5211,7 @@ dependencies = [
 [[package]]
 name = "opensharing-engine"
 version = "0.0.1"
-source = "git+https://github.com/ion-elgreco/distributary?rev=ec5bc3373d88465402a7c8efe1d9041c1f22d664#ec5bc3373d88465402a7c8efe1d9041c1f22d664"
+source = "git+https://github.com/ion-elgreco/distributary?rev=83ce08e6a75eaa635565271d9c9c96d7e58cc741#83ce08e6a75eaa635565271d9c9c96d7e58cc741"
 dependencies = [
  "async-trait",
  "buoyant_kernel",
@@ -5504,6 +5566,43 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 
 [[package]]
+name = "pbjson"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8edd1efdd8ab23ba9cb9ace3d9987a72663d5d7c9f74fa00b51d6213645cf6c"
+dependencies = [
+ "base64 0.22.1",
+ "serde",
+]
+
+[[package]]
+name = "pbjson-build"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ed4d5c6ae95e08ac768883c8401cf0e8deb4e6e1d6a4e1fd3d2ec4f0ec63200"
+dependencies = [
+ "heck 0.5.0",
+ "itertools 0.14.0",
+ "prost",
+ "prost-types",
+]
+
+[[package]]
+name = "pbjson-types"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a14e2757d877c0f607a82ce1b8560e224370f159d66c5d52eb55ea187ef0350e"
+dependencies = [
+ "bytes",
+ "chrono",
+ "pbjson",
+ "pbjson-build",
+ "prost",
+ "prost-build",
+ "serde",
+]
+
+[[package]]
 name = "pem"
 version = "3.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5544,6 +5643,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3672b37090dbd86368a4145bc067582552b29c27377cad4e0a306c97f9bd7772"
 dependencies = [
  "fixedbitset",
+ "indexmap 2.14.0",
+]
+
+[[package]]
+name = "petgraph"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8701b58ea97060d5e5b155d383a69952a60943f0e6dfe30b04c287beb0b27455"
+dependencies = [
+ "fixedbitset",
+ "hashbrown 0.15.5",
  "indexmap 2.14.0",
 ]
 
@@ -5903,6 +6013,25 @@ checksum = "d2ea70524a2f82d518bce41317d0fae74151505651af45faf1ffbd6fd33f0568"
 dependencies = [
  "bytes",
  "prost-derive",
+]
+
+[[package]]
+name = "prost-build"
+version = "0.14.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
+dependencies = [
+ "heck 0.4.1",
+ "itertools 0.11.0",
+ "log",
+ "multimap",
+ "petgraph 0.8.3",
+ "prettyplease 0.2.37",
+ "prost",
+ "prost-types",
+ "regex",
+ "syn 2.0.117",
+ "tempfile",
 ]
 
 [[package]]
@@ -8983,6 +9112,7 @@ dependencies = [
  "metrics-exporter-prometheus",
  "moka",
  "object_store",
+ "opensharing-admin-api",
  "opensharing-api",
  "opensharing-common",
  "opensharing-engine",

@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import time
+import urllib.error
 import urllib.request
 
 import pytest
@@ -44,7 +45,7 @@ from unitycatalog.scim import (
     ScimPatchOperation,
     ScimUser,
 )
-from unitycatalog.shares import SharedDataObject
+from unitycatalog.shares import DataObject, DataObjectUpdate, SharePermissionsChange
 from unitycatalog.tables import (
     ColumnInfo,
     Dependency,
@@ -884,29 +885,42 @@ def test_shares_recipients_and_delta_sharing(
     share_name, recipient_name = unique("share"), unique("recipient")
     share = uc.create_share(share_name, comment="for partners")
     assert (share.name, share.objects) == (share_name, [])
-    shared = SharedDataObject(
-        f"{catalog}.{schema_name}.orders",
-        "sales",
-        "orders",
-        data_object_type="TABLE",
-        history_data_sharing_status="DISABLED",
+    shared = DataObject(
+        f"{catalog}.{schema_name}.orders", "TABLE", shared_as="sales.orders"
     )
-    assert uc.share(share_name).update(add_objects=[shared]).objects == [shared]
+    added = uc.share(share_name).update(updates=[DataObjectUpdate("ADD", shared)])
+    [object] = added.objects
+    assert (object.name, object.shared_as) == (shared.name, "sales.orders")
+    assert object.history_data_sharing_status == "DISABLED"
     assert share_name in [s.name for s in uc.list_shares()]
+    assert uc.share(share_name).get().objects == []
+    assert uc.share(share_name).get(include_shared_data=True) == added
 
+    # The admin gets the activation link of the token, not the token.
     recipient = uc.create_recipient(recipient_name, comment="partner")
-    assert recipient.authentication_type == "TOKEN" and recipient.bearer_token
-    updated = uc.recipient(recipient_name).update(add_shares=[share_name])
-    assert (updated.shares, updated.bearer_token) == ([share_name], None)
+    assert recipient.authentication_type == "TOKEN"
     assert recipient_name in [r.name for r in uc.list_recipients()]
-    profile = uc.recipient(recipient_name).create_recipient_profile()
+    grant = SharePermissionsChange(principal=recipient_name, add=["SELECT"])
+    granted = uc.share(share_name).update_share_permissions(changes=[grant])
+    [assignment] = granted.privilege_assignments
+    assert (assignment.principal, assignment.privileges) == (recipient_name, ["SELECT"])
+    read_back = uc.share(share_name).get_share_permissions()
+    assert read_back.privilege_assignments == [assignment]
+
+    def activate(recipient):
+        code = recipient.tokens[-1].activation_url.rsplit("/", 1)[1]
+        return uc.activate_recipient_token(code)
+
+    profile = activate(recipient)
     assert profile.endpoint.endswith("/api/v1/delta-sharing")
+    with pytest.raises(NotFoundError, match="activation link"):
+        activate(recipient)
 
     # The Delta Sharing protocol, with the token of the recipient.
-    def read(path: str):
+    def read(path: str, token: str = profile.bearer_token):
         request = urllib.request.Request(
             f"{profile.endpoint}{path}",
-            headers={"Authorization": f"Bearer {profile.bearer_token}"},
+            headers={"Authorization": f"Bearer {token}"},
         )
         return urllib.request.urlopen(request)
 
@@ -914,8 +928,13 @@ def test_shares_recipients_and_delta_sharing(
     [table] = json.load(read(f"/shares/{share_name}/all-tables"))["items"]
     assert (table["schema"], table["name"]) == ("sales", "orders")
 
+    # A rotation ends the older token, at once without an overlap.
     rotated = uc.recipient(recipient_name).rotate_recipient_token()
-    assert rotated.bearer_token and rotated.bearer_token != profile.bearer_token
+    [token] = rotated.tokens
+    assert token.activation_url != recipient.tokens[0].activation_url
+    with pytest.raises(urllib.error.HTTPError, match="401"):
+        read("/shares")
+    read("/shares", activate(rotated).bearer_token)
     uc.recipient(recipient_name).delete()
     uc.share(share_name).delete()
     assert share_name not in [s.name for s in uc.list_shares()]

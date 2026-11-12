@@ -362,13 +362,40 @@ pub(crate) const RECIPIENT: TableDef = TableDef {
         ("authentication_type", Text),
         ("comment", Text),
         ("owner", Text),
+        ("properties", Json),
+        ("expiration_time", Int),
         ("created_at", Int),
         ("created_by", Text),
         ("updated_at", Int),
         ("updated_by", Text),
+    ],
+};
+
+pub(crate) const RECIPIENT_TOKEN: TableDef = TableDef {
+    name: "recipient_token",
+    key: &["id_string"],
+    columns: &[
+        ("id_string", Text),
+        ("recipient_id", Text),
         ("token_hash", Text),
-        ("token_prefix", Text),
-        ("shares", Json),
+        ("activation_hash", Text),
+        ("sealed_token", Text),
+        ("expiration_time", Int),
+        ("created_at", Int),
+        ("created_by", Text),
+        ("updated_at", Int),
+        ("updated_by", Text),
+    ],
+};
+
+pub(crate) const SHARE_GRANT: TableDef = TableDef {
+    name: "share_grant",
+    key: &["share_id", "recipient_id"],
+    columns: &[
+        ("share_id", Text),
+        ("recipient_id", Text),
+        ("granted_at", Int),
+        ("granted_by", Text),
     ],
 };
 
@@ -423,6 +450,8 @@ pub(crate) const ALL: &[&TableDef] = &[
     &SCIM_DELETED_USER,
     &SHARE,
     &RECIPIENT,
+    &RECIPIENT_TOKEN,
+    &SHARE_GRANT,
     &STORAGE_CLEANUP_TASK,
     &AUDIT_EVENT,
 ];

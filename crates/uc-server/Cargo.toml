@@ -73,6 +73,7 @@ bytes.workspace = true
 futures.workspace = true
 object_store.workspace = true
 iceberg.workspace = true
+opensharing-admin-api.workspace = true
 opensharing-api.workspace = true
 opensharing-common.workspace = true
 opensharing-engine.workspace = true

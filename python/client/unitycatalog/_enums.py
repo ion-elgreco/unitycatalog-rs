@@ -164,32 +164,59 @@ class ModelVersionStatus(enum.StrEnum):
 
 
 class AuthenticationType(enum.StrEnum):
-    """How a recipient signs in to the Delta Sharing server."""
-
     TOKEN = "TOKEN"
-    """A bearer token."""
+    """Basic authentication is required."""
     OAUTH_CLIENT_CREDENTIALS = "OAUTH_CLIENT_CREDENTIALS"
-    """OAuth client credentials. Not implemented: the recipient gets a bearer token."""
+    """OAuth2 authentication is required."""
 
 
-class HistoryDataSharingStatus(enum.StrEnum):
-    """Whether recipients read the history of a shared table."""
-
-    DISABLED = "DISABLED"
-    """Recipients read the latest version only."""
-    ENABLED = "ENABLED"
-    """Recipients read older versions too, by version or by time."""
+class Action(enum.StrEnum):
+    ADD = "ADD"
+    REMOVE = "REMOVE"
+    UPDATE = "UPDATE"
 
 
-class SharedObjectType(enum.StrEnum):
-    """What a share object is."""
+class DataObjectStatus(enum.StrEnum):
+    """Whether a shared data object is still accessible to the share."""
+
+    ACTIVE = "ACTIVE"
+    """The data object is accessible."""
+    PERMISSION_DENIED = "PERMISSION_DENIED"
+    """The share owner lost access to the data object."""
+
+
+class DataObjectType(enum.StrEnum):
+    """The server shares `TABLE`, `VOLUME` and `AGENT_SKILL` objects, and refuses the other types."""
 
     TABLE = "TABLE"
-    """A table."""
+    SCHEMA = "SCHEMA"
+    VIEW = "VIEW"
+    MATERIALIZED_VIEW = "MATERIALIZED_VIEW"
+    STREAMING_TABLE = "STREAMING_TABLE"
+    MODEL = "MODEL"
+    FUNCTION = "FUNCTION"
     VOLUME = "VOLUME"
-    """A volume."""
+    """A Unity Catalog volume shared as a storage-backed asset (OpenSharing)."""
     AGENT_SKILL = "AGENT_SKILL"
-    """A volume that holds an agent skill: a `SKILL.md` and its files."""
+    """An agent skill (a directory of SKILL.md + scripts/assets) shared as a
+    storage-backed asset on top of a volume (OpenSharing).
+    """
+
+
+class HistoryStatus(enum.StrEnum):
+    DISABLED = "DISABLED"
+    """Data history sharing is disabled."""
+    ENABLED = "ENABLED"
+    """Data history sharing is enabled."""
+
+
+class PartitionValueOp(enum.StrEnum):
+    """The operator a partition value is matched with."""
+
+    EQUAL = "EQUAL"
+    """The partition column equals the value."""
+    LIKE = "LIKE"
+    """The partition column matches the value as a SQL LIKE pattern."""
 
 
 class ColumnTypeName(enum.StrEnum):

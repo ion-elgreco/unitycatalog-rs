@@ -1280,43 +1280,39 @@ impl<'py> ::pyo3::IntoPyObject<'py> for PyAuthenticationType {
     }
 }
 
-/// A member of `unitycatalog._enums.HistoryDataSharingStatus`, or its name.
+/// A member of `unitycatalog._enums.Action`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct PyHistoryDataSharingStatus(pub super::shares::v1::HistoryDataSharingStatus);
-impl PyHistoryDataSharingStatus {
+pub struct PyAction(pub super::shares::v1::Action);
+impl PyAction {
     /// The name of the value, or `None` for a value without a Python member.
     fn __name(&self) -> ::core::option::Option<&'static str> {
-        match <super::shares::v1::HistoryDataSharingStatus as ::buffa::Enumeration>::to_i32(&self.0)
-        {
-            1i32 => ::core::option::Option::Some("DISABLED"),
-            2i32 => ::core::option::Option::Some("ENABLED"),
+        match <super::shares::v1::Action as ::buffa::Enumeration>::to_i32(&self.0) {
+            1i32 => ::core::option::Option::Some("ADD"),
+            2i32 => ::core::option::Option::Some("REMOVE"),
+            3i32 => ::core::option::Option::Some("UPDATE"),
             _ => ::core::option::Option::None,
         }
     }
 }
 
-impl ::core::convert::From<super::shares::v1::HistoryDataSharingStatus>
-    for PyHistoryDataSharingStatus
-{
-    fn from(value: super::shares::v1::HistoryDataSharingStatus) -> Self {
+impl ::core::convert::From<super::shares::v1::Action> for PyAction {
+    fn from(value: super::shares::v1::Action) -> Self {
         Self(value)
     }
 }
 
-impl ::core::convert::From<PyHistoryDataSharingStatus>
-    for super::shares::v1::HistoryDataSharingStatus
-{
-    fn from(value: PyHistoryDataSharingStatus) -> Self {
+impl ::core::convert::From<PyAction> for super::shares::v1::Action {
+    fn from(value: PyAction) -> Self {
         value.0
     }
 }
 
-impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyHistoryDataSharingStatus {
+impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyAction {
     type Error = ::pyo3::PyErr;
     const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
         use ::pyo3::type_hint_union;
         type_hint_union!(
-            ::pyo3::type_hint_identifier!("unitycatalog._enums", "HistoryDataSharingStatus"),
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "Action"),
             ::pyo3::type_hint_identifier!("builtins", "str")
         )
     };
@@ -1324,79 +1320,160 @@ impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyHistoryDataSharingStatus {
     fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
-            "DISABLED" => 1i32,
-            "ENABLED" => 2i32,
+            "ADD" => 1i32,
+            "REMOVE" => 2i32,
+            "UPDATE" => 3i32,
             other => {
                 return ::core::result::Result::Err(::pyo3::exceptions::PyValueError::new_err(
                     ::std::format!(
-                        "invalid HistoryDataSharingStatus: {:?}; expected one of: DISABLED, ENABLED",
+                        "invalid Action: {:?}; expected one of: ADD, REMOVE, UPDATE",
                         other
                     ),
                 ));
             }
         };
         ::core::result::Result::Ok(Self(
-            <super::shares::v1::HistoryDataSharingStatus as ::buffa::Enumeration>::from_i32(n)
-                .unwrap_or_default(),
+            <super::shares::v1::Action as ::buffa::Enumeration>::from_i32(n).unwrap_or_default(),
         ))
     }
 }
 
-impl<'py> ::pyo3::IntoPyObject<'py> for PyHistoryDataSharingStatus {
+impl<'py> ::pyo3::IntoPyObject<'py> for PyAction {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
     const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
-        ::pyo3::type_hint_identifier!("unitycatalog._enums", "HistoryDataSharingStatus");
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "Action");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
-        let class = CLASS.import(py, "unitycatalog._enums", "HistoryDataSharingStatus")?;
+        let class = CLASS.import(py, "unitycatalog._enums", "Action")?;
         let name = self.__name().ok_or_else(|| {
             ::pyo3::exceptions::PyValueError::new_err(::std::format!(
-                "HistoryDataSharingStatus value {} has no Python member",
-                <super::shares::v1::HistoryDataSharingStatus as ::buffa::Enumeration>::to_i32(
-                    &self.0
-                )
+                "Action value {} has no Python member",
+                <super::shares::v1::Action as ::buffa::Enumeration>::to_i32(&self.0)
             ))
         })?;
         ::pyo3::types::PyAnyMethods::getattr(class.as_any(), name)
     }
 }
 
-/// A member of `unitycatalog._enums.SharedObjectType`, or its name.
+/// A member of `unitycatalog._enums.DataObjectStatus`, or its name.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct PySharedObjectType(pub super::shares::v1::SharedObjectType);
-impl PySharedObjectType {
+pub struct PyDataObjectStatus(pub super::shares::v1::DataObjectStatus);
+impl PyDataObjectStatus {
     /// The name of the value, or `None` for a value without a Python member.
     fn __name(&self) -> ::core::option::Option<&'static str> {
-        match <super::shares::v1::SharedObjectType as ::buffa::Enumeration>::to_i32(&self.0) {
-            1i32 => ::core::option::Option::Some("TABLE"),
-            2i32 => ::core::option::Option::Some("VOLUME"),
-            3i32 => ::core::option::Option::Some("AGENT_SKILL"),
+        match <super::shares::v1::DataObjectStatus as ::buffa::Enumeration>::to_i32(&self.0) {
+            1i32 => ::core::option::Option::Some("ACTIVE"),
+            2i32 => ::core::option::Option::Some("PERMISSION_DENIED"),
             _ => ::core::option::Option::None,
         }
     }
 }
 
-impl ::core::convert::From<super::shares::v1::SharedObjectType> for PySharedObjectType {
-    fn from(value: super::shares::v1::SharedObjectType) -> Self {
+impl ::core::convert::From<super::shares::v1::DataObjectStatus> for PyDataObjectStatus {
+    fn from(value: super::shares::v1::DataObjectStatus) -> Self {
         Self(value)
     }
 }
 
-impl ::core::convert::From<PySharedObjectType> for super::shares::v1::SharedObjectType {
-    fn from(value: PySharedObjectType) -> Self {
+impl ::core::convert::From<PyDataObjectStatus> for super::shares::v1::DataObjectStatus {
+    fn from(value: PyDataObjectStatus) -> Self {
         value.0
     }
 }
 
-impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PySharedObjectType {
+impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyDataObjectStatus {
     type Error = ::pyo3::PyErr;
     const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
         use ::pyo3::type_hint_union;
         type_hint_union!(
-            ::pyo3::type_hint_identifier!("unitycatalog._enums", "SharedObjectType"),
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "DataObjectStatus"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
+    fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
+        let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
+        let n: i32 = match &*name {
+            "ACTIVE" => 1i32,
+            "PERMISSION_DENIED" => 2i32,
+            other => {
+                return ::core::result::Result::Err(::pyo3::exceptions::PyValueError::new_err(
+                    ::std::format!(
+                        "invalid DataObjectStatus: {:?}; expected one of: ACTIVE, PERMISSION_DENIED",
+                        other
+                    ),
+                ));
+            }
+        };
+        ::core::result::Result::Ok(Self(
+            <super::shares::v1::DataObjectStatus as ::buffa::Enumeration>::from_i32(n)
+                .unwrap_or_default(),
+        ))
+    }
+}
+
+impl<'py> ::pyo3::IntoPyObject<'py> for PyDataObjectStatus {
+    type Target = ::pyo3::PyAny;
+    type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
+    type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "DataObjectStatus");
+    fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
+        static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
+            ::pyo3::sync::PyOnceLock::new();
+        let class = CLASS.import(py, "unitycatalog._enums", "DataObjectStatus")?;
+        let name = self.__name().ok_or_else(|| {
+            ::pyo3::exceptions::PyValueError::new_err(::std::format!(
+                "DataObjectStatus value {} has no Python member",
+                <super::shares::v1::DataObjectStatus as ::buffa::Enumeration>::to_i32(&self.0)
+            ))
+        })?;
+        ::pyo3::types::PyAnyMethods::getattr(class.as_any(), name)
+    }
+}
+
+/// A member of `unitycatalog._enums.DataObjectType`, or its name.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct PyDataObjectType(pub super::shares::v1::DataObjectType);
+impl PyDataObjectType {
+    /// The name of the value, or `None` for a value without a Python member.
+    fn __name(&self) -> ::core::option::Option<&'static str> {
+        match <super::shares::v1::DataObjectType as ::buffa::Enumeration>::to_i32(&self.0) {
+            1i32 => ::core::option::Option::Some("TABLE"),
+            2i32 => ::core::option::Option::Some("SCHEMA"),
+            3i32 => ::core::option::Option::Some("VIEW"),
+            4i32 => ::core::option::Option::Some("MATERIALIZED_VIEW"),
+            5i32 => ::core::option::Option::Some("STREAMING_TABLE"),
+            6i32 => ::core::option::Option::Some("MODEL"),
+            8i32 => ::core::option::Option::Some("FUNCTION"),
+            10i32 => ::core::option::Option::Some("VOLUME"),
+            11i32 => ::core::option::Option::Some("AGENT_SKILL"),
+            _ => ::core::option::Option::None,
+        }
+    }
+}
+
+impl ::core::convert::From<super::shares::v1::DataObjectType> for PyDataObjectType {
+    fn from(value: super::shares::v1::DataObjectType) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyDataObjectType> for super::shares::v1::DataObjectType {
+    fn from(value: PyDataObjectType) -> Self {
+        value.0
+    }
+}
+
+impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyDataObjectType {
+    type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "DataObjectType"),
             ::pyo3::type_hint_identifier!("builtins", "str")
         )
     };
@@ -1405,38 +1482,198 @@ impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PySharedObjectType {
         let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
         let n: i32 = match &*name {
             "TABLE" => 1i32,
-            "VOLUME" => 2i32,
-            "AGENT_SKILL" => 3i32,
+            "SCHEMA" => 2i32,
+            "VIEW" => 3i32,
+            "MATERIALIZED_VIEW" => 4i32,
+            "STREAMING_TABLE" => 5i32,
+            "MODEL" => 6i32,
+            "FUNCTION" => 8i32,
+            "VOLUME" => 10i32,
+            "AGENT_SKILL" => 11i32,
             other => {
                 return ::core::result::Result::Err(::pyo3::exceptions::PyValueError::new_err(
                     ::std::format!(
-                        "invalid SharedObjectType: {:?}; expected one of: TABLE, VOLUME, AGENT_SKILL",
+                        "invalid DataObjectType: {:?}; expected one of: TABLE, SCHEMA, VIEW, MATERIALIZED_VIEW, STREAMING_TABLE, MODEL, FUNCTION, VOLUME, AGENT_SKILL",
                         other
                     ),
                 ));
             }
         };
         ::core::result::Result::Ok(Self(
-            <super::shares::v1::SharedObjectType as ::buffa::Enumeration>::from_i32(n)
+            <super::shares::v1::DataObjectType as ::buffa::Enumeration>::from_i32(n)
                 .unwrap_or_default(),
         ))
     }
 }
 
-impl<'py> ::pyo3::IntoPyObject<'py> for PySharedObjectType {
+impl<'py> ::pyo3::IntoPyObject<'py> for PyDataObjectType {
     type Target = ::pyo3::PyAny;
     type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
     type Error = ::pyo3::PyErr;
     const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
-        ::pyo3::type_hint_identifier!("unitycatalog._enums", "SharedObjectType");
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "DataObjectType");
     fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
         static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
             ::pyo3::sync::PyOnceLock::new();
-        let class = CLASS.import(py, "unitycatalog._enums", "SharedObjectType")?;
+        let class = CLASS.import(py, "unitycatalog._enums", "DataObjectType")?;
         let name = self.__name().ok_or_else(|| {
             ::pyo3::exceptions::PyValueError::new_err(::std::format!(
-                "SharedObjectType value {} has no Python member",
-                <super::shares::v1::SharedObjectType as ::buffa::Enumeration>::to_i32(&self.0)
+                "DataObjectType value {} has no Python member",
+                <super::shares::v1::DataObjectType as ::buffa::Enumeration>::to_i32(&self.0)
+            ))
+        })?;
+        ::pyo3::types::PyAnyMethods::getattr(class.as_any(), name)
+    }
+}
+
+/// A member of `unitycatalog._enums.HistoryStatus`, or its name.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct PyHistoryStatus(pub super::shares::v1::HistoryStatus);
+impl PyHistoryStatus {
+    /// The name of the value, or `None` for a value without a Python member.
+    fn __name(&self) -> ::core::option::Option<&'static str> {
+        match <super::shares::v1::HistoryStatus as ::buffa::Enumeration>::to_i32(&self.0) {
+            0i32 => ::core::option::Option::Some("DISABLED"),
+            1i32 => ::core::option::Option::Some("ENABLED"),
+            _ => ::core::option::Option::None,
+        }
+    }
+}
+
+impl ::core::convert::From<super::shares::v1::HistoryStatus> for PyHistoryStatus {
+    fn from(value: super::shares::v1::HistoryStatus) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyHistoryStatus> for super::shares::v1::HistoryStatus {
+    fn from(value: PyHistoryStatus) -> Self {
+        value.0
+    }
+}
+
+impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyHistoryStatus {
+    type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "HistoryStatus"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
+    fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
+        let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
+        let n: i32 = match &*name {
+            "DISABLED" => 0i32,
+            "ENABLED" => 1i32,
+            other => {
+                return ::core::result::Result::Err(::pyo3::exceptions::PyValueError::new_err(
+                    ::std::format!(
+                        "invalid HistoryStatus: {:?}; expected one of: DISABLED, ENABLED",
+                        other
+                    ),
+                ));
+            }
+        };
+        ::core::result::Result::Ok(Self(
+            <super::shares::v1::HistoryStatus as ::buffa::Enumeration>::from_i32(n)
+                .unwrap_or_default(),
+        ))
+    }
+}
+
+impl<'py> ::pyo3::IntoPyObject<'py> for PyHistoryStatus {
+    type Target = ::pyo3::PyAny;
+    type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
+    type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "HistoryStatus");
+    fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
+        static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
+            ::pyo3::sync::PyOnceLock::new();
+        let class = CLASS.import(py, "unitycatalog._enums", "HistoryStatus")?;
+        let name = self.__name().ok_or_else(|| {
+            ::pyo3::exceptions::PyValueError::new_err(::std::format!(
+                "HistoryStatus value {} has no Python member",
+                <super::shares::v1::HistoryStatus as ::buffa::Enumeration>::to_i32(&self.0)
+            ))
+        })?;
+        ::pyo3::types::PyAnyMethods::getattr(class.as_any(), name)
+    }
+}
+
+/// A member of `unitycatalog._enums.PartitionValueOp`, or its name.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct PyPartitionValueOp(pub super::shares::v1::PartitionValueOp);
+impl PyPartitionValueOp {
+    /// The name of the value, or `None` for a value without a Python member.
+    fn __name(&self) -> ::core::option::Option<&'static str> {
+        match <super::shares::v1::PartitionValueOp as ::buffa::Enumeration>::to_i32(&self.0) {
+            1i32 => ::core::option::Option::Some("EQUAL"),
+            2i32 => ::core::option::Option::Some("LIKE"),
+            _ => ::core::option::Option::None,
+        }
+    }
+}
+
+impl ::core::convert::From<super::shares::v1::PartitionValueOp> for PyPartitionValueOp {
+    fn from(value: super::shares::v1::PartitionValueOp) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyPartitionValueOp> for super::shares::v1::PartitionValueOp {
+    fn from(value: PyPartitionValueOp) -> Self {
+        value.0
+    }
+}
+
+impl<'a, 'py> ::pyo3::FromPyObject<'a, 'py> for PyPartitionValueOp {
+    type Error = ::pyo3::PyErr;
+    const INPUT_TYPE: ::pyo3::inspect::PyStaticExpr = {
+        use ::pyo3::type_hint_union;
+        type_hint_union!(
+            ::pyo3::type_hint_identifier!("unitycatalog._enums", "PartitionValueOp"),
+            ::pyo3::type_hint_identifier!("builtins", "str")
+        )
+    };
+
+    fn extract(obj: ::pyo3::Borrowed<'a, 'py, ::pyo3::PyAny>) -> ::pyo3::PyResult<Self> {
+        let name: ::pyo3::pybacked::PyBackedStr = ::pyo3::types::PyAnyMethods::extract(&*obj)?;
+        let n: i32 = match &*name {
+            "EQUAL" => 1i32,
+            "LIKE" => 2i32,
+            other => {
+                return ::core::result::Result::Err(::pyo3::exceptions::PyValueError::new_err(
+                    ::std::format!(
+                        "invalid PartitionValueOp: {:?}; expected one of: EQUAL, LIKE",
+                        other
+                    ),
+                ));
+            }
+        };
+        ::core::result::Result::Ok(Self(
+            <super::shares::v1::PartitionValueOp as ::buffa::Enumeration>::from_i32(n)
+                .unwrap_or_default(),
+        ))
+    }
+}
+
+impl<'py> ::pyo3::IntoPyObject<'py> for PyPartitionValueOp {
+    type Target = ::pyo3::PyAny;
+    type Output = ::pyo3::Bound<'py, ::pyo3::PyAny>;
+    type Error = ::pyo3::PyErr;
+    const OUTPUT_TYPE: ::pyo3::inspect::PyStaticExpr =
+        ::pyo3::type_hint_identifier!("unitycatalog._enums", "PartitionValueOp");
+    fn into_pyobject(self, py: ::pyo3::Python<'py>) -> ::pyo3::PyResult<Self::Output> {
+        static CLASS: ::pyo3::sync::PyOnceLock<::pyo3::Py<::pyo3::types::PyType>> =
+            ::pyo3::sync::PyOnceLock::new();
+        let class = CLASS.import(py, "unitycatalog._enums", "PartitionValueOp")?;
+        let name = self.__name().ok_or_else(|| {
+            ::pyo3::exceptions::PyValueError::new_err(::std::format!(
+                "PartitionValueOp value {} has no Python member",
+                <super::shares::v1::PartitionValueOp as ::buffa::Enumeration>::to_i32(&self.0)
             ))
         })?;
         ::pyo3::types::PyAnyMethods::getattr(class.as_any(), name)
@@ -10579,6 +10816,7 @@ impl ::core::convert::From<PyPrivilegeAssignment> for super::permissions::v1::Pr
     }
 }
 
+/// Response to list recipients.
 #[::pyo3::pyclass(
     name = "ListRecipientsResponse",
     eq,
@@ -10591,18 +10829,18 @@ pub struct PyListRecipientsResponse(pub super::recipients::v1::ListRecipientsRes
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
 #[::pyo3::pymethods]
 impl PyListRecipientsResponse {
-    /// The recipients.
+    /// List of recipients.
     #[getter]
-    fn items(&self) -> ::std::vec::Vec<PyRecipientInfo> {
+    fn recipients(&self) -> ::std::vec::Vec<PyRecipient> {
         self.0
-            .items
+            .recipients
             .iter()
             .cloned()
-            .map(PyRecipientInfo::from)
+            .map(PyRecipient::from)
             .collect()
     }
 
-    /// Opaque token of the next page. Absent on the last page.
+    /// Opaque pagination token to go to next page based on previous query.
     #[getter]
     fn next_page_token(&self) -> ::core::option::Option<::std::string::String> {
         self.0.next_page_token.clone()
@@ -10611,7 +10849,7 @@ impl PyListRecipientsResponse {
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
-            &[("items", false), ("next_page_token", false)],
+            &[("recipients", false), ("next_page_token", false)],
         )
     }
 }
@@ -10632,33 +10870,31 @@ impl ::core::convert::From<PyListRecipientsResponse>
     }
 }
 
-/// A Delta Sharing recipient: an organization or user outside Unity Catalog that reads shares with
-/// a bearer token. The server keeps a hash of the token only.
 #[::pyo3::pyclass(
-    name = "RecipientInfo",
+    name = "Recipient",
     eq,
     frozen,
     module = "unitycatalog._core.recipients",
     from_py_object
 )]
 #[derive(Clone, Debug, PartialEq)]
-pub struct PyRecipientInfo(pub super::recipients::v1::RecipientInfo);
+pub struct PyRecipient(pub super::recipients::v1::Recipient);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
 #[::pyo3::pymethods]
-impl PyRecipientInfo {
-    /// Name of the recipient.
+impl PyRecipient {
+    /// Unique ID of the recipient.
+    #[getter]
+    fn id(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.id.clone()
+    }
+
+    /// The name of the recipient.
     #[getter]
     fn name(&self) -> ::std::string::String {
         self.0.name.clone()
     }
 
-    /// Unique identifier of the recipient.
-    #[getter]
-    fn id(&self) -> ::std::string::String {
-        self.0.id.clone()
-    }
-
-    /// How the recipient signs in.
+    /// The delta sharing authentication type.
     #[getter]
     fn authentication_type(&self) -> ::core::option::Option<PyAuthenticationType> {
         self.0
@@ -10670,75 +10906,91 @@ impl PyRecipientInfo {
             .map(PyAuthenticationType::from)
     }
 
-    /// User-provided free-form text description.
-    #[getter]
-    fn comment(&self) -> ::core::option::Option<::std::string::String> {
-        self.0.comment.clone()
-    }
-
-    /// Username of the owner of the recipient.
+    /// Username of the recipient owner.
     #[getter]
     fn owner(&self) -> ::core::option::Option<::std::string::String> {
         self.0.owner.clone()
     }
 
-    /// Time at which the recipient was created, in epoch milliseconds.
+    /// Description about the recipient.
     #[getter]
-    fn created_at(&self) -> i64 {
+    fn comment(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.comment.clone()
+    }
+
+    /// Recipient properties as map of string key-value pairs.
+    #[getter]
+    fn properties_kvpairs(&self) -> ::core::option::Option<PySecurablePropertiesKvPairs> {
+        self.0
+            .properties_kvpairs
+            .clone()
+            .into_option()
+            .map(PySecurablePropertiesKvPairs::from)
+    }
+
+    /// Time at which this recipient was created, in epoch milliseconds.
+    #[getter]
+    fn created_at(&self) -> ::core::option::Option<i64> {
         self.0.created_at
     }
 
-    /// Username of the creator of the recipient.
+    /// Username of recipient creator.
     #[getter]
     fn created_by(&self) -> ::core::option::Option<::std::string::String> {
         self.0.created_by.clone()
     }
 
-    /// The bearer token. Set only in the responses of `CreateRecipient` and `RotateRecipientToken`.
+    /// This field is only present when the authentication_type is TOKEN.
     #[getter]
-    fn bearer_token(&self) -> ::core::option::Option<::std::string::String> {
-        self.0.bearer_token.clone()
+    fn tokens(&self) -> ::std::vec::Vec<PyRecipientToken> {
+        self.0
+            .tokens
+            .iter()
+            .cloned()
+            .map(PyRecipientToken::from)
+            .collect()
     }
 
-    /// The first 8 characters of the bearer token, for display only.
+    /// Time at which this recipient was updated, in epoch milliseconds.
     #[getter]
-    fn token_prefix(&self) -> ::std::string::String {
-        self.0.token_prefix.clone()
+    fn updated_at(&self) -> ::core::option::Option<i64> {
+        self.0.updated_at
     }
 
-    /// Names of the shares that the recipient can read.
+    /// Username of recipient updater.
     #[getter]
-    fn shares(&self) -> ::std::vec::Vec<::std::string::String> {
-        self.0.shares.clone()
+    fn updated_by(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.updated_by.clone()
     }
 
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
             &[
-                ("name", false),
                 ("id", false),
+                ("name", false),
                 ("authentication_type", false),
-                ("comment", false),
                 ("owner", false),
+                ("comment", false),
+                ("properties_kvpairs", false),
                 ("created_at", false),
                 ("created_by", false),
-                ("bearer_token", true),
-                ("token_prefix", false),
-                ("shares", false),
+                ("tokens", false),
+                ("updated_at", false),
+                ("updated_by", false),
             ],
         )
     }
 }
 
-impl ::core::convert::From<super::recipients::v1::RecipientInfo> for PyRecipientInfo {
-    fn from(value: super::recipients::v1::RecipientInfo) -> Self {
+impl ::core::convert::From<super::recipients::v1::Recipient> for PyRecipient {
+    fn from(value: super::recipients::v1::Recipient) -> Self {
         Self(value)
     }
 }
 
-impl ::core::convert::From<PyRecipientInfo> for super::recipients::v1::RecipientInfo {
-    fn from(value: PyRecipientInfo) -> Self {
+impl ::core::convert::From<PyRecipient> for super::recipients::v1::Recipient {
+    fn from(value: PyRecipient) -> Self {
         value.0
     }
 }
@@ -10776,8 +11028,8 @@ impl PyRecipientProfile {
         self.0.bearer_token.clone()
     }
 
-    /// Time at which the token expires, as an ISO 8601 timestamp. The server sends `null`: the tokens
-    /// do not expire.
+    /// Time at which the token expires, as an ISO 8601 timestamp. Not set for a token that does not
+    /// expire.
     #[getter]
     fn expiration_time(&self) -> ::core::option::Option<::std::string::String> {
         self.0.expiration_time.clone()
@@ -10804,6 +11056,143 @@ impl ::core::convert::From<super::recipients::v1::RecipientProfile> for PyRecipi
 
 impl ::core::convert::From<PyRecipientProfile> for super::recipients::v1::RecipientProfile {
     fn from(value: PyRecipientProfile) -> Self {
+        value.0
+    }
+}
+
+#[::pyo3::pyclass(
+    name = "RecipientToken",
+    eq,
+    frozen,
+    module = "unitycatalog._core.recipients",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyRecipientToken(pub super::recipients::v1::RecipientToken);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3::pymethods]
+impl PyRecipientToken {
+    /// Unique ID of the recipient token.
+    #[getter]
+    fn id(&self) -> ::std::string::String {
+        self.0.id.clone()
+    }
+
+    /// Time at which this recipient token was created, in epoch milliseconds.
+    #[getter]
+    fn created_at(&self) -> i64 {
+        self.0.created_at
+    }
+
+    /// Username of recipient token creator.
+    #[getter]
+    fn created_by(&self) -> ::std::string::String {
+        self.0.created_by.clone()
+    }
+
+    /// Full activation URL to retrieve the access token. It will be empty if the token is already retrieved.
+    #[getter]
+    fn activation_url(&self) -> ::std::string::String {
+        self.0.activation_url.clone()
+    }
+
+    /// Expiration timestamp of the token in epoch milliseconds.
+    #[getter]
+    fn expiration_time(&self) -> i64 {
+        self.0.expiration_time
+    }
+
+    /// Time at which this recipient token was updated, in epoch milliseconds.
+    #[getter]
+    fn updated_at(&self) -> i64 {
+        self.0.updated_at
+    }
+
+    /// Username of recipient token updater.
+    #[getter]
+    fn updated_by(&self) -> ::std::string::String {
+        self.0.updated_by.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[
+                ("id", false),
+                ("created_at", false),
+                ("created_by", false),
+                ("activation_url", false),
+                ("expiration_time", false),
+                ("updated_at", false),
+                ("updated_by", false),
+            ],
+        )
+    }
+}
+
+impl ::core::convert::From<super::recipients::v1::RecipientToken> for PyRecipientToken {
+    fn from(value: super::recipients::v1::RecipientToken) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyRecipientToken> for super::recipients::v1::RecipientToken {
+    fn from(value: PyRecipientToken) -> Self {
+        value.0
+    }
+}
+
+/// An object with the properties of a securable as key-value pairs.
+#[::pyo3::pyclass(
+    name = "SecurablePropertiesKvPairs",
+    eq,
+    frozen,
+    module = "unitycatalog._core.recipients",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PySecurablePropertiesKvPairs(pub super::recipients::v1::SecurablePropertiesKvPairs);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3::pymethods]
+impl PySecurablePropertiesKvPairs {
+    #[new]
+    #[pyo3(signature = (properties))]
+    fn new(
+        properties: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+    ) -> Self {
+        let mut inner = <super::recipients::v1::SecurablePropertiesKvPairs as ::core::default::Default>::default();
+        {
+            let value = properties;
+            inner.properties = value;
+        }
+        Self(inner)
+    }
+
+    /// A map of key-value properties attached to the securable.
+    #[getter]
+    fn properties(
+        &self,
+    ) -> ::std::collections::HashMap<::std::string::String, ::std::string::String> {
+        self.0.properties.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(slf.as_any(), &[("properties", false)])
+    }
+}
+
+impl ::core::convert::From<super::recipients::v1::SecurablePropertiesKvPairs>
+    for PySecurablePropertiesKvPairs
+{
+    fn from(value: super::recipients::v1::SecurablePropertiesKvPairs) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PySecurablePropertiesKvPairs>
+    for super::recipients::v1::SecurablePropertiesKvPairs
+{
+    fn from(value: PySecurablePropertiesKvPairs) -> Self {
         value.0
     }
 }
@@ -13200,6 +13589,389 @@ impl ::core::convert::From<PySearchResult> for super::search::v1::SearchResult {
 }
 
 #[::pyo3::pyclass(
+    name = "DataObject",
+    eq,
+    frozen,
+    module = "unitycatalog._core.shares",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyDataObject(pub super::shares::v1::DataObject);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3::pymethods]
+impl PyDataObject {
+    #[new]
+    #[pyo3(
+        signature = (
+            name,
+            data_object_type,
+            *,
+            added_at = None,
+            added_by = None,
+            comment = None,
+            shared_as = None,
+            partitions = None,
+            cdf_enabled = None,
+            history_data_sharing_status = None,
+            start_version = None,
+            string_shared_as = None,
+            status = None
+        )
+    )]
+    fn new(
+        name: ::std::string::String,
+        data_object_type: PyDataObjectType,
+        added_at: ::core::option::Option<i64>,
+        added_by: ::core::option::Option<::std::string::String>,
+        comment: ::core::option::Option<::std::string::String>,
+        shared_as: ::core::option::Option<::std::string::String>,
+        partitions: ::core::option::Option<::std::vec::Vec<PyPartition>>,
+        cdf_enabled: ::core::option::Option<bool>,
+        history_data_sharing_status: ::core::option::Option<PyHistoryStatus>,
+        start_version: ::core::option::Option<i64>,
+        string_shared_as: ::core::option::Option<::std::string::String>,
+        status: ::core::option::Option<PyDataObjectStatus>,
+    ) -> Self {
+        let mut inner = <super::shares::v1::DataObject as ::core::default::Default>::default();
+        {
+            let value = name;
+            inner.name = value;
+        }
+        {
+            let value = ::core::option::Option::Some(data_object_type);
+            inner.data_object_type = value
+                .map(|e| {
+                    ::buffa::EnumValue::Known(
+                        <super::shares::v1::DataObjectType as ::core::convert::From<_>>::from(e),
+                    )
+                })
+                .unwrap_or_default();
+        }
+        {
+            let value = added_at;
+            inner.added_at = value;
+        }
+        {
+            let value = added_by;
+            inner.added_by = value;
+        }
+        {
+            let value = comment;
+            inner.comment = value;
+        }
+        {
+            let value = shared_as;
+            inner.shared_as = value;
+        }
+        if let ::core::option::Option::Some(value) = partitions {
+            inner.partitions = value.into_iter().map(::core::convert::Into::into).collect();
+        }
+        {
+            let value = cdf_enabled;
+            inner.cdf_enabled = value;
+        }
+        {
+            let value = history_data_sharing_status;
+            inner.history_data_sharing_status = value.map(|e| {
+                ::buffa::EnumValue::Known(
+                    <super::shares::v1::HistoryStatus as ::core::convert::From<_>>::from(e),
+                )
+            });
+        }
+        {
+            let value = start_version;
+            inner.start_version = value;
+        }
+        {
+            let value = string_shared_as;
+            inner.string_shared_as = value;
+        }
+        {
+            let value = status;
+            inner.status = value.map(|e| {
+                ::buffa::EnumValue::Known(
+                    <super::shares::v1::DataObjectStatus as ::core::convert::From<_>>::from(e),
+                )
+            });
+        }
+        Self(inner)
+    }
+
+    /// A fully qualified name that uniquely identifies a data object.
+    ///
+    /// For example, a table's fully qualified name is in the format of <catalog>.<schema>.<table>,
+    #[getter]
+    fn name(&self) -> ::std::string::String {
+        self.0.name.clone()
+    }
+
+    /// Type of the data object.
+    #[getter]
+    fn data_object_type(&self) -> ::core::option::Option<PyDataObjectType> {
+        self.0
+            .data_object_type
+            .as_known()
+            .filter(|e| <super::shares::v1::DataObjectType as ::buffa::Enumeration>::to_i32(e) != 0)
+            .map(PyDataObjectType::from)
+    }
+
+    /// The time when this data object is added to the share, in epoch milliseconds.
+    #[getter]
+    fn added_at(&self) -> ::core::option::Option<i64> {
+        self.0.added_at
+    }
+
+    /// Username of the sharer.
+    #[getter]
+    fn added_by(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.added_by.clone()
+    }
+
+    /// A user-provided comment when adding the data object to the share.
+    #[getter]
+    fn comment(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.comment.clone()
+    }
+
+    /// A user-provided new name for the data object within the share.
+    ///
+    /// If this new name is not provided, the object's original name will be used as the shared_as name.
+    /// The shared_as name must be unique within a share.
+    /// For tables, the new name must follow the format of <schema>.<table>: two parts, each
+    /// consisting only of alphanumeric characters and underscores, without the catalog part.
+    /// Do not set it for non-table data objects; use string_shared_as instead.
+    #[getter]
+    fn shared_as(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.shared_as.clone()
+    }
+
+    /// Array of partitions for the shared data.
+    #[getter]
+    fn partitions(&self) -> ::std::vec::Vec<PyPartition> {
+        self.0
+            .partitions
+            .iter()
+            .cloned()
+            .map(PyPartition::from)
+            .collect()
+    }
+
+    /// Whether to enable cdf or indicate if cdf is enabled on the shared object.
+    #[getter]
+    fn cdf_enabled(&self) -> ::core::option::Option<bool> {
+        self.0.cdf_enabled
+    }
+
+    /// Whether to enable or disable sharing of data history. If not specified, the default is DISABLED.
+    #[getter]
+    fn history_data_sharing_status(&self) -> ::core::option::Option<PyHistoryStatus> {
+        self.0
+            .history_data_sharing_status
+            .as_ref()
+            .and_then(|e| e.as_known())
+            .map(PyHistoryStatus::from)
+    }
+
+    /// The start version associated with the object.
+    ///
+    /// This allows data providers to control the lowest object version that is accessible by clients.
+    /// If specified, clients can query snapshots or changes for versions >= start_version.
+    /// If not specified, clients can only query starting from the version of the object at the time it was added to the share.
+    ///
+    /// NOTE: The start_version should be <= the current version of the object.
+    #[getter]
+    fn start_version(&self) -> ::core::option::Option<i64> {
+        self.0.start_version
+    }
+
+    /// A user-provided alias for a non-table data object (e.g. a volume) within the share.
+    ///
+    /// For volumes, functions and models it is a two-part name <schema>.<name>, each part
+    /// consisting only of alphanumeric characters and underscores. If not provided, the
+    /// object's original name minus its catalog is used. It must be unique among objects of
+    /// the same type within the share. Do not set it for table-like data objects; use
+    /// shared_as instead.
+    #[getter]
+    fn string_shared_as(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.string_shared_as.clone()
+    }
+
+    /// Whether the data object is still accessible to the share.
+    #[getter]
+    fn status(&self) -> ::core::option::Option<PyDataObjectStatus> {
+        self.0
+            .status
+            .as_ref()
+            .and_then(|e| e.as_known())
+            .filter(|e| {
+                <super::shares::v1::DataObjectStatus as ::buffa::Enumeration>::to_i32(e) != 0
+            })
+            .map(PyDataObjectStatus::from)
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[
+                ("name", false),
+                ("data_object_type", false),
+                ("added_at", false),
+                ("added_by", false),
+                ("comment", false),
+                ("shared_as", false),
+                ("partitions", false),
+                ("cdf_enabled", false),
+                ("history_data_sharing_status", false),
+                ("start_version", false),
+                ("string_shared_as", false),
+                ("status", false),
+            ],
+        )
+    }
+}
+
+impl ::core::convert::From<super::shares::v1::DataObject> for PyDataObject {
+    fn from(value: super::shares::v1::DataObject) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyDataObject> for super::shares::v1::DataObject {
+    fn from(value: PyDataObject) -> Self {
+        value.0
+    }
+}
+
+/// Data object update.
+#[::pyo3::pyclass(
+    name = "DataObjectUpdate",
+    eq,
+    frozen,
+    module = "unitycatalog._core.shares",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyDataObjectUpdate(pub super::shares::v1::DataObjectUpdate);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3::pymethods]
+impl PyDataObjectUpdate {
+    #[new]
+    #[pyo3(signature = (action, data_object))]
+    fn new(action: PyAction, data_object: PyDataObject) -> Self {
+        let mut inner =
+            <super::shares::v1::DataObjectUpdate as ::core::default::Default>::default();
+        {
+            let value = ::core::option::Option::Some(action);
+            inner.action = value
+                .map(|e| {
+                    ::buffa::EnumValue::Known(
+                        <super::shares::v1::Action as ::core::convert::From<_>>::from(e),
+                    )
+                })
+                .unwrap_or_default();
+        }
+        {
+            let value = ::core::option::Option::Some(data_object);
+            inner.data_object = value
+                .map(|w| ::buffa::MessageField::some(w.into()))
+                .unwrap_or_default();
+        }
+        Self(inner)
+    }
+
+    /// The action to perform on the data object.
+    #[getter]
+    fn action(&self) -> ::core::option::Option<PyAction> {
+        self.0
+            .action
+            .as_known()
+            .filter(|e| <super::shares::v1::Action as ::buffa::Enumeration>::to_i32(e) != 0)
+            .map(PyAction::from)
+    }
+
+    /// The data object that is being added, removed, or updated.
+    #[getter]
+    fn data_object(&self) -> ::core::option::Option<PyDataObject> {
+        self.0
+            .data_object
+            .clone()
+            .into_option()
+            .map(PyDataObject::from)
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(slf.as_any(), &[("action", false), ("data_object", false)])
+    }
+}
+
+impl ::core::convert::From<super::shares::v1::DataObjectUpdate> for PyDataObjectUpdate {
+    fn from(value: super::shares::v1::DataObjectUpdate) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyDataObjectUpdate> for super::shares::v1::DataObjectUpdate {
+    fn from(value: PyDataObjectUpdate) -> Self {
+        value.0
+    }
+}
+
+/// Response to list shares.
+#[::pyo3::pyclass(
+    name = "GetSharePermissionsResponse",
+    eq,
+    frozen,
+    module = "unitycatalog._core.shares",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyGetSharePermissionsResponse(pub super::shares::v1::GetSharePermissionsResponse);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3::pymethods]
+impl PyGetSharePermissionsResponse {
+    /// The privileges assigned to each principal
+    #[getter]
+    fn privilege_assignments(&self) -> ::std::vec::Vec<PySharePrivilegeAssignment> {
+        self.0
+            .privilege_assignments
+            .iter()
+            .cloned()
+            .map(PySharePrivilegeAssignment::from)
+            .collect()
+    }
+
+    /// Opaque pagination token to go to next page based on previous query.
+    #[getter]
+    fn next_page_token(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.next_page_token.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[("privilege_assignments", false), ("next_page_token", false)],
+        )
+    }
+}
+
+impl ::core::convert::From<super::shares::v1::GetSharePermissionsResponse>
+    for PyGetSharePermissionsResponse
+{
+    fn from(value: super::shares::v1::GetSharePermissionsResponse) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyGetSharePermissionsResponse>
+    for super::shares::v1::GetSharePermissionsResponse
+{
+    fn from(value: PyGetSharePermissionsResponse) -> Self {
+        value.0
+    }
+}
+
+/// Response to list shares.
+#[::pyo3::pyclass(
     name = "ListSharesResponse",
     eq,
     frozen,
@@ -13211,18 +13983,13 @@ pub struct PyListSharesResponse(pub super::shares::v1::ListSharesResponse);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
 #[::pyo3::pymethods]
 impl PyListSharesResponse {
-    /// The shares.
+    /// List of shares.
     #[getter]
-    fn items(&self) -> ::std::vec::Vec<PyShareInfo> {
-        self.0
-            .items
-            .iter()
-            .cloned()
-            .map(PyShareInfo::from)
-            .collect()
+    fn shares(&self) -> ::std::vec::Vec<PyShare> {
+        self.0.shares.iter().cloned().map(PyShare::from).collect()
     }
 
-    /// Opaque token of the next page. Absent on the last page.
+    /// Opaque pagination token to go to next page based on previous query.
     #[getter]
     fn next_page_token(&self) -> ::core::option::Option<::std::string::String> {
         self.0.next_page_token.clone()
@@ -13231,7 +13998,7 @@ impl PyListSharesResponse {
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
-            &[("items", false), ("next_page_token", false)],
+            &[("shares", false), ("next_page_token", false)],
         )
     }
 }
@@ -13248,29 +14015,204 @@ impl ::core::convert::From<PyListSharesResponse> for super::shares::v1::ListShar
     }
 }
 
-/// A share: a named set of tables, volumes and agent skills that recipients can read.
+/// A partition specification: the conjunction of its partition values.
 #[::pyo3::pyclass(
-    name = "ShareInfo",
+    name = "Partition",
     eq,
     frozen,
     module = "unitycatalog._core.shares",
     from_py_object
 )]
 #[derive(Clone, Debug, PartialEq)]
-pub struct PyShareInfo(pub super::shares::v1::ShareInfo);
+pub struct PyPartition(pub super::shares::v1::Partition);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
 #[::pyo3::pymethods]
-impl PyShareInfo {
+impl PyPartition {
+    #[new]
+    #[pyo3(signature = (*, values = None))]
+    fn new(values: ::core::option::Option<::std::vec::Vec<PyPartitionValue>>) -> Self {
+        let mut inner = <super::shares::v1::Partition as ::core::default::Default>::default();
+        if let ::core::option::Option::Some(value) = values {
+            inner.values = value.into_iter().map(::core::convert::Into::into).collect();
+        }
+        Self(inner)
+    }
+
+    /// An array of partition values.
+    #[getter]
+    fn values(&self) -> ::std::vec::Vec<PyPartitionValue> {
+        self.0
+            .values
+            .iter()
+            .cloned()
+            .map(PyPartitionValue::from)
+            .collect()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(slf.as_any(), &[("values", false)])
+    }
+}
+
+impl ::core::convert::From<super::shares::v1::Partition> for PyPartition {
+    fn from(value: super::shares::v1::Partition) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyPartition> for super::shares::v1::Partition {
+    fn from(value: PyPartition) -> Self {
+        value.0
+    }
+}
+
+/// A partition column value a shared table is restricted to.
+#[::pyo3::pyclass(
+    name = "PartitionValue",
+    eq,
+    frozen,
+    module = "unitycatalog._core.shares",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyPartitionValue(pub super::shares::v1::PartitionValue);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3::pymethods]
+impl PyPartitionValue {
+    #[new]
+    #[pyo3(
+        signature = (name, *, value = None, recipient_property_key = None, op = None)
+    )]
+    fn new(
+        name: ::std::string::String,
+        value: ::core::option::Option<::std::string::String>,
+        recipient_property_key: ::core::option::Option<::std::string::String>,
+        op: ::core::option::Option<PyPartitionValueOp>,
+    ) -> Self {
+        let mut inner = <super::shares::v1::PartitionValue as ::core::default::Default>::default();
+        {
+            let value = name;
+            inner.name = value;
+        }
+        {
+            inner.value = value;
+        }
+        {
+            let value = recipient_property_key;
+            inner.recipient_property_key = value;
+        }
+        {
+            let value = op;
+            inner.op = value
+                .map(|e| {
+                    ::buffa::EnumValue::Known(
+                        <super::shares::v1::PartitionValueOp as ::core::convert::From<_>>::from(e),
+                    )
+                })
+                .unwrap_or_default();
+        }
+        Self(inner)
+    }
+
+    /// The name of the partition column.
+    #[getter]
+    fn name(&self) -> ::std::string::String {
+        self.0.name.clone()
+    }
+
+    /// The value of the partition column; unset means a `null` value.
+    ///
+    /// Mutually exclusive with recipient_property_key.
+    #[getter]
+    fn value(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.value.clone()
+    }
+
+    /// The key of a Delta Sharing recipient property whose value the partition column is
+    /// matched against, e.g. "databricks-account-id".
+    ///
+    /// Mutually exclusive with value.
+    #[getter]
+    fn recipient_property_key(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.recipient_property_key.clone()
+    }
+
+    /// The operator to apply for the value.
+    #[getter]
+    fn op(&self) -> ::core::option::Option<PyPartitionValueOp> {
+        self.0
+            .op
+            .as_known()
+            .filter(|e| {
+                <super::shares::v1::PartitionValueOp as ::buffa::Enumeration>::to_i32(e) != 0
+            })
+            .map(PyPartitionValueOp::from)
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(
+            slf.as_any(),
+            &[
+                ("name", false),
+                ("value", false),
+                ("recipient_property_key", false),
+                ("op", false),
+            ],
+        )
+    }
+}
+
+impl ::core::convert::From<super::shares::v1::PartitionValue> for PyPartitionValue {
+    fn from(value: super::shares::v1::PartitionValue) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyPartitionValue> for super::shares::v1::PartitionValue {
+    fn from(value: PyPartitionValue) -> Self {
+        value.0
+    }
+}
+
+#[::pyo3::pyclass(
+    name = "Share",
+    eq,
+    frozen,
+    module = "unitycatalog._core.shares",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyShare(pub super::shares::v1::Share);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3::pymethods]
+impl PyShare {
+    /// Unique ID of the share.
+    #[getter]
+    fn id(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.id.clone()
+    }
+
     /// Name of the share.
     #[getter]
     fn name(&self) -> ::std::string::String {
         self.0.name.clone()
     }
 
-    /// Unique identifier of the share.
+    /// A list of shared data objects within the share.
     #[getter]
-    fn id(&self) -> ::std::string::String {
-        self.0.id.clone()
+    fn objects(&self) -> ::std::vec::Vec<PyDataObject> {
+        self.0
+            .objects
+            .iter()
+            .cloned()
+            .map(PyDataObject::from)
+            .collect()
+    }
+
+    /// Username of current owner of share.
+    #[getter]
+    fn owner(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.owner.clone()
     }
 
     /// User-provided free-form text description.
@@ -13279,15 +14221,21 @@ impl PyShareInfo {
         self.0.comment.clone()
     }
 
-    /// Username of the owner of the share.
+    /// Storage Location URL (full path) for the share.
     #[getter]
-    fn owner(&self) -> ::core::option::Option<::std::string::String> {
-        self.0.owner.clone()
+    fn storage_location(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.storage_location.clone()
     }
 
-    /// Time at which the share was created, in epoch milliseconds.
+    /// Storage root URL for the share.
     #[getter]
-    fn created_at(&self) -> i64 {
+    fn storage_root(&self) -> ::core::option::Option<::std::string::String> {
+        self.0.storage_root.clone()
+    }
+
+    /// Time at which this share was created, in epoch milliseconds.
+    #[getter]
+    fn created_at(&self) -> ::core::option::Option<i64> {
         self.0.created_at
     }
 
@@ -13297,208 +14245,208 @@ impl PyShareInfo {
         self.0.created_by.clone()
     }
 
-    /// Time at which the share was last changed, in epoch milliseconds.
+    /// Time at which this share was updated, in epoch milliseconds.
     #[getter]
-    fn updated_at(&self) -> i64 {
+    fn updated_at(&self) -> ::core::option::Option<i64> {
         self.0.updated_at
     }
 
-    /// Username of the user who last changed the share.
+    /// Username of share updater.
     #[getter]
     fn updated_by(&self) -> ::core::option::Option<::std::string::String> {
         self.0.updated_by.clone()
-    }
-
-    /// The objects of the share.
-    #[getter]
-    fn objects(&self) -> ::std::vec::Vec<PySharedDataObject> {
-        self.0
-            .objects
-            .iter()
-            .cloned()
-            .map(PySharedDataObject::from)
-            .collect()
     }
 
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
             &[
-                ("name", false),
                 ("id", false),
-                ("comment", false),
+                ("name", false),
+                ("objects", false),
                 ("owner", false),
+                ("comment", false),
+                ("storage_location", false),
+                ("storage_root", false),
                 ("created_at", false),
                 ("created_by", false),
                 ("updated_at", false),
                 ("updated_by", false),
-                ("objects", false),
             ],
         )
     }
 }
 
-impl ::core::convert::From<super::shares::v1::ShareInfo> for PyShareInfo {
-    fn from(value: super::shares::v1::ShareInfo) -> Self {
+impl ::core::convert::From<super::shares::v1::Share> for PyShare {
+    fn from(value: super::shares::v1::Share) -> Self {
         Self(value)
     }
 }
 
-impl ::core::convert::From<PyShareInfo> for super::shares::v1::ShareInfo {
-    fn from(value: PyShareInfo) -> Self {
+impl ::core::convert::From<PyShare> for super::shares::v1::Share {
+    fn from(value: PyShare) -> Self {
         value.0
     }
 }
 
-/// An object of a share: a Unity Catalog table or volume and the name under which the recipients
-/// see it.
 #[::pyo3::pyclass(
-    name = "SharedDataObject",
+    name = "SharePermissionsChange",
     eq,
     frozen,
     module = "unitycatalog._core.shares",
     from_py_object
 )]
 #[derive(Clone, Debug, PartialEq)]
-pub struct PySharedDataObject(pub super::shares::v1::SharedDataObject);
+pub struct PySharePermissionsChange(pub super::shares::v1::SharePermissionsChange);
 #[allow(clippy::too_many_arguments, clippy::useless_conversion)]
 #[::pyo3::pymethods]
-impl PySharedDataObject {
+impl PySharePermissionsChange {
     #[new]
-    #[pyo3(
-        signature = (
-            source_full_name,
-            shared_as_schema,
-            shared_as_name,
-            *,
-            data_object_type = None,
-            history_data_sharing_status = None,
-            start_version = None
-        )
-    )]
+    #[pyo3(signature = (*, principal = None, add = None, remove = None))]
     fn new(
-        source_full_name: ::std::string::String,
-        shared_as_schema: ::std::string::String,
-        shared_as_name: ::std::string::String,
-        data_object_type: ::core::option::Option<PySharedObjectType>,
-        history_data_sharing_status: ::core::option::Option<PyHistoryDataSharingStatus>,
-        start_version: ::core::option::Option<i64>,
+        principal: ::core::option::Option<::std::string::String>,
+        add: ::core::option::Option<::std::vec::Vec<::std::string::String>>,
+        remove: ::core::option::Option<::std::vec::Vec<::std::string::String>>,
     ) -> Self {
         let mut inner =
-            <super::shares::v1::SharedDataObject as ::core::default::Default>::default();
-        {
-            let value = source_full_name;
-            inner.source_full_name = value;
+            <super::shares::v1::SharePermissionsChange as ::core::default::Default>::default();
+        if let ::core::option::Option::Some(value) = principal {
+            inner.principal = value;
         }
-        {
-            let value = shared_as_schema;
-            inner.shared_as_schema = value;
+        if let ::core::option::Option::Some(value) = add {
+            inner.add = value;
         }
-        {
-            let value = shared_as_name;
-            inner.shared_as_name = value;
-        }
-        {
-            let value = data_object_type;
-            inner.data_object_type = value.map(|e| {
-                ::buffa::EnumValue::Known(
-                    <super::shares::v1::SharedObjectType as ::core::convert::From<_>>::from(e),
-                )
-            });
-        }
-        {
-            let value = history_data_sharing_status;
-            inner.history_data_sharing_status = value.map(|e| {
-                ::buffa::EnumValue::Known(
-                    <super::shares::v1::HistoryDataSharingStatus as ::core::convert::From<_>>::from(
-                        e,
-                    ),
-                )
-            });
-        }
-        {
-            let value = start_version;
-            inner.start_version = value;
+        if let ::core::option::Option::Some(value) = remove {
+            inner.remove = value;
         }
         Self(inner)
     }
 
-    /// Three-level name of the Unity Catalog table or volume: `catalog.schema.name`. An agent skill
-    /// names the volume that holds it. A share holds an object once per type.
+    /// The principal (user email address or group name).
     #[getter]
-    fn source_full_name(&self) -> ::std::string::String {
-        self.0.source_full_name.clone()
+    fn principal(&self) -> ::std::string::String {
+        self.0.principal.clone()
     }
 
-    /// Schema under which the recipients see the object, such as `default`.
+    /// The set of privileges to add.
     #[getter]
-    fn shared_as_schema(&self) -> ::std::string::String {
-        self.0.shared_as_schema.clone()
+    fn add(&self) -> ::std::vec::Vec<::std::string::String> {
+        self.0.add.clone()
     }
 
-    /// Name under which the recipients see the object.
+    /// The set of privileges to remove.
     #[getter]
-    fn shared_as_name(&self) -> ::std::string::String {
-        self.0.shared_as_name.clone()
-    }
-
-    /// What the object is. A table, if not set.
-    #[getter]
-    fn data_object_type(&self) -> ::core::option::Option<PySharedObjectType> {
-        self.0
-            .data_object_type
-            .as_ref()
-            .and_then(|e| e.as_known())
-            .filter(|e| {
-                <super::shares::v1::SharedObjectType as ::buffa::Enumeration>::to_i32(e) != 0
-            })
-            .map(PySharedObjectType::from)
-    }
-
-    /// Of a table: whether recipients read its history. `DISABLED`, if not set.
-    #[getter]
-    fn history_data_sharing_status(&self) -> ::core::option::Option<PyHistoryDataSharingStatus> {
-        self.0
-            .history_data_sharing_status
-            .as_ref()
-            .and_then(|e| e.as_known())
-            .filter(|e| {
-                <super::shares::v1::HistoryDataSharingStatus as ::buffa::Enumeration>::to_i32(e)
-                    != 0
-            })
-            .map(PyHistoryDataSharingStatus::from)
-    }
-
-    /// Of a table that shares its history: the lowest version that recipients read. Without it,
-    /// they read from version 0.
-    #[getter]
-    fn start_version(&self) -> ::core::option::Option<i64> {
-        self.0.start_version
+    fn remove(&self) -> ::std::vec::Vec<::std::string::String> {
+        self.0.remove.clone()
     }
 
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
-            &[
-                ("source_full_name", false),
-                ("shared_as_schema", false),
-                ("shared_as_name", false),
-                ("data_object_type", false),
-                ("history_data_sharing_status", false),
-                ("start_version", false),
-            ],
+            &[("principal", false), ("add", false), ("remove", false)],
         )
     }
 }
 
-impl ::core::convert::From<super::shares::v1::SharedDataObject> for PySharedDataObject {
-    fn from(value: super::shares::v1::SharedDataObject) -> Self {
+impl ::core::convert::From<super::shares::v1::SharePermissionsChange> for PySharePermissionsChange {
+    fn from(value: super::shares::v1::SharePermissionsChange) -> Self {
         Self(value)
     }
 }
 
-impl ::core::convert::From<PySharedDataObject> for super::shares::v1::SharedDataObject {
-    fn from(value: PySharedDataObject) -> Self {
+impl ::core::convert::From<PySharePermissionsChange> for super::shares::v1::SharePermissionsChange {
+    fn from(value: PySharePermissionsChange) -> Self {
+        value.0
+    }
+}
+
+#[::pyo3::pyclass(
+    name = "SharePrivilegeAssignment",
+    eq,
+    frozen,
+    module = "unitycatalog._core.shares",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PySharePrivilegeAssignment(pub super::shares::v1::SharePrivilegeAssignment);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3::pymethods]
+impl PySharePrivilegeAssignment {
+    /// The principal (user email address or group name).
+    ///
+    /// For deleted principals, principal is empty while principal_id is populated.
+    #[getter]
+    fn principal(&self) -> ::std::string::String {
+        self.0.principal.clone()
+    }
+
+    /// The privileges assigned to the principal.
+    #[getter]
+    fn privileges(&self) -> ::std::vec::Vec<::std::string::String> {
+        self.0.privileges.clone()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(slf.as_any(), &[("principal", false), ("privileges", false)])
+    }
+}
+
+impl ::core::convert::From<super::shares::v1::SharePrivilegeAssignment>
+    for PySharePrivilegeAssignment
+{
+    fn from(value: super::shares::v1::SharePrivilegeAssignment) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PySharePrivilegeAssignment>
+    for super::shares::v1::SharePrivilegeAssignment
+{
+    fn from(value: PySharePrivilegeAssignment) -> Self {
+        value.0
+    }
+}
+
+#[::pyo3::pyclass(
+    name = "UpdateSharePermissionsResponse",
+    eq,
+    frozen,
+    module = "unitycatalog._core.shares",
+    from_py_object
+)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PyUpdateSharePermissionsResponse(pub super::shares::v1::UpdateSharePermissionsResponse);
+#[allow(clippy::too_many_arguments, clippy::useless_conversion)]
+#[::pyo3::pymethods]
+impl PyUpdateSharePermissionsResponse {
+    /// The privileges assigned to each principal
+    #[getter]
+    fn privilege_assignments(&self) -> ::std::vec::Vec<PySharePrivilegeAssignment> {
+        self.0
+            .privilege_assignments
+            .iter()
+            .cloned()
+            .map(PySharePrivilegeAssignment::from)
+            .collect()
+    }
+
+    fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
+        __python_repr(slf.as_any(), &[("privilege_assignments", false)])
+    }
+}
+
+impl ::core::convert::From<super::shares::v1::UpdateSharePermissionsResponse>
+    for PyUpdateSharePermissionsResponse
+{
+    fn from(value: super::shares::v1::UpdateSharePermissionsResponse) -> Self {
+        Self(value)
+    }
+}
+
+impl ::core::convert::From<PyUpdateSharePermissionsResponse>
+    for super::shares::v1::UpdateSharePermissionsResponse
+{
+    fn from(value: PyUpdateSharePermissionsResponse) -> Self {
         value.0
     }
 }

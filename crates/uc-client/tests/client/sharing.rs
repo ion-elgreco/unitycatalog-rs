@@ -1,5 +1,5 @@
-//! Sharing: shares and recipients, and what a recipient reads with a Delta
-//! Sharing client, signed in with its bearer token.
+//! Sharing: shares, their permissions and recipients, and what a recipient
+//! reads with a Delta Sharing client, signed in with its bearer token.
 
 use futures::TryStreamExt;
 use olai_http::CloudClient;
@@ -7,21 +7,60 @@ use opensharing_client::client::DeltaSharingClient;
 use url::Url;
 
 use uc_client::Client;
-use uc_client::models::recipients::v1::AuthenticationType;
-use uc_client::models::shares::v1::{HistoryDataSharingStatus, SharedDataObject, SharedObjectType};
+use uc_client::models::recipients::v1::{AuthenticationType, Recipient};
+use uc_client::models::shares::v1::{
+    Action, DataObject, DataObjectType, DataObjectUpdate, HistoryStatus, SharePermissionsChange,
+};
 
 use crate::common::{catalog_and_schema, client, external_table, rejected, server};
 
 /// The table `c.s.<name>`, as `default.<name>` of a share.
-fn shared(name: &str) -> SharedDataObject {
-    SharedDataObject {
-        source_full_name: format!("c.s.{name}"),
-        data_object_type: Some(SharedObjectType::Table.into()),
-        history_data_sharing_status: Some(HistoryDataSharingStatus::Disabled.into()),
-        shared_as_schema: "default".into(),
-        shared_as_name: name.into(),
+fn shared(name: &str) -> DataObject {
+    DataObject {
+        name: format!("c.s.{name}"),
+        data_object_type: DataObjectType::Table.into(),
+        shared_as: Some(format!("default.{name}")),
         ..Default::default()
     }
+}
+
+fn change(action: Action, object: DataObject) -> DataObjectUpdate {
+    DataObjectUpdate {
+        action: action.into(),
+        data_object: object.into(),
+        ..Default::default()
+    }
+}
+
+/// Let `recipient` read `share`, or not any more.
+async fn permission(uc: &Client, share: &str, recipient: &str, grant: bool) -> Vec<String> {
+    let select = vec!["SELECT".to_string()];
+    let change = SharePermissionsChange {
+        principal: recipient.into(),
+        add: if grant { select.clone() } else { Vec::new() },
+        remove: if grant { Vec::new() } else { select },
+        ..Default::default()
+    };
+    let answer = uc
+        .share(share)
+        .update_share_permissions()
+        .with_changes([change])
+        .await
+        .unwrap();
+    (answer.privilege_assignments.into_iter())
+        .map(|assignment| assignment.principal)
+        .collect()
+}
+
+/// The bearer token of the newest token of `recipient`, from its
+/// activation link.
+async fn activate(uc: &Client, recipient: &Recipient) -> String {
+    let link = &recipient.tokens.last().unwrap().activation_url;
+    let code = link.rsplit('/').next().unwrap();
+    let profile = uc.activate_recipient_token(code).await.unwrap();
+    assert_eq!(profile.share_credentials_version, 1);
+    assert!(profile.endpoint.ends_with("/api/v1/delta-sharing"));
+    profile.bearer_token
 }
 
 #[tokio::test]
@@ -36,33 +75,69 @@ async fn shares() {
         .unwrap();
     assert_eq!(created.name, "analytics");
     assert_eq!(created.comment.as_deref(), Some("for partners"));
-    assert!(created.objects.is_empty() && !created.id.is_empty());
+    assert!(created.objects.is_empty() && created.id.is_some());
 
     let updated = uc
         .share("analytics")
         .update()
-        .with_add_objects([shared("events")])
+        .with_updates([change(Action::Add, shared("events"))])
         .with_comment("edited".to_string())
         .await
         .unwrap();
-    assert_eq!(updated.objects, [shared("events")]);
+    let object = &updated.objects[0];
+    assert_eq!(object.name, "c.s.events");
+    assert_eq!(object.shared_as.as_deref(), Some("default.events"));
+    assert_eq!(
+        object.history_data_sharing_status,
+        Some(HistoryStatus::Disabled.into())
+    );
     assert_eq!(updated.comment.as_deref(), Some("edited"));
-    assert_eq!(uc.share("analytics").get().await.unwrap(), updated);
+    let read = uc.share("analytics").get().with_include_shared_data(true);
+    assert_eq!(read.await.unwrap(), updated);
+    // Without its objects, as in the list.
+    assert!(
+        uc.share("analytics")
+            .get()
+            .await
+            .unwrap()
+            .objects
+            .is_empty()
+    );
+
+    let history = DataObject {
+        history_data_sharing_status: Some(HistoryStatus::Enabled.into()),
+        start_version: Some(1),
+        ..shared("events")
+    };
+    let with_history = uc
+        .share("analytics")
+        .update()
+        .with_updates([change(Action::Update, history)])
+        .await
+        .unwrap();
+    assert_eq!(with_history.objects[0].start_version, Some(1));
+    let twice = uc
+        .share("analytics")
+        .update()
+        .with_updates([change(Action::Add, shared("events"))])
+        .await;
+    rejected(twice, 409, "ALREADY_EXISTS");
+
     uc.create_share("other").await.unwrap();
     let first = uc.list_shares().with_max_results(1).await.unwrap();
-    assert_eq!(first.items, std::slice::from_ref(&updated));
+    assert_eq!(first.shares[0].name, "analytics");
     let second = uc
         .list_shares()
         .with_max_results(1)
         .with_page_token(first.next_page_token)
         .await
         .unwrap();
-    assert_eq!(second.items[0].name, "other");
+    assert_eq!(second.shares[0].name, "other");
 
     let renamed = uc
         .share("analytics")
         .update()
-        .with_remove_objects([shared("events")])
+        .with_updates([change(Action::Remove, shared("events"))])
         .with_new_name("renamed".to_string())
         .await
         .unwrap();
@@ -86,20 +161,30 @@ async fn recipients() {
         .unwrap();
     assert_eq!(created.authentication_type, AuthenticationType::Token);
     assert_eq!(created.comment.as_deref(), Some("partner x"));
-    let token = created.bearer_token.clone().expect("the token, once");
-    assert!(token.starts_with("dsr_") && token.starts_with(&created.token_prefix));
+    // The admin gets the activation link of the token, not the token.
+    assert_eq!(created.tokens.len(), 1);
+    assert!(created.tokens[0].activation_url.contains("/activations/"));
 
-    let granted = uc
+    assert_eq!(
+        permission(&uc, "analytics", "partner", true).await,
+        ["partner"]
+    );
+    let granted = uc.share("analytics").get_share_permissions().await.unwrap();
+    assert_eq!(granted.privilege_assignments[0].privileges, ["SELECT"]);
+    assert!(
+        permission(&uc, "analytics", "partner", false)
+            .await
+            .is_empty()
+    );
+
+    let edited = uc
         .recipient("partner")
         .update()
-        .with_add_shares(["analytics".to_string()])
         .with_comment("edited".to_string())
         .await
         .unwrap();
-    assert_eq!(granted.shares, ["analytics"]);
-    assert_eq!(granted.comment.as_deref(), Some("edited"));
-    assert_eq!(granted.bearer_token, None);
-    assert_eq!(uc.recipient("partner").get().await.unwrap(), granted);
+    assert_eq!(edited.comment.as_deref(), Some("edited"));
+    assert_eq!(uc.recipient("partner").get().await.unwrap(), edited);
     uc.create_recipient("other").await.unwrap();
     let first = uc.list_recipients().with_max_results(1).await.unwrap();
     let second = uc
@@ -108,17 +193,12 @@ async fn recipients() {
         .with_page_token(first.next_page_token)
         .await
         .unwrap();
-    let mut names = vec![first.items[0].name.clone(), second.items[0].name.clone()];
-    names.sort();
+    let names = [
+        first.recipients[0].name.as_str(),
+        second.recipients[0].name.as_str(),
+    ];
     assert_eq!(names, ["other", "partner"]);
 
-    let revoked = uc
-        .recipient("partner")
-        .update()
-        .with_remove_shares(["analytics".to_string()])
-        .await
-        .unwrap();
-    assert!(revoked.shares.is_empty());
     uc.recipient("partner").delete().await.unwrap();
     rejected(uc.recipient("partner").get().await, 404, "NOT_FOUND");
     let left: Vec<_> = uc
@@ -137,12 +217,9 @@ async fn partner() -> (Client, Url, String) {
     let uc = Client::new_unauthenticated(url.clone());
     uc.create_share("analytics").await.unwrap();
     let recipient = uc.create_recipient("partner").await.unwrap();
-    uc.recipient("partner")
-        .update()
-        .with_add_shares(["analytics".to_string()])
-        .await
-        .unwrap();
-    (uc, url, recipient.bearer_token.unwrap())
+    permission(&uc, "analytics", "partner", true).await;
+    let token = activate(&uc, &recipient).await;
+    (uc, url, token)
 }
 
 fn reader(url: &Url, token: &str) -> DeltaSharingClient {
@@ -185,7 +262,7 @@ async fn the_protocol() {
     let table = external_table(&uc, &storage, "events").await;
     uc.share("analytics")
         .update()
-        .with_add_objects([shared("events")])
+        .with_updates([change(Action::Add, shared("events"))])
         .await
         .unwrap();
 
@@ -245,28 +322,34 @@ async fn the_protocol() {
     assert!(secret.is_err());
 }
 
-/// A new bearer token, or a profile with one, ends the token before.
+/// A rotation gives a new token, and ends the older one at once or after
+/// an overlap.
 #[tokio::test]
 async fn new_tokens() {
-    let (uc, url, token) = partner().await;
-    assert!(signs_in(&url, &token).await);
+    let (uc, url, first) = partner().await;
+    assert!(signs_in(&url, &first).await);
+    let rotated = uc
+        .recipient("partner")
+        .rotate_recipient_token()
+        .with_existing_token_expire_in_seconds(3600)
+        .await
+        .unwrap();
+    assert_eq!(rotated.tokens.len(), 2);
+    assert!(rotated.tokens[0].expiration_time > 0);
+    let second = activate(&uc, &rotated).await;
+    assert!(signs_in(&url, &first).await && signs_in(&url, &second).await);
+
     let rotated = uc
         .recipient("partner")
         .rotate_recipient_token()
         .await
         .unwrap();
-    assert!(!signs_in(&url, &token).await);
-    let token = rotated.bearer_token.unwrap();
-    assert!(signs_in(&url, &token).await);
+    assert_eq!(rotated.tokens.len(), 1);
+    let third = activate(&uc, &rotated).await;
+    assert!(!signs_in(&url, &first).await && !signs_in(&url, &second).await);
+    assert!(signs_in(&url, &third).await);
 
-    let profile = uc
-        .recipient("partner")
-        .create_recipient_profile()
-        .await
-        .unwrap();
-    assert_eq!(profile.share_credentials_version, 1);
-    assert_eq!(profile.endpoint, format!("{url}api/v1/delta-sharing"));
-    assert_eq!(profile.expiration_time, None);
-    assert!(!signs_in(&url, &token).await);
-    assert!(signs_in(&url, &profile.bearer_token).await);
+    // An activation link works once.
+    let code = rotated.tokens[0].activation_url.rsplit('/').next().unwrap();
+    rejected(uc.activate_recipient_token(code).await, 404, "NOT_FOUND");
 }

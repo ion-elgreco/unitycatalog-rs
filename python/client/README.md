@@ -109,8 +109,7 @@ returns the handle; its methods also come as `name_async`.
 | Sign-in | `exchange_token`, `request_access_token`, `get_auth_mode`, `logout` |
 | SCIM users and groups | `create_user`, `get_user`, `list_users`, `replace_user`, `patch_user`, `delete_user`, `get_me`, `create_group`, `get_group`, `list_groups`, `replace_group`, `patch_group`, `delete_group`, `scim_bulk`, `list_scim_schemas`, `list_scim_resource_types`, `get_service_provider_config` |
 | Admin (a signed-in admin) | `get_backup`, `restore_backup`, `list_audit_events` |
-| Shares and recipients | `create_share`, `list_shares`, `create_recipient`, `list_recipients`; `share(name)`: `get`, `update`, `delete`; `recipient(name)`: `get`, `update`, `delete`, `rotate_recipient_token`, `create_recipient_profile` |
-| Delta Sharing (a recipient's token) | `sharing_list_shares`, `sharing_list_schemas`, `sharing_list_tables`, `sharing_list_all_tables`, `sharing_get_table_version`, `sharing_get_table_metadata`, `sharing_query_table` |
+| Shares and recipients | `create_share`, `list_shares`, `create_recipient`, `list_recipients`, `activate_recipient_token`; `share(name)`: `get`, `update`, `delete`, `get_share_permissions`, `update_share_permissions`; `recipient(name)`: `get`, `update`, `delete`, `rotate_recipient_token` |
 | Iceberg REST catalog | `get_iceberg_config`, `list_iceberg_namespaces`, `create_iceberg_namespace`, `load_iceberg_namespace`, `iceberg_namespace_exists`, `update_iceberg_namespace_properties`, `drop_iceberg_namespace`, `list_iceberg_tables`, `create_iceberg_table`, `load_iceberg_table`, `iceberg_table_exists`, `commit_iceberg_table`, `rename_iceberg_table`, `drop_iceberg_table`, `load_iceberg_table_credentials`, `report_iceberg_metrics`, `load_iceberg_view` |
 | Delta API | `get_delta_config`, `create_delta_staging_table`, `get_delta_staging_table_credentials`, `create_delta_table`, `load_delta_table`, `update_delta_table`, `delta_table_exists`, `rename_delta_table`, `delete_delta_table`, `get_delta_table_credentials`, `report_delta_table_metrics` |
 | Delta commits | `get_delta_commits`, `commit_delta` |
@@ -145,7 +144,7 @@ The classes of the models come from the `python` feature of `uc-client`
 the same name exports them, with the enums of that package: `admin`, `audit`,
 `auth`, `catalogs`, `credentials`, `delta`, `external_locations`, `functions`,
 `health`, `iceberg`, `metastore`, `models`, `permissions`, `recipients`,
-`schemas`, `scim`, `shares`, `sharing`, `tables`, `tokens` and `volumes`. Each
+`schemas`, `scim`, `shares`, `tables`, `tokens` and `volumes`. Each
 handle class is in the module of its resource, such as
 `catalogs.CatalogClient`.
 
