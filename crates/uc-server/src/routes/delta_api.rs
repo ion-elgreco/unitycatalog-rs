@@ -275,7 +275,7 @@ pub async fn delete_table(
         &principal,
         SecurableType::Table,
         &full_name,
-        rules::own_child,
+        rules::manage_child,
     )
     .await?;
     state.metastore.tables().delete(&full_name).await?;
@@ -562,7 +562,7 @@ pub async fn staging_table_credentials(
 ) -> ApiResult<Json<DeltaCredentialsResponse>> {
     // Upstream: the staging table's OWNER, its creator.
     authz::check_table_id(&state, &principal, &table_id, async |a, l| {
-        a.owner(l, authz::Level::Object)
+        a.owner(l, authz::Level::Object).await
     })
     .await?;
     // Always read-write: the client writes the first commit.

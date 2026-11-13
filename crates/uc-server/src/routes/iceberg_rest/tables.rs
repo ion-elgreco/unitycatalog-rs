@@ -81,48 +81,56 @@ fn credentials_endpoint(catalog: &str, namespace: &str, table: &str) -> String {
     )
 }
 
-/// Upstream `getLoadCredentialPrivileges`: UniForm tables are read-only;
-/// native Iceberg tables are writable for their owner or a caller with
-/// `SELECT` and `MODIFY` (anyone, with authorization off).
+/// Upstream `getLoadCredentialPrivileges`: none for a caller who may not
+/// read the table's data (the read rule of table credentials). UniForm
+/// tables are read-only; native Iceberg tables are writable for their
+/// owner or a caller with `SELECT` and `MODIFY` (anyone, with
+/// authorization off).
 async fn load_privileges(
     state: &AppState,
     principal: &Principal,
     served: &IcebergTableState,
     full_name: &str,
-) -> IcebergResult<VendOp> {
-    if served.data_source_format != Some(DataSourceFormat::Iceberg) {
-        return Ok(VendOp::Read);
-    }
+) -> IcebergResult<Option<VendOp>> {
+    let native = served.data_source_format == Some(DataSourceFormat::Iceberg);
     if !state.authorization_enabled {
-        return Ok(VendOp::ReadWrite);
+        return Ok(Some(match native {
+            true => VendOp::ReadWrite,
+            false => VendOp::Read,
+        }));
     }
     let access = authz::Access::load(state, principal).await?;
     let lineage = authz::lineage(state, SecurableType::Table, full_name).await?;
-    let can_write = access.owner(&lineage, authz::Level::Object)
-        || access
-            .all(
-                &lineage,
-                authz::Level::Object,
-                &[Privilege::Select, Privilege::Modify],
-            )
-            .await;
-    Ok(match can_write {
+    if !rules::vend_table(&access, &lineage, false).await {
+        return Ok(None);
+    }
+    let can_write = native
+        && (access.owner(&lineage, authz::Level::Object).await
+            || access
+                .all(
+                    &lineage,
+                    authz::Level::Object,
+                    &[Privilege::Select, Privilege::Modify],
+                )
+                .await);
+    Ok(Some(match can_write {
         true => VendOp::ReadWrite,
         false => VendOp::Read,
-    })
+    }))
 }
 
-/// The FileIO properties a caller gets for a served table.
+/// The FileIO properties a caller gets for a served table; none without
+/// credentials (`op`).
 async fn client_config(
     state: &AppState,
-    principal: &Principal,
-    served: &IcebergTableState,
+    op: Option<VendOp>,
     (catalog, namespace, table): (&str, &str, &str),
     table_location: &NormalizedUrl,
 ) -> IcebergResult<BTreeMap<String, String>> {
-    let full_name = three_part_full_name(catalog, namespace, table);
+    let Some(op) = op else {
+        return Ok(BTreeMap::new());
+    };
     // Never a location from the metadata: that is client-written.
-    let op = load_privileges(state, principal, served, &full_name).await?;
     let endpoint = credentials_endpoint(catalog, namespace, table);
     Ok(table_config(state, table_location, op, &endpoint).await?)
 }
@@ -182,6 +190,7 @@ pub async fn list_tables(
         tables,
         |t| (schema.clone(), Some(t.table_id.clone()), t.owner.clone()),
         rules::get_table,
+        None,
     )
     .await?;
     let identifiers = tables
@@ -246,9 +255,14 @@ fn refs_only(snapshots: Option<&str>) -> IcebergResult<bool> {
 /// Upstream `metadataETag`: a weak tag of the metadata version and the
 /// snapshots mode (whose bodies differ), hashed so that it does not reveal
 /// the metadata location.
-fn metadata_etag(metadata_location: &str, refs_only: bool) -> String {
+fn metadata_etag(metadata_location: &str, refs_only: bool, credentials: Option<VendOp>) -> String {
     let mode = if refs_only { "refs" } else { "all" };
-    let digest = Sha256::digest(format!("{metadata_location}\n{mode}"));
+    let credentials = match credentials {
+        None => "none",
+        Some(VendOp::Read) => "read",
+        Some(VendOp::ReadWrite) => "read-write",
+    };
+    let digest = Sha256::digest(format!("{metadata_location}\n{mode}\n{credentials}"));
     format!("W/\"{digest:x}\"")
 }
 
@@ -321,9 +335,13 @@ pub async fn load_table(
     .await?;
     let served = served_table(&state, &catalog, &namespace, &table).await?;
     let refs_only = refs_only(params.snapshots.as_deref())?;
+    // A caller with metadata access and no read access gets the metadata
+    // without credentials.
+    let op = load_privileges(&state, &principal, &served, &full_name).await?;
     let etag = metadata_etag(
         served.metadata_location.as_deref().unwrap_or_default(),
         refs_only,
+        op,
     );
     let etag_header = HeaderValue::from_str(&etag)
         .map_err(|e| uc_common::Error::internal(format!("invalid etag: {e}")))?;
@@ -336,7 +354,7 @@ pub async fn load_table(
         let storage = ServerStorage::new(state.metastore.clone(), state.vendor.clone());
         let table_metadata = metadata::read(&storage, &metadata_location, &table_location).await?;
         let names = (catalog.as_str(), namespace.as_str(), table.as_str());
-        let config = client_config(&state, &principal, &served, names, &table_location).await?;
+        let config = client_config(&state, op, names, &table_location).await?;
         let mut resp = load_response(&table_metadata, Some(&metadata_location), config)?;
         if refs_only {
             suppress_historical_snapshots(&mut resp.0.metadata);
@@ -369,14 +387,15 @@ pub async fn load_credentials(
         &principal,
         SecurableType::Table,
         &full_name,
-        rules::get_table,
+        async |a, l| rules::vend_table(a, l, false).await,
     )
     .await?;
     let served = served_table(&state, &catalog, &namespace, &table).await?;
     let (_, table_location) = locations(&served)?;
     // The same scope as load table, so a renewal never widens access.
     let names = (catalog.as_str(), namespace.as_str(), table.as_str());
-    let config = client_config(&state, &principal, &served, names, &table_location).await?;
+    let op = load_privileges(&state, &principal, &served, &full_name).await?;
+    let config = client_config(&state, op, names, &table_location).await?;
     // A local table vends nothing: an empty list, since Iceberg's own
     // credential type rejects an empty config.
     let storage_credentials = match config.is_empty() {
@@ -852,7 +871,7 @@ pub async fn drop_table(
         &principal,
         SecurableType::Table,
         &full_name,
-        rules::own_child,
+        rules::manage_child,
     )
     .await?;
     check_writes_enabled(&state)?;

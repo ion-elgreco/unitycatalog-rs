@@ -27,6 +27,22 @@ pub struct ExternalLocationInfo {
     pub id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub credential_id: Option<String>,
+    /// True when the object has only the discovery fields that `BROWSE`
+    /// allows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browse_only: Option<bool>,
+}
+
+impl ExternalLocationInfo {
+    /// What `BROWSE` shows of an external location: no credential.
+    pub fn into_browse_only(self) -> Self {
+        Self {
+            credential_name: None,
+            credential_id: None,
+            browse_only: Some(true),
+            ..self
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

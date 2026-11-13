@@ -52,6 +52,8 @@ message VolumeInfo {
   string storage_location = 12;
   // Full name of the volume, in the form `<catalog>.<schema>.<volume>`.
   string full_name = 13;
+  // True when the volume has only the discovery fields that the `BROWSE` privilege allows.
+  optional bool browse_only = 14;
 }
 
 message CreateVolumeRequestContent {
@@ -79,6 +81,9 @@ message ListVolumesRequest {
   optional int32 max_results = 3;
   // Opaque token of the page to return: the `next_page_token` of the page before.
   optional string page_token = 4;
+  // Also return the volumes that the caller sees through the `BROWSE` privilege only, with
+  // their discovery fields and `browse_only` set.
+  optional bool include_browse = 5;
 }
 
 message ListVolumesResponseContent {
@@ -91,6 +96,9 @@ message ListVolumesResponseContent {
 message GetVolumeRequest {
   // Full name of the volume, in the form `<catalog>.<schema>.<volume>`.
   string full_name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Also answer a caller who sees the volume through the `BROWSE` privilege only, with its
+  // discovery fields and `browse_only` set.
+  optional bool include_browse = 2;
 }
 
 message UpdateVolumeRequestContent {

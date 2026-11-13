@@ -22,6 +22,8 @@ impl PyTableClient {
     ///                                      can. This server does not read it.
     ///     read_materialized_view_as_managed: Show a materialized view as a MANAGED table, as upstream's
     ///                                        server can. This server does not read it.
+    ///     include_browse: Also answer a caller who sees the table through the `BROWSE` privilege only,
+    ///                     with its discovery fields and `browse_only` set.
     ///
     /// Returns:
     ///     A table: data in the third layer of the three-level namespace, below a schema.
@@ -29,7 +31,8 @@ impl PyTableClient {
         signature = (
             *,
             read_streaming_table_as_managed = None,
-            read_materialized_view_as_managed = None
+            read_materialized_view_as_managed = None,
+            include_browse = None
         )
     )]
     pub fn get(
@@ -37,12 +40,14 @@ impl PyTableClient {
         py: Python,
         read_streaming_table_as_managed: Option<bool>,
         read_materialized_view_as_managed: Option<bool>,
+        include_browse: Option<bool>,
     ) -> PyUnityCatalogResult<PyTableInfo> {
         let request = self
             .client
             .get()
             .with_read_streaming_table_as_managed(read_streaming_table_as_managed)
-            .with_read_materialized_view_as_managed(read_materialized_view_as_managed);
+            .with_read_materialized_view_as_managed(read_materialized_view_as_managed)
+            .with_include_browse(include_browse);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
         Ok(PyTableInfo::from(result))
@@ -53,7 +58,8 @@ impl PyTableClient {
         signature = (
             *,
             read_streaming_table_as_managed = None,
-            read_materialized_view_as_managed = None
+            read_materialized_view_as_managed = None,
+            include_browse = None
         )
     )]
     pub fn get_async<'py>(
@@ -61,12 +67,14 @@ impl PyTableClient {
         py: Python<'py>,
         read_streaming_table_as_managed: Option<bool>,
         read_materialized_view_as_managed: Option<bool>,
+        include_browse: Option<bool>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyTableInfo>> {
         let request = self
             .client
             .get()
             .with_read_streaming_table_as_managed(read_streaming_table_as_managed)
-            .with_read_materialized_view_as_managed(read_materialized_view_as_managed);
+            .with_read_materialized_view_as_managed(read_materialized_view_as_managed)
+            .with_include_browse(include_browse);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

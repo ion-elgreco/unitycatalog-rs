@@ -42,6 +42,20 @@ pub struct SchemaInfo {
     pub storage_root: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_location: Option<String>,
+    /// True when the object has only the discovery fields that `BROWSE`
+    /// allows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browse_only: Option<bool>,
+}
+
+impl SchemaInfo {
+    /// What `BROWSE` shows of a schema: every field.
+    pub fn into_browse_only(self) -> Self {
+        Self {
+            browse_only: Some(true),
+            ..self
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

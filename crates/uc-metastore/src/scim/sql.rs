@@ -12,9 +12,11 @@ use uc_common::{Error, ErrorCode, Result, SecurableType, now_epoch_millis, requi
 use uc_storage::{Exec, Transaction, Value};
 
 use crate::ScimOps;
-use crate::permissions::sql::{apply_permission_change, forget_principal, rename_principal};
+use crate::permissions::sql::{
+    MetastoreRow, apply_permission_change, forget_principal, rename_principal,
+};
 use crate::scim::{ADMIN, Edit, Page, ScimKey, SeedReport, SeedUser};
-use crate::sql::rows::{SCIM_GROUP, SCIM_GROUP_MEMBER, SCIM_USER};
+use crate::sql::rows::{METASTORE, SCIM_GROUP, SCIM_GROUP_MEMBER, SCIM_USER};
 use crate::sql::{
     SqlMetastore, by_id, create_err_as, db_err, insert, insert_all, placeholders, select,
     select_one, update,
@@ -344,6 +346,22 @@ const SAME_PRINCIPAL: &str = "principal = $1";
 const SAME_PRINCIPAL_ANY_CASE: &str = "lower(principal) = lower($1)";
 const SAME_EXTERNAL_ID: &str = "external_id = $1";
 
+/// Upstream `checkNotMetastoreOwner`: the metastore owner is not deleted
+/// or deactivated, whatever its name.
+async fn check_not_metastore_owner(db: &dyn Exec, user: &ScimUserRow) -> Result<()> {
+    let metastore: Option<MetastoreRow> = select_one(db, &METASTORE, "LIMIT 1", &[]).await?;
+    match metastore.and_then(|m| m.owner) == Some(user.principal.clone()) {
+        true => Err(Error::new(
+            ErrorCode::FailedPrecondition,
+            format!(
+                "The metastore owner can't be deleted or deactivated: {}",
+                user.principal
+            ),
+        )),
+        false => Ok(()),
+    }
+}
+
 /// Whether `name` is [`ADMIN`], in any case.
 fn is_admin(name: &str) -> bool {
     name.trim().eq_ignore_ascii_case(ADMIN)
@@ -650,6 +668,9 @@ impl Edit<ScimUser> for UserEdit {
             Some(now_epoch_millis()),
         );
         check_admin(&row, Some(&stored))?;
+        if row.active == Some(false) {
+            check_not_metastore_owner(tx.as_ref(), &stored).await?;
+        }
         check_user(tx.as_ref(), &row, Some(&stored)).await?;
         update(tx.as_ref(), &SCIM_USER, &row)
             .await
@@ -842,6 +863,7 @@ impl ScimOps for SqlMetastore {
                 format!("The server's own user {ADMIN} cannot be deleted"),
             ));
         }
+        check_not_metastore_owner(tx.as_ref(), &user).await?;
         let groups: Vec<ScimGroupRow> = select(
             tx.as_ref(),
             &SCIM_GROUP,

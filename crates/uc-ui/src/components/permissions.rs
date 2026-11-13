@@ -38,9 +38,14 @@ const CREATE_EXTERNAL_TABLE: &str = "CREATE EXTERNAL TABLE";
 const CREATE_EXTERNAL_VOLUME: &str = "CREATE EXTERNAL VOLUME";
 const CREATE_MANAGED_STORAGE: &str = "CREATE MANAGED STORAGE";
 const CREATE_STORAGE_CREDENTIAL: &str = "CREATE STORAGE CREDENTIAL";
+const BROWSE: &str = "BROWSE";
+const MANAGE: &str = "MANAGE";
+const WRITE_VOLUME: &str = "WRITE VOLUME";
+const CREATE_MODEL_VERSION: &str = "CREATE MODEL VERSION";
+const READ_METADATA: &str = "READ METADATA";
 
-/// The privileges that a securable of `kind` can hold, as the server names
-/// them.
+/// The privileges that a securable of `kind` takes: the server refuses a
+/// grant of any other.
 fn choices(kind: SecurableType) -> &'static [&'static str] {
     match kind {
         SecurableType::Catalog => &[
@@ -54,7 +59,12 @@ fn choices(kind: SecurableType) -> &'static [&'static str] {
             EXECUTE,
             CREATE_VOLUME,
             READ_VOLUME,
+            WRITE_VOLUME,
             CREATE_MODEL,
+            CREATE_MODEL_VERSION,
+            BROWSE,
+            READ_METADATA,
+            MANAGE,
         ],
         SecurableType::Schema => &[
             USE_SCHEMA,
@@ -65,39 +75,39 @@ fn choices(kind: SecurableType) -> &'static [&'static str] {
             EXECUTE,
             CREATE_VOLUME,
             READ_VOLUME,
+            WRITE_VOLUME,
             CREATE_MODEL,
+            CREATE_MODEL_VERSION,
+            READ_METADATA,
+            MANAGE,
         ],
-        SecurableType::Table => &[SELECT, MODIFY],
-        SecurableType::Volume => &[READ_VOLUME],
-        SecurableType::Function | SecurableType::RegisteredModel => &[EXECUTE],
-        SecurableType::Credential => &[CREATE_EXTERNAL_LOCATION],
+        SecurableType::Table => &[SELECT, MODIFY, READ_METADATA, MANAGE],
+        SecurableType::Volume => &[READ_VOLUME, WRITE_VOLUME, READ_METADATA, MANAGE],
+        SecurableType::Function => &[EXECUTE, READ_METADATA, MANAGE],
+        SecurableType::RegisteredModel => &[EXECUTE, CREATE_MODEL_VERSION, READ_METADATA, MANAGE],
+        SecurableType::Credential => &[
+            CREATE_EXTERNAL_LOCATION,
+            READ_FILES,
+            WRITE_FILES,
+            CREATE_EXTERNAL_TABLE,
+            READ_METADATA,
+            MANAGE,
+        ],
         SecurableType::ExternalLocation => &[
             READ_FILES,
             WRITE_FILES,
             CREATE_EXTERNAL_TABLE,
             CREATE_EXTERNAL_VOLUME,
             CREATE_MANAGED_STORAGE,
+            BROWSE,
+            READ_METADATA,
+            MANAGE,
         ],
         SecurableType::Metastore => &[
             CREATE_CATALOG,
-            USE_CATALOG,
-            CREATE_SCHEMA,
-            USE_SCHEMA,
-            CREATE_TABLE,
-            SELECT,
-            MODIFY,
-            CREATE_FUNCTION,
-            EXECUTE,
-            CREATE_VOLUME,
-            READ_VOLUME,
-            CREATE_MODEL,
-            CREATE_EXTERNAL_LOCATION,
-            READ_FILES,
-            WRITE_FILES,
-            CREATE_EXTERNAL_TABLE,
-            CREATE_EXTERNAL_VOLUME,
-            CREATE_MANAGED_STORAGE,
             CREATE_STORAGE_CREDENTIAL,
+            CREATE_EXTERNAL_LOCATION,
+            READ_METADATA,
         ],
     }
 }

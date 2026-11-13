@@ -151,6 +151,25 @@ pub struct TableInfo {
     pub view_definition: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub view_dependencies: Option<DependencyList>,
+    /// True when the object has only the discovery fields that `BROWSE`
+    /// allows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browse_only: Option<bool>,
+}
+
+impl TableInfo {
+    /// What `BROWSE` shows of a table: no storage location, properties
+    /// or view definition.
+    pub fn into_browse_only(self) -> Self {
+        Self {
+            storage_location: None,
+            properties: None,
+            view_definition: None,
+            view_dependencies: None,
+            browse_only: Some(true),
+            ..self
+        }
+    }
 }
 
 /// `PATCH /tables/{full_name}`: a new comment for the table, and new

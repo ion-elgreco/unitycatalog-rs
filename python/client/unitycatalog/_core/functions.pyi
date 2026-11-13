@@ -166,15 +166,21 @@ class FunctionClient:
         """
         Like `delete`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def get(self, /) -> FunctionInfo:
+    def get(self, /, *, include_browse: bool | None = None) -> FunctionInfo:
         """
         Get a function.
+
+        Args:
+            include_browse: Also answer a caller who sees the function through the `BROWSE` privilege only,
+                            with its discovery fields and `browse_only` set.
 
         Returns:
             A function: a user-defined function in the third layer of the three-level namespace, below
             a schema.
         """
-    def get_async(self, /) -> Future[FunctionInfo]:
+    def get_async(
+        self, /, *, include_browse: bool | None = None
+    ) -> Future[FunctionInfo]:
         """
         Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -188,6 +194,11 @@ class FunctionInfo:
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
     def __repr__(self, /) -> str: ...
+    @property
+    def browse_only(self, /) -> bool | None:
+        """
+        True when the function has only the discovery fields that the `BROWSE` privilege allows.
+        """
     @property
     def catalog_name(self, /) -> str:
         """

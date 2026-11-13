@@ -232,12 +232,28 @@ async fn catalog_rules() {
     w.grant("catalog", "c2", "bob@example.com", &["USE CATALOG"])
         .await;
     w.ok(&w.bob, Method::GET, "/catalogs/c2", None).await;
-    // A grant on the metastore counts for every catalog.
+    // USE CATALOG is a catalog's privilege: the metastore does not take it.
+    let refused = w
+        .call(
+            &w.admin,
+            Method::PATCH,
+            "/permissions/metastore/metastore",
+            Some(
+                json!({ "changes": [{ "principal": "bob@example.com", "add": ["USE CATALOG"] }] }),
+            ),
+        )
+        .await;
+    let err = common::assert_error(refused, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    assert_eq!(
+        err["message"],
+        "Privilege USE CATALOG cannot be granted on metastore"
+    );
+    // READ METADATA on the metastore reads every catalog.
     w.grant(
         "metastore",
         "metastore",
         "bob@example.com",
-        &["USE CATALOG"],
+        &["READ METADATA"],
     )
     .await;
     w.ok(&w.bob, Method::GET, "/catalogs/c1", None).await;
@@ -1564,4 +1580,493 @@ async fn groups_give_their_grants_to_members() {
     };
     let err = w.metastore.scim().create_user(user).await.unwrap_err();
     assert_eq!(err.code(), uc_common::ErrorCode::AlreadyExists);
+}
+
+impl World {
+    /// Catalog `c`, schema `c.s` and the external location `el` at
+    /// `s3://lake`, with the admin's table `c.s.t1` and volume `c.s.v1` in
+    /// it; `users` get USE CATALOG and USE SCHEMA. Returns the ids of the
+    /// table and the volume.
+    async fn lake(&self, users: &[&str]) -> (String, String) {
+        self.catalog_and_schema(users).await;
+        self.external_location("s3://lake").await;
+        let table = json!({ "name": "t1", "catalog_name": "c", "schema_name": "s",
+            "table_type": "EXTERNAL", "data_source_format": "DELTA",
+            "storage_location": "s3://lake/t1", "properties": { "k": "v" } });
+        let table = self
+            .ok(&self.admin, Method::POST, "/tables", Some(table))
+            .await;
+        let volume = json!({ "name": "v1", "catalog_name": "c", "schema_name": "s",
+            "volume_type": "EXTERNAL", "storage_location": "s3://lake/v1" });
+        let volume = self
+            .ok(&self.admin, Method::POST, "/volumes", Some(volume))
+            .await;
+        (
+            table["table_id"].as_str().unwrap().to_string(),
+            volume["volume_id"].as_str().unwrap().to_string(),
+        )
+    }
+}
+
+#[tokio::test]
+async fn manage_stands_in_for_the_owner_but_reads_no_data() {
+    let w = World::new().await;
+    let (table_id, _) = w.lake(&[ALICE, BOB]).await;
+
+    // MANAGE is not for the metastore.
+    let refused = w
+        .call(
+            &w.admin,
+            Method::PATCH,
+            "/permissions/metastore/metastore",
+            Some(json!({ "changes": [{ "principal": BOB, "add": ["MANAGE"] }] })),
+        )
+        .await;
+    common::assert_error(refused, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+
+    // A volume: changes with MANAGE; a new name also takes CREATE VOLUME.
+    let comment = Some(json!({ "comment": "x" }));
+    let rename = Some(json!({ "new_name": "v2" }));
+    assert_eq!(
+        w.status(&w.bob, Method::PATCH, "/volumes/c.s.v1", comment.clone())
+            .await,
+        StatusCode::FORBIDDEN
+    );
+    w.grant("volume", "c.s.v1", BOB, &["MANAGE"]).await;
+    w.ok(&w.bob, Method::PATCH, "/volumes/c.s.v1", comment.clone())
+        .await;
+    assert_eq!(
+        w.status(&w.bob, Method::PATCH, "/volumes/c.s.v1", rename.clone())
+            .await,
+        StatusCode::FORBIDDEN
+    );
+    w.grant("schema", "c.s", BOB, &["CREATE VOLUME"]).await;
+    w.ok(&w.bob, Method::PATCH, "/volumes/c.s.v1", rename).await;
+
+    // A table: MANAGE reads its metadata and changes its grants, and gives
+    // no credentials.
+    assert_eq!(
+        w.status(&w.bob, Method::GET, "/tables/c.s.t1", None).await,
+        StatusCode::FORBIDDEN
+    );
+    w.grant("table", "c.s.t1", BOB, &["MANAGE"]).await;
+    w.ok(&w.bob, Method::GET, "/tables/c.s.t1", None).await;
+    let grant = json!({ "changes": [{ "principal": ALICE, "add": ["SELECT"] }] });
+    w.ok(
+        &w.bob,
+        Method::PATCH,
+        "/permissions/table/c.s.t1",
+        Some(grant),
+    )
+    .await;
+    let creds = Some(json!({ "table_id": table_id, "operation": "READ" }));
+    assert_eq!(
+        w.status(&w.bob, Method::POST, "/temporary-table-credentials", creds)
+            .await,
+        StatusCode::FORBIDDEN
+    );
+    w.ok(&w.bob, Method::DELETE, "/tables/c.s.t1", None).await;
+
+    // A catalog: changes with MANAGE; a new name also takes CREATE CATALOG.
+    w.grant("catalog", "c", ALICE, &["MANAGE"]).await;
+    w.ok(&w.alice, Method::PATCH, "/catalogs/c", comment).await;
+    let rename = Some(json!({ "new_name": "c2" }));
+    assert_eq!(
+        w.status(&w.alice, Method::PATCH, "/catalogs/c", rename.clone())
+            .await,
+        StatusCode::FORBIDDEN
+    );
+    w.grant("metastore", "metastore", ALICE, &["CREATE CATALOG"])
+        .await;
+    w.ok(&w.alice, Method::PATCH, "/catalogs/c", rename).await;
+}
+
+#[tokio::test]
+async fn read_metadata_reads_metadata_and_grants_only() {
+    let w = World::new().await;
+    let (table_id, _) = w.lake(&[ALICE]).await;
+    w.grant("table", "c.s.t1", ALICE, &["MODIFY"]).await;
+
+    // MODIFY alone does not read a table's metadata; SELECT does.
+    assert_eq!(
+        w.status(&w.alice, Method::GET, "/tables/c.s.t1", None)
+            .await,
+        StatusCode::FORBIDDEN
+    );
+
+    // READ METADATA on the catalog needs no usage grants.
+    assert_eq!(
+        w.status(&w.bob, Method::GET, "/tables/c.s.t1", None).await,
+        StatusCode::FORBIDDEN
+    );
+    w.grant("catalog", "c", BOB, &["READ METADATA"]).await;
+    w.ok(&w.bob, Method::GET, "/catalogs/c", None).await;
+    w.ok(&w.bob, Method::GET, "/schemas/c.s", None).await;
+    let table = w.ok(&w.bob, Method::GET, "/tables/c.s.t1", None).await;
+    assert_eq!(table["storage_location"], "s3://lake/t1");
+    assert_eq!(table.get("browse_only"), None);
+    let list = "/volumes?catalog_name=c&schema_name=s";
+    assert_eq!(
+        World::names(&w.ok(&w.bob, Method::GET, list, None).await, "volumes"),
+        ["v1"]
+    );
+    // It shows the grants of others.
+    let grants = w
+        .ok(&w.bob, Method::GET, "/permissions/table/c.s.t1", None)
+        .await;
+    assert_eq!(
+        grants["privilege_assignments"][0]["principal"], ALICE,
+        "{grants}"
+    );
+    // No data, and no changes.
+    let creds = Some(json!({ "table_id": table_id, "operation": "READ" }));
+    assert_eq!(
+        w.status(&w.bob, Method::POST, "/temporary-table-credentials", creds)
+            .await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        w.status(&w.bob, Method::DELETE, "/tables/c.s.t1", None)
+            .await,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn browse_shows_the_discovery_fields_on_request() {
+    let w = World::new().await;
+    let (table_id, _) = w.lake(&[]).await;
+
+    // BROWSE is for catalogs and external locations.
+    let refused = w
+        .call(
+            &w.admin,
+            Method::PATCH,
+            "/permissions/schema/c.s",
+            Some(json!({ "changes": [{ "principal": BOB, "add": ["BROWSE"] }] })),
+        )
+        .await;
+    let err = common::assert_error(refused, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    assert_eq!(
+        err["message"],
+        "Privilege BROWSE cannot be granted on schema"
+    );
+    w.grant("catalog", "c", BOB, &["BROWSE"]).await;
+
+    // Only with include_browse.
+    assert_eq!(
+        w.status(&w.bob, Method::GET, "/catalogs/c", None).await,
+        StatusCode::FORBIDDEN
+    );
+    let catalog = w
+        .ok(&w.bob, Method::GET, "/catalogs/c?include_browse=true", None)
+        .await;
+    assert_eq!(catalog["browse_only"], true);
+    assert_eq!(
+        World::names(
+            &w.ok(&w.bob, Method::GET, "/catalogs", None).await,
+            "catalogs"
+        ),
+        Vec::<String>::new()
+    );
+    let catalogs = w
+        .ok(&w.bob, Method::GET, "/catalogs?include_browse=true", None)
+        .await;
+    assert_eq!(World::names(&catalogs, "catalogs"), ["c"]);
+    assert_eq!(catalogs["catalogs"][0]["browse_only"], true);
+
+    // What the catalog holds: schemas, tables and volumes.
+    let schemas = w
+        .ok(
+            &w.bob,
+            Method::GET,
+            "/schemas?catalog_name=c&include_browse=true",
+            None,
+        )
+        .await;
+    assert_eq!(schemas["schemas"][0]["browse_only"], true);
+    assert_eq!(
+        w.status(&w.bob, Method::GET, "/tables/c.s.t1", None).await,
+        StatusCode::FORBIDDEN
+    );
+    let table = w
+        .ok(
+            &w.bob,
+            Method::GET,
+            "/tables/c.s.t1?include_browse=true",
+            None,
+        )
+        .await;
+    assert_eq!(table["browse_only"], true);
+    assert_eq!(table["table_id"], table_id.as_str());
+    assert_eq!(table.get("storage_location"), None, "{table}");
+    assert_ne!(table["properties"]["k"], "v", "{table}");
+    let tables = w
+        .ok(
+            &w.bob,
+            Method::GET,
+            "/tables?catalog_name=c&schema_name=s&include_browse=true",
+            None,
+        )
+        .await;
+    assert_eq!(World::names(&tables, "tables"), ["t1"]);
+    assert_eq!(tables["tables"][0]["browse_only"], true);
+    let volume = w
+        .ok(
+            &w.bob,
+            Method::GET,
+            "/volumes/c.s.v1?include_browse=true",
+            None,
+        )
+        .await;
+    assert_eq!(volume["browse_only"], true);
+
+    // A caller with ordinary access gets all of it.
+    let full = w
+        .ok(
+            &w.admin,
+            Method::GET,
+            "/tables/c.s.t1?include_browse=true",
+            None,
+        )
+        .await;
+    assert_eq!(full.get("browse_only"), None);
+    assert_eq!(full["storage_location"], "s3://lake/t1");
+
+    // No data and no changes.
+    let creds = Some(json!({ "table_id": table_id, "operation": "READ" }));
+    assert_eq!(
+        w.status(&w.bob, Method::POST, "/temporary-table-credentials", creds)
+            .await,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        w.status(&w.bob, Method::DELETE, "/tables/c.s.t1", None)
+            .await,
+        StatusCode::FORBIDDEN
+    );
+
+    // An external location: no credential in the discovery fields.
+    w.grant("external_location", "el", BOB, &["BROWSE"]).await;
+    assert_eq!(
+        w.status(&w.bob, Method::GET, "/external-locations/el", None)
+            .await,
+        StatusCode::FORBIDDEN
+    );
+    let location = w
+        .ok(
+            &w.bob,
+            Method::GET,
+            "/external-locations/el?include_browse=true",
+            None,
+        )
+        .await;
+    assert_eq!(location["browse_only"], true);
+    assert_eq!(location["url"], "s3://lake");
+    assert_eq!(location.get("credential_name"), None, "{location}");
+    let locations = w
+        .ok(
+            &w.bob,
+            Method::GET,
+            "/external-locations?include_browse=true",
+            None,
+        )
+        .await;
+    assert_eq!(World::names(&locations, "external_locations"), ["el"]);
+}
+
+#[tokio::test]
+async fn write_volume_and_create_model_version() {
+    let w = World::new().await;
+    // Managed models need a storage root, under an external location.
+    w.external_location("s3://lake").await;
+    w.catalog_and_schema_at(&[ALICE, BOB], Some("s3://lake/c".to_string()))
+        .await;
+    let volume = json!({ "name": "v1", "catalog_name": "c", "schema_name": "s",
+        "volume_type": "EXTERNAL", "storage_location": "s3://lake/v1" });
+    let volume = w.ok(&w.admin, Method::POST, "/volumes", Some(volume)).await;
+    let volume_id = volume["volume_id"].as_str().unwrap();
+
+    // Volume writes: READ VOLUME and WRITE VOLUME together.
+    let creds = |op: &str| Some(json!({ "volume_id": volume_id, "operation": op }));
+    let vend = "/temporary-volume-credentials";
+    w.grant("volume", "c.s.v1", ALICE, &["WRITE VOLUME"]).await;
+    w.grant("volume", "c.s.v1", BOB, &["READ VOLUME"]).await;
+    for user in [&w.alice, &w.bob] {
+        assert_eq!(
+            w.status(user, Method::POST, vend, creds("WRITE_VOLUME"))
+                .await,
+            StatusCode::FORBIDDEN
+        );
+    }
+    w.grant("volume", "c.s.v1", BOB, &["WRITE VOLUME"]).await;
+    assert_ne!(
+        w.status(&w.bob, Method::POST, vend, creds("WRITE_VOLUME"))
+            .await,
+        StatusCode::FORBIDDEN
+    );
+
+    // Model versions: the model's owner, or CREATE MODEL VERSION.
+    let model = json!({ "name": "m1", "catalog_name": "c", "schema_name": "s" });
+    w.ok(&w.admin, Method::POST, "/models", Some(model)).await;
+    let version = Some(
+        json!({ "model_name": "m1", "catalog_name": "c", "schema_name": "s", "source": "s3://lake/m1/v1" }),
+    );
+    assert_eq!(
+        w.status(&w.bob, Method::POST, "/models/versions", version.clone())
+            .await,
+        StatusCode::FORBIDDEN
+    );
+    for user in [ALICE, BOB] {
+        w.grant(
+            "registered_model",
+            "c.s.m1",
+            user,
+            &["CREATE MODEL VERSION", "EXECUTE"],
+        )
+        .await;
+    }
+    w.ok(&w.bob, Method::POST, "/models/versions", version)
+        .await;
+
+    // Read credentials need a version that is ready.
+    let creds = |op: &str| {
+        Some(
+            json!({ "catalog_name": "c", "schema_name": "s", "model_name": "m1",
+            "version": 1, "operation": op }),
+        )
+    };
+    let vend = "/temporary-model-version-credentials";
+    let pending = w
+        .call(&w.bob, Method::POST, vend, creds("READ_MODEL_VERSION"))
+        .await;
+    let err = common::assert_error(pending, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    assert_eq!(
+        err["message"],
+        "Cannot request read credentials on a model version that is not ready: c.s.m1/1"
+    );
+    // Any publisher uploads to a pending version.
+    assert_ne!(
+        w.status(
+            &w.alice,
+            Method::POST,
+            vend,
+            creds("READ_WRITE_MODEL_VERSION")
+        )
+        .await,
+        StatusCode::FORBIDDEN
+    );
+
+    // Only its creator finalizes it.
+    let finalize = "/models/c.s.m1/versions/1/finalize";
+    let body = Some(json!({ "full_name": "c.s.m1", "version": 1 }));
+    let other = w
+        .call(&w.alice, Method::PATCH, finalize, body.clone())
+        .await;
+    let err = common::assert_error(other, StatusCode::FORBIDDEN, "PERMISSION_DENIED").await;
+    assert_eq!(
+        err["message"],
+        "Only model version creator can finalize model version"
+    );
+    let ready = w.ok(&w.bob, Method::PATCH, finalize, body).await;
+    assert_eq!(ready["status"], "READY");
+    assert_ne!(
+        w.status(&w.bob, Method::POST, vend, creds("READ_MODEL_VERSION"))
+            .await,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn the_metastore_owner_is_not_deleted_or_deactivated() {
+    let w = World::new().await;
+    let mut find = common::control(
+        Method::GET,
+        "/scim2/Users?filter=userName%20eq%20%22admin%40example.com%22",
+    );
+    find.headers_mut().insert(
+        "authorization",
+        format!("Bearer {}", w.admin).parse().unwrap(),
+    );
+    let found = json_body(
+        assert_status(
+            w.app.clone().oneshot(find).await.unwrap(),
+            StatusCode::OK,
+            "find",
+        )
+        .await,
+    )
+    .await;
+    let id = found["Resources"][0]["id"].as_str().unwrap();
+    let path = format!("/scim2/Users/{id}");
+    let mut delete = common::control(Method::DELETE, &path);
+    delete.headers_mut().insert(
+        "authorization",
+        format!("Bearer {}", w.admin).parse().unwrap(),
+    );
+    let refused = assert_status(
+        w.app.clone().oneshot(delete).await.unwrap(),
+        StatusCode::BAD_REQUEST,
+        "delete",
+    )
+    .await;
+    assert_eq!(
+        json_body(refused).await["detail"],
+        "The metastore owner can't be deleted or deactivated: admin@example.com"
+    );
+    let patch = json!({
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        "Operations": [{ "op": "replace", "path": "active", "value": false }],
+    });
+    let refused = w.scim(Method::PATCH, &path, patch).await;
+    assert_status(refused, StatusCode::BAD_REQUEST, "deactivate").await;
+    assert_eq!(w.control(&w.admin, "/scim2/Me").await, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn iceberg_credentials_take_the_table_read_rule() {
+    let w = World::new().await;
+    let root = common::temp_storage_root();
+    w.external_location(&root).await;
+    w.catalog_and_schema_at(&[ALICE, BOB], Some(format!("{root}/c")))
+        .await;
+    let tables = "/iceberg/v1/catalogs/c/namespaces/s/tables";
+    let schema = json!({ "type": "struct", "schema-id": 0,
+        "fields": [{ "id": 1, "name": "id", "required": true, "type": "long" }] });
+    w.ok(
+        &w.admin,
+        Method::POST,
+        tables,
+        Some(json!({ "name": "t", "schema": schema })),
+    )
+    .await;
+    w.grant("table", "c.s.t", ALICE, &["SELECT"]).await;
+    w.grant("table", "c.s.t", BOB, &["READ METADATA"]).await;
+
+    // Metadata access loads the table; only read access gets credentials.
+    let load = format!("{tables}/t");
+    let etag = async |token: &str| {
+        let resp = assert_status(
+            w.call(token, Method::GET, &load, None).await,
+            StatusCode::OK,
+            "load table",
+        )
+        .await;
+        resp.headers()["etag"].to_str().unwrap().to_string()
+    };
+    assert_ne!(etag(&w.alice).await, etag(&w.bob).await);
+    let credentials = format!("{tables}/t/credentials");
+    assert_eq!(
+        w.status(&w.alice, Method::GET, &credentials, None).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        w.status(&w.bob, Method::GET, &credentials, None).await,
+        StatusCode::FORBIDDEN
+    );
+    // The admin has no SELECT on it either, but owns it.
+    assert_eq!(
+        w.status(&w.admin, Method::GET, &credentials, None).await,
+        StatusCode::OK
+    );
 }

@@ -76,6 +76,7 @@ impl RegisteredModelRow {
             updated_at: Some(self.updated_at),
             updated_by: self.updated_by,
             id: Some(self.id_string),
+            browse_only: None,
         }
     }
 }
@@ -542,8 +543,14 @@ impl ModelOps for SqlMetastore {
         full_name: &str,
         version: i64,
         updated_by: Option<&str>,
+        creator_only: bool,
     ) -> Result<ModelVersionInfo> {
         let (schema, model, mut row) = self.resolve_version(full_name, version).await?;
+        if creator_only && (updated_by.is_none() || row.created_by.as_deref() != updated_by) {
+            return Err(Error::permission_denied(
+                "Only model version creator can finalize model version",
+            ));
+        }
         if row.status != enum_str(&ModelVersionStatus::PendingRegistration) {
             return Err(Error::invalid_argument(format!(
                 "Model version not in a pending registration state: {full_name}/{version}"

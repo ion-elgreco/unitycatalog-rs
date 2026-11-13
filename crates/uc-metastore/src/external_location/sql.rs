@@ -55,6 +55,7 @@ impl ExternalLocationRow {
             updated_by: self.updated_by,
             id: Some(self.id_string),
             credential_id: Some(self.credential_id),
+            browse_only: None,
         }
     }
 }

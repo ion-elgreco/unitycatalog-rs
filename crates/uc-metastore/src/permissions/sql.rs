@@ -34,7 +34,7 @@ struct PermissionRow {
 pub(crate) struct MetastoreRow {
     pub(crate) metastore_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    owner: Option<String>,
+    pub(crate) owner: Option<String>,
 }
 
 fn assignments(rows: Vec<PermissionRow>) -> PermissionsList {

@@ -3,11 +3,13 @@ use axum::extract::State;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use uc_api::{CreateFunctionRequest, FunctionInfo, ListFunctionsResponse};
-use uc_common::{PageToken, SchemaScopedListParams as ListParams, SecurableType, schema_full_name};
+use uc_common::{
+    BrowseParams, PageToken, SchemaScopedListParams as ListParams, SecurableType, schema_full_name,
+};
 
 use crate::{
     authn::principal::Principal,
-    authz::{self, Access, rules},
+    authz::{self, Access, Read, rules},
     http::{EmptyObject, error::ApiResult},
     server::state::AppState,
 };
@@ -64,6 +66,7 @@ pub async fn list_functions(
     State(state): State<AppState>,
     principal: Principal,
     Query(params): Query<ListParams>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<ListFunctionsResponse>> {
     let (functions, next) = state
         .metastore
@@ -79,6 +82,9 @@ pub async fn list_functions(
         functions,
         |f| (schema.clone(), f.function_id.clone(), f.owner.clone()),
         rules::get_function,
+        browse
+            .include_browse
+            .then_some(FunctionInfo::into_browse_only),
     )
     .await?;
     Ok(Json(ListFunctionsResponse {
@@ -100,16 +106,23 @@ pub async fn get_function(
     State(state): State<AppState>,
     principal: Principal,
     Path(name): Path<String>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<FunctionInfo>> {
-    authz::check(
+    let read = authz::check_read(
         &state,
         &principal,
         SecurableType::Function,
         &name,
+        browse.include_browse,
         rules::get_function,
+        rules::browse_catalog,
     )
     .await?;
-    Ok(Json(state.metastore.functions().get(&name).await?))
+    let info = state.metastore.functions().get(&name).await?;
+    Ok(Json(match read {
+        Read::Full => info,
+        Read::BrowseOnly => info.into_browse_only(),
+    }))
 }
 
 #[utoipa::path(
@@ -131,7 +144,7 @@ pub async fn delete_function(
         &principal,
         SecurableType::Function,
         &name,
-        rules::own_child,
+        rules::manage_child,
     )
     .await?;
     state.metastore.functions().delete(&name).await?;

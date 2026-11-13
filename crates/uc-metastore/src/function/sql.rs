@@ -104,6 +104,7 @@ impl FunctionRow {
             updated_by: self.updated_by,
             function_id: Some(self.id_string),
             external_language: self.external_language,
+            browse_only: None,
         })
     }
 }

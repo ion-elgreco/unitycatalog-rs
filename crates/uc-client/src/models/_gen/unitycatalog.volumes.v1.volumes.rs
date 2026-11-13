@@ -273,6 +273,15 @@ pub struct VolumeInfo {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub full_name: ::buffa::alloc::string::String,
+    /// True when the volume has only the discovery fields that the `BROWSE` privilege allows.
+    ///
+    /// Field 14: `browse_only`
+    #[serde(
+        rename = "browse_only",
+        alias = "browseOnly",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub browse_only: ::core::option::Option<bool>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -294,6 +303,7 @@ impl ::core::fmt::Debug for VolumeInfo {
             .field("volume_type", &self.volume_type)
             .field("storage_location", &self.storage_location)
             .field("full_name", &self.full_name)
+            .field("browse_only", &self.browse_only)
             .finish()
     }
 }
@@ -336,6 +346,14 @@ impl VolumeInfo {
     ///Sets [`Self::updated_by`] to `Some(value)`, consuming and returning `self`.
     pub fn with_updated_by(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
         self.updated_by = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::browse_only`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_browse_only(mut self, value: bool) -> Self {
+        self.browse_only = Some(value);
         self
     }
 }
@@ -406,6 +424,9 @@ impl ::buffa::Message for VolumeInfo {
         }
         if !self.full_name.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.full_name) as u32;
+        }
+        if self.browse_only.is_some() {
+            size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
@@ -478,6 +499,10 @@ impl ::buffa::Message for VolumeInfo {
             ::buffa::encoding::Tag::new(13u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(&self.full_name, buf);
+        }
+        if let Some(v) = self.browse_only {
+            ::buffa::encoding::Tag::new(14u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_bool(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -640,6 +665,16 @@ impl ::buffa::Message for VolumeInfo {
                 }
                 ::buffa::types::merge_string(&mut self.full_name, buf)?;
             }
+            14u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 14u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.browse_only = ::core::option::Option::Some(::buffa::types::decode_bool(buf)?);
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -662,6 +697,7 @@ impl ::buffa::Message for VolumeInfo {
         self.volume_type = ::buffa::EnumValue::from(0);
         self.storage_location.clear();
         self.full_name.clear();
+        self.browse_only = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -1075,6 +1111,16 @@ pub struct ListVolumesRequest {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub page_token: ::core::option::Option<::buffa::alloc::string::String>,
+    /// Also return the volumes that the caller sees through the `BROWSE` privilege only, with
+    /// their discovery fields and `browse_only` set.
+    ///
+    /// Field 5: `include_browse`
+    #[serde(
+        rename = "include_browse",
+        alias = "includeBrowse",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub include_browse: ::core::option::Option<bool>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1087,6 +1133,7 @@ impl ::core::fmt::Debug for ListVolumesRequest {
             .field("schema_name", &self.schema_name)
             .field("max_results", &self.max_results)
             .field("page_token", &self.page_token)
+            .field("include_browse", &self.include_browse)
             .finish()
     }
 }
@@ -1114,6 +1161,14 @@ impl ListVolumesRequest {
     ///Sets [`Self::page_token`] to `Some(value)`, consuming and returning `self`.
     pub fn with_page_token(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
         self.page_token = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::include_browse`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_include_browse(mut self, value: bool) -> Self {
+        self.include_browse = Some(value);
         self
     }
 }
@@ -1156,6 +1211,9 @@ impl ::buffa::Message for ListVolumesRequest {
         if let Some(ref v) = self.page_token {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
         }
+        if self.include_browse.is_some() {
+            size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -1181,6 +1239,10 @@ impl ::buffa::Message for ListVolumesRequest {
             ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(v) = self.include_browse {
+            ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_bool(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -1241,6 +1303,17 @@ impl ::buffa::Message for ListVolumesRequest {
                     buf,
                 )?;
             }
+            5u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 5u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.include_browse =
+                    ::core::option::Option::Some(::buffa::types::decode_bool(buf)?);
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -1254,6 +1327,7 @@ impl ::buffa::Message for ListVolumesRequest {
         self.schema_name.clear();
         self.max_results = ::core::option::Option::None;
         self.page_token = ::core::option::Option::None;
+        self.include_browse = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -1508,6 +1582,16 @@ pub struct GetVolumeRequest {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub full_name: ::buffa::alloc::string::String,
+    /// Also answer a caller who sees the volume through the `BROWSE` privilege only, with its
+    /// discovery fields and `browse_only` set.
+    ///
+    /// Field 2: `include_browse`
+    #[serde(
+        rename = "include_browse",
+        alias = "includeBrowse",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub include_browse: ::core::option::Option<bool>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1517,6 +1601,7 @@ impl ::core::fmt::Debug for GetVolumeRequest {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("GetVolumeRequest")
             .field("full_name", &self.full_name)
+            .field("include_browse", &self.include_browse)
             .finish()
     }
 }
@@ -1528,6 +1613,16 @@ impl GetVolumeRequest {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str =
         "type.googleapis.com/unitycatalog.volumes.v1.GetVolumeRequest";
+}
+
+impl GetVolumeRequest {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::include_browse`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_include_browse(mut self, value: bool) -> Self {
+        self.include_browse = Some(value);
+        self
+    }
 }
 
 impl ::buffa::DefaultInstance for GetVolumeRequest {
@@ -1559,6 +1654,9 @@ impl ::buffa::Message for GetVolumeRequest {
         if !self.full_name.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.full_name) as u32;
         }
+        if self.include_browse.is_some() {
+            size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -1570,6 +1668,10 @@ impl ::buffa::Message for GetVolumeRequest {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(&self.full_name, buf);
+        }
+        if let Some(v) = self.include_browse {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_bool(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -1596,6 +1698,17 @@ impl ::buffa::Message for GetVolumeRequest {
                 }
                 ::buffa::types::merge_string(&mut self.full_name, buf)?;
             }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.include_browse =
+                    ::core::option::Option::Some(::buffa::types::decode_bool(buf)?);
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -1606,6 +1719,7 @@ impl ::buffa::Message for GetVolumeRequest {
 
     fn clear(&mut self) {
         self.full_name.clear();
+        self.include_browse = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }

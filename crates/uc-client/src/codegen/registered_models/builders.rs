@@ -57,6 +57,13 @@ impl ListRegisteredModelsBuilder {
         self
     }
 
+    /// Also return the registered models that the caller sees through the `BROWSE` privilege only, with
+    /// their discovery fields and `browse_only` set.
+    pub fn with_include_browse(mut self, include_browse: impl Into<Option<bool>>) -> Self {
+        self.request.include_browse = include_browse.into();
+        self
+    }
+
     /// Convert paginated request into stream of results
     pub fn into_stream(self) -> BoxStr<'static, Result<RegisteredModelInfo>> {
         let remaining = self.request.max_results;
@@ -159,6 +166,13 @@ impl GetRegisteredModelBuilder {
             ..Default::default()
         };
         Self { client, request }
+    }
+
+    /// Also answer a caller who sees the registered model through the `BROWSE` privilege only, with its
+    /// discovery fields and `browse_only` set.
+    pub fn with_include_browse(mut self, include_browse: impl Into<Option<bool>>) -> Self {
+        self.request.include_browse = include_browse.into();
+        self
     }
 }
 

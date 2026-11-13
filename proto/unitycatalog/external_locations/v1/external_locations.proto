@@ -39,6 +39,8 @@ message ExternalLocationInfo {
   string id = 10;
   // Unique identifier of the credential that gives access to the path.
   string credential_id = 11;
+  // True when the external location has only the discovery fields that the `BROWSE` privilege allows.
+  optional bool browse_only = 12;
 }
 
 message CreateExternalLocation {
@@ -57,6 +59,9 @@ message ListExternalLocationsRequest {
   optional int32 max_results = 1;
   // Opaque token of the page to return: the `next_page_token` of the page before.
   optional string page_token = 2;
+  // Also return the external locations that the caller sees through the `BROWSE` privilege only, with
+  // their discovery fields and `browse_only` set.
+  optional bool include_browse = 3;
 }
 
 message ListExternalLocationsResponse {
@@ -69,6 +74,9 @@ message ListExternalLocationsResponse {
 message GetExternalLocationRequest {
   // Name of the external location.
   string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Also answer a caller who sees the external location through the `BROWSE` privilege only, with its
+  // discovery fields and `browse_only` set.
+  optional bool include_browse = 2;
 }
 
 message UpdateExternalLocation {

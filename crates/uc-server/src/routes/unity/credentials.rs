@@ -143,7 +143,7 @@ pub async fn update_credential(
         &principal,
         SecurableType::Credential,
         &name,
-        rules::admin_or_owner,
+        rules::admin_or_manage,
     )
     .await?;
     let info = state
@@ -178,7 +178,7 @@ pub async fn delete_credential(
         &principal,
         SecurableType::Credential,
         &name,
-        rules::admin_or_owner,
+        rules::admin_or_manage,
     )
     .await?;
     state

@@ -23,14 +23,20 @@ class CatalogClient:
         """
         Like `delete`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def get(self, /) -> CatalogInfo:
+    def get(self, /, *, include_browse: bool | None = None) -> CatalogInfo:
         """
         Get a catalog.
+
+        Args:
+            include_browse: Also answer a caller who sees the catalog through the `BROWSE` privilege only,
+                            with its discovery fields and `browse_only` set.
 
         Returns:
             A catalog: the first layer of the three-level namespace. It holds schemas.
         """
-    def get_async(self, /) -> Future[CatalogInfo]:
+    def get_async(
+        self, /, *, include_browse: bool | None = None
+    ) -> Future[CatalogInfo]:
         """
         Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -73,6 +79,11 @@ class CatalogInfo:
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
     def __repr__(self, /) -> str: ...
+    @property
+    def browse_only(self, /) -> bool | None:
+        """
+        True when the catalog has only the discovery fields that the `BROWSE` privilege allows.
+        """
     @property
     def comment(self, /) -> str | None:
         """

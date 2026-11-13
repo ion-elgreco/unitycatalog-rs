@@ -61,6 +61,7 @@ impl SchemaRow {
             schema_id: Some(self.id_string),
             storage_root: self.storage_root,
             storage_location: self.storage_location,
+            browse_only: None,
         }
     }
 }

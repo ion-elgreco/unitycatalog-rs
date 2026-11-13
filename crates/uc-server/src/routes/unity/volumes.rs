@@ -5,11 +5,13 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use uc_api::{
     CreateVolumeRequestContent, ListVolumesResponseContent, UpdateVolumeRequestContent, VolumeInfo,
 };
-use uc_common::{PageToken, SchemaScopedListParams as ListParams, SecurableType, schema_full_name};
+use uc_common::{
+    BrowseParams, PageToken, SchemaScopedListParams as ListParams, SecurableType, schema_full_name,
+};
 
 use crate::{
     authn::principal::Principal,
-    authz::{self, Access, rules},
+    authz::{self, Access, Read, rules},
     http::{EmptyObject, error::ApiResult},
     server::state::AppState,
 };
@@ -59,6 +61,7 @@ pub async fn list_volumes(
     State(state): State<AppState>,
     principal: Principal,
     Query(params): Query<ListParams>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<ListVolumesResponseContent>> {
     let (volumes, next) = state
         .metastore
@@ -74,6 +77,9 @@ pub async fn list_volumes(
         volumes,
         |v| (schema.clone(), v.volume_id.clone(), v.owner.clone()),
         rules::get_volume,
+        browse
+            .include_browse
+            .then_some(VolumeInfo::into_browse_only),
     )
     .await?;
     Ok(Json(ListVolumesResponseContent {
@@ -95,16 +101,23 @@ pub async fn get_volume(
     State(state): State<AppState>,
     principal: Principal,
     Path(name): Path<String>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<VolumeInfo>> {
-    authz::check(
+    let read = authz::check_read(
         &state,
         &principal,
         SecurableType::Volume,
         &name,
+        browse.include_browse,
         rules::get_volume,
+        rules::browse_catalog,
     )
     .await?;
-    Ok(Json(state.metastore.volumes().get(&name).await?))
+    let info = state.metastore.volumes().get(&name).await?;
+    Ok(Json(match read {
+        Read::Full => info,
+        Read::BrowseOnly => info.into_browse_only(),
+    }))
 }
 
 #[utoipa::path(
@@ -123,12 +136,16 @@ pub async fn update_volume(
     Path(name): Path<String>,
     Json(req): Json<UpdateVolumeRequestContent>,
 ) -> ApiResult<Json<VolumeInfo>> {
+    let rename = req.new_name.is_some();
     authz::check(
         &state,
         &principal,
         SecurableType::Volume,
         &name,
-        rules::own_child,
+        async |a, l| match rename {
+            true => rules::rename_volume(a, l).await,
+            false => rules::manage_child(a, l).await,
+        },
     )
     .await?;
     Ok(Json(
@@ -159,7 +176,7 @@ pub async fn delete_volume(
         &principal,
         SecurableType::Volume,
         &name,
-        rules::own_child,
+        rules::manage_child,
     )
     .await?;
     state.metastore.volumes().delete(&name).await?;

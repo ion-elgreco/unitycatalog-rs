@@ -105,6 +105,7 @@ impl TableRow {
             view_definition: self.view_definition,
             view_dependencies: self.view_dependencies,
             name: Some(self.name),
+            browse_only: None,
         })
     }
 }

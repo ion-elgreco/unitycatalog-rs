@@ -6,11 +6,11 @@ use uc_api::{
     CreateExternalLocation, ExternalLocationInfo, ListExternalLocationsResponse,
     UpdateExternalLocation,
 };
-use uc_common::{DeleteParams, PageToken, Pagination, SecurableType};
+use uc_common::{BrowseParams, DeleteParams, PageToken, Pagination, SecurableType};
 
 use crate::{
     authn::principal::Principal,
-    authz::{self, Access, Lineage, rules},
+    authz::{self, Access, Lineage, Read, rules},
     http::{EmptyObject, error::ApiResult},
     server::state::AppState,
 };
@@ -67,13 +67,18 @@ pub async fn list_external_locations(
     State(state): State<AppState>,
     principal: Principal,
     Query(page): Query<Pagination>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<ListExternalLocationsResponse>> {
     let (external_locations, next) = state.metastore.external_locations().list(&page).await?;
     let access = Access::load(&state, &principal).await?;
     let mut kept = Vec::with_capacity(external_locations.len());
     for location in external_locations {
-        if rules::get_external_location(&access, &lineage_of(&location)).await {
+        let lineage = lineage_of(&location);
+        if rules::get_external_location(&access, &lineage).await {
             kept.push(location);
+        } else if browse.include_browse && rules::browse_external_location(&access, &lineage).await
+        {
+            kept.push(location.into_browse_only());
         }
     }
     let external_locations = kept;
@@ -96,11 +101,22 @@ pub async fn get_external_location(
     State(state): State<AppState>,
     principal: Principal,
     Path(name): Path<String>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<ExternalLocationInfo>> {
     let info = state.metastore.external_locations().get(&name).await?;
     let access = Access::load(&state, &principal).await?;
-    access.check(rules::get_external_location(&access, &lineage_of(&info)).await)?;
-    Ok(Json(info))
+    let read = access
+        .read(
+            &lineage_of(&info),
+            browse.include_browse,
+            rules::get_external_location,
+            rules::browse_external_location,
+        )
+        .await?;
+    Ok(Json(match read {
+        Read::Full => info,
+        Read::BrowseOnly => info.into_browse_only(),
+    }))
 }
 
 #[utoipa::path(
@@ -164,7 +180,7 @@ pub async fn delete_external_location(
         &principal,
         SecurableType::ExternalLocation,
         &name,
-        rules::admin_or_owner,
+        rules::admin_or_manage,
     )
     .await?;
     state

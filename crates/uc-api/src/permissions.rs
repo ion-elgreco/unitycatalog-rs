@@ -46,6 +46,16 @@ pub enum Privilege {
     CreateManagedStorage,
     #[serde(rename = "CREATE STORAGE CREDENTIAL")]
     CreateStorageCredential,
+    #[serde(rename = "BROWSE")]
+    Browse,
+    #[serde(rename = "MANAGE")]
+    Manage,
+    #[serde(rename = "WRITE VOLUME")]
+    WriteVolume,
+    #[serde(rename = "CREATE MODEL VERSION")]
+    CreateModelVersion,
+    #[serde(rename = "READ METADATA")]
+    ReadMetadata,
 }
 
 impl Privilege {
@@ -71,6 +81,11 @@ impl Privilege {
         Privilege::CreateExternalVolume,
         Privilege::CreateManagedStorage,
         Privilege::CreateStorageCredential,
+        Privilege::Browse,
+        Privilege::Manage,
+        Privilege::WriteVolume,
+        Privilege::CreateModelVersion,
+        Privilege::ReadMetadata,
     ];
 }
 
@@ -129,6 +144,11 @@ mod tests {
             "CREATE EXTERNAL VOLUME",
             "CREATE MANAGED STORAGE",
             "CREATE STORAGE CREDENTIAL",
+            "BROWSE",
+            "MANAGE",
+            "WRITE VOLUME",
+            "CREATE MODEL VERSION",
+            "READ METADATA",
         ];
         assert_eq!(Privilege::ALL.len(), names.len());
         let cases: Vec<_> = Privilege::ALL.iter().copied().zip(names).collect();

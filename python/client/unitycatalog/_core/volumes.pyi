@@ -37,14 +37,18 @@ class VolumeClient:
         """
         Like `delete`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def get(self, /) -> VolumeInfo:
+    def get(self, /, *, include_browse: bool | None = None) -> VolumeInfo:
         """
         Get a volume.
+
+        Args:
+            include_browse: Also answer a caller who sees the volume through the `BROWSE` privilege only,
+                            with its discovery fields and `browse_only` set.
 
         Returns:
             A volume: files in the third layer of the three-level namespace, below a schema.
         """
-    def get_async(self, /) -> Future[VolumeInfo]:
+    def get_async(self, /, *, include_browse: bool | None = None) -> Future[VolumeInfo]:
         """
         Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -76,6 +80,11 @@ class VolumeInfo:
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
     def __repr__(self, /) -> str: ...
+    @property
+    def browse_only(self, /) -> bool | None:
+        """
+        True when the volume has only the discovery fields that the `BROWSE` privilege allows.
+        """
     @property
     def catalog_name(self, /) -> str:
         """

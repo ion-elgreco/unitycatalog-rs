@@ -49,6 +49,7 @@ impl From<CatalogRow> for CatalogInfo {
             id: Some(r.id_string),
             storage_root: r.storage_root,
             storage_location: r.storage_location,
+            browse_only: None,
         }
     }
 }

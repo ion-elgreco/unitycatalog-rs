@@ -578,16 +578,23 @@ impl PyClient {
     ///
     /// Args:
     ///     max_results: The maximum number of catalogs to return.
+    ///     include_browse: Also return the catalogs that the caller sees through the `BROWSE` privilege
+    ///                     only, with their discovery fields and `browse_only` set.
     ///
     /// Returns:
     ///     The catalogs.
-    #[pyo3(signature = (*, max_results = None))]
+    #[pyo3(signature = (*, max_results = None, include_browse = None))]
     pub fn list_catalogs(
         &self,
         py: Python,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyCatalogInfo>> {
-        let request = self.client.list_catalogs().with_max_results(max_results);
+        let request = self
+            .client
+            .list_catalogs()
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, async move {
             request
@@ -602,14 +609,19 @@ impl PyClient {
     }
 
     /// Like `list_catalogs`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (*, max_results = None))]
+    #[pyo3(signature = (*, max_results = None, include_browse = None))]
     pub fn list_catalogs_async<'py>(
         &self,
         py: Python<'py>,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyCatalogInfo>>>
     {
-        let request = self.client.list_catalogs().with_max_results(max_results);
+        let request = self
+            .client
+            .list_catalogs()
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -1600,19 +1612,23 @@ impl PyClient {
     ///
     /// Args:
     ///     max_results: The maximum number of external locations to return.
+    ///     include_browse: Also return the external locations that the caller sees through the `BROWSE`
+    ///                     privilege only, with their discovery fields and `browse_only` set.
     ///
     /// Returns:
     ///     The external locations.
-    #[pyo3(signature = (*, max_results = None))]
+    #[pyo3(signature = (*, max_results = None, include_browse = None))]
     pub fn list_external_locations(
         &self,
         py: Python,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyExternalLocationInfo>> {
         let request = self
             .client
             .list_external_locations()
-            .with_max_results(max_results);
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, async move {
             request
@@ -1627,18 +1643,20 @@ impl PyClient {
     }
 
     /// Like `list_external_locations`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (*, max_results = None))]
+    #[pyo3(signature = (*, max_results = None, include_browse = None))]
     pub fn list_external_locations_async<'py>(
         &self,
         py: Python<'py>,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyExternalLocationInfo>>,
     > {
         let request = self
             .client
             .list_external_locations()
-            .with_max_results(max_results);
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -2024,21 +2042,33 @@ impl PyClient {
     ///     catalog_name: Name of the parent catalog.
     ///     schema_name: Name of the parent schema.
     ///     max_results: The maximum number of functions to return.
+    ///     include_browse: Also return the functions that the caller sees through the `BROWSE` privilege
+    ///                     only, with their discovery fields and `browse_only` set.
     ///
     /// Returns:
     ///     The functions.
-    #[pyo3(signature = (catalog_name, schema_name, *, max_results = None))]
+    #[pyo3(
+        signature = (
+            catalog_name,
+            schema_name,
+            *,
+            max_results = None,
+            include_browse = None
+        )
+    )]
     pub fn list_functions(
         &self,
         py: Python,
         catalog_name: String,
         schema_name: String,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyFunctionInfo>> {
         let request = self
             .client
             .list_functions(catalog_name, schema_name)
-            .with_max_results(max_results);
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, async move {
             request
@@ -2053,19 +2083,29 @@ impl PyClient {
     }
 
     /// Like `list_functions`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (catalog_name, schema_name, *, max_results = None))]
+    #[pyo3(
+        signature = (
+            catalog_name,
+            schema_name,
+            *,
+            max_results = None,
+            include_browse = None
+        )
+    )]
     pub fn list_functions_async<'py>(
         &self,
         py: Python<'py>,
         catalog_name: String,
         schema_name: String,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyFunctionInfo>>>
     {
         let request = self
             .client
             .list_functions(catalog_name, schema_name)
-            .with_max_results(max_results);
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -3720,23 +3760,35 @@ impl PyClient {
     ///     catalog_name: Name of the catalog whose registered models to return.
     ///     schema_name: Name of the schema whose registered models to return.
     ///     max_results: The maximum number of registered models to return.
+    ///     include_browse: Also return the registered models that the caller sees through the `BROWSE`
+    ///                     privilege only, with their discovery fields and `browse_only` set.
     ///
     /// Returns:
     ///     The registered models.
-    #[pyo3(signature = (*, catalog_name = None, schema_name = None, max_results = None))]
+    #[pyo3(
+        signature = (
+            *,
+            catalog_name = None,
+            schema_name = None,
+            max_results = None,
+            include_browse = None
+        )
+    )]
     pub fn list_registered_models(
         &self,
         py: Python,
         catalog_name: Option<String>,
         schema_name: Option<String>,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyRegisteredModelInfo>> {
         let request = self
             .client
             .list_registered_models()
             .with_catalog_name(catalog_name)
             .with_schema_name(schema_name)
-            .with_max_results(max_results);
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, async move {
             request
@@ -3751,13 +3803,22 @@ impl PyClient {
     }
 
     /// Like `list_registered_models`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (*, catalog_name = None, schema_name = None, max_results = None))]
+    #[pyo3(
+        signature = (
+            *,
+            catalog_name = None,
+            schema_name = None,
+            max_results = None,
+            include_browse = None
+        )
+    )]
     pub fn list_registered_models_async<'py>(
         &self,
         py: Python<'py>,
         catalog_name: Option<String>,
         schema_name: Option<String>,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> ::pyo3::PyResult<
         crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyRegisteredModelInfo>>,
     > {
@@ -3766,7 +3827,8 @@ impl PyClient {
             .list_registered_models()
             .with_catalog_name(catalog_name)
             .with_schema_name(schema_name)
-            .with_max_results(max_results);
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -3843,20 +3905,24 @@ impl PyClient {
     /// Args:
     ///     catalog_name: Name of the parent catalog.
     ///     max_results: The maximum number of schemas to return.
+    ///     include_browse: Also return the schemas that the caller sees through the `BROWSE` privilege
+    ///                     only, with their discovery fields and `browse_only` set.
     ///
     /// Returns:
     ///     The schemas.
-    #[pyo3(signature = (catalog_name, *, max_results = None))]
+    #[pyo3(signature = (catalog_name, *, max_results = None, include_browse = None))]
     pub fn list_schemas(
         &self,
         py: Python,
         catalog_name: String,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PySchemaInfo>> {
         let request = self
             .client
             .list_schemas(catalog_name)
-            .with_max_results(max_results);
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, async move {
             request
@@ -3871,18 +3937,20 @@ impl PyClient {
     }
 
     /// Like `list_schemas`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (catalog_name, *, max_results = None))]
+    #[pyo3(signature = (catalog_name, *, max_results = None, include_browse = None))]
     pub fn list_schemas_async<'py>(
         &self,
         py: Python<'py>,
         catalog_name: String,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PySchemaInfo>>>
     {
         let request = self
             .client
             .list_schemas(catalog_name)
-            .with_max_results(max_results);
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -5585,21 +5653,33 @@ impl PyClient {
     ///     catalog_name: Name of the parent catalog.
     ///     schema_name: Name of the parent schema.
     ///     max_results: The maximum number of tables to return.
+    ///     include_browse: Also return the tables that the caller sees through the `BROWSE` privilege only,
+    ///                     with their discovery fields and `browse_only` set.
     ///
     /// Returns:
     ///     The tables.
-    #[pyo3(signature = (catalog_name, schema_name, *, max_results = None))]
+    #[pyo3(
+        signature = (
+            catalog_name,
+            schema_name,
+            *,
+            max_results = None,
+            include_browse = None
+        )
+    )]
     pub fn list_tables(
         &self,
         py: Python,
         catalog_name: String,
         schema_name: String,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyTableInfo>> {
         let request = self
             .client
             .list_tables(catalog_name, schema_name)
-            .with_max_results(max_results);
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, async move {
             request
@@ -5614,19 +5694,29 @@ impl PyClient {
     }
 
     /// Like `list_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (catalog_name, schema_name, *, max_results = None))]
+    #[pyo3(
+        signature = (
+            catalog_name,
+            schema_name,
+            *,
+            max_results = None,
+            include_browse = None
+        )
+    )]
     pub fn list_tables_async<'py>(
         &self,
         py: Python<'py>,
         catalog_name: String,
         schema_name: String,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyTableInfo>>>
     {
         let request = self
             .client
             .list_tables(catalog_name, schema_name)
-            .with_max_results(max_results);
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {
@@ -6073,21 +6163,33 @@ impl PyClient {
     ///     catalog_name: Name of the parent catalog.
     ///     schema_name: Name of the parent schema.
     ///     max_results: The maximum number of volumes to return.
+    ///     include_browse: Also return the volumes that the caller sees through the `BROWSE` privilege
+    ///                     only, with their discovery fields and `browse_only` set.
     ///
     /// Returns:
     ///     The volumes.
-    #[pyo3(signature = (catalog_name, schema_name, *, max_results = None))]
+    #[pyo3(
+        signature = (
+            catalog_name,
+            schema_name,
+            *,
+            max_results = None,
+            include_browse = None
+        )
+    )]
     pub fn list_volumes(
         &self,
         py: Python,
         catalog_name: String,
         schema_name: String,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> PyUnityCatalogResult<::std::vec::Vec<PyVolumeInfo>> {
         let request = self
             .client
             .list_volumes(catalog_name, schema_name)
-            .with_max_results(max_results);
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, async move {
             request
@@ -6102,19 +6204,29 @@ impl PyClient {
     }
 
     /// Like `list_volumes`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
-    #[pyo3(signature = (catalog_name, schema_name, *, max_results = None))]
+    #[pyo3(
+        signature = (
+            catalog_name,
+            schema_name,
+            *,
+            max_results = None,
+            include_browse = None
+        )
+    )]
     pub fn list_volumes_async<'py>(
         &self,
         py: Python<'py>,
         catalog_name: String,
         schema_name: String,
         max_results: Option<i32>,
+        include_browse: Option<bool>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, ::std::vec::Vec<PyVolumeInfo>>>
     {
         let request = self
             .client
             .list_volumes(catalog_name, schema_name)
-            .with_max_results(max_results);
+            .with_max_results(max_results)
+            .with_include_browse(include_browse);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = async move {

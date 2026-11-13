@@ -163,6 +163,8 @@ message TableInfo {
   optional string view_definition = 16;
   // The tables and functions that a view-like table reads.
   DependencyList view_dependencies = 17;
+  // True when the table has only the discovery fields that the `BROWSE` privilege allows.
+  optional bool browse_only = 18;
 }
 
 message CreateTable {
@@ -201,6 +203,9 @@ message ListTablesRequest {
   optional int32 max_results = 3;
   // Opaque token of the page to return: the `next_page_token` of the page before.
   optional string page_token = 4;
+  // Also return the tables that the caller sees through the `BROWSE` privilege only, with
+  // their discovery fields and `browse_only` set.
+  optional bool include_browse = 5;
 }
 
 message ListTablesResponse {
@@ -219,6 +224,9 @@ message GetTableRequest {
   // Show a materialized view as a MANAGED table, as upstream's server can. This server does not
   // read it.
   optional bool read_materialized_view_as_managed = 3;
+  // Also answer a caller who sees the table through the `BROWSE` privilege only, with its
+  // discovery fields and `browse_only` set.
+  optional bool include_browse = 4;
 }
 
 // A new comment for a column of a table.

@@ -17,21 +17,32 @@ pub struct PyVolumeClient {
 impl PyVolumeClient {
     /// Get a volume.
     ///
+    /// Args:
+    ///     include_browse: Also answer a caller who sees the volume through the `BROWSE` privilege only,
+    ///                     with its discovery fields and `browse_only` set.
+    ///
     /// Returns:
     ///     A volume: files in the third layer of the three-level namespace, below a schema.
-    pub fn get(&self, py: Python) -> PyUnityCatalogResult<PyVolumeInfo> {
-        let request = self.client.get();
+    #[pyo3(signature = (*, include_browse = None))]
+    pub fn get(
+        &self,
+        py: Python,
+        include_browse: Option<bool>,
+    ) -> PyUnityCatalogResult<PyVolumeInfo> {
+        let request = self.client.get().with_include_browse(include_browse);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
         Ok(PyVolumeInfo::from(result))
     }
 
     /// Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (*, include_browse = None))]
     pub fn get_async<'py>(
         &self,
         py: Python<'py>,
+        include_browse: Option<bool>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyVolumeInfo>> {
-        let request = self.client.get();
+        let request = self.client.get().with_include_browse(include_browse);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

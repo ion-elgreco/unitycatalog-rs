@@ -164,6 +164,25 @@ impl Access {
         self.admin
     }
 
+    /// What the caller reads of the object of `lineage`: all of it by
+    /// `rule`, else, with `include_browse`, its discovery fields by
+    /// `browse`; else "Access denied.".
+    pub async fn read(
+        &self,
+        lineage: &Lineage,
+        include_browse: bool,
+        rule: impl AsyncFnOnce(&Access, &Lineage) -> bool,
+        browse: impl AsyncFnOnce(&Access, &Lineage) -> bool,
+    ) -> Result<Read> {
+        if !self.enabled || rule(self, lineage).await {
+            return Ok(Read::Full);
+        }
+        match include_browse && browse(self, lineage).await {
+            true => Ok(Read::BrowseOnly),
+            false => Err(denied()),
+        }
+    }
+
     fn node<'a>(&'a self, lineage: &'a Lineage, level: Level) -> Option<&'a Node> {
         match level {
             Level::Metastore => Some(&self.metastore),
@@ -174,7 +193,7 @@ impl Access {
     }
 
     /// `#authorize(#principal, #<level>, OWNER)`.
-    pub fn owner(&self, lineage: &Lineage, level: Level) -> bool {
+    pub async fn owner(&self, lineage: &Lineage, level: Level) -> bool {
         if !self.enabled {
             return true;
         }
@@ -274,9 +293,11 @@ impl Access {
         level: Level,
         privileges: &[Privilege],
     ) -> bool {
-        if self.owner(lineage, level) {
-            return true;
-        }
+        self.owner(lineage, level).await || self.any(lineage, level, privileges).await
+    }
+
+    /// `#authorizeAny(#principal, #<level>, privileges…)`, without `OWNER`.
+    pub async fn any(&self, lineage: &Lineage, level: Level, privileges: &[Privilege]) -> bool {
         for privilege in privileges {
             if self.has(lineage, level, *privilege).await {
                 return true;
@@ -330,6 +351,37 @@ where
     let lineage = lineage?;
     let access = access?;
     access.check(rule(&access, &lineage).await)
+}
+
+/// What a caller reads of an object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Read {
+    /// All of it.
+    Full,
+    /// The discovery fields that `BROWSE` allows.
+    BrowseOnly,
+}
+
+/// Check a read of the securable `name` of `kind`: `rule` for all of it,
+/// else, when the caller asks with `include_browse`, `browse` for its
+/// discovery fields. A missing securable is a 404.
+pub async fn check_read(
+    state: &AppState,
+    principal: &Principal,
+    kind: SecurableType,
+    name: &str,
+    include_browse: bool,
+    rule: impl AsyncFnOnce(&Access, &Lineage) -> bool,
+    browse: impl AsyncFnOnce(&Access, &Lineage) -> bool,
+) -> Result<Read> {
+    if !state.authorization_enabled {
+        return Ok(Read::Full);
+    }
+    let (lineage, access) =
+        tokio::join!(lineage(state, kind, name), Access::load(state, principal));
+    let lineage = lineage?;
+    let access = access?;
+    access.read(&lineage, include_browse, rule, browse).await
 }
 
 /// Check `rule` on creating a table or volume in the schema `schema`;
@@ -395,7 +447,9 @@ where
 
 /// Keep the schema children the caller may read: `rule` on each item's
 /// lineage. `keys` gives an item's schema full name, id and owner. Schema
-/// lineages are looked up once each.
+/// lineages are looked up once each. With `browse_only`, the request has
+/// `include_browse`: an item of a catalog that the caller may browse
+/// stays as what `browse_only` makes of it.
 pub async fn filter_children<T>(
     state: &AppState,
     access: &Access,
@@ -403,6 +457,7 @@ pub async fn filter_children<T>(
     items: Vec<T>,
     keys: impl Fn(&T) -> (String, Option<String>, Option<String>),
     rule: impl AsyncFn(&Access, &Lineage) -> bool,
+    browse_only: Option<fn(T) -> T>,
 ) -> Result<Vec<T>> {
     if !access.enabled() {
         return Ok(items);
@@ -421,6 +476,10 @@ pub async fn filter_children<T>(
         };
         if rule(access, &lineage).await {
             kept.push(item);
+        } else if let Some(browse_only) = browse_only
+            && rules::browse_catalog(access, &lineage).await
+        {
+            kept.push(browse_only(item));
         }
     }
     Ok(kept)
@@ -519,14 +578,33 @@ pub async fn require_signed_in_admin(state: &AppState, principal: &Principal) ->
 
 /// Upstream's expressions, one per kind of request. `l` is the lineage of
 /// the object the request names; for creates, of its parent.
+///
+/// `MANAGE` stands in for `OWNER` in reads, changes, deletes and grant
+/// changes, but not in data access. `READ METADATA` reads metadata and
+/// grants, and no data. `BROWSE` shows the discovery fields of an object
+/// to a caller who asks with `include_browse`.
 pub mod rules {
     use super::{Access, Level::*, Lineage, PathOwner};
-    use uc_api::Privilege::*;
+    use uc_api::Privilege::{self, *};
     use uc_common::SecurableType;
+
+    /// The metastore tier of the read rules: the admin, or `READ METADATA`
+    /// on the metastore.
+    async fn reads_metastore(a: &Access) -> bool {
+        a.admin() || a.has(&Lineage::default(), Metastore, ReadMetadata).await
+    }
 
     /// `GET_CATALOG`: catalog reads and the Delta/Iceberg config.
     pub async fn get_catalog(a: &Access, l: &Lineage) -> bool {
-        a.admin() || a.owner_or_any(l, Catalog, &[UseCatalog]).await
+        reads_metastore(a).await
+            || a.owner_or_any(l, Catalog, &[Manage, UseCatalog, ReadMetadata])
+                .await
+    }
+
+    /// `BROWSE_CATALOG`: the discovery fields of a catalog and of what it
+    /// holds.
+    pub async fn browse_catalog(a: &Access, l: &Lineage) -> bool {
+        a.has(l, Catalog, Browse).await
     }
 
     /// `createCatalog`, given whether a storage root is set and, then,
@@ -537,14 +615,19 @@ pub mod rules {
             && storage_root_allowed.unwrap_or(true)
     }
 
-    /// `updateCatalog`.
-    pub async fn update_catalog(a: &Access, l: &Lineage) -> bool {
-        a.owner(l, Catalog)
+    /// `updateCatalog`: a rename through `MANAGE` also takes what creating
+    /// a catalog takes.
+    pub async fn update_catalog(a: &Access, l: &Lineage, rename: bool) -> bool {
+        a.owner_or_any(l, Catalog, &[Manage]).await
+            && (!rename
+                || a.owner(l, Catalog).await
+                || a.admin()
+                || a.has(&Lineage::default(), Metastore, CreateCatalog).await)
     }
 
     /// `deleteCatalog`.
     pub async fn delete_catalog(a: &Access, l: &Lineage) -> bool {
-        a.admin() || a.owner(l, Catalog)
+        a.admin() || a.owner_or_any(l, Catalog, &[Manage]).await
     }
 
     /// A storage root under an external location that the caller owns or
@@ -560,31 +643,41 @@ pub mod rules {
 
     /// `GET_SCHEMA`: schema reads and the schema/namespace list filter.
     pub async fn get_schema(a: &Access, l: &Lineage) -> bool {
-        a.admin()
-            || a.owner(l, Catalog)
+        reads_metastore(a).await
+            || a.owner_or_any(l, Catalog, &[Manage, ReadMetadata]).await
             || (a.has(l, Catalog, UseCatalog).await
-                && a.owner_or_any(l, Schema, &[UseSchema]).await)
+                && a.owner_or_any(l, Schema, &[Manage, UseSchema, ReadMetadata])
+                    .await)
     }
 
     /// `CREATE_SCHEMA` (catalog tier).
     pub async fn create_schema(a: &Access, l: &Lineage) -> bool {
-        a.owner(l, Catalog) || a.all(l, Catalog, &[UseCatalog, CreateSchema]).await
+        a.owner(l, Catalog).await || a.all(l, Catalog, &[UseCatalog, CreateSchema]).await
     }
 
-    /// `UPDATE_SCHEMA` and `DELETE_SCHEMA`.
+    /// `UPDATE_SCHEMA` and `DELETE_SCHEMA`; schema grant changes too.
     pub async fn update_schema(a: &Access, l: &Lineage) -> bool {
-        a.owner(l, Catalog) || (a.has(l, Catalog, UseCatalog).await && a.owner(l, Schema))
+        a.owner_or_any(l, Catalog, &[Manage]).await
+            || (a.has(l, Catalog, UseCatalog).await && a.owner_or_any(l, Schema, &[Manage]).await)
+    }
+
+    /// `updateSchema` with a new name: its owner with `USE CATALOG`, else
+    /// what creating a schema takes.
+    pub async fn rename_schema(a: &Access, l: &Lineage) -> bool {
+        update_schema(a, l).await
+            && ((a.has(l, Catalog, UseCatalog).await && a.owner(l, Schema).await)
+                || create_schema(a, l).await)
     }
 
     /// The catalog and schema tiers of creating a child: catalog `OWNER` or
     /// `USE_CATALOG`, and schema `OWNER` or `USE_SCHEMA` + one of `create`.
-    pub async fn create_in_schema(a: &Access, l: &Lineage, create: &[uc_api::Privilege]) -> bool {
+    pub async fn create_in_schema(a: &Access, l: &Lineage, create: &[Privilege]) -> bool {
         a.owner_or_any(l, Catalog, &[UseCatalog]).await
-            && (a.owner(l, Schema) || any_create(a, l, create).await)
+            && (a.owner(l, Schema).await || any_create(a, l, create).await)
     }
 
     /// `USE_SCHEMA` and one of `create` on the schema.
-    async fn any_create(a: &Access, l: &Lineage, create: &[uc_api::Privilege]) -> bool {
+    async fn any_create(a: &Access, l: &Lineage, create: &[Privilege]) -> bool {
         for c in create {
             if a.all(l, Schema, &[UseSchema, *c]).await {
                 return true;
@@ -597,35 +690,52 @@ pub mod rules {
     /// external location covers the path, with no data securable at it, and
     /// the caller has `OWNER` or `create` on it. Unlike upstream, a path
     /// that no external location covers is refused, also for admins.
-    pub async fn external_path(a: &Access, owner: &PathOwner, create: uc_api::Privilege) -> bool {
+    pub async fn external_path(a: &Access, owner: &PathOwner, create: Privilege) -> bool {
         match owner {
             PathOwner::ExternalLocation(el) => a.owner_or_any(el, Object, &[create]).await,
             PathOwner::Data(..) | PathOwner::Unowned => false,
         }
     }
 
-    /// Reads of a schema child: admin, catalog owner, schema owner with
-    /// `USE_CATALOG`, or `USE_CATALOG` + `USE_SCHEMA` + one of `read` (or
-    /// `OWNER`) on the child (`GET_TABLE` and the volume, function and model
-    /// read rules).
-    pub async fn read_child(a: &Access, l: &Lineage, read: &[uc_api::Privilege]) -> bool {
-        if a.admin() || a.owner(l, Catalog) {
+    /// Reads of a schema child (`GET_TABLE`, `GET_FUNCTION` and the volume
+    /// and model read rules). `READ METADATA` on the metastore or catalog
+    /// needs no usage grants; on the schema, `USE CATALOG`; on the child,
+    /// both, as do `OWNER`, `MANAGE` and `read` on the child.
+    pub async fn read_child(a: &Access, l: &Lineage, read: &[Privilege]) -> bool {
+        if reads_metastore(a).await || a.owner_or_any(l, Catalog, &[Manage, ReadMetadata]).await {
             return true;
         }
-        a.has(l, Catalog, UseCatalog).await
-            && (a.owner(l, Schema)
-                || (a.has(l, Schema, UseSchema).await && a.owner_or_any(l, Object, read).await))
+        if !a.has(l, Catalog, UseCatalog).await {
+            return false;
+        }
+        if a.owner_or_any(l, Schema, &[Manage, ReadMetadata]).await {
+            return true;
+        }
+        let mut on_child = vec![Manage, ReadMetadata];
+        on_child.extend_from_slice(read);
+        a.has(l, Schema, UseSchema).await && a.owner_or_any(l, Object, &on_child).await
     }
 
-    /// Changes and deletes of a schema child (`DELETE_TABLE` and the volume,
-    /// function and model rules): catalog owner, schema owner with
-    /// `USE_CATALOG`, or `USE_CATALOG` + `USE_SCHEMA` + child owner.
-    pub async fn own_child(a: &Access, l: &Lineage) -> bool {
-        if a.owner(l, Catalog) {
+    /// Changes, deletes and grant changes of a schema child
+    /// (`DELETE_TABLE`, `UPDATE_FUNCTION`, `UPDATE_VOLUME` and
+    /// `UPDATE_REGISTERED_MODEL`): `OWNER` or `MANAGE` on the catalog, the
+    /// schema or the child, with the usage grants above it. The admin
+    /// alone is not enough.
+    pub async fn manage_child(a: &Access, l: &Lineage) -> bool {
+        if a.owner_or_any(l, Catalog, &[Manage]).await {
             return true;
         }
         a.has(l, Catalog, UseCatalog).await
-            && (a.owner(l, Schema) || (a.owner(l, Object) && a.has(l, Schema, UseSchema).await))
+            && (a.owner_or_any(l, Schema, &[Manage]).await
+                || (a.has(l, Schema, UseSchema).await
+                    && a.owner_or_any(l, Object, &[Manage]).await))
+    }
+
+    /// A new name for a schema child (`RENAME_TABLE` and the volume and
+    /// model renames): [`manage_child`], and what creating one in its
+    /// schema takes.
+    pub async fn rename_child(a: &Access, l: &Lineage, create: &[Privilege]) -> bool {
+        manage_child(a, l).await && create_in_schema(a, l, create).await
     }
 
     /// The catalog and schema tiers of using a child: `OWNER` or `USE_*` on
@@ -635,9 +745,9 @@ pub mod rules {
             && a.owner_or_any(l, Schema, &[UseSchema]).await
     }
 
-    /// `GET_TABLE`.
+    /// `GET_TABLE`. `MODIFY` alone does not read a table's metadata.
     pub async fn get_table(a: &Access, l: &Lineage) -> bool {
-        read_child(a, l, &[Select, Modify]).await
+        read_child(a, l, &[Select]).await
     }
 
     /// `CREATE_TABLE` on the schema `l`; for an EXTERNAL table, what holds
@@ -670,7 +780,12 @@ pub mod rules {
             }
     }
 
-    /// Function reads.
+    /// `updateVolume` with a new name.
+    pub async fn rename_volume(a: &Access, l: &Lineage) -> bool {
+        rename_child(a, l, &[CreateVolume]).await
+    }
+
+    /// `GET_FUNCTION`.
     pub async fn get_function(a: &Access, l: &Lineage) -> bool {
         read_child(a, l, &[Execute]).await
     }
@@ -691,22 +806,36 @@ pub mod rules {
         create_in_schema(a, l, &[CreateModel, CreateFunction]).await
     }
 
+    /// `updateRegisteredModel` with a new name.
+    pub async fn rename_model(a: &Access, l: &Lineage) -> bool {
+        rename_child(a, l, &[CreateModel, CreateFunction]).await
+    }
+
+    /// `CREATE_MODEL_VERSION`: creating and finalizing a version of the
+    /// model `l`. Its owner, or `CREATE MODEL VERSION`.
+    pub async fn create_model_version(a: &Access, l: &Lineage) -> bool {
+        use_parents(a, l).await && a.owner_or_any(l, Object, &[CreateModelVersion]).await
+    }
+
     /// `UPDATE_TABLE`: commits and Delta updates.
     pub async fn update_table(a: &Access, l: &Lineage) -> bool {
-        use_parents(a, l).await && (a.owner(l, Object) || a.all(l, Object, &[Select, Modify]).await)
+        use_parents(a, l).await
+            && (a.owner(l, Object).await || a.all(l, Object, &[Select, Modify]).await)
     }
 
     /// `RENAME_TABLE`.
     pub async fn rename_table(a: &Access, l: &Lineage) -> bool {
-        own_child(a, l).await && create_in_schema(a, l, &[CreateTable]).await
+        rename_child(a, l, &[CreateTable]).await
     }
 
-    /// `VEND_TABLE_CREDENTIAL`: `write` for `READ_WRITE`.
+    /// `VEND_TABLE_CREDENTIAL`: `write` for `READ_WRITE`. Iceberg
+    /// credentials take the read rule. `MANAGE`, `READ METADATA` and the
+    /// ownership of a parent give no credentials.
     pub async fn vend_table(a: &Access, l: &Lineage, write: bool) -> bool {
         use_parents(a, l).await
             && match write {
                 false => a.owner_or_any(l, Object, &[Select]).await,
-                true => a.owner(l, Object) || a.all(l, Object, &[Select, Modify]).await,
+                true => a.owner(l, Object).await || a.all(l, Object, &[Select, Modify]).await,
             }
     }
 
@@ -715,32 +844,39 @@ pub mod rules {
         use_parents(a, l).await && a.owner_or_any(l, Object, &[Select]).await
     }
 
-    /// Volume credentials: `READ_VOLUME`, else owner.
+    /// `VEND_VOLUME_CREDENTIAL`: `READ VOLUME` to read, and `WRITE VOLUME`
+    /// with it to write; else the owner.
     pub async fn vend_volume(a: &Access, l: &Lineage, write: bool) -> bool {
         use_parents(a, l).await
             && match write {
                 false => a.owner_or_any(l, Object, &[ReadVolume]).await,
-                true => a.owner(l, Object),
+                true => {
+                    a.owner(l, Object).await || a.all(l, Object, &[ReadVolume, WriteVolume]).await
+                }
             }
     }
 
-    /// Model version credentials: `EXECUTE`, else owner.
+    /// Model version credentials: `EXECUTE` to read, `CREATE MODEL
+    /// VERSION` to write; else the owner.
     pub async fn vend_model(a: &Access, l: &Lineage, write: bool) -> bool {
         use_parents(a, l).await
             && match write {
                 false => a.owner_or_any(l, Object, &[Execute]).await,
-                true => a.owner(l, Object),
+                true => a.owner_or_any(l, Object, &[CreateModelVersion]).await,
             }
     }
 
     /// Credential reads.
     pub async fn get_credential(a: &Access, l: &Lineage) -> bool {
-        a.admin() || a.owner_or_any(l, Object, &[CreateExternalLocation]).await
+        reads_metastore(a).await
+            || a.owner_or_any(l, Object, &[Manage, ReadMetadata, CreateExternalLocation])
+                .await
     }
 
-    /// Credential changes and deletes; external location deletes.
-    pub async fn admin_or_owner(a: &Access, l: &Lineage) -> bool {
-        a.admin() || a.owner(l, Object)
+    /// Changes and deletes of a credential or an external location: the
+    /// admin, its owner or `MANAGE`.
+    pub async fn admin_or_manage(a: &Access, l: &Lineage) -> bool {
+        a.admin() || a.owner_or_any(l, Object, &[Manage]).await
     }
 
     /// `createCredential`.
@@ -752,11 +888,13 @@ pub mod rules {
 
     /// External location reads.
     pub async fn get_external_location(a: &Access, l: &Lineage) -> bool {
-        a.admin()
+        reads_metastore(a).await
             || a.owner_or_any(
                 l,
                 Object,
                 &[
+                    Manage,
+                    ReadMetadata,
                     ReadFiles,
                     WriteFiles,
                     CreateExternalTable,
@@ -765,6 +903,11 @@ pub mod rules {
                 ],
             )
             .await
+    }
+
+    /// The discovery fields of an external location.
+    pub async fn browse_external_location(a: &Access, l: &Lineage) -> bool {
+        a.has(l, Object, Browse).await
     }
 
     /// `createExternalLocation`, `credential` being the credential's lineage.
@@ -785,18 +928,49 @@ pub mod rules {
         credential: Option<&Lineage>,
     ) -> bool {
         a.admin()
-            || (a.owner(l, Object)
+            || (a.owner_or_any(l, Object, &[Manage]).await
                 && match credential {
                     Some(c) => a.owner_or_any(c, Object, &[CreateExternalLocation]).await,
                     None => true,
                 })
     }
 
-    /// Who sees every grant on a securable, after upstream
-    /// `getAuthorization`: the admin, or the owner of it, of its parent or
-    /// of its grandparent. Others see their own grants only.
-    pub async fn see_permissions(a: &Access, l: &Lineage) -> bool {
-        a.admin() || a.owner(l, Object) || a.owner(l, Schema) || a.owner(l, Catalog)
+    /// Who sees every grant on a securable of `kind`, after upstream
+    /// `getAuthorization`: the admin; the owner of it, of its parent or of
+    /// its grandparent; and who has `MANAGE` or `READ METADATA` on it or
+    /// above it, with the usage grants above that. Others see their own
+    /// grants only.
+    pub async fn see_permissions(a: &Access, kind: SecurableType, l: &Lineage) -> bool {
+        if a.admin()
+            || a.owner(l, Object).await
+            || a.owner(l, Schema).await
+            || a.owner(l, Catalog).await
+            || a.has(&Lineage::default(), Metastore, ReadMetadata).await
+        {
+            return true;
+        }
+        let reads = [Manage, ReadMetadata];
+        match kind {
+            SecurableType::Metastore => false,
+            SecurableType::Catalog => a.any(l, Catalog, &reads).await,
+            SecurableType::ExternalLocation | SecurableType::Credential => {
+                a.any(l, Object, &reads).await
+            }
+            SecurableType::Schema => {
+                a.any(l, Catalog, &reads).await
+                    || (a.has(l, Catalog, UseCatalog).await && a.any(l, Schema, &reads).await)
+            }
+            SecurableType::Table
+            | SecurableType::Volume
+            | SecurableType::Function
+            | SecurableType::RegisteredModel => {
+                a.any(l, Catalog, &reads).await
+                    || (a.has(l, Catalog, UseCatalog).await
+                        && (a.any(l, Schema, &reads).await
+                            || (a.has(l, Schema, UseSchema).await
+                                && a.any(l, Object, &reads).await)))
+            }
+        }
     }
 
     /// `update<Securable>Authorization`.
@@ -804,13 +978,57 @@ pub mod rules {
         a.admin()
             || match kind {
                 SecurableType::Metastore => false,
-                SecurableType::Catalog => a.owner(l, Catalog),
+                SecurableType::Catalog => a.owner_or_any(l, Catalog, &[Manage]).await,
                 SecurableType::Schema => update_schema(a, l).await,
-                SecurableType::ExternalLocation | SecurableType::Credential => a.owner(l, Object),
+                SecurableType::ExternalLocation | SecurableType::Credential => {
+                    a.owner_or_any(l, Object, &[Manage]).await
+                }
                 SecurableType::Table
                 | SecurableType::Volume
                 | SecurableType::Function
-                | SecurableType::RegisteredModel => own_child(a, l).await,
+                | SecurableType::RegisteredModel => manage_child(a, l).await,
             }
+    }
+
+    /// The securable types that take a grant of `privilege`, after upstream
+    /// `validateAddedPrivileges`.
+    pub fn grant_targets(privilege: Privilege) -> &'static [SecurableType] {
+        use SecurableType as T;
+        match privilege {
+            Browse => &[T::Catalog, T::ExternalLocation],
+            Manage => &[
+                T::Catalog,
+                T::Schema,
+                T::Table,
+                T::Volume,
+                T::Function,
+                T::RegisteredModel,
+                T::ExternalLocation,
+                T::Credential,
+            ],
+            CreateCatalog | CreateStorageCredential => &[T::Metastore],
+            UseCatalog | CreateSchema => &[T::Catalog],
+            UseSchema | CreateTable | CreateFunction | CreateVolume | CreateModel => {
+                &[T::Catalog, T::Schema]
+            }
+            Select | Modify => &[T::Catalog, T::Schema, T::Table],
+            Execute => &[T::Catalog, T::Schema, T::Function, T::RegisteredModel],
+            CreateModelVersion => &[T::Catalog, T::Schema, T::RegisteredModel],
+            ReadVolume | WriteVolume => &[T::Catalog, T::Schema, T::Volume],
+            CreateExternalLocation => &[T::Metastore, T::Credential],
+            ReadFiles | WriteFiles | CreateExternalTable => &[T::ExternalLocation, T::Credential],
+            CreateExternalVolume | CreateManagedStorage => &[T::ExternalLocation],
+            ReadMetadata => &[
+                T::Metastore,
+                T::Catalog,
+                T::Schema,
+                T::Table,
+                T::Function,
+                T::Volume,
+                T::RegisteredModel,
+                T::ExternalLocation,
+                T::Credential,
+            ],
+        }
     }
 }
