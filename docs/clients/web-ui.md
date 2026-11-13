@@ -19,15 +19,18 @@ When the server needs a sign-in, the UI shows its login page first: see
 
 ## Use it
 
-- **Catalogs**, on the left, is the tree of catalogs, schemas, and the tables, volumes, functions
-  and models of each schema. Click a name to open its page.
+- **Catalogs**, on the left, is the tree of catalogs, schemas, and the tables, metric views,
+  volumes, functions and models of each schema. Click a name to open its page.
 - Each page has three tabs: **Overview** (the description and what the object holds),
   **Details** (its fields, properties and JSON) and **Permissions**. Volumes and tables also have
   **Files**.
 - **Create**: **Create catalog** on the list of catalogs, **Create schema** on a catalog, and
-  **New** on a schema, for a table, volume, SQL function or registered model. A new table is
-  managed, or external at a storage location, with any number of columns. The Iceberg REST
-  catalog creates an Iceberg table, with its first metadata file.
+  **New** on a schema, for a table, metric view, volume, SQL function or registered model. A new
+  table is managed, or external at a storage location, with any number of columns. The Iceberg
+  REST catalog creates an Iceberg table, with its first metadata file.
+- **Metric view**: give its YAML definition, the full name of the table it reads, and one column
+  for each dimension and measure of the YAML, with the same name. Its page shows the columns and
+  the definition.
 - **Edit**: the button at the top of a page, or **Edit** on the description. The pencil in a
   column's row edits the column's comment.
 - **Delete**: the button at the top of a page; type the name to confirm. The server deletes only

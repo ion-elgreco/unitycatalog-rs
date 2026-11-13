@@ -1,6 +1,6 @@
 //! The sidebar tree, as the console's `CatalogTree`: catalogs, their
-//! schemas, and under each schema its tables, volumes, functions and
-//! models, in groups with their counts. A node loads its children when it
+//! schemas, and under each schema its tables, metric views, volumes,
+//! functions and models, in groups with their counts. A node loads its children when it
 //! first opens; they load again when a create or delete changes them. The
 //! page shown is selected, and its nodes open. The arrow keys move between
 //! the labels, and open and close the nodes.
@@ -158,8 +158,8 @@ fn Branch(
     }
 }
 
-/// "Tables (5)", "Volumes", "Functions" or "Models" under a schema. Tables
-/// open at once, as in the console; the count shows once the list has
+/// "Tables (5)", "Metric views", "Volumes", "Functions" or "Models" under a
+/// schema. Tables open at once, as in the console; the count shows once the list has
 /// loaded.
 #[component]
 fn GroupNode(kind: Kind, catalog: String, schema: String, route: Memo<Route>) -> impl IntoView {

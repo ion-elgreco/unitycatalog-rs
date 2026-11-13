@@ -1,7 +1,10 @@
 //! A table's page, as the console's `TableDetails`: its description and
 //! columns, its files, its details, its credentials and grants; "Delete".
+//! A metric view, which the API keeps as a table, has its own page.
 
 use leptos::prelude::*;
+use leptos_router::NavigateOptions;
+use leptos_router::hooks::use_navigate;
 use uc_client::models::tables::v1::TableInfo;
 use uc_common::{SecurableType, three_part_full_name};
 
@@ -14,6 +17,7 @@ use crate::components::{
 };
 use crate::kind::Kind;
 use crate::load::{Key, field, use_cache, use_load};
+use crate::metric_view::is_metric_view;
 use crate::util::{enum_name, format_timestamp, or_dash, pretty_json, route_params};
 
 #[component]
@@ -50,6 +54,19 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
     });
     let table_id = field(info, |t: &TableInfo| {
         Some(t.table_id.clone()).filter(|id| !id.is_empty())
+    });
+
+    // The search and old links name a metric view as a table.
+    let view_page = Kind::MetricViews.href(&catalog, &schema, &table);
+    let navigate = use_navigate();
+    Effect::new(move |_| {
+        if info.with(|i| i.ready().is_some_and(is_metric_view)) {
+            let in_place = NavigateOptions {
+                replace: true,
+                ..Default::default()
+            };
+            navigate(&view_page, in_place);
+        }
     });
 
     let save_comment = move |comment: String| {

@@ -1,6 +1,6 @@
-//! What a schema holds: tables, volumes, functions and registered models.
-//! They are the groups under a schema in the tree and the picker on the
-//! schema page.
+//! What a schema holds: tables, metric views, volumes, functions and
+//! registered models. They are the groups under a schema in the tree and
+//! the picker on the schema page.
 
 use leptos::prelude::*;
 use uc_client::models::functions::v1::FunctionInfo;
@@ -8,12 +8,16 @@ use uc_common::EpochMillis;
 
 use crate::api;
 use crate::components::Label;
-use crate::components::icons::{Box, Database, FunctionSquare, HardDrive, Notebook, Table};
+use crate::components::icons::{
+    Box, ChartNoAxesCombined, Database, FunctionSquare, HardDrive, Notebook, Table,
+};
+use crate::metric_view::is_metric_view;
 use crate::util::{enum_name, or_dash, schema_href};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
     Tables,
+    MetricViews,
     Volumes,
     Functions,
     Models,
@@ -32,12 +36,19 @@ pub struct Entry {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 4] = [Kind::Tables, Kind::Volumes, Kind::Functions, Kind::Models];
+    pub const ALL: [Kind; 5] = [
+        Kind::Tables,
+        Kind::MetricViews,
+        Kind::Volumes,
+        Kind::Functions,
+        Kind::Models,
+    ];
 
     /// Its value of `?tab=` on the schema page.
     pub fn tab(self) -> &'static str {
         match self {
             Kind::Tables => "tables",
+            Kind::MetricViews => "views",
             Kind::Volumes => "volumes",
             Kind::Functions => "functions",
             Kind::Models => "models",
@@ -51,17 +62,18 @@ impl Kind {
     pub fn label(self) -> &'static str {
         match self {
             Kind::Tables => "Tables",
+            Kind::MetricViews => "Metric views",
             Kind::Volumes => "Volumes",
             Kind::Functions => "Functions",
             Kind::Models => "Models",
         }
     }
 
-    /// One object, such as "table"; also the part of an object's URL that
-    /// names its kind.
-    pub fn noun(self) -> &'static str {
+    /// The part of an object's URL that names its kind.
+    pub fn segment(self) -> &'static str {
         match self {
             Kind::Tables => "table",
+            Kind::MetricViews => "view",
             Kind::Volumes => "volume",
             Kind::Functions => "function",
             Kind::Models => "model",
@@ -70,13 +82,22 @@ impl Kind {
 
     /// The kind that the part `segment` of an object's URL names.
     pub fn from_segment(segment: &str) -> Option<Kind> {
-        Kind::ALL.into_iter().find(|kind| kind.noun() == segment)
+        Kind::ALL.into_iter().find(|kind| kind.segment() == segment)
+    }
+
+    /// One object, such as "table".
+    pub fn noun(self) -> &'static str {
+        match self {
+            Kind::MetricViews => "metric view",
+            other => other.segment(),
+        }
     }
 
     /// Its name in the "New" dialog's picker.
     pub fn new_label(self) -> &'static str {
         match self {
             Kind::Tables => "Table",
+            Kind::MetricViews => "Metric view",
             Kind::Volumes => "Volume",
             Kind::Functions => "Function",
             Kind::Models => "Registered model",
@@ -88,6 +109,7 @@ impl Kind {
     pub fn columns(self) -> &'static [&'static str] {
         match self {
             Kind::Tables => &["Type", "Format"],
+            Kind::MetricViews => &[],
             Kind::Volumes => &["Type"],
             Kind::Functions => &["Language", "Returns"],
             Kind::Models => &[],
@@ -100,6 +122,9 @@ impl Kind {
         match self {
             Kind::Tables => {
                 "A table is data in Delta, Parquet or another format, with its columns. Click New to register one: managed under the storage root, or external at a location of yours."
+            }
+            Kind::MetricViews => {
+                "A metric view names the dimensions and measures of a table, in YAML, for engines to query. Click New to register one."
             }
             Kind::Volumes => {
                 "A volume is a folder of files that are not a table, such as images or exports. Click New to register one."
@@ -117,6 +142,7 @@ impl Kind {
     fn color(self) -> &'static str {
         match self {
             Kind::Tables => "uc-icon--table",
+            Kind::MetricViews => "uc-icon--view",
             Kind::Volumes => "uc-icon--volume",
             Kind::Functions => "uc-icon--function",
             Kind::Models => "uc-icon--model",
@@ -127,6 +153,7 @@ impl Kind {
         let class = self.color();
         match self {
             Kind::Tables => view! { <Table class/> }.into_any(),
+            Kind::MetricViews => view! { <ChartNoAxesCombined class/> }.into_any(),
             Kind::Volumes => view! { <HardDrive class/> }.into_any(),
             Kind::Functions => view! { <FunctionSquare class/> }.into_any(),
             Kind::Models => view! { <Box class/> }.into_any(),
@@ -140,15 +167,17 @@ impl Kind {
 
     /// The page of the object `name` in `catalog.schema`.
     pub fn href(self, catalog: &str, schema: &str, name: &str) -> String {
-        format!("{}/{}/{name}", schema_href(catalog, schema), self.noun())
+        format!("{}/{}/{name}", schema_href(catalog, schema), self.segment())
     }
 
     /// The objects of this kind in `catalog.schema`.
     pub async fn entries(self, catalog: &str, schema: &str) -> api::Result<Vec<Entry>> {
         let entries = match self {
+            // The API lists the metric views with the tables.
             Kind::Tables => api::tables(catalog, schema)
                 .await?
                 .into_iter()
+                .filter(|t| !is_metric_view(t))
                 .map(|t| {
                     let cells = vec![
                         or_dash(enum_name(t.table_type)).into(),
@@ -156,6 +185,12 @@ impl Kind {
                     ];
                     entry(t.name, t.comment, t.owner, t.created_at, cells)
                 })
+                .collect(),
+            Kind::MetricViews => api::tables(catalog, schema)
+                .await?
+                .into_iter()
+                .filter(is_metric_view)
+                .map(|t| entry(t.name, t.comment, t.owner, t.created_at, Vec::new()))
                 .collect(),
             Kind::Volumes => api::volumes(catalog, schema)
                 .await?

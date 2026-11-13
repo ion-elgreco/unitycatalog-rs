@@ -15,6 +15,7 @@ pub mod contents;
 pub mod kind;
 pub mod layout;
 pub mod load;
+pub mod metric_view;
 pub mod pages;
 pub mod preview;
 pub mod search;
