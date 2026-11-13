@@ -217,7 +217,9 @@ mod tests {
         let route = Route::parse("/catalog/unity/default/model/iris/version/2");
         assert_eq!(route.object, Some((Kind::Models, "iris".into())));
         assert_eq!(route.version.as_deref(), Some("2"));
-        let route = Route::parse("/catalog/unity/default/view/x");
+        let route = Route::parse("/catalog/unity/default/view/sales");
+        assert_eq!(route.object, Some((Kind::MetricViews, "sales".into())));
+        let route = Route::parse("/catalog/unity/default/other/x");
         assert_eq!(route.object, None);
         let route = Route::parse("/catalog/caf%C3%A9%20bar/a%2Fb");
         assert_eq!(route.catalog.as_deref(), Some("café bar"));

@@ -118,6 +118,7 @@ impl Key {
             Key::Schemas(_) => "Failed to list schemas",
             Key::Schema(_) => "Failed to fetch schema",
             Key::Entries(_, _, Kind::Tables) => "Failed to list tables",
+            Key::Entries(_, _, Kind::MetricViews) => "Failed to list metric views",
             Key::Entries(_, _, Kind::Volumes) => "Failed to list volumes",
             Key::Entries(_, _, Kind::Functions) => "Failed to list functions",
             Key::Entries(_, _, Kind::Models) => "Failed to list models",

@@ -13,8 +13,8 @@ use crate::load::provide_cache;
 use crate::pages::{
     AccessTokens, AuditLog, CatalogDetails, CatalogsList, CredentialDetails, Credentials,
     ExternalLocationDetails, ExternalLocations, FunctionDetails, GroupDetails, Groups, Login,
-    ModelDetails, ModelVersionDetails, SchemaDetails, SearchResults, TableDetails, Users,
-    VolumeDetails,
+    MetricViewDetails, ModelDetails, ModelVersionDetails, SchemaDetails, SearchResults,
+    TableDetails, Users, VolumeDetails,
 };
 use crate::theme::provide_theme;
 
@@ -35,6 +35,7 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("catalog/:catalog") view=CatalogDetails/>
                     <Route path=path!("catalog/:catalog/:schema") view=SchemaDetails/>
                     <Route path=path!("catalog/:catalog/:schema/table/:table") view=TableDetails/>
+                    <Route path=path!("catalog/:catalog/:schema/view/:view") view=MetricViewDetails/>
                     <Route path=path!("catalog/:catalog/:schema/volume/:volume") view=VolumeDetails/>
                     <Route path=path!("catalog/:catalog/:schema/function/:function") view=FunctionDetails/>
                     <Route path=path!("catalog/:catalog/:schema/model/:model") view=ModelDetails/>

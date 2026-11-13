@@ -9187,6 +9187,7 @@ dependencies = [
  "leptos_router",
  "percent-encoding",
  "serde",
+ "serde-saphyr",
  "serde_json",
  "uc-client",
  "uc-common",

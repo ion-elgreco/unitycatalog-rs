@@ -73,8 +73,9 @@ added:
 | ---------------------------------------------------------- | -------------------- |
 | `/`                                                        | Catalogs             |
 | `/catalog/:catalog`                                        | Catalog              |
-| `/catalog/:catalog/:schema`                                | Schema (`?tab=` picks tables, volumes, functions or models) |
+| `/catalog/:catalog/:schema`                                | Schema (`?tab=` picks tables, views, volumes, functions or models) |
 | `/catalog/:catalog/:schema/table/:table`                   | Table                |
+| `/catalog/:catalog/:schema/view/:view`                     | Metric view          |
 | `/catalog/:catalog/:schema/volume/:volume`                 | Volume               |
 | `/catalog/:catalog/:schema/function/:function`             | Function             |
 | `/catalog/:catalog/:schema/model/:model`                   | Registered model     |

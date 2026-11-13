@@ -1,5 +1,5 @@
 //! A schema's page, as the console's `SchemaDetails`: its description, its
-//! tables, volumes, functions or models behind a picker, its details, its
+//! tables, metric views, volumes, functions or models behind a picker, its details, its
 //! grants; "Edit" (its name, comment and properties), "New" and "Delete".
 //! The picker is the URL's `?tab=`, so that the tree's groups open it.
 
@@ -174,7 +174,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
     }
 }
 
-/// Tables, Volumes, Functions, Models: a click sets the URL's `?tab=` in
+/// Tables, Metric views, Volumes, Functions, Models: a click sets the URL's `?tab=` in
 /// place, without a new history entry.
 #[component]
 fn KindPicker(kind: Memo<Kind>, catalog: String, schema: String) -> impl IntoView {

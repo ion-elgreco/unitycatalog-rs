@@ -53,6 +53,7 @@
   --color-catalog: #2d68d3;
   --color-schema: #936921;
   --color-table: #3d7d40;
+  --color-view: #be5a1e;
   --color-volume: #936921;
   --color-function: #7b53d7;
   --color-model: #2d68d3;
@@ -102,6 +103,7 @@
   --color-catalog: #6a9cf0;
   --color-schema: #d2a44a;
   --color-table: #6fbf74;
+  --color-view: #ec9a63;
   --color-volume: #d2a44a;
   --color-function: #a98bf0;
   --color-model: #6a9cf0;
@@ -146,6 +148,7 @@
     --color-catalog: #6a9cf0;
     --color-schema: #d2a44a;
     --color-table: #6fbf74;
+    --color-view: #ec9a63;
     --color-volume: #d2a44a;
     --color-function: #a98bf0;
     --color-model: #6a9cf0;
@@ -259,6 +262,7 @@ pre,
 .uc-icon--catalog { color: var(--color-catalog); }
 .uc-icon--schema { color: var(--color-schema); }
 .uc-icon--table { color: var(--color-table); }
+.uc-icon--view { color: var(--color-view); }
 .uc-icon--volume { color: var(--color-volume); }
 .uc-icon--function { color: var(--color-function); }
 .uc-icon--model { color: var(--color-model); }

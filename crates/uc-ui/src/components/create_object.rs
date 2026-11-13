@@ -1,6 +1,6 @@
 //! "New" on a schema's page, as the console's `CreateSchemaObjectAction`:
-//! a table, a volume, a SQL function or a registered model, from one
-//! dialog with a type picker. Beyond the console's, a table can be managed,
+//! a table, a metric view, a volume, a SQL function or a registered model,
+//! from one dialog with a type picker. Beyond the console's, a table can be managed,
 //! have any number of columns and be in Iceberg format, which the Iceberg
 //! REST catalog creates. After the call, a toast, and the list that gained
 //! the object loads again.
@@ -13,7 +13,10 @@ use uc_client::models::functions::v1::{
     CreateFunction, ParameterStyle, RoutineBody, SecurityType, SqlDataAccess,
 };
 use uc_client::models::iceberg::v1::{IcebergSchema, IcebergStructField};
-use uc_client::models::tables::v1::{ColumnInfo, ColumnTypeName, DataSourceFormat, TableType};
+use uc_client::models::tables::v1::{
+    ColumnInfo, ColumnTypeName, DataSourceFormat, Dependency, DependencyList, TableDependency,
+    TableType,
+};
 use uc_client::models::volumes::v1::VolumeType;
 
 use super::field::{Select, TextArea, TextField};
@@ -22,6 +25,30 @@ use crate::api;
 use crate::components::{Modal, use_notify};
 use crate::kind::Kind;
 use crate::load::{Key, use_cache};
+use crate::metric_view;
+
+/// The columns of a metric view: one per dimension and measure of its YAML
+/// `definition`, which the column's metadata names with its expression.
+fn metric_view_columns(
+    definition: &str,
+    columns: &[(String, ColumnTypeName)],
+) -> Result<Vec<ColumnInfo>, String> {
+    let fields = metric_view::fields(definition)?;
+    let names: Vec<String> = columns.iter().map(|(name, _)| name.clone()).collect();
+    let matched = metric_view::fields_of(&fields, &names)?;
+    Ok(columns
+        .iter()
+        .zip(matched)
+        .zip(0..)
+        .map(|(((name, t), field), position)| {
+            let metadata = serde_json::json!({
+                "metric_view.type": field.kind,
+                "metric_view.expr": field.expr,
+            });
+            column(name, *t, position, metadata)
+        })
+        .collect())
+}
 
 /// The column types the dialog offers: the scalar ones, in the console's
 /// order.
@@ -122,13 +149,14 @@ fn iceberg_schema(columns: &[(String, ColumnTypeName)]) -> IcebergSchema {
     }
 }
 
-/// A column of a scalar type at `position`, as the API wants it.
-fn column(name: &str, t: ColumnTypeName, position: i32) -> ColumnInfo {
+/// A column of a scalar type at `position`, as the API wants it, with
+/// `metadata` in its Spark type.
+fn column(name: &str, t: ColumnTypeName, position: i32, metadata: serde_json::Value) -> ColumnInfo {
     let type_json = serde_json::json!({
         "name": name,
         "type": delta_type(t),
         "nullable": true,
-        "metadata": {},
+        "metadata": metadata,
     });
     ColumnInfo {
         name: name.to_string(),
@@ -158,6 +186,7 @@ pub fn CreateObjectModal(
     let volume_type = RwSignal::new(VolumeType::Managed);
     let return_type = RwSignal::new(ColumnTypeName::String);
     let definition = RwSignal::new(String::new());
+    let dependency = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
     let notify = use_notify();
     let cache = use_cache();
@@ -184,6 +213,7 @@ pub fn CreateObjectModal(
         comment.set(String::new());
         location.set(String::new());
         definition.set(String::new());
+        dependency.set(String::new());
         reset_columns();
     };
     let needs_location = move || {
@@ -210,7 +240,8 @@ pub fn CreateObjectModal(
                 })
                 .collect()
         });
-        if kind == Kind::Tables && columns.iter().any(|(name, _)| name.is_empty()) {
+        let has_columns = matches!(kind, Kind::Tables | Kind::MetricViews);
+        if has_columns && columns.iter().any(|(name, _)| name.is_empty()) {
             notify.error("Every column needs a name");
             return;
         }
@@ -240,6 +271,25 @@ pub fn CreateObjectModal(
         if kind == Kind::Functions && routine.trim().is_empty() {
             notify.error("Routine definition is required");
             return;
+        }
+        let reads = dependency.get_untracked().trim().to_string();
+        let mut view_columns = Vec::new();
+        if kind == Kind::MetricViews {
+            if routine.trim().is_empty() {
+                notify.error("Metric view YAML is required");
+                return;
+            }
+            if reads.is_empty() {
+                notify.error("Table dependency is required");
+                return;
+            }
+            match metric_view_columns(&routine, &columns) {
+                Ok(columns) => view_columns = columns,
+                Err(message) => {
+                    notify.error(message);
+                    return;
+                }
+            }
         }
         let catalog = catalog.clone();
         let schema = schema.clone();
@@ -282,7 +332,7 @@ pub fn CreateObjectModal(
                         let columns = columns
                             .iter()
                             .zip(0..)
-                            .map(|((name, t), i)| column(name, *t, i))
+                            .map(|((name, t), i)| column(name, *t, i, serde_json::json!({})))
                             .collect::<Vec<ColumnInfo>>();
                         let create = client
                             .create_table(&new_name, &catalog, &schema, table_type)
@@ -305,6 +355,29 @@ pub fn CreateObjectModal(
                         create.await.map(|_| ())
                     }
                     .await
+                }
+                // A metric view is a table of its own type, without data:
+                // its definition, and the table that the definition reads.
+                Kind::MetricViews => {
+                    let reads = Dependency {
+                        table: Some(TableDependency {
+                            table_full_name: reads,
+                            ..Default::default()
+                        })
+                        .into(),
+                        ..Default::default()
+                    };
+                    client
+                        .create_table(new_name, catalog, schema, TableType::MetricView)
+                        .with_columns(view_columns)
+                        .with_view_definition(routine)
+                        .with_view_dependencies(DependencyList {
+                            dependencies: vec![reads],
+                            ..Default::default()
+                        })
+                        .with_comment(comment)
+                        .await
+                        .map(|_| ())
                 }
                 Kind::Volumes => {
                     let volume_type = volume_type.get_untracked();
@@ -399,6 +472,8 @@ pub fn CreateObjectModal(
                     value=format
                     name=wire_name
                 />
+            </Show>
+            <Show when=move || matches!(kind.get(), Kind::Tables | Kind::MetricViews)>
                 <div class="uc-field">
                     <span class="uc-label">"Columns"</span>
                     <For
@@ -486,6 +561,22 @@ pub fn CreateObjectModal(
                     choices=&SCALARS
                     value=return_type
                     name=wire_name
+                />
+            </Show>
+            <Show when=move || kind.get() == Kind::MetricViews>
+                <TextArea
+                    id="uc-new-view-definition"
+                    label="Metric view YAML"
+                    value=definition
+                    required=true
+                    code=true
+                />
+                <TextField
+                    id="uc-new-dependency"
+                    label="Table dependency (full name)"
+                    value=dependency
+                    required=true
+                    placeholder="catalog.schema.table"
                 />
             </Show>
             <TextField id="uc-new-comment" label="Comment" value=comment/>
