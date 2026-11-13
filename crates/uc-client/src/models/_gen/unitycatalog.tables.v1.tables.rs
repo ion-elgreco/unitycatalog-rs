@@ -2036,6 +2036,15 @@ pub struct TableInfo {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
     )]
     pub view_dependencies: ::buffa::MessageField<DependencyList>,
+    /// True when the table has only the discovery fields that the `BROWSE` privilege allows.
+    ///
+    /// Field 18: `browse_only`
+    #[serde(
+        rename = "browse_only",
+        alias = "browseOnly",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub browse_only: ::core::option::Option<bool>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -2061,6 +2070,7 @@ impl ::core::fmt::Debug for TableInfo {
             .field("table_id", &self.table_id)
             .field("view_definition", &self.view_definition)
             .field("view_dependencies", &self.view_dependencies)
+            .field("browse_only", &self.browse_only)
             .finish()
     }
 }
@@ -2136,6 +2146,14 @@ impl TableInfo {
         value: impl Into<::buffa::alloc::string::String>,
     ) -> Self {
         self.view_definition = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::browse_only`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_browse_only(mut self, value: bool) -> Self {
+        self.browse_only = Some(value);
         self
     }
 }
@@ -2230,6 +2248,9 @@ impl ::buffa::Message for TableInfo {
             let inner_size = self.view_dependencies.compute_size(__cache);
             __cache.set(__slot, inner_size);
             size += 2u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
+        }
+        if self.browse_only.is_some() {
+            size += 2u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
         }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
@@ -2333,6 +2354,10 @@ impl ::buffa::Message for TableInfo {
                 .encode(buf);
             ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.view_dependencies.write_to(__cache, buf);
+        }
+        if let Some(v) = self.browse_only {
+            ::buffa::encoding::Tag::new(18u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_bool(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -2602,6 +2627,16 @@ impl ::buffa::Message for TableInfo {
                     depth,
                 )?;
             }
+            18u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 18u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.browse_only = ::core::option::Option::Some(::buffa::types::decode_bool(buf)?);
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -2628,6 +2663,7 @@ impl ::buffa::Message for TableInfo {
         self.table_id.clear();
         self.view_definition = ::core::option::Option::None;
         self.view_dependencies = ::buffa::MessageField::none();
+        self.browse_only = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -3294,6 +3330,16 @@ pub struct ListTablesRequest {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub page_token: ::core::option::Option<::buffa::alloc::string::String>,
+    /// Also return the tables that the caller sees through the `BROWSE` privilege only, with
+    /// their discovery fields and `browse_only` set.
+    ///
+    /// Field 5: `include_browse`
+    #[serde(
+        rename = "include_browse",
+        alias = "includeBrowse",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub include_browse: ::core::option::Option<bool>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -3306,6 +3352,7 @@ impl ::core::fmt::Debug for ListTablesRequest {
             .field("schema_name", &self.schema_name)
             .field("max_results", &self.max_results)
             .field("page_token", &self.page_token)
+            .field("include_browse", &self.include_browse)
             .finish()
     }
 }
@@ -3333,6 +3380,14 @@ impl ListTablesRequest {
     ///Sets [`Self::page_token`] to `Some(value)`, consuming and returning `self`.
     pub fn with_page_token(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
         self.page_token = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::include_browse`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_include_browse(mut self, value: bool) -> Self {
+        self.include_browse = Some(value);
         self
     }
 }
@@ -3375,6 +3430,9 @@ impl ::buffa::Message for ListTablesRequest {
         if let Some(ref v) = self.page_token {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
         }
+        if self.include_browse.is_some() {
+            size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -3400,6 +3458,10 @@ impl ::buffa::Message for ListTablesRequest {
             ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(v) = self.include_browse {
+            ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_bool(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -3460,6 +3522,17 @@ impl ::buffa::Message for ListTablesRequest {
                     buf,
                 )?;
             }
+            5u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 5u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.include_browse =
+                    ::core::option::Option::Some(::buffa::types::decode_bool(buf)?);
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -3473,6 +3546,7 @@ impl ::buffa::Message for ListTablesRequest {
         self.schema_name.clear();
         self.max_results = ::core::option::Option::None;
         self.page_token = ::core::option::Option::None;
+        self.include_browse = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -3746,6 +3820,16 @@ pub struct GetTableRequest {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub read_materialized_view_as_managed: ::core::option::Option<bool>,
+    /// Also answer a caller who sees the table through the `BROWSE` privilege only, with its
+    /// discovery fields and `browse_only` set.
+    ///
+    /// Field 4: `include_browse`
+    #[serde(
+        rename = "include_browse",
+        alias = "includeBrowse",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub include_browse: ::core::option::Option<bool>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -3763,6 +3847,7 @@ impl ::core::fmt::Debug for GetTableRequest {
                 "read_materialized_view_as_managed",
                 &self.read_materialized_view_as_managed,
             )
+            .field("include_browse", &self.include_browse)
             .finish()
     }
 }
@@ -3789,6 +3874,14 @@ impl GetTableRequest {
     ///Sets [`Self::read_materialized_view_as_managed`] to `Some(value)`, consuming and returning `self`.
     pub fn with_read_materialized_view_as_managed(mut self, value: bool) -> Self {
         self.read_materialized_view_as_managed = Some(value);
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::include_browse`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_include_browse(mut self, value: bool) -> Self {
+        self.include_browse = Some(value);
         self
     }
 }
@@ -3828,6 +3921,9 @@ impl ::buffa::Message for GetTableRequest {
         if self.read_materialized_view_as_managed.is_some() {
             size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
         }
+        if self.include_browse.is_some() {
+            size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -3846,6 +3942,10 @@ impl ::buffa::Message for GetTableRequest {
         }
         if let Some(v) = self.read_materialized_view_as_managed {
             ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_bool(v, buf);
+        }
+        if let Some(v) = self.include_browse {
+            ::buffa::encoding::Tag::new(4u32, ::buffa::encoding::WireType::Varint).encode(buf);
             ::buffa::types::encode_bool(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
@@ -3895,6 +3995,17 @@ impl ::buffa::Message for GetTableRequest {
                 self.read_materialized_view_as_managed =
                     ::core::option::Option::Some(::buffa::types::decode_bool(buf)?);
             }
+            4u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 4u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.include_browse =
+                    ::core::option::Option::Some(::buffa::types::decode_bool(buf)?);
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -3907,6 +4018,7 @@ impl ::buffa::Message for GetTableRequest {
         self.full_name.clear();
         self.read_streaming_table_as_managed = ::core::option::Option::None;
         self.read_materialized_view_as_managed = ::core::option::Option::None;
+        self.include_browse = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }

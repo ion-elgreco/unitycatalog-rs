@@ -3,11 +3,11 @@ use axum::extract::State;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use uc_api::{CatalogInfo, CreateCatalog, ListCatalogsResponse, UpdateCatalog};
-use uc_common::{DeleteParams, PageToken, Pagination, SecurableType};
+use uc_common::{BrowseParams, DeleteParams, PageToken, Pagination, SecurableType};
 
 use crate::{
     authn::principal::Principal,
-    authz::{self, Access, Lineage, rules},
+    authz::{self, Access, Lineage, Read, rules},
     http::{EmptyObject, error::ApiResult},
     server::state::AppState,
 };
@@ -57,7 +57,10 @@ pub async fn create_catalog(
 #[utoipa::path(
     get,
     path = "/catalogs",
-    params(Pagination),
+    params(
+        Pagination,
+        ("include_browse" = Option<bool>, Query, description = "Also the catalogs seen through BROWSE only"),
+    ),
     responses((status = 200, description = "OK", body = ListCatalogsResponse)),
     tag = "Catalogs",
 )]
@@ -65,14 +68,18 @@ pub async fn list_catalogs(
     State(state): State<AppState>,
     principal: Principal,
     Query(page): Query<Pagination>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<ListCatalogsResponse>> {
     let access = Access::load(&state, &principal).await?;
     let (catalogs, next) = state.metastore.catalogs().list(&page).await?;
     // Upstream filters each page, which may then hold fewer items.
     let mut kept = Vec::with_capacity(catalogs.len());
     for catalog in catalogs {
-        if rules::get_catalog(&access, &lineage_of(&catalog)).await {
+        let lineage = lineage_of(&catalog);
+        if rules::get_catalog(&access, &lineage).await {
             kept.push(catalog);
+        } else if browse.include_browse && rules::browse_catalog(&access, &lineage).await {
+            kept.push(catalog.into_browse_only());
         }
     }
     let catalogs = kept;
@@ -96,11 +103,22 @@ pub async fn get_catalog(
     State(state): State<AppState>,
     principal: Principal,
     Path(name): Path<String>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<CatalogInfo>> {
     let info = state.metastore.catalogs().get(&name).await?;
     let access = Access::load(&state, &principal).await?;
-    access.check(rules::get_catalog(&access, &lineage_of(&info)).await)?;
-    Ok(Json(info))
+    let read = access
+        .read(
+            &lineage_of(&info),
+            browse.include_browse,
+            rules::get_catalog,
+            rules::browse_catalog,
+        )
+        .await?;
+    Ok(Json(match read {
+        Read::Full => info,
+        Read::BrowseOnly => info.into_browse_only(),
+    }))
 }
 
 #[utoipa::path(
@@ -120,12 +138,13 @@ pub async fn update_catalog(
     Path(name): Path<String>,
     Json(req): Json<UpdateCatalog>,
 ) -> ApiResult<Json<CatalogInfo>> {
+    let rename = req.new_name.is_some();
     authz::check(
         &state,
         &principal,
         SecurableType::Catalog,
         &name,
-        rules::update_catalog,
+        async |a, l| rules::update_catalog(a, l, rename).await,
     )
     .await?;
     let info = state

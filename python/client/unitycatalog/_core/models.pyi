@@ -142,16 +142,22 @@ class RegisteredModelClient:
         """
         Like `delete`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def get(self, /) -> RegisteredModelInfo:
+    def get(self, /, *, include_browse: bool | None = None) -> RegisteredModelInfo:
         """
         Get a registered model.
+
+        Args:
+            include_browse: Also answer a caller who sees the registered model through the `BROWSE`
+                            privilege only, with its discovery fields and `browse_only` set.
 
         Returns:
             A registered model: a securable in the three-level namespace (catalog.schema.model) that
             holds
             model versions.
         """
-    def get_async(self, /) -> Future[RegisteredModelInfo]:
+    def get_async(
+        self, /, *, include_browse: bool | None = None
+    ) -> Future[RegisteredModelInfo]:
         """
         Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -186,6 +192,11 @@ class RegisteredModelInfo:
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
     def __repr__(self, /) -> str: ...
+    @property
+    def browse_only(self, /) -> bool | None:
+        """
+        True when the registered model has only the discovery fields that the `BROWSE` privilege allows.
+        """
     @property
     def catalog_name(self, /) -> str:
         """

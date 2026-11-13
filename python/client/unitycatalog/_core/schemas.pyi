@@ -39,15 +39,19 @@ class SchemaClient:
         """
         Like `delete`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def get(self, /) -> SchemaInfo:
+    def get(self, /, *, include_browse: bool | None = None) -> SchemaInfo:
         """
         Get a schema.
+
+        Args:
+            include_browse: Also answer a caller who sees the schema through the `BROWSE` privilege only,
+                            with its discovery fields and `browse_only` set.
 
         Returns:
             A schema: the second layer of the three-level namespace. It holds tables, volumes, functions
             and models.
         """
-    def get_async(self, /) -> Future[SchemaInfo]:
+    def get_async(self, /, *, include_browse: bool | None = None) -> Future[SchemaInfo]:
         """
         Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -92,6 +96,11 @@ class SchemaInfo:
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
     def __repr__(self, /) -> str: ...
+    @property
+    def browse_only(self, /) -> bool | None:
+        """
+        True when the schema has only the discovery fields that the `BROWSE` privilege allows.
+        """
     @property
     def catalog_name(self, /) -> str:
         """

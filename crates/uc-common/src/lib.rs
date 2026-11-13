@@ -20,8 +20,8 @@ pub use error::{ERROR_INFO_TYPE, Error, ErrorCode, ErrorDetail, ErrorResponse, R
 pub use location::{MANAGED_STORAGE_PREFIX, ManagedResource, NormalizedUrl, UriScheme};
 pub use name::{schema_full_name, three_part_full_name};
 pub use page::{
-    DEFAULT_PAGE_SIZE, DeleteParams, PageToken, Pagination, SchemaScopedListParams, lenient_bool,
-    lenient_opt_i64,
+    BrowseParams, DEFAULT_PAGE_SIZE, DeleteParams, PageToken, Pagination, SchemaScopedListParams,
+    lenient_bool, lenient_opt_i64,
 };
 pub use securable::{SecurablePropertiesMap, SecurableType, serialize_properties};
 pub use time::{EpochMillis, now_epoch_millis};

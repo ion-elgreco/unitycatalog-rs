@@ -1705,19 +1705,29 @@ class Client:
         Like `list_audit_events`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
     def list_catalogs(
-        self, /, *, max_results: SupportsIndex | None = None
+        self,
+        /,
+        *,
+        max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> list[CatalogInfo]:
         """
         List the catalogs that the caller can see.
 
         Args:
             max_results: The maximum number of catalogs to return.
+            include_browse: Also return the catalogs that the caller sees through the `BROWSE` privilege
+                            only, with their discovery fields and `browse_only` set.
 
         Returns:
             The catalogs.
         """
     def list_catalogs_async(
-        self, /, *, max_results: SupportsIndex | None = None
+        self,
+        /,
+        *,
+        max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> Future[list[CatalogInfo]]:
         """
         Like `list_catalogs`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1780,19 +1790,29 @@ class Client:
         Like `list_directory_contents`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
     def list_external_locations(
-        self, /, *, max_results: SupportsIndex | None = None
+        self,
+        /,
+        *,
+        max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> list[ExternalLocationInfo]:
         """
         List the external locations that the caller can see.
 
         Args:
             max_results: The maximum number of external locations to return.
+            include_browse: Also return the external locations that the caller sees through the `BROWSE`
+                            privilege only, with their discovery fields and `browse_only` set.
 
         Returns:
             The external locations.
         """
     def list_external_locations_async(
-        self, /, *, max_results: SupportsIndex | None = None
+        self,
+        /,
+        *,
+        max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> Future[list[ExternalLocationInfo]]:
         """
         Like `list_external_locations`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1804,6 +1824,7 @@ class Client:
         schema_name: str,
         *,
         max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> list[FunctionInfo]:
         """
         List the functions of a schema that the caller can see.
@@ -1812,6 +1833,8 @@ class Client:
             catalog_name: Name of the parent catalog.
             schema_name: Name of the parent schema.
             max_results: The maximum number of functions to return.
+            include_browse: Also return the functions that the caller sees through the `BROWSE` privilege
+                            only, with their discovery fields and `browse_only` set.
 
         Returns:
             The functions.
@@ -1823,6 +1846,7 @@ class Client:
         schema_name: str,
         *,
         max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> Future[list[FunctionInfo]]:
         """
         Like `list_functions`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -1977,6 +2001,7 @@ class Client:
         catalog_name: str | None = None,
         schema_name: str | None = None,
         max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> list[RegisteredModelInfo]:
         """
         List the registered models that the caller can see, of a catalog or schema when given.
@@ -1985,6 +2010,8 @@ class Client:
             catalog_name: Name of the catalog whose registered models to return.
             schema_name: Name of the schema whose registered models to return.
             max_results: The maximum number of registered models to return.
+            include_browse: Also return the registered models that the caller sees through the `BROWSE`
+                            privilege only, with their discovery fields and `browse_only` set.
 
         Returns:
             The registered models.
@@ -1996,12 +2023,18 @@ class Client:
         catalog_name: str | None = None,
         schema_name: str | None = None,
         max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> Future[list[RegisteredModelInfo]]:
         """
         Like `list_registered_models`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
     def list_schemas(
-        self, /, catalog_name: str, *, max_results: SupportsIndex | None = None
+        self,
+        /,
+        catalog_name: str,
+        *,
+        max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> list[SchemaInfo]:
         """
         List the schemas of a catalog that the caller can see.
@@ -2009,12 +2042,19 @@ class Client:
         Args:
             catalog_name: Name of the parent catalog.
             max_results: The maximum number of schemas to return.
+            include_browse: Also return the schemas that the caller sees through the `BROWSE` privilege
+                            only, with their discovery fields and `browse_only` set.
 
         Returns:
             The schemas.
         """
     def list_schemas_async(
-        self, /, catalog_name: str, *, max_results: SupportsIndex | None = None
+        self,
+        /,
+        catalog_name: str,
+        *,
+        max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> Future[list[SchemaInfo]]:
         """
         Like `list_schemas`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2069,6 +2109,7 @@ class Client:
         schema_name: str,
         *,
         max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> list[TableInfo]:
         """
         List the tables of a schema that the caller can see.
@@ -2077,6 +2118,8 @@ class Client:
             catalog_name: Name of the parent catalog.
             schema_name: Name of the parent schema.
             max_results: The maximum number of tables to return.
+            include_browse: Also return the tables that the caller sees through the `BROWSE` privilege only,
+                            with their discovery fields and `browse_only` set.
 
         Returns:
             The tables.
@@ -2088,6 +2131,7 @@ class Client:
         schema_name: str,
         *,
         max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> Future[list[TableInfo]]:
         """
         Like `list_tables`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -2153,6 +2197,7 @@ class Client:
         schema_name: str,
         *,
         max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> list[VolumeInfo]:
         """
         List the volumes of a schema that the caller can see.
@@ -2161,6 +2206,8 @@ class Client:
             catalog_name: Name of the parent catalog.
             schema_name: Name of the parent schema.
             max_results: The maximum number of volumes to return.
+            include_browse: Also return the volumes that the caller sees through the `BROWSE` privilege
+                            only, with their discovery fields and `browse_only` set.
 
         Returns:
             The volumes.
@@ -2172,6 +2219,7 @@ class Client:
         schema_name: str,
         *,
         max_results: SupportsIndex | None = None,
+        include_browse: bool | None = None,
     ) -> Future[list[VolumeInfo]]:
         """
         Like `list_volumes`, but returns an `asyncio.Future` of the result. Call it in a running event loop.

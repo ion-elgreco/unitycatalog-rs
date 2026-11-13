@@ -2522,6 +2522,12 @@ impl PyCatalogInfo {
         self.0.storage_location.clone()
     }
 
+    /// True when the catalog has only the discovery fields that the `BROWSE` privilege allows.
+    #[getter]
+    fn browse_only(&self) -> ::core::option::Option<bool> {
+        self.0.browse_only
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -2537,6 +2543,7 @@ impl PyCatalogInfo {
                 ("id", false),
                 ("storage_root", false),
                 ("storage_location", false),
+                ("browse_only", false),
             ],
         )
     }
@@ -6091,6 +6098,12 @@ impl PyExternalLocationInfo {
         self.0.credential_id.clone()
     }
 
+    /// True when the external location has only the discovery fields that the `BROWSE` privilege allows.
+    #[getter]
+    fn browse_only(&self) -> ::core::option::Option<bool> {
+        self.0.browse_only
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -6106,6 +6119,7 @@ impl PyExternalLocationInfo {
                 ("updated_by", false),
                 ("id", false),
                 ("credential_id", false),
+                ("browse_only", false),
             ],
         )
     }
@@ -7009,6 +7023,12 @@ impl PyFunctionInfo {
         self.0.external_language.clone()
     }
 
+    /// True when the function has only the discovery fields that the `BROWSE` privilege allows.
+    #[getter]
+    fn browse_only(&self) -> ::core::option::Option<bool> {
+        self.0.browse_only
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -7039,6 +7059,7 @@ impl PyFunctionInfo {
                 ("updated_by", false),
                 ("function_id", false),
                 ("external_language", false),
+                ("browse_only", false),
             ],
         )
     }
@@ -10623,6 +10644,12 @@ impl PyRegisteredModelInfo {
         self.0.id.clone()
     }
 
+    /// True when the registered model has only the discovery fields that the `BROWSE` privilege allows.
+    #[getter]
+    fn browse_only(&self) -> ::core::option::Option<bool> {
+        self.0.browse_only
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -10639,6 +10666,7 @@ impl PyRegisteredModelInfo {
                 ("updated_at", false),
                 ("updated_by", false),
                 ("id", false),
+                ("browse_only", false),
             ],
         )
     }
@@ -10793,7 +10821,8 @@ impl PyPrivilegeAssignment {
     /// `USE SCHEMA`, `CREATE TABLE`, `SELECT`, `MODIFY`, `CREATE FUNCTION`, `EXECUTE`,
     /// `CREATE VOLUME`, `READ VOLUME`, `CREATE MODEL`, `CREATE EXTERNAL LOCATION`, `READ FILES`,
     /// `WRITE FILES`, `CREATE EXTERNAL TABLE`, `CREATE EXTERNAL VOLUME`, `CREATE MANAGED STORAGE`,
-    /// `CREATE STORAGE CREDENTIAL`.
+    /// `CREATE STORAGE CREDENTIAL`, `BROWSE`, `MANAGE`, `WRITE VOLUME`, `CREATE MODEL VERSION`,
+    /// `READ METADATA`.
     #[getter]
     fn privileges(&self) -> ::std::vec::Vec<::std::string::String> {
         self.0.privileges.clone()
@@ -11341,6 +11370,12 @@ impl PySchemaInfo {
         self.0.storage_location.clone()
     }
 
+    /// True when the schema has only the discovery fields that the `BROWSE` privilege allows.
+    #[getter]
+    fn browse_only(&self) -> ::core::option::Option<bool> {
+        self.0.browse_only
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -11358,6 +11393,7 @@ impl PySchemaInfo {
                 ("schema_id", false),
                 ("storage_root", false),
                 ("storage_location", false),
+                ("browse_only", false),
             ],
         )
     }
@@ -15124,6 +15160,12 @@ impl PyTableInfo {
             .map(PyDependencyList::from)
     }
 
+    /// True when the table has only the discovery fields that the `BROWSE` privilege allows.
+    #[getter]
+    fn browse_only(&self) -> ::core::option::Option<bool> {
+        self.0.browse_only
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -15145,6 +15187,7 @@ impl PyTableInfo {
                 ("table_id", false),
                 ("view_definition", false),
                 ("view_dependencies", false),
+                ("browse_only", false),
             ],
         )
     }
@@ -15496,6 +15539,12 @@ impl PyVolumeInfo {
         self.0.full_name.clone()
     }
 
+    /// True when the volume has only the discovery fields that the `BROWSE` privilege allows.
+    #[getter]
+    fn browse_only(&self) -> ::core::option::Option<bool> {
+        self.0.browse_only
+    }
+
     fn __repr__(slf: &::pyo3::Bound<'_, Self>) -> ::pyo3::PyResult<::std::string::String> {
         __python_repr(
             slf.as_any(),
@@ -15513,6 +15562,7 @@ impl PyVolumeInfo {
                 ("volume_type", false),
                 ("storage_location", false),
                 ("full_name", false),
+                ("browse_only", false),
             ],
         )
     }

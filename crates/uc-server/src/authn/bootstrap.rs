@@ -6,10 +6,11 @@
 use std::collections::HashSet;
 
 use uc_api::Privilege;
-use uc_common::{Result, settings};
+use uc_common::{Result, SecurableType, settings};
 use uc_metastore::{DynMetastore, SeedReport, SeedUser};
 
 use crate::authn::security::ADMIN;
+use crate::authz::rules;
 
 /// The users of `auth`: those of `[[auth.users]]`, then the admins of
 /// `auth.admin_principals` that the list does not have. An entry that the
@@ -49,13 +50,18 @@ pub fn seed_users(auth: &settings::Auth) -> std::result::Result<Vec<SeedUser>, S
             .privileges
             .iter()
             .map(|text| {
-                privilege(text).ok_or_else(|| {
-                    invalid(
-                        "privileges",
-                        text,
-                        "Expected a privilege, such as CREATE CATALOG.",
-                    )
-                })
+                // They are granted on the metastore.
+                privilege(text)
+                    .filter(|privilege| {
+                        rules::grant_targets(*privilege).contains(&SecurableType::Metastore)
+                    })
+                    .ok_or_else(|| {
+                        invalid(
+                            "privileges",
+                            text,
+                            "Expected a privilege of the metastore, such as CREATE CATALOG.",
+                        )
+                    })
             })
             .collect::<std::result::Result<Vec<_>, _>>()?;
         users.push(SeedUser {
@@ -114,7 +120,7 @@ mod tests {
             [[auth.users]]
             email = "alice@example.com"
             name = "Alice"
-            privileges = ["CREATE CATALOG", " USE CATALOG "]
+            privileges = ["CREATE CATALOG", " READ METADATA "]
 
             [[auth.users]]
             email = " etl@example.com "
@@ -130,7 +136,7 @@ mod tests {
                     email: "alice@example.com".into(),
                     display_name: Some("Alice".into()),
                     external_id: None,
-                    privileges: vec![Privilege::CreateCatalog, Privilege::UseCatalog],
+                    privileges: vec![Privilege::CreateCatalog, Privilege::ReadMetadata],
                 },
                 SeedUser {
                     email: "etl@example.com".into(),
@@ -177,14 +183,19 @@ mod tests {
         };
         assert!(error(vec![with_id("a@x", "c"), with_id("b@x", "c")]).contains("[1].external_id"));
         assert!(error(vec![with_id("a@x", " ")]).contains("Expected an id."));
-        let error = error(vec![AuthUser {
-            privileges: vec!["CREATE_CATALOG".into()],
-            ..user("a@x")
-        }]);
-        assert_eq!(
-            error,
-            "Invalid value for auth.users[0].privileges: 'CREATE_CATALOG'. Expected a privilege, \
-             such as CREATE CATALOG."
-        );
+        // A name that is no privilege, and a privilege of catalogs.
+        for text in ["CREATE_CATALOG", "USE CATALOG"] {
+            let error = error(vec![AuthUser {
+                privileges: vec![text.into()],
+                ..user("a@x")
+            }]);
+            assert_eq!(
+                error,
+                format!(
+                    "Invalid value for auth.users[0].privileges: '{text}'. Expected a privilege \
+                     of the metastore, such as CREATE CATALOG."
+                )
+            );
+        }
     }
 }

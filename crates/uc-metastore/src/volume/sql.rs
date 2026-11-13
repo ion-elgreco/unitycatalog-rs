@@ -54,6 +54,7 @@ impl VolumeRow {
             volume_id: Some(self.id_string),
             volume_type: Some(parse_enum::<VolumeType>(&self.volume_type)?),
             storage_location: self.storage_location,
+            browse_only: None,
         })
     }
 }

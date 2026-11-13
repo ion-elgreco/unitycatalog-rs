@@ -41,6 +41,10 @@ impl CatalogServiceClient {
             url.query_pairs_mut()
                 .append_pair("page_token", &value.to_string());
         }
+        if let Some(ref value) = request.include_browse {
+            url.query_pairs_mut()
+                .append_pair("include_browse", &value.to_string());
+        }
         let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);
@@ -72,7 +76,11 @@ impl CatalogServiceClient {
             "api/2.1/unity-catalog/catalogs/{}",
             encode_path_value(&request.name, false)
         );
-        let url = self.base_url.join(&formatted_path)?;
+        let mut url = self.base_url.join(&formatted_path)?;
+        if let Some(ref value) = request.include_browse {
+            url.query_pairs_mut()
+                .append_pair("include_browse", &value.to_string());
+        }
         let response = self.client.get(url).send_unchecked().await?;
         if !response.status().is_success() {
             return Err(crate::codegen::error::parse_error_response(response).await);

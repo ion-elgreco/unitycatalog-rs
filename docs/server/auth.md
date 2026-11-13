@@ -66,7 +66,8 @@ To end all sign-ins at once, replace the file with a file that has only a new ke
 ## The first users
 
 At each start, the server makes the users of `[[auth.users]]` and `admin_principals` that are
-missing. It grants the missing `privileges` of `[[auth.users]]` on the metastore. It never changes
+missing. It grants the missing `privileges` of `[[auth.users]]` on the metastore: `CREATE CATALOG`,
+`CREATE STORAGE CREDENTIAL`, `CREATE EXTERNAL LOCATION` or `READ METADATA`. It never changes
 or deletes a user that exists. The users of `admin_principals` are admins. A user that was
 deleted through SCIM stays deleted: the server logs a warning at each start, until an admin
 creates the user again or the entry leaves the settings.
@@ -678,24 +679,48 @@ A securable is an object that privileges apply to, such as a catalog, schema or 
 - The user who makes a securable owns it, and can grant privileges on it.
 - A privilege on a catalog or schema applies to everything in it.
 - To read a table, a user needs `USE CATALOG` on its catalog, `USE SCHEMA` on its schema, and
-  `SELECT` on the table.
+  `SELECT` on the table. `MODIFY` alone does not read a table or its metadata.
 - Admins read everything, make catalogs, credentials and external locations, manage users, and
   grant any privilege.
 - External tables and volumes, and the credentials of a path, need an external location that
   covers the path. This applies to admins too.
 
-| Privilege | Lets the user |
-| --- | --- |
-| `CREATE CATALOG` | Make catalogs (on the metastore). |
-| `USE CATALOG`, `USE SCHEMA` | Use a catalog or schema, and what it holds. |
-| `CREATE SCHEMA`, `CREATE TABLE`, `CREATE VOLUME`, `CREATE FUNCTION`, `CREATE MODEL` | Make these in a catalog or schema. |
-| `SELECT`, `MODIFY` | Read a table, change its data. |
-| `READ VOLUME` | Read a volume and its files. |
-| `EXECUTE` | Run a function; read a registered model. |
-| `CREATE STORAGE CREDENTIAL`, `CREATE EXTERNAL LOCATION` | Make storage credentials and external locations. |
-| `READ FILES`, `WRITE FILES` | Read and write files under an external location. |
-| `CREATE EXTERNAL TABLE`, `CREATE EXTERNAL VOLUME` | Make tables and volumes under an external location. |
-| `CREATE MANAGED STORAGE` | Use a path under an external location as a storage root. |
+| Privilege | Lets the user | Granted on |
+| --- | --- | --- |
+| `CREATE CATALOG` | Make catalogs. | Metastore |
+| `USE CATALOG` | Use a catalog and what it holds. | Catalog |
+| `CREATE SCHEMA` | Make schemas. | Catalog |
+| `USE SCHEMA` | Use a schema and what it holds. | Catalog, schema |
+| `CREATE TABLE`, `CREATE VOLUME`, `CREATE FUNCTION`, `CREATE MODEL` | Make these in a schema. | Catalog, schema |
+| `SELECT`, `MODIFY` | Read a table, change its data. | Catalog, schema, table |
+| `READ VOLUME`, `WRITE VOLUME` | Read the files of a volume; with both, write them. | Catalog, schema, volume |
+| `EXECUTE` | Run a function; read a registered model. | Catalog, schema, function, registered model |
+| `CREATE MODEL VERSION` | Add versions to a registered model. | Catalog, schema, registered model |
+| `CREATE STORAGE CREDENTIAL` | Make storage credentials. | Metastore |
+| `CREATE EXTERNAL LOCATION` | Make external locations with a credential. | Metastore, credential |
+| `READ FILES`, `WRITE FILES` | Read and write files under an external location. | External location, credential |
+| `CREATE EXTERNAL TABLE` | Make tables under an external location. | External location, credential |
+| `CREATE EXTERNAL VOLUME` | Make volumes under an external location. | External location |
+| `CREATE MANAGED STORAGE` | Use a path under an external location as a storage root. | External location |
+| `MANAGE` | Do what the owner does to the object: change it, delete it and change its grants. | All but the metastore |
+| `READ METADATA` | Read the object, what it holds and their grants. | All |
+| `BROWSE` | See that the object and what it holds exist. | Catalog, external location |
+
+The server refuses a grant on an object that does not take the privilege.
+
+`MANAGE`, `READ METADATA` and `BROWSE` give no access to data: no credentials and no table
+loads through the Delta or Iceberg APIs. Iceberg load table gives the metadata to a user with
+`READ METADATA`, and credentials only to a user who can read the table.
+
+- A new name through `MANAGE` also needs the privilege to make the object: `CREATE CATALOG` for a
+  catalog, `CREATE SCHEMA` for a schema, `CREATE TABLE`, `CREATE VOLUME` or `CREATE MODEL` for
+  what a schema holds.
+- A user with `CREATE MODEL VERSION` adds a version and uploads its files. Only the user who made
+  a version can finalize it. Read credentials need a finalized version.
+- A user with only `BROWSE` gets an object when the request has `include_browse=true`. The answer
+  then has `browse_only: true` and the discovery fields: a table without its storage location,
+  properties and view definition, a function without its body, an external location without its
+  credential. Lists with `include_browse=true` can hold both kinds of object.
 
 ```bash
 uc permission create --securable_type table --name main.default.events \

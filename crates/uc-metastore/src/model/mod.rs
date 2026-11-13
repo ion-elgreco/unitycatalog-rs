@@ -54,11 +54,14 @@ pub trait ModelOps: Send + Sync {
     async fn delete_version(&self, full_name: &str, version: i64) -> Result<()>;
 
     /// Upstream `finalizeModelVersion`: PENDING_REGISTRATION becomes READY.
+    /// With `creator_only`, only for `updated_by` when it created the
+    /// version.
     async fn finalize_version(
         &self,
         full_name: &str,
         version: i64,
         updated_by: Option<&str>,
+        creator_only: bool,
     ) -> Result<ModelVersionInfo>;
 
     async fn list_versions(

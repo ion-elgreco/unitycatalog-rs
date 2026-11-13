@@ -6,12 +6,13 @@ use uc_api::{
     CreateStagingTable, CreateTable, ListTablesResponse, StagingTableInfo, TableInfo, UpdateTable,
 };
 use uc_common::{
-    PageToken, SchemaScopedListParams as ListTablesParams, SecurableType, schema_full_name,
+    BrowseParams, PageToken, SchemaScopedListParams as ListTablesParams, SecurableType,
+    schema_full_name,
 };
 
 use crate::{
     authn::principal::Principal,
-    authz::{self, Access, rules},
+    authz::{self, Access, Read, rules},
     http::{EmptyObject, error::ApiResult},
     server::state::AppState,
 };
@@ -67,6 +68,7 @@ pub async fn list_tables(
     State(state): State<AppState>,
     principal: Principal,
     Query(params): Query<ListTablesParams>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<ListTablesResponse>> {
     let (tables, next) = state
         .metastore
@@ -82,6 +84,7 @@ pub async fn list_tables(
         tables,
         |t| (schema.clone(), t.table_id.clone(), t.owner.clone()),
         rules::get_table,
+        browse.include_browse.then_some(TableInfo::into_browse_only),
     )
     .await?;
     Ok(Json(ListTablesResponse {
@@ -104,16 +107,23 @@ pub async fn get_table(
     State(state): State<AppState>,
     principal: Principal,
     Path(full_name): Path<String>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<TableInfo>> {
-    authz::check(
+    let read = authz::check_read(
         &state,
         &principal,
         SecurableType::Table,
         &full_name,
+        browse.include_browse,
         rules::get_table,
+        rules::browse_catalog,
     )
     .await?;
-    Ok(Json(state.metastore.tables().get(&full_name).await?))
+    let info = state.metastore.tables().get(&full_name).await?;
+    Ok(Json(match read {
+        Read::Full => info,
+        Read::BrowseOnly => info.into_browse_only(),
+    }))
 }
 
 #[utoipa::path(
@@ -138,7 +148,7 @@ pub async fn update_table(
         &principal,
         SecurableType::Table,
         &full_name,
-        rules::own_child,
+        rules::manage_child,
     )
     .await?;
     Ok(Json(
@@ -170,7 +180,7 @@ pub async fn delete_table(
         &principal,
         SecurableType::Table,
         &full_name,
-        rules::own_child,
+        rules::manage_child,
     )
     .await?;
     state.metastore.tables().delete(&full_name).await?;

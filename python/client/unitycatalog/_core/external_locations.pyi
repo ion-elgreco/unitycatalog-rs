@@ -27,14 +27,20 @@ class ExternalLocationClient:
         """
         Like `delete`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
-    def get(self, /) -> ExternalLocationInfo:
+    def get(self, /, *, include_browse: bool | None = None) -> ExternalLocationInfo:
         """
         Get an external location.
+
+        Args:
+            include_browse: Also answer a caller who sees the external location through the `BROWSE`
+                            privilege only, with its discovery fields and `browse_only` set.
 
         Returns:
             An external location: a storage path and the credential that gives access to it.
         """
-    def get_async(self, /) -> Future[ExternalLocationInfo]:
+    def get_async(
+        self, /, *, include_browse: bool | None = None
+    ) -> Future[ExternalLocationInfo]:
         """
         Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
         """
@@ -80,6 +86,11 @@ class ExternalLocationInfo:
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
     def __repr__(self, /) -> str: ...
+    @property
+    def browse_only(self, /) -> bool | None:
+        """
+        True when the external location has only the discovery fields that the `BROWSE` privilege allows.
+        """
     @property
     def comment(self, /) -> str | None:
         """

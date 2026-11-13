@@ -51,6 +51,13 @@ impl ListTablesBuilder {
         self
     }
 
+    /// Also return the tables that the caller sees through the `BROWSE` privilege only, with
+    /// their discovery fields and `browse_only` set.
+    pub fn with_include_browse(mut self, include_browse: impl Into<Option<bool>>) -> Self {
+        self.request.include_browse = include_browse.into();
+        self
+    }
+
     /// Convert paginated request into stream of results
     pub fn into_stream(self) -> BoxStr<'static, Result<TableInfo>> {
         let remaining = self.request.max_results;
@@ -229,6 +236,13 @@ impl GetTableBuilder {
         read_materialized_view_as_managed: impl Into<Option<bool>>,
     ) -> Self {
         self.request.read_materialized_view_as_managed = read_materialized_view_as_managed.into();
+        self
+    }
+
+    /// Also answer a caller who sees the table through the `BROWSE` privilege only, with its
+    /// discovery fields and `browse_only` set.
+    pub fn with_include_browse(mut self, include_browse: impl Into<Option<bool>>) -> Self {
+        self.request.include_browse = include_browse.into();
         self
     }
 }

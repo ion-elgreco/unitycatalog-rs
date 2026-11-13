@@ -38,6 +38,8 @@ message CatalogInfo {
   optional string storage_root = 10;
   // Storage location URL (full path) of the managed storage of the catalog.
   optional string storage_location = 11;
+  // True when the catalog has only the discovery fields that the `BROWSE` privilege allows.
+  optional bool browse_only = 12;
 }
 
 message CreateCatalog {
@@ -56,6 +58,9 @@ message ListCatalogsRequest {
   optional int32 max_results = 1;
   // Opaque token of the page to return: the `next_page_token` of the page before.
   optional string page_token = 2;
+  // Also return the catalogs that the caller sees through the `BROWSE` privilege only, with
+  // their discovery fields and `browse_only` set.
+  optional bool include_browse = 3;
 }
 
 message ListCatalogsResponse {
@@ -68,6 +73,9 @@ message ListCatalogsResponse {
 message GetCatalogRequest {
   // Name of the catalog.
   string name = 1 [(google.api.field_behavior) = REQUIRED];
+  // Also answer a caller who sees the catalog through the `BROWSE` privilege only, with its
+  // discovery fields and `browse_only` set.
+  optional bool include_browse = 2;
 }
 
 message UpdateCatalog {

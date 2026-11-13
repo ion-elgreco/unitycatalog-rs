@@ -106,6 +106,15 @@ pub struct ExternalLocationInfo {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub credential_id: ::buffa::alloc::string::String,
+    /// True when the external location has only the discovery fields that the `BROWSE` privilege allows.
+    ///
+    /// Field 12: `browse_only`
+    #[serde(
+        rename = "browse_only",
+        alias = "browseOnly",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub browse_only: ::core::option::Option<bool>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -125,6 +134,7 @@ impl ::core::fmt::Debug for ExternalLocationInfo {
             .field("updated_by", &self.updated_by)
             .field("id", &self.id)
             .field("credential_id", &self.credential_id)
+            .field("browse_only", &self.browse_only)
             .finish()
     }
 }
@@ -179,6 +189,14 @@ impl ExternalLocationInfo {
     ///Sets [`Self::updated_by`] to `Some(value)`, consuming and returning `self`.
     pub fn with_updated_by(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
         self.updated_by = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::browse_only`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_browse_only(mut self, value: bool) -> Self {
+        self.browse_only = Some(value);
         self
     }
 }
@@ -243,6 +261,9 @@ impl ::buffa::Message for ExternalLocationInfo {
         if !self.credential_id.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.credential_id) as u32;
         }
+        if self.browse_only.is_some() {
+            size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -302,6 +323,10 @@ impl ::buffa::Message for ExternalLocationInfo {
             ::buffa::encoding::Tag::new(11u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(&self.credential_id, buf);
+        }
+        if let Some(v) = self.browse_only {
+            ::buffa::encoding::Tag::new(12u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_bool(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -448,6 +473,16 @@ impl ::buffa::Message for ExternalLocationInfo {
                 }
                 ::buffa::types::merge_string(&mut self.credential_id, buf)?;
             }
+            12u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 12u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.browse_only = ::core::option::Option::Some(::buffa::types::decode_bool(buf)?);
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -468,6 +503,7 @@ impl ::buffa::Message for ExternalLocationInfo {
         self.updated_by = ::core::option::Option::None;
         self.id.clear();
         self.credential_id.clear();
+        self.browse_only = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -780,6 +816,16 @@ pub struct ListExternalLocationsRequest {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub page_token: ::core::option::Option<::buffa::alloc::string::String>,
+    /// Also return the external locations that the caller sees through the `BROWSE` privilege only, with
+    /// their discovery fields and `browse_only` set.
+    ///
+    /// Field 3: `include_browse`
+    #[serde(
+        rename = "include_browse",
+        alias = "includeBrowse",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub include_browse: ::core::option::Option<bool>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -790,6 +836,7 @@ impl ::core::fmt::Debug for ListExternalLocationsRequest {
         f.debug_struct("ListExternalLocationsRequest")
             .field("max_results", &self.max_results)
             .field("page_token", &self.page_token)
+            .field("include_browse", &self.include_browse)
             .finish()
     }
 }
@@ -817,6 +864,14 @@ impl ListExternalLocationsRequest {
     ///Sets [`Self::page_token`] to `Some(value)`, consuming and returning `self`.
     pub fn with_page_token(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
         self.page_token = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::include_browse`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_include_browse(mut self, value: bool) -> Self {
+        self.include_browse = Some(value);
         self
     }
 }
@@ -855,6 +910,9 @@ impl ::buffa::Message for ListExternalLocationsRequest {
         if let Some(ref v) = self.page_token {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
         }
+        if self.include_browse.is_some() {
+            size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -870,6 +928,10 @@ impl ::buffa::Message for ListExternalLocationsRequest {
             ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(v) = self.include_browse {
+            ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_bool(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -910,6 +972,17 @@ impl ::buffa::Message for ListExternalLocationsRequest {
                     buf,
                 )?;
             }
+            3u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 3u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.include_browse =
+                    ::core::option::Option::Some(::buffa::types::decode_bool(buf)?);
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -921,6 +994,7 @@ impl ::buffa::Message for ListExternalLocationsRequest {
     fn clear(&mut self) {
         self.max_results = ::core::option::Option::None;
         self.page_token = ::core::option::Option::None;
+        self.include_browse = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -1178,6 +1252,16 @@ pub struct GetExternalLocationRequest {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub name: ::buffa::alloc::string::String,
+    /// Also answer a caller who sees the external location through the `BROWSE` privilege only, with its
+    /// discovery fields and `browse_only` set.
+    ///
+    /// Field 2: `include_browse`
+    #[serde(
+        rename = "include_browse",
+        alias = "includeBrowse",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub include_browse: ::core::option::Option<bool>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1187,6 +1271,7 @@ impl ::core::fmt::Debug for GetExternalLocationRequest {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("GetExternalLocationRequest")
             .field("name", &self.name)
+            .field("include_browse", &self.include_browse)
             .finish()
     }
 }
@@ -1198,6 +1283,16 @@ impl GetExternalLocationRequest {
     /// Format: `type.googleapis.com/<fully.qualified.TypeName>`
     pub const TYPE_URL: &'static str =
         "type.googleapis.com/unitycatalog.external_locations.v1.GetExternalLocationRequest";
+}
+
+impl GetExternalLocationRequest {
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::include_browse`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_include_browse(mut self, value: bool) -> Self {
+        self.include_browse = Some(value);
+        self
+    }
 }
 
 impl ::buffa::DefaultInstance for GetExternalLocationRequest {
@@ -1230,6 +1325,9 @@ impl ::buffa::Message for GetExternalLocationRequest {
         if !self.name.is_empty() {
             size += 1u32 + ::buffa::types::string_encoded_len(&self.name) as u32;
         }
+        if self.include_browse.is_some() {
+            size += 1u32 + ::buffa::types::BOOL_ENCODED_LEN as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -1241,6 +1339,10 @@ impl ::buffa::Message for GetExternalLocationRequest {
             ::buffa::encoding::Tag::new(1u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(&self.name, buf);
+        }
+        if let Some(v) = self.include_browse {
+            ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::Varint).encode(buf);
+            ::buffa::types::encode_bool(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -1267,6 +1369,17 @@ impl ::buffa::Message for GetExternalLocationRequest {
                 }
                 ::buffa::types::merge_string(&mut self.name, buf)?;
             }
+            2u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 2u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.include_browse =
+                    ::core::option::Option::Some(::buffa::types::decode_bool(buf)?);
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -1277,6 +1390,7 @@ impl ::buffa::Message for GetExternalLocationRequest {
 
     fn clear(&mut self) {
         self.name.clear();
+        self.include_browse = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }

@@ -183,6 +183,15 @@ pub async fn temp_model_version_credentials(
         ))
         .into());
     }
+    if status != ModelVersionStatus::Ready
+        && req.operation == ModelVersionOperation::ReadModelVersion
+    {
+        return Err(Error::invalid_argument(format!(
+            "Cannot request read credentials on a model version that is not ready: \
+             {full_name}/{version}"
+        ))
+        .into());
+    }
     let privileges: &[StoragePrivilege] = match req.operation {
         ModelVersionOperation::ReadModelVersion => &[Select],
         ModelVersionOperation::ReadWriteModelVersion => &[Select, Update],
@@ -248,11 +257,14 @@ async fn path_allowed(a: &Access, owner: &PathOwner, operation: PathOperation) -
         (PathOperation::PathReadWrite, PathOwner::Data(SecurableType::Table, l)) => {
             rules::update_table(a, l).await
         }
+        (PathOperation::PathReadWrite, PathOwner::Data(SecurableType::Volume, l)) => {
+            rules::vend_volume(a, l, true).await
+        }
         (PathOperation::PathReadWrite, PathOwner::Data(_, l)) => {
-            rules::use_parents(a, l).await && a.owner(l, object)
+            rules::use_parents(a, l).await && a.owner(l, object).await
         }
         (PathOperation::PathReadWrite, PathOwner::ExternalLocation(l)) => {
-            a.owner(l, object) || a.all(l, object, &[ReadFiles, WriteFiles]).await
+            a.owner(l, object).await || a.all(l, object, &[ReadFiles, WriteFiles]).await
         }
         (PathOperation::PathCreateTable, PathOwner::ExternalLocation(l)) => {
             a.owner_or_any(l, object, &[CreateExternalTable]).await

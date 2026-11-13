@@ -149,6 +149,11 @@ pub const PRIVILEGES: &[&str] = &[
     "CREATE EXTERNAL VOLUME",
     "CREATE MANAGED STORAGE",
     "CREATE STORAGE CREDENTIAL",
+    "BROWSE",
+    "MANAGE",
+    "WRITE VOLUME",
+    "CREATE MODEL VERSION",
+    "READ METADATA",
 ];
 
 /// The changes of an update, which needs one or more.

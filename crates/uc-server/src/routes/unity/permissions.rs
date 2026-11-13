@@ -4,7 +4,7 @@ use serde::Deserialize;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use uc_api::{PermissionsList, UpdatePermissions};
-use uc_common::SecurableType;
+use uc_common::{Error, SecurableType};
 
 use crate::{
     authn::principal::Principal,
@@ -40,7 +40,7 @@ pub async fn get_permissions(
     if access.enabled() {
         let lineage = authz::lineage(&state, securable_type, &full_name).await?;
         // Upstream `getAuthorization`: others see their own grants only.
-        if !rules::see_permissions(&access, &lineage).await {
+        if !rules::see_permissions(&access, securable_type, &lineage).await {
             if only.as_deref().is_some_and(|p| p != access.principal()) {
                 return Ok(Json(PermissionsList {
                     privilege_assignments: vec![],
@@ -82,6 +82,7 @@ pub async fn update_permissions(
         async |a, l| rules::update_permissions(a, securable_type, l).await,
     )
     .await?;
+    check_grant_targets(securable_type, &req)?;
     Ok(Json(
         state
             .metastore
@@ -89,6 +90,30 @@ pub async fn update_permissions(
             .update(securable_type, &full_name, req)
             .await?,
     ))
+}
+
+/// Upstream `validateAddedPrivileges`: a privilege is granted only on the
+/// securable types that take it, also with authorization off. Removals are
+/// not checked, so a grant from before this check can still be revoked.
+fn check_grant_targets(kind: SecurableType, req: &UpdatePermissions) -> Result<(), Error> {
+    for privilege in req.changes.iter().flat_map(|change| &change.add) {
+        if !rules::grant_targets(*privilege).contains(&kind) {
+            return Err(Error::invalid_argument(format!(
+                "Privilege {} cannot be granted on {}",
+                wire_name(privilege),
+                wire_name(&kind),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The API name of an enum value.
+fn wire_name<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default()
 }
 
 pub fn router() -> OpenApiRouter<AppState> {

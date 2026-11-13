@@ -46,6 +46,20 @@ pub struct RegisteredModelInfo {
     pub updated_by: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    /// True when the object has only the discovery fields that `BROWSE`
+    /// allows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browse_only: Option<bool>,
+}
+
+impl RegisteredModelInfo {
+    /// What `BROWSE` shows of a model: every field.
+    pub fn into_browse_only(self) -> Self {
+        Self {
+            browse_only: Some(true),
+            ..self
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]

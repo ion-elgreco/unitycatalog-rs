@@ -17,23 +17,34 @@ pub struct PyRegisteredModelClient {
 impl PyRegisteredModelClient {
     /// Get a registered model.
     ///
+    /// Args:
+    ///     include_browse: Also answer a caller who sees the registered model through the `BROWSE`
+    ///                     privilege only, with its discovery fields and `browse_only` set.
+    ///
     /// Returns:
     ///     A registered model: a securable in the three-level namespace (catalog.schema.model) that
     ///     holds
     ///     model versions.
-    pub fn get(&self, py: Python) -> PyUnityCatalogResult<PyRegisteredModelInfo> {
-        let request = self.client.get();
+    #[pyo3(signature = (*, include_browse = None))]
+    pub fn get(
+        &self,
+        py: Python,
+        include_browse: Option<bool>,
+    ) -> PyUnityCatalogResult<PyRegisteredModelInfo> {
+        let request = self.client.get().with_include_browse(include_browse);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
         Ok(PyRegisteredModelInfo::from(result))
     }
 
     /// Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
+    #[pyo3(signature = (*, include_browse = None))]
     pub fn get_async<'py>(
         &self,
         py: Python<'py>,
+        include_browse: Option<bool>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyRegisteredModelInfo>> {
-        let request = self.client.get();
+        let request = self.client.get().with_include_browse(include_browse);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

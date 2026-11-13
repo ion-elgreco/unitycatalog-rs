@@ -4,11 +4,11 @@ use serde::Deserialize;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use uc_api::{CreateSchema, ListSchemasResponse, SchemaInfo, UpdateSchema};
-use uc_common::{DeleteParams, PageToken, Pagination, SecurableType};
+use uc_common::{BrowseParams, DeleteParams, PageToken, Pagination, SecurableType};
 
 use crate::{
     authn::principal::Principal,
-    authz::{self, Access, rules, schema_lineage},
+    authz::{self, Access, Read, rules, schema_lineage},
     http::{EmptyObject, error::ApiResult},
     server::state::AppState,
 };
@@ -67,6 +67,7 @@ pub async fn list_schemas(
     State(state): State<AppState>,
     principal: Principal,
     Query(params): Query<ListSchemasParams>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<ListSchemasResponse>> {
     let (schemas, next) = state
         .metastore
@@ -81,8 +82,11 @@ pub async fn list_schemas(
                 authz::lineage(&state, SecurableType::Catalog, &params.catalog_name).await?;
             let mut kept = Vec::with_capacity(schemas.len());
             for schema in schemas {
-                if rules::get_schema(&access, &schema_lineage(&catalog, &schema)).await {
+                let lineage = schema_lineage(&catalog, &schema);
+                if rules::get_schema(&access, &lineage).await {
                     kept.push(schema);
+                } else if browse.include_browse && rules::browse_catalog(&access, &lineage).await {
+                    kept.push(schema.into_browse_only());
                 }
             }
             kept
@@ -108,16 +112,23 @@ pub async fn get_schema(
     State(state): State<AppState>,
     principal: Principal,
     Path(full_name): Path<String>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<SchemaInfo>> {
-    authz::check(
+    let read = authz::check_read(
         &state,
         &principal,
         SecurableType::Schema,
         &full_name,
+        browse.include_browse,
         rules::get_schema,
+        rules::browse_catalog,
     )
     .await?;
-    Ok(Json(state.metastore.schemas().get(&full_name).await?))
+    let info = state.metastore.schemas().get(&full_name).await?;
+    Ok(Json(match read {
+        Read::Full => info,
+        Read::BrowseOnly => info.into_browse_only(),
+    }))
 }
 
 #[utoipa::path(
@@ -137,12 +148,16 @@ pub async fn update_schema(
     Path(full_name): Path<String>,
     Json(req): Json<UpdateSchema>,
 ) -> ApiResult<Json<SchemaInfo>> {
+    let rename = req.new_name.is_some();
     authz::check(
         &state,
         &principal,
         SecurableType::Schema,
         &full_name,
-        rules::update_schema,
+        async |a, l| match rename {
+            true => rules::rename_schema(a, l).await,
+            false => rules::update_schema(a, l).await,
+        },
     )
     .await?;
     Ok(Json(

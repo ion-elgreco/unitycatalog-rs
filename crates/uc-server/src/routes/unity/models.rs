@@ -9,13 +9,13 @@ use uc_api::{
     UpdateRegisteredModel,
 };
 use uc_common::{
-    DeleteParams as DeleteModelParams, Error, PageToken, Pagination, SecurableType,
+    BrowseParams, DeleteParams as DeleteModelParams, Error, PageToken, Pagination, SecurableType,
     schema_full_name, three_part_full_name,
 };
 
 use crate::{
     authn::principal::Principal,
-    authz::{self, Access, rules},
+    authz::{self, Access, Read, rules},
     http::{EmptyObject, error::ApiResult},
     server::state::AppState,
 };
@@ -76,6 +76,7 @@ pub async fn list_registered_models(
     State(state): State<AppState>,
     principal: Principal,
     Query(params): Query<ListModelsParams>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<ListRegisteredModelsResponse>> {
     let (registered_models, next) = state
         .metastore
@@ -103,6 +104,9 @@ pub async fn list_registered_models(
             )
         },
         rules::get_model,
+        browse
+            .include_browse
+            .then_some(RegisteredModelInfo::into_browse_only),
     )
     .await?;
     Ok(Json(ListRegisteredModelsResponse {
@@ -124,16 +128,23 @@ pub async fn get_registered_model(
     State(state): State<AppState>,
     principal: Principal,
     Path(full_name): Path<String>,
+    Query(browse): Query<BrowseParams>,
 ) -> ApiResult<Json<RegisteredModelInfo>> {
-    authz::check(
+    let read = authz::check_read(
         &state,
         &principal,
         SecurableType::RegisteredModel,
         &full_name,
+        browse.include_browse,
         rules::get_model,
+        rules::browse_catalog,
     )
     .await?;
-    Ok(Json(state.metastore.models().get_model(&full_name).await?))
+    let info = state.metastore.models().get_model(&full_name).await?;
+    Ok(Json(match read {
+        Read::Full => info,
+        Read::BrowseOnly => info.into_browse_only(),
+    }))
 }
 
 #[utoipa::path(
@@ -152,12 +163,16 @@ pub async fn update_registered_model(
     Path(full_name): Path<String>,
     Json(req): Json<UpdateRegisteredModel>,
 ) -> ApiResult<Json<RegisteredModelInfo>> {
+    let rename = req.new_name.is_some();
     authz::check(
         &state,
         &principal,
         SecurableType::RegisteredModel,
         &full_name,
-        rules::own_child,
+        async |a, l| match rename {
+            true => rules::rename_model(a, l).await,
+            false => rules::manage_child(a, l).await,
+        },
     )
     .await?;
     Ok(Json(
@@ -193,7 +208,7 @@ pub async fn delete_registered_model(
         &principal,
         SecurableType::RegisteredModel,
         &full_name,
-        rules::own_child,
+        rules::manage_child,
     )
     .await?;
     state
@@ -224,7 +239,7 @@ pub async fn create_model_version(
         &principal,
         SecurableType::RegisteredModel,
         &parent,
-        rules::own_child,
+        rules::create_model_version,
     )
     .await?;
     Ok(Json(
@@ -323,7 +338,7 @@ pub async fn update_model_version(
         &principal,
         SecurableType::RegisteredModel,
         &full_name,
-        rules::own_child,
+        rules::manage_child,
     )
     .await?;
     Ok(Json(
@@ -354,7 +369,7 @@ pub async fn delete_model_version(
         &principal,
         SecurableType::RegisteredModel,
         &full_name,
-        rules::own_child,
+        rules::manage_child,
     )
     .await?;
     state
@@ -393,14 +408,21 @@ pub async fn finalize_model_version(
         &principal,
         SecurableType::RegisteredModel,
         &full_name,
-        rules::own_child,
+        rules::create_model_version,
     )
     .await?;
+    // Upstream: with authorization on, only the creator of a pending
+    // version finalizes it.
     Ok(Json(
         state
             .metastore
             .models()
-            .finalize_version(&full_name, version, principal.actor())
+            .finalize_version(
+                &full_name,
+                version,
+                principal.actor(),
+                state.authorization_enabled,
+            )
             .await?,
     ))
 }

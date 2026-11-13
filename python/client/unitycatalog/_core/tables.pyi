@@ -229,6 +229,7 @@ class TableClient:
         *,
         read_streaming_table_as_managed: bool | None = None,
         read_materialized_view_as_managed: bool | None = None,
+        include_browse: bool | None = None,
     ) -> TableInfo:
         """
         Get a table.
@@ -238,6 +239,8 @@ class TableClient:
                                              can. This server does not read it.
             read_materialized_view_as_managed: Show a materialized view as a MANAGED table, as upstream's
                                                server can. This server does not read it.
+            include_browse: Also answer a caller who sees the table through the `BROWSE` privilege only,
+                            with its discovery fields and `browse_only` set.
 
         Returns:
             A table: data in the third layer of the three-level namespace, below a schema.
@@ -248,6 +251,7 @@ class TableClient:
         *,
         read_streaming_table_as_managed: bool | None = None,
         read_materialized_view_as_managed: bool | None = None,
+        include_browse: bool | None = None,
     ) -> Future[TableInfo]:
         """
         Like `get`, but returns an `asyncio.Future` of the result. Call it in a running event loop.
@@ -303,6 +307,11 @@ class TableInfo:
     def __eq__(self, value: object, /) -> bool: ...
     def __ne__(self, value: object, /) -> bool: ...
     def __repr__(self, /) -> str: ...
+    @property
+    def browse_only(self, /) -> bool | None:
+        """
+        True when the table has only the discovery fields that the `BROWSE` privilege allows.
+        """
     @property
     def catalog_name(self, /) -> str:
         """

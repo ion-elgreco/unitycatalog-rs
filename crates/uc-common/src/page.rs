@@ -146,6 +146,14 @@ pub struct DeleteParams {
     pub force: bool,
 }
 
+/// `?include_browse=true` of the get and list endpoints: also answer with
+/// the objects that the caller sees through `BROWSE` only.
+#[derive(Debug, Default, Deserialize)]
+pub struct BrowseParams {
+    #[serde(default, deserialize_with = "lenient_bool")]
+    pub include_browse: bool,
+}
+
 /// Standard list-endpoint params for resources scoped to a schema:
 /// `?catalog_name=X&schema_name=Y` and [`Pagination`].
 /// Used by tables/volumes/functions/models list endpoints.

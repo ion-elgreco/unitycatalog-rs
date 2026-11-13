@@ -75,7 +75,7 @@ curl "$fs/directories/Tables/main/default/events/_delta_log"
 | `DELETE` | `/files/<path>` | Deletes a file. |
 
 - **Privileges**: reads need `READ VOLUME` on a volume or `SELECT` on a table, as their temporary
-  credentials. Writes need ownership of the volume: upstream has no `WRITE VOLUME` privilege.
+  credentials. Writes need `READ VOLUME` and `WRITE VOLUME` on the volume, or its ownership.
 - **`recursive`** is ours: the Databricks Files API deletes only empty directories.
 - **Tables are read-only**: a file written or deleted outside the table's commits would break the
   table, so writes under `/Tables` fail.
