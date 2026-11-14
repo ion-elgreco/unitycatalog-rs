@@ -1,6 +1,9 @@
 //! Upstream `CliUtils.parseColumns` and `parseInputParams`: `--columns
 //! "id INT, price DECIMAL(10,2)"` and `--input_params "a INT, b STRING"`.
 
+use std::sync::LazyLock;
+
+use regex::Regex;
 use uc_client::models::functions::v1::FunctionParameterInfo;
 use uc_client::models::tables::v1::{ColumnInfo, ColumnTypeName};
 
@@ -63,79 +66,28 @@ fn type_json(name: &str, json_type: &str) -> String {
     format!("{{\"name\":\"{name}\",\"type\":\"{json_type}\",\"nullable\":true,\"metadata\":{{}}}}")
 }
 
-fn is_word(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_'
-}
+/// Upstream's `(\w+)\s+(\w+)(?:\(([^)]+)\)|(?<=(?i:decimal))\s*\(([^)]*)\))?`:
+/// name, type, and the text in parentheses. Only a `DECIMAL` type takes
+/// blanks before the parentheses or nothing in them. The regex crate has no
+/// lookbehind. Upstream's lookbehind can only see the type, so the first
+/// branch takes a type that ends in `decimal`. `[[:word:]]` and `[[:space:]]`
+/// are ASCII, as Java's `\w` and `\s`.
+static COLUMN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"([[:word:]]+)[[:space:]]+",
+        r"(?:([[:word:]]*(?i:decimal))[[:space:]]*\(([^)]*)\)",
+        r"|([[:word:]]+)(?:\(([^)]+)\))?)",
+    ))
+    .expect("valid regex")
+});
 
-/// One column of `--columns`: what upstream's
-/// `(\w+)\s+(\w+)(?:\(([^)]+)\)|(?<=(?i:decimal))\s*\(([^)]*)\))?` matches.
-struct ColumnMatch {
-    name: String,
-    type_name: String,
-    /// The text in parentheses. Only `DECIMAL` takes blanks before them, or
-    /// nothing in them.
-    params: Option<String>,
-    /// The matched text.
-    text: String,
-    /// The text after the match starts like parameters (`\s*[(\[\d]`).
-    params_follow: bool,
-}
+/// Upstream's `\s*[(\[\d]`: the text after a column starts like parameters.
+static PARAMS_FOLLOW: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[[:space:]]*[(\[0-9]").expect("valid regex"));
 
-fn matches(text: &str) -> Vec<ColumnMatch> {
-    let chars: Vec<char> = text.chars().collect();
-    let take = |from: usize, keep: fn(char) -> bool| {
-        let mut end = from;
-        while end < chars.len() && keep(chars[end]) {
-            end += 1;
-        }
-        end
-    };
-    // The text in the parentheses that open at `open`, and the end of the `)`.
-    let parenthesized = |open: usize| {
-        if chars.get(open) != Some(&'(') {
-            return None;
-        }
-        let close = chars[open + 1..].iter().position(|c| *c == ')')?;
-        let params: String = chars[open + 1..open + 1 + close].iter().collect();
-        Some((params, open + close + 2))
-    };
-    let mut found = Vec::new();
-    let mut pos = 0;
-    while pos < chars.len() {
-        if !is_word(chars[pos]) {
-            pos += 1;
-            continue;
-        }
-        let name_end = take(pos, is_word);
-        let type_start = take(name_end, |c| c.is_ascii_whitespace());
-        let type_end = take(type_start, is_word);
-        if type_start == name_end || type_end == type_start {
-            pos = name_end;
-            continue;
-        }
-        let type_name: String = chars[type_start..type_end].iter().collect();
-        let decimal = type_name.eq_ignore_ascii_case("decimal");
-        let params = match parenthesized(type_end) {
-            Some((params, end)) if !params.is_empty() => Some((params, end)),
-            _ if decimal => parenthesized(take(type_end, |c| c.is_ascii_whitespace())),
-            _ => None,
-        };
-        let end = params.as_ref().map_or(type_end, |(_, end)| *end);
-        let after = take(end, |c| c.is_ascii_whitespace());
-        let params_follow = chars
-            .get(after)
-            .is_some_and(|c| matches!(c, '(' | '[') || c.is_ascii_digit());
-        found.push(ColumnMatch {
-            name: chars[pos..name_end].iter().collect(),
-            type_name,
-            params: params.map(|(params, _)| params),
-            text: chars[pos..end].iter().collect(),
-            params_follow,
-        });
-        pos = end;
-    }
-    found
-}
+/// Upstream's `\d{1,9}`: one parameter of `DECIMAL`.
+static DECIMAL_PARAM: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new("^[0-9]{1,9}$").expect("valid regex"));
 
 /// Upstream `setPrecisionAndScale`: the precision and scale of a column,
 /// and the `(p,s)` that its type text gets. A bare `DECIMAL` is
@@ -156,8 +108,9 @@ fn precision_and_scale(
         anyhow::bail!("DECIMAL takes at most 2 parameters: ({params})");
     }
     let parse = |part: &str| {
-        let part = part.trim();
-        if part.is_empty() || part.len() > 9 || !part.bytes().all(|b| b.is_ascii_digit()) {
+        // Java's trim: all characters up to U+0020.
+        let part = part.trim_matches(|c| c <= ' ');
+        if !DECIMAL_PARAM.is_match(part) {
             anyhow::bail!("Invalid DECIMAL parameters: ({params})");
         }
         Ok(part.parse::<i32>()?)
@@ -180,25 +133,32 @@ fn precision_and_scale(
 /// The columns of `--columns`, as upstream's `ColumnInfo`s.
 pub fn parse_columns(text: &str) -> anyhow::Result<Vec<ColumnInfo>> {
     let mut columns = Vec::new();
-    for (position, column) in matches(text).into_iter().enumerate() {
-        let type_name = column.type_name.to_uppercase();
+    for (position, column) in COLUMN.captures_iter(text).enumerate() {
+        let whole = column.get(0).expect("group 0 is the match");
+        let matched = whole.as_str();
+        let name = &column[1];
+        let type_name = column
+            .get(2)
+            .or(column.get(4))
+            .map_or("", |m| m.as_str())
+            .to_uppercase();
+        let params = column.get(3).or(column.get(5)).map(|m| m.as_str());
         let invalid =
-            |e: anyhow::Error| anyhow::anyhow!("Invalid column definition: {}: {e}", column.text);
+            |e: anyhow::Error| anyhow::anyhow!("Invalid column definition: {matched}: {e}");
         let Some(column_type) = type_named(&type_name) else {
-            anyhow::bail!("Invalid column definition: {}", column.text);
+            anyhow::bail!("Invalid column definition: {matched}");
         };
         let decimal = column_type == ColumnTypeName::Decimal;
-        if decimal && column.params.is_none() && column.params_follow {
+        if decimal && params.is_none() && PARAMS_FOLLOW.is_match(&text[whole.end()..]) {
             return Err(invalid(anyhow::anyhow!(
                 "Malformed DECIMAL parameters, expected DECIMAL(p) or DECIMAL(p,s)"
             )));
         }
-        let (precision, scale, suffix) =
-            precision_and_scale(decimal, column.params.as_deref()).map_err(invalid)?;
+        let (precision, scale, suffix) = precision_and_scale(decimal, params).map_err(invalid)?;
         columns.push(ColumnInfo {
             type_text: Some(format!("{}{suffix}", type_text(&type_name))),
-            type_json: type_json(&column.name, &format!("{}{suffix}", json_type(&type_name))),
-            name: column.name,
+            type_json: type_json(name, &format!("{}{suffix}", json_type(&type_name))),
+            name: name.to_string(),
             type_name: Some(column_type.into()),
             type_precision: precision,
             type_scale: scale,
@@ -370,6 +330,33 @@ mod tests {
         let columns = parse_columns("price DECIMAL extra").unwrap();
         assert_eq!(columns.len(), 1);
         assert_eq!(columns[0].type_text.as_deref(), Some("decimal(10,0)"));
+    }
+
+    /// Upstream's Java patterns, at their edges.
+    #[test]
+    fn columns_match_as_java() {
+        // `\s` takes a vertical tab.
+        let columns = parse_columns("d\x0bDECIMAL\x0b(5,1)").unwrap();
+        assert_eq!(columns[0].type_text.as_deref(), Some("decimal(5,1)"));
+        // The lookbehind takes each type that ends in `decimal`.
+        let err = parse_columns("x mydecimal (1,2)").unwrap_err().to_string();
+        assert_eq!(err, "Invalid column definition: x mydecimal (1,2)");
+        let err = parse_columns("x decimalx (1,2)").unwrap_err().to_string();
+        assert_eq!(err, "Invalid column definition: x decimalx");
+        // `\w` is ASCII: the type ends before `é`, and the rest is ignored.
+        let columns = parse_columns("x decimalé (1,2)").unwrap();
+        assert_eq!(columns.len(), 1);
+        assert_eq!(columns[0].type_text.as_deref(), Some("decimal(10,0)"));
+        // `trim` removes control characters, not a no-break space.
+        let columns = parse_columns("d DECIMAL(\x0112,3)").unwrap();
+        assert_eq!(columns[0].type_text.as_deref(), Some("decimal(12,3)"));
+        let err = parse_columns("d DECIMAL(\u{a0}12,3)")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.ends_with("Invalid DECIMAL parameters: (\u{a0}12,3)"),
+            "{err}"
+        );
     }
 
     #[test]

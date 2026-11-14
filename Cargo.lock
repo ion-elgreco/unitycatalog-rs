@@ -8953,6 +8953,7 @@ dependencies = [
  "olai-http",
  "rand 0.8.6",
  "ratatui",
+ "regex",
  "reqwest 0.13.5",
  "rsa",
  "serde",
