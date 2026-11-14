@@ -6,6 +6,7 @@
 pub mod column_mapping;
 pub mod commits;
 pub mod contract;
+pub mod fields;
 pub mod schema_evolution;
 pub mod table;
 pub mod uniform;

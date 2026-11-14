@@ -405,7 +405,7 @@ fn apply_columns(
             column_mapping::validate_set_columns(
                 state.table_type,
                 &state.columns,
-                &fields,
+                &crate::fields::kernel_fields(&fields),
                 table_mode,
                 requested_mode,
                 &state.properties,

@@ -676,7 +676,7 @@ async fn create_table_follows_upstream() {
         (with(&|b| b["columns"] = json!({ "type": "struct", "fields": [] })),
             "columns.fields must contain at least one field.".into()),
         (with(&|b| b["columns"]["fields"][0]["type"] = json!("int")),
-            "columns.fields[0].type: Unsupported Delta primitive type: int".into()),
+            "columns.fields[0].type: Unsupported Delta table type: 'int'".into()),
         (with(&|b| b["columns"]["fields"][0]["type"] = json!({ "type": "decimal", "scale": 2 })),
             "columns.fields[0].type.precision is required.".into()),
         (with(&|b| { b.as_object_mut().unwrap().remove("table-type"); }), "table-type is required.".into()),

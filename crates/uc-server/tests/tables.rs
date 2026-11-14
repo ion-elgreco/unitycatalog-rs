@@ -619,7 +619,7 @@ async fn column_type_json_is_validated(#[future(awt)] seeded: Router) {
             column(Some(
                 r#"{"name":"c","type":"int","nullable":true,"metadata":{}}"#,
             )),
-            format!("{prefix}type_json.type: Unsupported Delta primitive type: int"),
+            format!("{prefix}type_json.type: Unsupported Delta table type: 'int'"),
         ),
         (
             "DELTA",
@@ -631,7 +631,10 @@ async fn column_type_json_is_validated(#[future(awt)] seeded: Router) {
             column(Some(
                 r#"{"name":"c","type":"decimal(40,2)","nullable":true,"metadata":{}}"#,
             )),
-            format!("{prefix}type_json.type.precision must be in [0, 38], got 40."),
+            format!(
+                "{prefix}type_json.type: Invalid decimal: precision must be in range 1..38 \
+                 inclusive, found: 40."
+            ),
         ),
         (
             "DELTA",

@@ -11,15 +11,14 @@
 use std::collections::HashMap;
 
 use delta_kernel::schema::diff::{FieldChangeType, FieldUpdate, SchemaDiff};
+use delta_kernel::schema::{MetadataValue, StructField, StructType};
 use serde_json::Value;
 
-use uc_api::{
-    ColumnInfo,
-    delta_types::{DELTA_PRIMITIVES, DeltaDataType, DeltaStructField},
-};
+use uc_api::ColumnInfo;
 use uc_common::{Error, Result, SecurablePropertiesMap};
 
-use crate::column_mapping::{PHYSICAL_NAME, column_id, kernel_schema};
+use crate::column_mapping::{PHYSICAL_NAME, column_id};
+use crate::fields::{kernel_message, nested_fields};
 use crate::table::struct_field;
 use crate::unsupported_changes;
 
@@ -38,7 +37,7 @@ pub(crate) fn invalid(message: impl AsRef<str>) -> Error {
 /// `properties` are the table properties before the request.
 pub fn validate(
     current_columns: &[ColumnInfo],
-    incoming: &[DeltaStructField],
+    incoming: &[StructField],
     properties: &SecurablePropertiesMap,
     renames_top_level_column: bool,
 ) -> Result<()> {
@@ -49,12 +48,14 @@ pub fn validate(
         .iter()
         .map(struct_field)
         .collect::<std::result::Result<Vec<_>, _>>()
-        .and_then(|fields| readable(&fields).map(|()| fields))
-        .and_then(|fields| kernel_schema(&fields))
+        .and_then(|fields| StructType::try_new(fields).map_err(kernel_message))
         .map_err(|e| invalid(format!("the table schema cannot be read: {e}")))?;
-    let new = readable(incoming)
-        .and_then(|()| kernel_schema(incoming))
-        .map_err(|e| invalid(format!("the requested schema cannot be read: {e}")))?;
+    let new = StructType::try_new(incoming.iter().cloned()).map_err(|e| {
+        invalid(format!(
+            "the requested schema cannot be read: {}",
+            kernel_message(e)
+        ))
+    })?;
     let iceberg_writer_compat_v1 = properties
         .get(ENABLE_ICEBERG_WRITER_COMPAT_V1)
         .is_some_and(|v| v.eq_ignore_ascii_case("true"));
@@ -96,56 +97,13 @@ fn reject_tightened_nullability(update: &FieldUpdate) -> Result<()> {
     Ok(())
 }
 
-/// Whether every type in the schema is one Delta knows, with all its parts.
-/// The kernel reads more types than the API takes, such as `void`.
-fn readable(fields: &[DeltaStructField]) -> std::result::Result<(), String> {
-    for field in fields {
-        let name = field.name.as_deref().ok_or("a field has no name")?;
-        if field.nullable.is_none() {
-            return Err(format!("field {name} has no nullable flag"));
-        }
-        let data_type = field
-            .data_type
-            .as_ref()
-            .ok_or_else(|| format!("field {name} has no type"))?;
-        readable_type(data_type).map_err(|e| format!("field {name}: {e}"))?;
-    }
-    Ok(())
-}
-
-fn readable_type(data_type: &DeltaDataType) -> std::result::Result<(), String> {
-    match data_type {
-        DeltaDataType::Primitive(p) if DELTA_PRIMITIVES.contains(&p.as_str()) => Ok(()),
-        DeltaDataType::Primitive(p) => Err(format!("unknown type {p}")),
-        DeltaDataType::Decimal {
-            precision: Some(_),
-            scale: Some(_),
-        } => Ok(()),
-        DeltaDataType::Decimal { .. } => Err("decimal without precision or scale".into()),
-        DeltaDataType::Array { element_type, .. } => readable_type(
-            element_type
-                .as_deref()
-                .ok_or("array without element type")?,
-        ),
-        DeltaDataType::Map {
-            key_type,
-            value_type,
-            ..
-        } => {
-            readable_type(key_type.as_deref().ok_or("map without key type")?)?;
-            readable_type(value_type.as_deref().ok_or("map without value type")?)
-        }
-        DeltaDataType::Struct { fields } => readable(fields.as_deref().unwrap_or_default()),
-    }
-}
-
 /// A field's name and physical name: what a rename or a new physical name
 /// changes under an id.
-type Identity = (String, Option<Value>);
+type Identity = (String, Option<MetadataValue>);
 
 fn keeps_an_id_under_a_new_identity(
     current_columns: &[ColumnInfo],
-    incoming: &[DeltaStructField],
+    incoming: &[StructField],
 ) -> bool {
     let mut current = HashMap::new();
     // A stored column that cannot be read has no identity to compare.
@@ -161,38 +119,17 @@ fn keeps_an_id_under_a_new_identity(
         .any(|(id, identity)| current.get(id).is_some_and(|c| c != identity))
 }
 
-fn collect_identities(field: &DeltaStructField, by_id: &mut HashMap<i32, Identity>) {
+fn collect_identities(field: &StructField, by_id: &mut HashMap<i32, Identity>) {
     if let Some(id) = column_id(field) {
         let physical = field
-            .metadata
-            .as_ref()
-            .and_then(|m| m.get(PHYSICAL_NAME))
-            .filter(|v| !v.is_null())
+            .metadata()
+            .get(PHYSICAL_NAME)
+            .filter(|v| **v != MetadataValue::Other(Value::Null))
             .cloned();
-        by_id.insert(id, (field.name.clone().unwrap_or_default(), physical));
+        by_id.insert(id, (field.name().clone(), physical));
     }
-    collect_identities_in(field.data_type.as_ref(), by_id);
-}
-
-fn collect_identities_in(data_type: Option<&DeltaDataType>, by_id: &mut HashMap<i32, Identity>) {
-    match data_type {
-        Some(DeltaDataType::Struct { fields }) => {
-            for field in fields.iter().flatten() {
-                collect_identities(field, by_id);
-            }
-        }
-        Some(DeltaDataType::Array { element_type, .. }) => {
-            collect_identities_in(element_type.as_deref(), by_id)
-        }
-        Some(DeltaDataType::Map {
-            key_type,
-            value_type,
-            ..
-        }) => {
-            collect_identities_in(key_type.as_deref(), by_id);
-            collect_identities_in(value_type.as_deref(), by_id);
-        }
-        _ => {}
+    for nested in nested_fields(field.data_type()) {
+        collect_identities(nested, by_id);
     }
 }
 
@@ -200,7 +137,6 @@ fn collect_identities_in(data_type: Option<&DeltaDataType>, by_id: &mut HashMap<
 mod tests {
     use super::*;
     use serde_json::json;
-    use uc_api::delta_types::KeyStyle;
 
     fn fld(name: &str, data_type: Value, id: Option<i32>, physical: Option<&str>) -> Value {
         fld_nullable(name, data_type, true, id, physical)
@@ -268,9 +204,9 @@ mod tests {
                 ..Default::default()
             })
             .collect();
-        let incoming: Vec<DeltaStructField> = incoming
-            .iter()
-            .map(|f| DeltaStructField::from_json(f, KeyStyle::Camel).unwrap())
+        let incoming: Vec<StructField> = incoming
+            .into_iter()
+            .map(|f| serde_json::from_value(f).unwrap())
             .collect();
         validate(&current, &incoming, properties, rename)
     }
@@ -658,13 +594,13 @@ mod tests {
     #[test]
     fn a_schema_that_cannot_be_read_fails_the_check() {
         let p = properties("name", &[]);
-        let void = || fld("v", json!("void"), Some(2), Some("col-v"));
+        let unknown = || fld("v", json!("hyperdecimal"), Some(2), Some("col-v"));
         assert!(
             rejected(
                 &p,
                 true,
-                vec![long("a", 1, "col-1"), void()],
-                vec![long("b", 1, "col-1"), void()]
+                vec![long("a", 1, "col-1"), unknown()],
+                vec![long("b", 1, "col-1"), long("v", 2, "col-v")]
             )
             .contains("the table schema cannot be read")
         );
@@ -673,16 +609,16 @@ mod tests {
                 &p,
                 true,
                 vec![long("a", 1, "col-1")],
-                vec![long("b", 1, "col-1"), void()]
+                vec![long("b", 1, "col-1"), long("B", 2, "col-2")]
             )
-            .contains("the requested schema cannot be read")
+            .contains("the requested schema cannot be read: Duplicate field name")
         );
         assert!(
             check(
                 &p,
                 false,
-                vec![long("a", 1, "col-1"), void()],
-                vec![long("a", 1, "col-1"), void()]
+                vec![long("a", 1, "col-1"), unknown()],
+                vec![long("a", 1, "col-1"), long("v", 2, "col-v")]
             )
             .is_ok()
         );

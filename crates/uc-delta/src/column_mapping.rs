@@ -9,17 +9,15 @@
 
 use std::collections::{HashMap, HashSet};
 
-use delta_kernel::schema::StructType;
+use delta_kernel::schema::{DataType, MetadataValue, StructField, StructType};
 use delta_kernel::table_features::validate_schema_column_mapping;
-use serde_json::{Map, Value, json};
+use serde_json::Value;
 use tracing::warn;
 
-use uc_api::{
-    ColumnInfo, TableType,
-    delta_types::{DeltaDataType, DeltaStructField, KeyStyle},
-};
+use uc_api::{ColumnInfo, TableType};
 use uc_common::{Error, Result, SecurablePropertiesMap};
 
+use crate::fields::{all_fields, kernel_message};
 use crate::table::struct_field;
 
 pub use delta_kernel::table_features::ColumnMappingMode;
@@ -54,14 +52,6 @@ fn identity_metadata_key(mode: ColumnMappingMode) -> &'static str {
     }
 }
 
-/// The fields as a kernel schema, read from their Delta schema JSON.
-pub(crate) fn kernel_schema(
-    fields: &[DeltaStructField],
-) -> std::result::Result<StructType, String> {
-    let fields: Vec<Value> = fields.iter().map(|f| f.to_json(KeyStyle::Camel)).collect();
-    serde_json::from_value(json!({ "type": "struct", "fields": fields })).map_err(|e| e.to_string())
-}
-
 /// Whether the request sets the mode to name or id while the stored mode is
 /// neither. Neither value is parsed, so an unknown mode does not block
 /// other updates.
@@ -73,79 +63,41 @@ pub fn turns_on(stored: Option<&str>, requested: Option<&str>) -> bool {
     !name_or_id(stored) && name_or_id(requested)
 }
 
-fn metadata(field: &DeltaStructField) -> Option<&Map<String, Value>> {
-    field.metadata.as_ref()
+/// The column-mapping id of a field: an integer in the 32-bit range.
+pub(crate) fn column_id(field: &StructField) -> Option<i32> {
+    match field.metadata().get(ID)? {
+        MetadataValue::Number(id) => i32::try_from(*id).ok(),
+        _ => None,
+    }
 }
 
-fn name(field: &DeltaStructField) -> &str {
-    field.name.as_deref().unwrap_or_default()
-}
-
-/// The column-mapping id of a field: a JSON integer in the 32-bit range.
-pub(crate) fn column_id(field: &DeltaStructField) -> Option<i32> {
-    metadata(field)?
-        .get(ID)?
-        .as_i64()
-        .and_then(|id| i32::try_from(id).ok())
+/// The value of `key` in the metadata of a field, if it is a string.
+fn metadata_str<'a>(field: &'a StructField, key: &str) -> Option<&'a str> {
+    match field.metadata().get(key)? {
+        MetadataValue::String(value) => Some(value),
+        _ => None,
+    }
 }
 
 /// The physical name of a field: a non-empty string.
-pub(crate) fn physical_name(field: &DeltaStructField) -> Option<&str> {
-    metadata(field)?
-        .get(PHYSICAL_NAME)?
-        .as_str()
-        .filter(|s| !s.is_empty())
-}
-
-/// The struct fields directly under a type, through array elements and map
-/// keys and values.
-fn nested_fields(data_type: Option<&DeltaDataType>) -> Vec<&DeltaStructField> {
-    match data_type {
-        Some(DeltaDataType::Struct { fields }) => fields.iter().flatten().collect(),
-        Some(DeltaDataType::Array { element_type, .. }) => nested_fields(element_type.as_deref()),
-        Some(DeltaDataType::Map {
-            key_type,
-            value_type,
-            ..
-        }) => {
-            let mut fields = nested_fields(key_type.as_deref());
-            fields.extend(nested_fields(value_type.as_deref()));
-            fields
-        }
-        _ => vec![],
-    }
-}
-
-/// Every field at every depth, each before the fields nested in it.
-fn all_fields<'a>(
-    fields: impl IntoIterator<Item = &'a DeltaStructField>,
-) -> Vec<&'a DeltaStructField> {
-    let mut all = vec![];
-    for field in fields {
-        all.push(field);
-        all.extend(all_fields(nested_fields(field.data_type.as_ref())));
-    }
-    all
+pub(crate) fn physical_name(field: &StructField) -> Option<&str> {
+    metadata_str(field, PHYSICAL_NAME).filter(|s| !s.is_empty())
 }
 
 /// Whether some field, at any depth, has `key` in its metadata.
-fn carries_key(fields: &[DeltaStructField], key: &str) -> bool {
+fn carries_key(fields: &[StructField], key: &str) -> bool {
     all_fields(fields)
         .iter()
-        .any(|f| metadata(f).is_some_and(|m| m.contains_key(key)))
+        .any(|f| f.metadata().contains_key(key))
 }
 
 /// The table's stored columns as fields. A stored column that cannot be
 /// read is skipped with a warning, as loading a table does.
-pub(crate) fn readable_stored_fields(columns: &[ColumnInfo]) -> Vec<DeltaStructField> {
+pub(crate) fn readable_stored_fields(columns: &[ColumnInfo]) -> Vec<StructField> {
     let mut fields = vec![];
     for column in columns {
         match struct_field(column) {
-            Ok(field) if field.name.is_some() && field.data_type.is_some() => fields.push(field),
-            Ok(_) => warn!(
-                column = column.name.as_deref().unwrap_or_default(),
-                "skipping a column: its stored type is an incomplete field"
-            ),
+            Ok(field) => fields.push(field),
             Err(error) => warn!(
                 column = column.name.as_deref().unwrap_or_default(),
                 %error,
@@ -156,35 +108,39 @@ pub(crate) fn readable_stored_fields(columns: &[ColumnInfo]) -> Vec<DeltaStructF
     fields
 }
 
-fn has_key(field: &DeltaStructField, key: &str) -> bool {
-    metadata(field).is_some_and(|m| m.get(key).is_some_and(|v| !v.is_null()))
+/// Whether the metadata of a field has `key` with a value that is not null.
+fn has_key(field: &StructField, key: &str) -> bool {
+    field
+        .metadata()
+        .get(key)
+        .is_some_and(|v| *v != MetadataValue::Other(Value::Null))
 }
 
 /// The dotted paths of the fields that stay in `incoming` (by name, case
 /// ignored) but lost `key`. `prefix` is the path of the enclosing field.
 fn stripped_keys(
-    stored: &[&DeltaStructField],
-    incoming: &[&DeltaStructField],
+    stored: &[&StructField],
+    incoming: &[&StructField],
     key: &str,
     prefix: &str,
 ) -> Vec<String> {
-    let incoming_by_name: HashMap<String, &DeltaStructField> = incoming
+    let incoming_by_name: HashMap<String, &StructField> = incoming
         .iter()
-        .map(|f| (name(f).to_lowercase(), *f))
+        .map(|f| (f.name().to_lowercase(), *f))
         .collect();
     let mut stripped = vec![];
     for stored in stored {
         // A column that is gone was dropped, not stripped.
-        let Some(incoming) = incoming_by_name.get(&name(stored).to_lowercase()) else {
+        let Some(incoming) = incoming_by_name.get(&stored.name().to_lowercase()) else {
             continue;
         };
-        let path = format!("{prefix}{}", name(stored));
+        let path = format!("{prefix}{}", stored.name());
         if has_key(stored, key) && !has_key(incoming, key) {
             stripped.push(path.clone());
         }
         stripped.extend(stripped_keys_in_types(
-            stored.data_type.as_ref(),
-            incoming.data_type.as_ref(),
+            stored.data_type(),
+            incoming.data_type(),
             key,
             &format!("{path}."),
         ));
@@ -193,57 +149,30 @@ fn stripped_keys(
 }
 
 fn stripped_keys_in_types(
-    stored: Option<&DeltaDataType>,
-    incoming: Option<&DeltaDataType>,
+    stored: &DataType,
+    incoming: &DataType,
     key: &str,
     prefix: &str,
 ) -> Vec<String> {
     match (stored, incoming) {
-        (
-            Some(DeltaDataType::Struct { fields: stored }),
-            Some(DeltaDataType::Struct { fields: incoming }),
-        ) => {
-            // A nested stored field without a name or type has no identity
-            // to keep.
-            let stored: Vec<&DeltaStructField> = stored
-                .iter()
-                .flatten()
-                .filter(|f| f.name.is_some() && f.data_type.is_some())
-                .collect();
-            let incoming: Vec<&DeltaStructField> = incoming.iter().flatten().collect();
+        (DataType::Struct(stored), DataType::Struct(incoming)) => {
+            let stored: Vec<&StructField> = stored.fields().collect();
+            let incoming: Vec<&StructField> = incoming.fields().collect();
             stripped_keys(&stored, &incoming, key, prefix)
         }
-        (
-            Some(DeltaDataType::Array {
-                element_type: stored,
-                ..
-            }),
-            Some(DeltaDataType::Array {
-                element_type: incoming,
-                ..
-            }),
-        ) => stripped_keys_in_types(stored.as_deref(), incoming.as_deref(), key, prefix),
-        (
-            Some(DeltaDataType::Map {
-                key_type: stored_key,
-                value_type: stored_value,
-                ..
-            }),
-            Some(DeltaDataType::Map {
-                key_type: incoming_key,
-                value_type: incoming_value,
-                ..
-            }),
-        ) => {
+        (DataType::Array(stored), DataType::Array(incoming)) => {
+            stripped_keys_in_types(stored.element_type(), incoming.element_type(), key, prefix)
+        }
+        (DataType::Map(stored), DataType::Map(incoming)) => {
             let mut stripped = stripped_keys_in_types(
-                stored_key.as_deref(),
-                incoming_key.as_deref(),
+                stored.key_type(),
+                incoming.key_type(),
                 key,
                 &format!("{prefix}key."),
             );
             stripped.extend(stripped_keys_in_types(
-                stored_value.as_deref(),
-                incoming_value.as_deref(),
+                stored.value_type(),
+                incoming.value_type(),
                 key,
                 &format!("{prefix}value."),
             ));
@@ -257,11 +186,11 @@ fn stripped_keys_in_types(
 /// top-level columns share with case ignored. Renames and partition columns
 /// are found by physical name in lowercase, and Delta reads partition values
 /// and statistics by physical name in both modes.
-fn reject_unusable_physical_names(fields: &[DeltaStructField]) -> Result<()> {
+fn reject_unusable_physical_names(fields: &[StructField]) -> Result<()> {
     let empty: Vec<&str> = all_fields(fields)
         .into_iter()
-        .filter(|f| metadata(f).and_then(|m| m.get(PHYSICAL_NAME)) == Some(&json!("")))
-        .map(name)
+        .filter(|f| metadata_str(f, PHYSICAL_NAME) == Some(""))
+        .map(|f| f.name().as_str())
         .collect();
     if !empty.is_empty() {
         return Err(invalid(format!(
@@ -271,10 +200,7 @@ fn reject_unusable_physical_names(fields: &[DeltaStructField]) -> Result<()> {
     }
     let mut seen = HashSet::new();
     for field in fields {
-        let physical = metadata(field)
-            .and_then(|m| m.get(PHYSICAL_NAME))
-            .and_then(Value::as_str);
-        if let Some(physical) = physical
+        if let Some(physical) = metadata_str(field, PHYSICAL_NAME)
             && !seen.insert(physical.to_lowercase())
         {
             return Err(invalid(format!(
@@ -291,16 +217,13 @@ fn reject_unusable_physical_names(fields: &[DeltaStructField]) -> Result<()> {
 /// the wrong type, an id out of range or shared by two fields, and a
 /// physical name that two fields of one struct share. Create and
 /// `set-columns` both call it.
-pub fn validate_identities(fields: &[DeltaStructField], mode: ColumnMappingMode) -> Result<()> {
+pub fn validate_identities(fields: &[StructField], mode: ColumnMappingMode) -> Result<()> {
     if mode == ColumnMappingMode::None {
         return Ok(());
     }
-    let schema =
-        kernel_schema(fields).map_err(|e| invalid(format!("the schema cannot be read: {e}")))?;
-    validate_schema_column_mapping(&schema, mode).map_err(|e| match e {
-        delta_kernel::KernelError::Schema(message) => invalid(message),
-        e => invalid(e.to_string()),
-    })?;
+    let schema = StructType::try_new(fields.iter().cloned())
+        .map_err(|e| invalid(format!("the schema cannot be read: {}", kernel_message(e))))?;
+    validate_schema_column_mapping(&schema, mode).map_err(|e| invalid(kernel_message(e)))?;
     reject_unusable_physical_names(fields)
 }
 
@@ -308,11 +231,11 @@ pub fn validate_identities(fields: &[DeltaStructField], mode: ColumnMappingMode)
 /// of the same parent while its own name differs. Enabling column mapping
 /// keeps each stored name as the physical name, so such a field was
 /// renamed.
-fn renames_while_enabling(current: &[&DeltaStructField], incoming: &[&DeltaStructField]) -> bool {
-    let mut current_by_name: HashMap<String, &DeltaStructField> = HashMap::new();
+fn renames_while_enabling(current: &[&StructField], incoming: &[&StructField]) -> bool {
+    let mut current_by_name: HashMap<String, &StructField> = HashMap::new();
     for field in current {
         current_by_name
-            .entry(name(field).to_lowercase())
+            .entry(field.name().to_lowercase())
             .or_insert(field);
     }
     incoming.iter().any(|inc| {
@@ -322,53 +245,25 @@ fn renames_while_enabling(current: &[&DeltaStructField], incoming: &[&DeltaStruc
         current_by_name
             .get(&physical.to_lowercase())
             .is_some_and(|cur| {
-                name(cur).to_lowercase() != name(inc).to_lowercase()
-                    || type_renames_while_enabling(cur.data_type.as_ref(), inc.data_type.as_ref())
+                cur.name().to_lowercase() != inc.name().to_lowercase()
+                    || type_renames_while_enabling(cur.data_type(), inc.data_type())
             })
     })
 }
 
-fn type_renames_while_enabling(
-    current: Option<&DeltaDataType>,
-    incoming: Option<&DeltaDataType>,
-) -> bool {
+fn type_renames_while_enabling(current: &DataType, incoming: &DataType) -> bool {
     match (current, incoming) {
-        (
-            Some(DeltaDataType::Struct {
-                fields: Some(current),
-            }),
-            Some(DeltaDataType::Struct {
-                fields: Some(incoming),
-            }),
-        ) => {
-            let current: Vec<&DeltaStructField> = current.iter().collect();
-            let incoming: Vec<&DeltaStructField> = incoming.iter().collect();
+        (DataType::Struct(current), DataType::Struct(incoming)) => {
+            let current: Vec<&StructField> = current.fields().collect();
+            let incoming: Vec<&StructField> = incoming.fields().collect();
             renames_while_enabling(&current, &incoming)
         }
-        (
-            Some(DeltaDataType::Array {
-                element_type: current,
-                ..
-            }),
-            Some(DeltaDataType::Array {
-                element_type: incoming,
-                ..
-            }),
-        ) => type_renames_while_enabling(current.as_deref(), incoming.as_deref()),
-        (
-            Some(DeltaDataType::Map {
-                key_type: current_key,
-                value_type: current_value,
-                ..
-            }),
-            Some(DeltaDataType::Map {
-                key_type: incoming_key,
-                value_type: incoming_value,
-                ..
-            }),
-        ) => {
-            type_renames_while_enabling(current_key.as_deref(), incoming_key.as_deref())
-                || type_renames_while_enabling(current_value.as_deref(), incoming_value.as_deref())
+        (DataType::Array(current), DataType::Array(incoming)) => {
+            type_renames_while_enabling(current.element_type(), incoming.element_type())
+        }
+        (DataType::Map(current), DataType::Map(incoming)) => {
+            type_renames_while_enabling(current.key_type(), incoming.key_type())
+                || type_renames_while_enabling(current.value_type(), incoming.value_type())
         }
         _ => false,
     }
@@ -376,33 +271,30 @@ fn type_renames_while_enabling(
 
 /// The identity Delta reads a field by in `mode`: the id as text in id
 /// mode, else the physical name in lowercase.
-fn identity_key(field: &DeltaStructField, mode: ColumnMappingMode) -> Option<String> {
+fn identity_key(field: &StructField, mode: ColumnMappingMode) -> Option<String> {
     if mode == ColumnMappingMode::Id {
         return column_id(field).map(|id| id.to_string());
     }
-    metadata(field)?
-        .get(PHYSICAL_NAME)
-        .and_then(Value::as_str)
-        .map(str::to_lowercase)
+    metadata_str(field, PHYSICAL_NAME).map(str::to_lowercase)
 }
 
 /// The top-level renames: columns whose identity stayed while the name
 /// changed. A change of case only is not a rename.
 fn top_level_renames(
-    current: &[DeltaStructField],
-    incoming: &[DeltaStructField],
+    current: &[StructField],
+    incoming: &[StructField],
     mode: ColumnMappingMode,
 ) -> Vec<(String, String)> {
     let incoming_by_key: HashMap<String, &str> = incoming
         .iter()
-        .filter_map(|f| Some((identity_key(f, mode)?, name(f))))
+        .filter_map(|f| Some((identity_key(f, mode)?, f.name().as_str())))
         .collect();
     current
         .iter()
         .filter_map(|f| {
             let new_name = incoming_by_key.get(&identity_key(f, mode)?)?;
-            (new_name.to_lowercase() != name(f).to_lowercase())
-                .then(|| (name(f).to_string(), new_name.to_string()))
+            (new_name.to_lowercase() != f.name().to_lowercase())
+                .then(|| (f.name().clone(), new_name.to_string()))
         })
         .collect()
 }
@@ -425,7 +317,7 @@ fn top_level_renames(
 pub fn validate_set_columns(
     table_type: TableType,
     stored_columns: &[ColumnInfo],
-    incoming: &[DeltaStructField],
+    incoming: &[StructField],
     table_mode: ColumnMappingMode,
     requested_mode: ColumnMappingMode,
     properties: &SecurablePropertiesMap,
@@ -435,8 +327,8 @@ pub fn validate_set_columns(
     let current_has_keys = table_mode != ColumnMappingMode::None && carries_key(&current, key);
     let incoming_has_keys = carries_key(incoming, key);
     if current_has_keys {
-        let stored: Vec<&DeltaStructField> = current.iter().collect();
-        let requested: Vec<&DeltaStructField> = incoming.iter().collect();
+        let stored: Vec<&StructField> = current.iter().collect();
+        let requested: Vec<&StructField> = incoming.iter().collect();
         let mut stripped = stripped_keys(&stored, &requested, key, "");
         if !stripped.is_empty() {
             stripped.sort();
@@ -470,8 +362,8 @@ pub fn validate_set_columns(
     if !current_has_keys {
         // The identities were checked above, against the stored mode or the
         // mode being enabled.
-        let stored: Vec<&DeltaStructField> = current.iter().collect();
-        let requested: Vec<&DeltaStructField> = incoming.iter().collect();
+        let stored: Vec<&StructField> = current.iter().collect();
+        let requested: Vec<&StructField> = incoming.iter().collect();
         if renames_while_enabling(&stored, &requested) {
             return Err(invalid(
                 "set-columns: renaming a column while enabling column mapping is not supported \
@@ -533,11 +425,11 @@ fn stored_keys_by_name(
             return Err(invalid(format!(
                 "stored columns '{other}' and '{}' share the column mapping identity '{key}'; \
                  send set-partition-columns with this update.",
-                name(&field)
+                field.name()
             )));
         }
-        name_by_key.insert(key.clone(), name(&field).to_string());
-        key_by_name.insert(name(&field).to_lowercase(), key);
+        name_by_key.insert(key.clone(), field.name().clone());
+        key_by_name.insert(field.name().to_lowercase(), key);
     }
     Ok(key_by_name)
 }

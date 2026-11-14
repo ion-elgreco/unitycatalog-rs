@@ -17,6 +17,7 @@ use serde_json::Value;
 
 use uc_common::{Error, Result};
 
+use crate::fields::all_fields;
 use crate::schema_evolution::invalid;
 
 const TYPE_CHANGES: &str = "delta.typeChanges";
@@ -140,31 +141,6 @@ fn field_id(field: &StructField) -> Option<i64> {
         Some(MetadataValue::Number(id)) => Some(*id),
         _ => None,
     }
-}
-
-/// The struct fields directly under a type, through array elements and map
-/// keys and values.
-fn nested_fields(data_type: &DataType) -> Vec<&StructField> {
-    match data_type {
-        DataType::Struct(fields) => fields.fields().collect(),
-        DataType::Array(array) => nested_fields(array.element_type()),
-        DataType::Map(map) => {
-            let mut fields = nested_fields(map.key_type());
-            fields.extend(nested_fields(map.value_type()));
-            fields
-        }
-        _ => vec![],
-    }
-}
-
-/// Every struct field at every depth, each before the fields nested in it.
-fn all_fields<'a>(fields: impl IntoIterator<Item = &'a StructField>) -> Vec<&'a StructField> {
-    let mut all = vec![];
-    for field in fields {
-        all.push(field);
-        all.extend(all_fields(nested_fields(field.data_type())));
-    }
-    all
 }
 
 /// The struct fields of a schema by id. The kernel's schema diff refused

@@ -174,7 +174,7 @@ fn validate_columns(columns: &mut [ColumnInfo], format: Option<DataSourceFormat>
 /// `StructField` whose name and nullability match the column. Delta tables
 /// also get the Delta type checks.
 fn validate_type_json(column: &ColumnInfo, format: Option<DataSourceFormat>) -> Result<()> {
-    use uc_api::delta_types::{DeltaStructField, KeyStyle, validate_struct_field};
+    use uc_delta::fields::{self, KeyStyle};
     let name = column.name.as_deref();
     let invalid = |message: String| {
         Error::invalid_argument(format!(
@@ -199,31 +199,33 @@ fn validate_type_json(column: &ColumnInfo, format: Option<DataSourceFormat>) -> 
         ))
     };
     let value: serde_json::Value = serde_json::from_str(type_json).map_err(|_| unparsable())?;
-    let field = DeltaStructField::from_json(&value, KeyStyle::Camel).map_err(|_| unparsable())?;
+    let field =
+        fields::normalize(&value, KeyStyle::Camel, KeyStyle::Camel).map_err(|_| unparsable())?;
     if format == Some(DataSourceFormat::Delta) {
-        validate_struct_field(&field, "type_json").map_err(invalid)?;
+        fields::check(&field, "type_json").map_err(invalid)?;
     } else {
         // A shallow check for other formats; upstream does not prefix these.
-        let missing = [
-            ("name", field.name.is_none()),
-            ("type", field.data_type.is_none()),
-            ("nullable", field.nullable.is_none()),
-            ("metadata", field.metadata.is_none()),
-        ];
-        if let Some((key, _)) = missing.iter().find(|(_, m)| *m) {
+        let missing = ["name", "type", "nullable", "metadata"]
+            .into_iter()
+            .find(|key| field.get(key).is_none());
+        if let Some(key) = missing {
             return Err(Error::invalid_argument(format!(
                 "type_json.{key} is required."
             )));
         }
     }
-    let field_name = field.name.as_deref().unwrap_or_default();
+    let field_name = field
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
     if Some(field_name) != name {
         return Err(invalid(format!(
             "field name {field_name} does not match column name {}",
             name.unwrap_or("null")
         )));
     }
-    if let (Some(column_nullable), Some(field_nullable)) = (column.nullable, field.nullable)
+    let field_nullable = field.get("nullable").and_then(serde_json::Value::as_bool);
+    if let (Some(column_nullable), Some(field_nullable)) = (column.nullable, field_nullable)
         && column_nullable != field_nullable
     {
         return Err(invalid(format!(

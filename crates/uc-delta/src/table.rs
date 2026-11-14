@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use delta_kernel::schema::StructField;
 use serde_json::{Value, json};
 use tracing::warn;
 
@@ -12,12 +13,12 @@ use uc_api::{
         DeltaCommitWire, DeltaCreateTableRequest, DeltaLoadTableResponse,
         DeltaMaintenanceOperation, DeltaTableMetadata, DeltaTableType,
     },
-    delta_types::{DeltaStructField, KeyStyle, column_type_name, validate_struct_fields},
 };
 use uc_common::{Error, ErrorCode, NormalizedUrl, Result};
 
 use crate::commits::StoredCommit;
 use crate::contract::{self as contract, LAST_COMMIT_TIMESTAMP, LAST_UPDATE_VERSION};
+use crate::fields::{self, CheckedField, KeyStyle};
 
 /// Upstream `requireDeltaTable`: only Delta tables are served.
 pub fn require_delta(info: &TableInfo, full_name: &str) -> Result<()> {
@@ -38,8 +39,8 @@ pub fn etag(info: &TableInfo) -> String {
     }
 }
 
-/// A column's `type_json` as a Delta struct field.
-pub fn struct_field(column: &ColumnInfo) -> std::result::Result<DeltaStructField, String> {
+/// A column's `type_json`, as JSON.
+fn type_json(column: &ColumnInfo) -> std::result::Result<Value, String> {
     let type_json = column
         .type_json
         .as_deref()
@@ -50,48 +51,47 @@ pub fn struct_field(column: &ColumnInfo) -> std::result::Result<DeltaStructField
                 column.name.as_deref().unwrap_or("null")
             )
         })?;
-    let value: Value = serde_json::from_str(type_json).map_err(|e| e.to_string())?;
-    DeltaStructField::from_json(&value, KeyStyle::Camel)
+    serde_json::from_str(type_json).map_err(|e| e.to_string())
 }
 
-/// Upstream `ColumnUtils.toColumnInfo`: a validated Delta field as a UC
-/// column, like Spark's `UCSingleCatalog` writes it.
-pub fn column_info(field: &DeltaStructField, position: i32) -> Result<ColumnInfo> {
-    let data_type = field
-        .data_type
-        .as_ref()
-        .ok_or_else(|| Error::invalid_argument("struct field type is required"))?;
-    let type_name = column_type_name(data_type).map_err(Error::invalid_argument)?;
+/// A column's `type_json` as the kernel's struct field.
+pub fn struct_field(column: &ColumnInfo) -> std::result::Result<StructField, String> {
+    serde_json::from_value(type_json(column)?).map_err(|e| e.to_string())
+}
+
+/// Upstream `ColumnUtils.toColumnInfo`: a checked Delta field as a UC
+/// column, like Spark's `UCSingleCatalog` writes it. `type_json` is the
+/// field's camelCase JSON.
+pub fn column_info(field: &StructField, type_json: &Value, position: i32) -> Result<ColumnInfo> {
+    let type_name = fields::column_type_name(field.data_type()).map_err(Error::invalid_argument)?;
     let type_name: ColumnTypeName = serde_json::from_value(json!(type_name))
         .map_err(|e| Error::internal(format!("column type {type_name}: {e}")))?;
     Ok(ColumnInfo {
-        name: field.name.clone(),
+        name: Some(field.name().clone()),
         type_text: Some(
-            data_type
-                .catalog_string()
-                .map_err(Error::invalid_argument)?,
+            fields::catalog_string(field.data_type()).map_err(Error::invalid_argument)?,
         ),
-        type_json: Some(field.to_json(KeyStyle::Camel).to_string()),
+        type_json: Some(type_json.to_string()),
         type_name: Some(type_name),
         position: Some(position),
-        comment: field.comment().map(str::to_string),
-        nullable: Some(field.nullable == Some(true)),
+        comment: fields::comment(field).map(str::to_string),
+        nullable: Some(field.is_nullable()),
         ..Default::default()
     })
 }
 
-/// Parse and check a Delta struct type (`columns`) as upstream
+/// Read and check a Delta struct type (`columns`) in kebab case as upstream
 /// `ColumnUtils.validateStructType`, at `path` in messages.
-pub fn struct_fields(columns: Option<&Value>, path: &str) -> Result<Vec<DeltaStructField>> {
+pub fn struct_fields(columns: Option<&Value>, path: &str) -> Result<Vec<CheckedField>> {
     let columns = columns
         .filter(|c| !c.is_null())
         .ok_or_else(|| Error::invalid_argument(format!("{path} is required.")))?;
-    let fields = match columns.get("fields") {
+    let type_jsons = match columns.get("fields") {
         None | Some(Value::Null) => None,
         Some(Value::Array(items)) => Some(
             items
                 .iter()
-                .map(|f| DeltaStructField::from_json(f, KeyStyle::Kebab))
+                .map(|f| fields::normalize(f, KeyStyle::Kebab, KeyStyle::Camel))
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(Error::invalid_argument)?,
         ),
@@ -101,16 +101,21 @@ pub fn struct_fields(columns: Option<&Value>, path: &str) -> Result<Vec<DeltaStr
             )));
         }
     };
-    validate_struct_fields(fields.as_deref(), path).map_err(Error::invalid_argument)?;
-    Ok(fields.unwrap_or_default())
+    let checked =
+        fields::check_fields(type_jsons.as_deref(), path).map_err(Error::invalid_argument)?;
+    Ok(checked
+        .into_iter()
+        .zip(type_jsons.unwrap_or_default())
+        .map(|(field, type_json)| CheckedField { field, type_json })
+        .collect())
 }
 
 /// Upstream `ColumnUtils.toColumnInfos`: positions follow the list order.
-pub fn column_infos(fields: &[DeltaStructField]) -> Result<Vec<ColumnInfo>> {
+pub fn column_infos(fields: &[CheckedField]) -> Result<Vec<ColumnInfo>> {
     fields
         .iter()
         .enumerate()
-        .map(|(i, f)| column_info(f, i as i32))
+        .map(|(i, f)| column_info(&f.field, &f.type_json, i as i32))
         .collect()
 }
 
@@ -136,7 +141,7 @@ pub fn create_table_request(
         .as_ref()
         .and_then(|p| p.get(crate::column_mapping::MODE));
     crate::column_mapping::validate_identities(
-        &fields,
+        &fields::kernel_fields(&fields),
         crate::column_mapping::parse_mode(mode.map(String::as_str))?,
     )?;
     let table_type = match req.table_type {
@@ -230,7 +235,7 @@ pub fn apply_partition_columns(
 fn columns_struct(columns: &[ColumnInfo], full_name: &str) -> Value {
     let fields: std::result::Result<Vec<Value>, String> = columns
         .iter()
-        .map(|c| struct_field(c).map(|f| f.to_json(KeyStyle::Kebab)))
+        .map(|c| fields::normalize(&type_json(c)?, KeyStyle::Camel, KeyStyle::Kebab))
         .collect();
     match fields {
         Ok(fields) => json!({ "type": "struct", "fields": fields }),
@@ -367,16 +372,20 @@ mod tests {
 
     #[test]
     fn columns_round_trip_through_type_json() {
-        let field = DeltaStructField::from_json(
-            &json!({ "name": "amount", "type": "decimal(10,2)", "nullable": true,
-                     "metadata": { "comment": "money" } }),
-            KeyStyle::Kebab,
-        )
-        .unwrap();
-        let col = column_info(&field, 3).unwrap();
+        let columns = json!({ "type": "struct", "fields": [
+            { "name": "id", "type": "long", "nullable": false, "metadata": {} },
+            { "name": "amount", "type": { "type": "decimal", "precision": 10, "scale": 2 },
+              "nullable": true, "metadata": { "comment": "money" } },
+        ] });
+        let fields = struct_fields(Some(&columns), "columns").unwrap();
+        let cols = column_infos(&fields).unwrap();
+        let col = &cols[1];
         assert_eq!(col.type_text.as_deref(), Some("decimal(10,2)"));
         assert_eq!(col.comment.as_deref(), Some("money"));
-        assert_eq!(col.position, Some(3));
-        assert_eq!(struct_field(&col).unwrap(), field);
+        assert_eq!(col.position, Some(1));
+        assert_eq!(struct_field(col).unwrap(), fields[1].field);
+        let served = columns_struct(&cols, "c.s.t");
+        assert_eq!(served["fields"][1]["type"], "decimal(10,2)");
+        assert_eq!(served["fields"][1]["metadata"]["comment"], "money");
     }
 }

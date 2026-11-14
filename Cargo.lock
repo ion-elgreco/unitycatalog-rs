@@ -9095,6 +9095,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.22.1",
+ "buoyant_kernel",
  "bytes",
  "chrono",
  "flate2",
