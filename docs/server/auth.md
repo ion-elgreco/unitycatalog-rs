@@ -730,13 +730,14 @@ uc permission get --securable_type table --name main.default.events
 
 ## Cedar policies
 
-[Cedar](https://www.cedarpolicy.com) is a policy language. With `auth.cedar = true`, Cedar checks
-the privileges. Its default policy allows what the grants allow. To add your own rules, list your
-policy files in `auth.cedar_policies`:
+[Cedar](https://www.cedarpolicy.com) is a policy language. With `auth.engine = "cedar"`, Cedar
+checks the privileges. Its default policy allows what the grants allow. To add your own rules,
+list your policy files in `auth.cedar_policies`:
 
 ```toml
 [auth]
-cedar = true
+enabled = true
+engine = "cedar"
 cedar_policies = ["/etc/uc/policies.cedar"]
 ```
 
@@ -810,3 +811,255 @@ a new id.
   without an owner, denies the request. Test optional attributes with `has` first.
 - **Owners and admins:** Cedar decides only whether a user holds a privilege. The checks for an
   owner or an admin do not ask Cedar, so a `forbid` does not stop them.
+
+## Open Policy Agent
+
+[Open Policy Agent](https://www.openpolicyagent.org) (OPA) is a policy server. With
+`auth.engine = "opa"`, the server asks OPA about each privilege that a request needs, `OWNER` and
+the admin included. The policy is in OPA, written in Rego, and OPA can load it again while it
+runs. The server's rules stay: they say which privileges each request needs, and OPA says
+whether the user has each one.
+
+```toml
+[auth]
+enabled = true
+engine = "opa"
+opa_url = "http://opa:8181/v1/data/uc/authz"
+opa_timeout = "5s"
+```
+
+`opa_url` is the URL of the policy's package in OPA's data API: `/v1/data/` and the package path.
+It must be `http` or `https`, without a user name, password or fragment. The server does not send
+the user's token to OPA. Keep others away from OPA: see [Protect OPA](#protect-opa).
+
+- **Only OPA decides.** Grants, the `owner` of an object and `auth.admin_principals` give
+  nothing. The admin is the user that OPA gives `OWNER` on the metastore, so give the server's
+  own user `admin` a rule too. `auth.admin_principals` with OPA stops the server at start.
+- **Grants stay.** `uc permission` still stores grants, and objects still get an owner. They
+  count again when you change the engine back.
+- **One question per privilege.** Reading a table asks about `USE_CATALOG`, `USE_SCHEMA` and
+  `SELECT`, and about `OWNER`, `MANAGE` and `READ_METADATA` where the rules allow those
+  instead. The server stops asking when the answer is clear. It asks each question once per
+  request, and keeps no answer for the next request. A list asks about each item.
+- **Failures are 503.** When OPA cannot be reached, answers with an error, takes longer than
+  `opa_timeout`, or answers without a boolean `result.allow`, the request fails with 503
+  `UNAVAILABLE`, also for lists. The server does not fall back to the grants.
+- **Users and admins in SCIM.** The server does not delete or deactivate a user that OPA gives
+  `OWNER` on the metastore, nor the owner of the metastore.
+
+### What OPA gets
+
+For each question, the server posts the question as `input`:
+
+```json
+{
+  "input": {
+    "principal": {
+      "id": "<user id>",
+      "email": "alice@example.com",
+      "external_id": "entra:<object id>",
+      "groups": ["entra:analysts"]
+    },
+    "privilege": "SELECT",
+    "resource": {
+      "id": "<table id>",
+      "type": "TABLE",
+      "name": "orders",
+      "owner": "bob@example.com",
+      "parents": [
+        { "id": "<schema id>", "type": "SCHEMA", "name": "sales" },
+        { "id": "<catalog id>", "type": "CATALOG", "name": "main" }
+      ]
+    },
+    "context": {
+      "auth_method": "jwt",
+      "provider": "entra",
+      "groups": ["entra:analysts"],
+      "source_ip": "10.1.2.3",
+      "request_time": "2026-11-14T09:30:00Z"
+    }
+  }
+}
+```
+
+| Field | Value |
+| --- | --- |
+| `principal.id` | The user's id, as SCIM shows it. |
+| `principal.email` | The user's principal: an email, or `<name>:<value>` for an application. |
+| `principal.external_id` | The user's `externalId`, when it has one. |
+| `principal.groups` | The groups that the user's token names (`groups_claim`), not the server's own groups. |
+| `privilege` | The privilege with `_` for spaces, such as `USE_CATALOG`, or `OWNER`. |
+| `resource.type` | `METASTORE`, `CATALOG`, `SCHEMA`, `TABLE`, `VOLUME`, `FUNCTION`, `REGISTERED_MODEL`, `EXTERNAL_LOCATION` or `CREDENTIAL`. An uncommitted staging table is a `TABLE`. |
+| `resource.name` | The object's own name, such as `orders` of `main.sales.orders`. The metastore has none. |
+| `resource.owner` | The object's owner in the server, when it has one. |
+| `resource.parents` | For a table, volume, function or model, its schema and catalog; for a schema, its catalog. Others have none. |
+| `context` | How and from where the request came, as for [Cedar](#cedar-policies). Text, not Cedar types. |
+
+`id`, `email`, `external_id`, `privilege`, `type`, `name` and `parents` are what upstream's Java
+server sends, so a policy written for it works here. `groups`, `owner` and `context` are added.
+The server sends no grants and no cloud credentials. A caller that no user matches gets no for
+each question, and OPA is not asked.
+
+OPA must answer with a boolean `result.allow`:
+
+```json
+{ "result": { "allow": true } }
+```
+
+### Try a policy
+
+This policy allows everything to the server's own user `admin`, and to others the grants in OPA's
+own data. With `owner`, it also keeps the owners of the server:
+
+```rego
+package uc.authz
+
+import rego.v1
+
+default allow := false
+
+allow if input.principal.email == "admin"
+
+allow if {
+	input.privilege == "OWNER"
+	input.resource.owner == input.principal.email
+}
+
+allow if {
+	some grant in data.grants
+	grant.principal == input.principal.email
+	grant.privilege == input.privilege
+	grant.type == input.resource.type
+	grant.id == input.resource.id
+}
+```
+
+Start OPA with it, and give alice the privileges to read the schema `main.sales`:
+
+```bash
+opa run --server --addr 127.0.0.1:8181 uc.rego
+curl -X PUT http://127.0.0.1:8181/v1/data/grants -H 'Content-Type: application/json' -d '[
+  {"principal": "alice@example.com", "privilege": "USE_CATALOG", "type": "CATALOG", "id": "<catalog id>"},
+  {"principal": "alice@example.com", "privilege": "USE_SCHEMA", "type": "SCHEMA", "id": "<schema id>"}
+]'
+```
+
+`uc catalog get` and `uc schema get` show the ids.
+
+### Protect OPA
+
+OPA has no sign-in by default. Whoever can reach its port can read the policy, and change it or
+its data through OPA's REST API (`PUT /v1/policies`, `PUT /v1/data`). That person can then make
+themselves the admin of the catalog. Do one of these two things:
+
+- Run OPA next to the server, where nothing else can reach it. OPA's
+  [security guide](https://www.openpolicyagent.org/docs/security) recommends this.
+- Make OPA take tokens, when it runs as a service of its own.
+
+#### OPA next to the server
+
+Run OPA as a second container in the server's pod (a sidecar), and let it listen on `localhost`
+only. Only the containers of the pod reach it, so it needs no token. With the Helm chart:
+
+```yaml
+auth:
+  enabled: true
+  opa:
+    url: http://localhost:8181/v1/data/uc/authz
+
+server:
+  deployment:
+    extraContainers:
+      - name: opa
+        image: openpolicyagent/opa:1.22.4-static
+        # The ConfigMap's hidden folders hold the same files again.
+        args: [run, --server, --addr, "localhost:8181", "--ignore=.*", /policies]
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+          - {name: opa-policies, mountPath: /policies, readOnly: true}
+    extraVolumes:
+      - name: opa-policies
+        configMap:
+          name: uc-opa-policies
+```
+
+Put the policy and its data in the ConfigMap:
+
+```bash
+kubectl create configmap uc-opa-policies --from-file=uc.rego --from-file=data.json
+```
+
+Each pod has its own OPA, which reads the files when it starts. Data that you `PUT` into one OPA
+reaches only that one. To change policies and data without a restart, let each OPA download them
+as a [bundle](https://www.openpolicyagent.org/docs/management-bundles).
+
+#### OPA that takes tokens
+
+Start OPA with `--authentication=token --authorization=basic`. OPA then asks its own policy,
+`system.authz`, about each request to it, with the request's bearer token as `input.identity`.
+This policy lets the catalog server only ask for decisions of `uc.authz`, and lets an admin token
+do everything. Health checks need no token:
+
+```rego
+package system.authz
+
+default allow := false
+
+allow if {
+	input.identity == opa.runtime().env.OPA_CATALOG_TOKEN
+	input.method == "POST"
+	input.path == ["v1", "data", "uc", "authz"]
+}
+
+allow if input.identity == opa.runtime().env.OPA_ADMIN_TOKEN
+
+allow if input.path == ["health"]
+```
+
+OPA reads the tokens from its environment. Make a token for the server, and start OPA with TLS:
+
+```bash
+openssl rand -hex 32 > opa-token
+OPA_CATALOG_TOKEN=$(cat opa-token) OPA_ADMIN_TOKEN=<admin token> \
+  opa run --server --addr :8181 --tls-cert-file cert.pem --tls-private-key-file key.pem \
+  --authentication=token --authorization=basic system-authz.rego uc.rego
+```
+
+Give the server the token file:
+
+```toml
+[auth]
+enabled = true
+engine = "opa"
+opa_url = "https://opa.example.com:8181/v1/data/uc/authz"
+opa_token_file = "/etc/uc/opa/token"
+```
+
+The server reads the file when it starts, without the spaces and line ends around the token. It
+sends `Authorization: Bearer <token>` with each question. With the Helm chart, put the token in a
+secret, under the key `token`:
+
+```bash
+kubectl create secret generic uc-opa-token --from-file=token=opa-token
+```
+
+```yaml
+auth:
+  enabled: true
+  opa:
+    url: https://opa.example.com:8181/v1/data/uc/authz
+    tokenSecretName: uc-opa-token
+```
+
+- **Use `https`.** Over `http`, the token goes unencrypted, and the server logs a warning when it
+  starts. Use `http` only when the network to OPA encrypts the traffic itself, such as a service
+  mesh.
+- **A refused token is 503.** When OPA refuses the token, each request that asks OPA fails with
+  503 `UNAVAILABLE`: "OPA answered HTTP 401: it refused the server's token".
+- **Change the token in three steps.** Let `system.authz` take the old and the new token. Then
+  change the file or secret, and restart the servers. Then remove the old token from the policy.
+- **No client certificates.** OPA can also check client certificates (`--authentication=tls`),
+  but the server cannot send one.

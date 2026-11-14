@@ -1,4 +1,4 @@
-use std::{path::PathBuf, process::ExitCode, sync::Arc, time::Duration};
+use std::{process::ExitCode, sync::Arc, time::Duration};
 
 use tokio::net::TcpListener;
 use tracing::{info, warn};
@@ -12,6 +12,7 @@ use uc_server::{
         security::{ADMIN, SecurityContext, generate_key_pem},
         sign_in::SignIn,
     },
+    authz::EngineSettings,
     build_app, build_observability_app,
     observability::telemetry::init_tracing,
     server::{banner, options, serve},
@@ -144,6 +145,7 @@ async fn run(options: options::Options) -> Result<(), String> {
     let auth = cfg.auth_settings();
     auth.validate().map_err(invalid_sign_in)?;
     let seeds = bootstrap::seed_users(&cfg.auth)?;
+    let engine = EngineSettings::new(&cfg.auth)?;
     let authorization = cfg.auth.enabled;
     info!(
         %bind,
@@ -191,18 +193,29 @@ async fn run(options: options::Options) -> Result<(), String> {
         }
     }
 
-    // The Cedar engine (`auth.cedar`), with `auth.cedar_policies` on top of
-    // its defaults. Only with authorization on: Cedar is a policy engine,
-    // not an authorization switch.
-    if authorization && cfg.auth.cedar {
-        let policies: Vec<PathBuf> = cfg.auth.cedar_policies.iter().map(PathBuf::from).collect();
-        state = state
-            .with_cedar(&policies)
-            .map_err(|e| format!("Cedar engine init failed: {e}"))?;
-        info!(
-            extra_policies = policies.len(),
-            "Cedar policy engine enabled"
-        );
+    // `auth.engine`: what decides each privilege.
+    match engine {
+        EngineSettings::Grants => {}
+        EngineSettings::Cedar(policies) => {
+            state = state
+                .with_cedar(&policies)
+                .map_err(|e| format!("Cedar engine init failed: {e}"))?;
+            info!(
+                extra_policies = policies.len(),
+                "Cedar policy engine enabled"
+            );
+        }
+        EngineSettings::Opa(opa) => {
+            let token = cfg.auth.opa_token_file.is_some();
+            info!(timeout = ?cfg.auth.opa_timeout, token, "OPA decides privileges");
+            if opa.sends_token_in_clear() {
+                warn!(
+                    "auth.opa_url is http://: the token of auth.opa_token_file goes to OPA \
+                     unencrypted. Use https:// unless the network to OPA is encrypted."
+                );
+            }
+            state = state.with_opa(opa);
+        }
     }
 
     // `auth.admin_principals`: metastore admins besides its owner.

@@ -100,6 +100,7 @@ pub async fn list_registered_models(
                     m.schema_name.as_deref().unwrap_or_default(),
                 ),
                 m.id.clone(),
+                m.name.clone().unwrap_or_default(),
                 m.owner.clone(),
             )
         },

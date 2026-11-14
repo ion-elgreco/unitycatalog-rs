@@ -21,6 +21,7 @@ fn lineage_of(info: &CredentialInfo) -> Lineage {
     authz::object(
         SecurableType::Credential,
         info.id.as_deref(),
+        info.name.as_deref().unwrap_or_default(),
         info.owner.as_deref(),
     )
 }
@@ -92,6 +93,7 @@ pub async fn list_credentials(
             kept.push(credential);
         }
     }
+    access.failed()?;
     let credentials = kept;
     Ok(Json(ListCredentialsResponse {
         credentials: credentials

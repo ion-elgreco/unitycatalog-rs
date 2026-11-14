@@ -148,10 +148,11 @@ impl PermissionOps for SqlMetastore {
     }
 
     async fn lineage(&self, kind: SecurableType, name: &str) -> Result<Lineage> {
-        let node = |kind, id: &str, owner: &Option<String>| {
+        let node = |kind, id: &str, name: &str, owner: &Option<String>| {
             Some(Node {
                 kind,
                 id: id.to_string(),
+                name: name.to_string(),
                 owner: owner.clone(),
             })
         };
@@ -159,7 +160,7 @@ impl PermissionOps for SqlMetastore {
             SecurableType::Metastore => Lineage::default(),
             SecurableType::Catalog => {
                 let row = self.require_catalog_row(name).await?;
-                let catalog = node(kind, &row.id_string, &row.owner);
+                let catalog = node(kind, &row.id_string, &row.name, &row.owner);
                 Lineage {
                     catalog: catalog.clone(),
                     schema: None,
@@ -169,9 +170,14 @@ impl PermissionOps for SqlMetastore {
             SecurableType::Schema => {
                 let (catalog_name, row) = self.require_schema_row(name).await?;
                 let catalog = self.require_catalog_row(&catalog_name).await?;
-                let schema = node(kind, &row.id_string, &row.owner);
+                let schema = node(kind, &row.id_string, &row.name, &row.owner);
                 Lineage {
-                    catalog: node(SecurableType::Catalog, &catalog.id_string, &catalog.owner),
+                    catalog: node(
+                        SecurableType::Catalog,
+                        &catalog.id_string,
+                        &catalog.name,
+                        &catalog.owner,
+                    ),
                     schema: schema.clone(),
                     object: schema,
                 }
@@ -180,22 +186,22 @@ impl PermissionOps for SqlMetastore {
             | SecurableType::Volume
             | SecurableType::Function
             | SecurableType::RegisteredModel => {
-                let (schema_ref, id, owner) = match kind {
+                let (schema_ref, id, object_name, owner) = match kind {
                     SecurableType::Table => {
                         let (s, r) = self.resolve_table(name).await?;
-                        (s, r.id_string, r.owner)
+                        (s, r.id_string, r.name, r.owner)
                     }
                     SecurableType::Volume => {
                         let (s, r) = self.resolve_volume(name).await?;
-                        (s, r.id_string, r.owner)
+                        (s, r.id_string, r.name, r.owner)
                     }
                     SecurableType::Function => {
                         let (s, r) = self.resolve_function(name).await?;
-                        (s, r.id_string, r.owner)
+                        (s, r.id_string, r.name, r.owner)
                     }
                     _ => {
                         let (s, r) = self.resolve_model(name).await?;
-                        (s, r.id_string, r.owner)
+                        (s, r.id_string, r.name, r.owner)
                     }
                 };
                 let schema: Option<crate::schema::sql::SchemaRow> = by_id(
@@ -206,13 +212,19 @@ impl PermissionOps for SqlMetastore {
                 .await?;
                 let catalog = self.require_catalog_row(&schema_ref.catalog_name).await?;
                 Lineage {
-                    catalog: node(SecurableType::Catalog, &catalog.id_string, &catalog.owner),
+                    catalog: node(
+                        SecurableType::Catalog,
+                        &catalog.id_string,
+                        &catalog.name,
+                        &catalog.owner,
+                    ),
                     schema: node(
                         SecurableType::Schema,
                         &schema_ref.schema_id,
+                        &schema_ref.schema_name,
                         &schema.and_then(|s| s.owner),
                     ),
-                    object: node(kind, &id, &owner),
+                    object: node(kind, &id, &object_name, &owner),
                 }
             }
             SecurableType::ExternalLocation => {
@@ -220,7 +232,7 @@ impl PermissionOps for SqlMetastore {
                     Error::not_found(format!("External location not found: {name}"))
                 })?;
                 Lineage {
-                    object: node(kind, &row.id_string, &row.owner),
+                    object: node(kind, &row.id_string, &row.name, &row.owner),
                     ..Default::default()
                 }
             }
@@ -229,7 +241,7 @@ impl PermissionOps for SqlMetastore {
                     Error::not_found(format!("Storage credential not found: {name}"))
                 })?;
                 Lineage {
-                    object: node(kind, &row.id_string, &row.owner),
+                    object: node(kind, &row.id_string, &row.name, &row.owner),
                     ..Default::default()
                 }
             }
@@ -259,28 +271,31 @@ impl PermissionOps for SqlMetastore {
             by_id(self.db.as_ref(), &STAGING_TABLE, table_id)
                 .await?
                 .ok_or_else(not_found)?;
-        let (schema_id, schema_owner, catalog_id) = self
-            .node_row("schema", Some("catalog_id"), &staging.schema_id)
+        let (schema, catalog_id) = self
+            .node_row(
+                SecurableType::Schema,
+                "schema",
+                Some("catalog_id"),
+                &staging.schema_id,
+            )
             .await?
             .ok_or_else(not_found)?;
-        let (catalog_id, catalog_owner, _) = self
-            .node_row("catalog", None, &catalog_id.unwrap_or_default())
+        let (catalog, _) = self
+            .node_row(
+                SecurableType::Catalog,
+                "catalog",
+                None,
+                &catalog_id.unwrap_or_default(),
+            )
             .await?
             .ok_or_else(not_found)?;
         Ok(Lineage {
-            catalog: Some(Node {
-                kind: SecurableType::Catalog,
-                id: catalog_id,
-                owner: catalog_owner,
-            }),
-            schema: Some(Node {
-                kind: SecurableType::Schema,
-                id: schema_id,
-                owner: schema_owner,
-            }),
+            catalog: Some(catalog),
+            schema: Some(schema),
             object: Some(Node {
                 kind: SecurableType::Table,
                 id: table_id.to_string(),
+                name: staging.name,
                 owner: staging.created_by,
             }),
         })
@@ -406,7 +421,7 @@ impl PermissionOps for SqlMetastore {
             _ => return Err(multiple()),
         }
         let sql = format!(
-            "SELECT id_string, owner FROM external_location WHERE {} LIMIT 2",
+            "SELECT id_string, owner, name FROM external_location WHERE {} LIMIT 2",
             at("url")
         );
         let locations = self.db.query(&sql, &containing).await.map_err(&failed)?;
@@ -416,6 +431,7 @@ impl PermissionOps for SqlMetastore {
                 object: Some(Node {
                     kind: SecurableType::ExternalLocation,
                     id: location.text(0).map_err(&failed)?,
+                    name: location.text(2).map_err(&failed)?,
                     owner: location.opt_text(1).map_err(&failed)?,
                 }),
                 ..Default::default()
@@ -581,18 +597,27 @@ impl SqlMetastore {
     /// `table`.
     async fn node_row(
         &self,
+        kind: SecurableType,
         table: &str,
         parent: Option<&str>,
         id: &str,
-    ) -> Result<Option<(String, Option<String>, Option<String>)>> {
+    ) -> Result<Option<(Node, Option<String>)>> {
         let failed = db_err("lineage");
         let sql = format!(
-            "SELECT id_string, owner, {} FROM {table} WHERE id_string = $1",
+            "SELECT id_string, owner, name, {} FROM {table} WHERE id_string = $1",
             parent.unwrap_or("NULL")
         );
         let rows = self.db.query(&sql, &[id.into()]).await.map_err(&failed)?;
         rows.first()
-            .map(|r| Ok((r.text(0)?, r.opt_text(1)?, r.opt_text(2)?)))
+            .map(|r| {
+                let node = Node {
+                    kind,
+                    id: r.text(0)?,
+                    name: r.text(2)?,
+                    owner: r.opt_text(1)?,
+                };
+                Ok((node, r.opt_text(3)?))
+            })
             .transpose()
             .map_err(&failed)
     }
@@ -600,25 +625,29 @@ impl SqlMetastore {
     /// The lineage of the schema child `id` of `kind`, stored in `table`.
     async fn child_lineage(&self, kind: SecurableType, table: &str, id: &str) -> Result<Lineage> {
         let missing = |table: &str, id: &str| Error::not_found(format!("{table} not found: {id}"));
-        let (object_id, object_owner, schema_id) = self
-            .node_row(table, Some("schema_id"), id)
+        let (object, schema_id) = self
+            .node_row(kind, table, Some("schema_id"), id)
             .await?
             .ok_or_else(|| missing(table, id))?;
         let schema_id = schema_id.unwrap_or_default();
-        let (schema_id, schema_owner, catalog_id) = self
-            .node_row("schema", Some("catalog_id"), &schema_id)
+        let (schema, catalog_id) = self
+            .node_row(
+                SecurableType::Schema,
+                "schema",
+                Some("catalog_id"),
+                &schema_id,
+            )
             .await?
             .ok_or_else(|| missing("schema", &schema_id))?;
         let catalog_id = catalog_id.unwrap_or_default();
-        let (catalog_id, catalog_owner, _) = self
-            .node_row("catalog", None, &catalog_id)
+        let (catalog, _) = self
+            .node_row(SecurableType::Catalog, "catalog", None, &catalog_id)
             .await?
             .ok_or_else(|| missing("catalog", &catalog_id))?;
-        let node = |kind, id, owner| Some(Node { kind, id, owner });
         Ok(Lineage {
-            catalog: node(SecurableType::Catalog, catalog_id, catalog_owner),
-            schema: node(SecurableType::Schema, schema_id, schema_owner),
-            object: node(kind, object_id, object_owner),
+            catalog: Some(catalog),
+            schema: Some(schema),
+            object: Some(object),
         })
     }
 

@@ -40,7 +40,9 @@ pub async fn get_permissions(
     if access.enabled() {
         let lineage = authz::lineage(&state, securable_type, &full_name).await?;
         // Upstream `getAuthorization`: others see their own grants only.
-        if !rules::see_permissions(&access, securable_type, &lineage).await {
+        let sees_all = rules::see_permissions(&access, securable_type, &lineage).await;
+        access.failed()?;
+        if !sees_all {
             if only.as_deref().is_some_and(|p| p != access.principal()) {
                 return Ok(Json(PermissionsList {
                     privilege_assignments: vec![],

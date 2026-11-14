@@ -22,7 +22,7 @@ What upstream (Java) and this project (Rust) have.
 | Delta REST API (managed Delta tables) | X | X | |
 | Iceberg REST catalog | X | X | |
 | Temporary cloud credentials (AWS, Azure, GCP) | X | X | |
-| Authorization with privileges | X | X | Rust can also use Cedar policies |
+| Authorization with privileges | X | X | Both can ask Open Policy Agent; Rust can also use Cedar policies |
 | Sign-in with an identity provider's tokens (token exchange) | X | X | |
 | SCIM users | X | X | Rust also has groups and bulk changes |
 | Personal access tokens, OAuth client credentials | | X | |

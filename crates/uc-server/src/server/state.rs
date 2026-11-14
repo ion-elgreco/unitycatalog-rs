@@ -40,11 +40,11 @@ pub struct AppStateInner {
     /// `auth.enabled`: privileges are checked and every
     /// API request must be signed in.
     pub authorization_enabled: bool,
-    /// What decides each privilege when authorization is on: Cedar policies
-    /// ([`Self::with_cedar`]) or any other authorizer
-    /// ([`Self::with_authorizer`]); with none, the grants of the
-    /// `permission` table.
-    pub authorizer: Option<Arc<dyn uc_auth::authz::Authorizer>>,
+    /// What decides each privilege when authorization is on: the grants of
+    /// the `permission` table, Cedar policies ([`Self::with_cedar`]) or any
+    /// other authorizer ([`Self::with_authorizer`]), or OPA
+    /// ([`Self::with_opa`]).
+    pub engine: crate::authz::Engine,
     /// The `.cedar` files of [`Self::with_cedar`], each with the names
     /// that its policies hold
     /// ([`CedarAuthorizer::names`](uc_auth::authz::CedarAuthorizer::names)).
@@ -93,7 +93,7 @@ impl AppState {
             security: None,
             auth: Arc::new(AuthSettings::default()),
             authorization_enabled: false,
-            authorizer: None,
+            engine: crate::authz::Engine::Grants,
             cedar_names: Arc::new(Vec::new()),
             vendor: Arc::new(PlaceholderVendor),
             admin_principals: Arc::new(HashSet::new()),
@@ -213,7 +213,14 @@ impl AppState {
     /// kept for the rest of a request; wrap a remote one in
     /// [`uc_auth::authz::CachedAuthorizer`] to keep them across requests.
     pub fn with_authorizer(mut self, authorizer: impl uc_auth::authz::Authorizer) -> Self {
-        self.inner().authorizer = Some(Arc::new(authorizer));
+        self.inner().engine = crate::authz::Engine::Authorizer(Arc::new(authorizer));
+        self
+    }
+
+    /// OPA decides each privilege, `OWNER` and the admin
+    /// ([`crate::authz::opa`]).
+    pub fn with_opa(mut self, opa: crate::authz::opa::Opa) -> Self {
+        self.inner().engine = crate::authz::Engine::Opa(Arc::new(opa));
         self
     }
 

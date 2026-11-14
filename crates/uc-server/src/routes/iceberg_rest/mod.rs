@@ -409,6 +409,7 @@ pub async fn list_namespaces(
             kept.push(schema);
         }
     }
+    access.failed()?;
     let schemas = kept;
     let namespaces = schemas
         .into_iter()

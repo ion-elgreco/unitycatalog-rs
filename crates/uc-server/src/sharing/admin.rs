@@ -64,7 +64,7 @@ impl SharingAdmin {
 
     /// The name that changes are recorded with, if the caller is an admin.
     async fn admin<'a>(&self, caller: &'a Caller) -> Result<Option<&'a str>> {
-        authz::require_admin(&self.state, &caller.principal.username).await?;
+        authz::require_admin(&self.state, &caller.principal).await?;
         Ok(caller.principal.actor())
     }
 }

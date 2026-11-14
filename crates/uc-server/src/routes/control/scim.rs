@@ -683,15 +683,53 @@ fn principal_changed(state: &AppState, old: &str, new: &str) {
 }
 
 async fn put_user_from(state: &AppState, id: &str, body: Value) -> ScimResult<ScimUser> {
+    if authz::asks_opa(state) {
+        check_deactivation(state, id, |current| {
+            put_onto(&USERS, current, body.clone(), id)
+        })
+        .await?;
+    }
     modify_user(state, id, |current| put_onto(&USERS, current, body, id)).await
 }
 
 async fn patch_user_from(state: &AppState, id: &str, body: Value) -> ScimResult<ScimUser> {
     let operations = patch_operations(body)?;
+    if authz::asks_opa(state) {
+        check_deactivation(state, id, |current| {
+            patch_onto(&USERS, current, &operations)
+        })
+        .await?;
+    }
     modify_user(state, id, |current| {
         patch_onto(&USERS, current, &operations)
     })
     .await
+}
+
+/// With OPA: a change that deactivates the user `id` asks OPA first
+/// whether the user is the admin ([`authz::protect_metastore_owner`]).
+/// Asked before the change, which holds the user locked.
+async fn check_deactivation(
+    state: &AppState,
+    id: &str,
+    change: impl FnOnce(&ScimUser) -> ScimResult<ScimUser>,
+) -> ScimResult<()> {
+    let current = state.metastore.scim().get_user(id).await?;
+    if current.is_active() && !change(&current)?.is_active() {
+        authz::protect_metastore_owner(state, &current).await?;
+    }
+    Ok(())
+}
+
+/// Delete the user `id`; with OPA, not the admin
+/// ([`authz::protect_metastore_owner`]).
+async fn delete_user_with(state: &AppState, id: &str) -> ScimResult<()> {
+    if authz::asks_opa(state) {
+        let user = state.metastore.scim().get_user(id).await?;
+        authz::protect_metastore_owner(state, &user).await?;
+    }
+    state.metastore.scim().delete_user(id).await?;
+    Ok(())
 }
 
 #[utoipa::path(
@@ -712,7 +750,7 @@ pub async fn create_user(
     Query(selection): Query<Selection>,
     ScimBody(body): ScimBody,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     let user = create_user_from(&state, body).await?;
     Ok(Scim::created(&USERS, &user, &base, &selection))
 }
@@ -736,7 +774,7 @@ pub async fn list_users(
     BaseUrl(base): BaseUrl,
     Query(params): Query<ScimListParams>,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     list_users_by(&state, &base, ListQuery::from_params(&params)?).await
 }
 
@@ -819,7 +857,7 @@ pub async fn search_users(
     BaseUrl(base): BaseUrl,
     ScimBody(body): ScimBody,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     list_users_by(&state, &base, ListQuery::from_search(body)?).await
 }
 
@@ -844,7 +882,7 @@ pub async fn get_user(
     Path(id): Path<String>,
     Query(selection): Query<Selection>,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     let user = state.metastore.scim().get_user(&id).await?;
     Ok(Scim::resource(&USERS, &user, &base, &selection))
 }
@@ -870,7 +908,7 @@ pub async fn put_user(
     Query(selection): Query<Selection>,
     ScimBody(body): ScimBody,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     let user = put_user_from(&state, &id, body).await?;
     Ok(Scim::resource(&USERS, &user, &base, &selection))
 }
@@ -895,7 +933,7 @@ pub async fn patch_user(
     Query(selection): Query<Selection>,
     ScimBody(body): ScimBody,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     let user = patch_user_from(&state, &id, body).await?;
     Ok(Scim::resource(&USERS, &user, &base, &selection))
 }
@@ -915,8 +953,8 @@ pub async fn delete_user(
     principal: Principal,
     Path(id): Path<String>,
 ) -> ScimResult<StatusCode> {
-    authz::require_admin(&state, &principal.username).await?;
-    state.metastore.scim().delete_user(&id).await?;
+    authz::require_admin(&state, &principal).await?;
+    delete_user_with(&state, &id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -946,7 +984,7 @@ pub async fn me(
     };
     let (user, admin) = tokio::try_join!(
         state.metastore.scim().find_user_by_principal(caller),
-        authz::is_admin(&state, caller),
+        authz::is_admin(&state, &principal),
     )?;
     let mut user = user.ok_or_else(|| Error::not_found(format!("User not found: {caller}")))?;
     if admin {
@@ -971,7 +1009,7 @@ pub async fn search(
     BaseUrl(base): BaseUrl,
     ScimBody(body): ScimBody,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     let query = ListQuery::from_search(body)?;
     let Some(filter) = &query.filter else {
         // The users, then the groups: the metastore reads only the page.
@@ -1046,7 +1084,7 @@ pub async fn create_group(
     Query(selection): Query<Selection>,
     ScimBody(body): ScimBody,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     let group = create_group_from(&state, body).await?;
     Ok(Scim::created(&GROUPS, &group, &base, &selection))
 }
@@ -1070,7 +1108,7 @@ pub async fn list_groups(
     BaseUrl(base): BaseUrl,
     Query(params): Query<ScimListParams>,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     list_groups_by(&state, &base, ListQuery::from_params(&params)?).await
 }
 
@@ -1117,7 +1155,7 @@ pub async fn search_groups(
     BaseUrl(base): BaseUrl,
     ScimBody(body): ScimBody,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     list_groups_by(&state, &base, ListQuery::from_search(body)?).await
 }
 
@@ -1142,7 +1180,7 @@ pub async fn get_group(
     Path(id): Path<String>,
     Query(selection): Query<Selection>,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     let group = state.metastore.scim().get_group(&id).await?;
     Ok(Scim::resource(&GROUPS, &group, &base, &selection))
 }
@@ -1166,7 +1204,7 @@ pub async fn put_group(
     Query(selection): Query<Selection>,
     ScimBody(body): ScimBody,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     let group = put_group_from(&state, &id, body).await?;
     Ok(Scim::resource(&GROUPS, &group, &base, &selection))
 }
@@ -1191,7 +1229,7 @@ pub async fn patch_group(
     Query(selection): Query<Selection>,
     ScimBody(body): ScimBody,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     let group = patch_group_from(&state, &id, body).await?;
     Ok(Scim::resource(&GROUPS, &group, &base, &selection))
 }
@@ -1211,7 +1249,7 @@ pub async fn delete_group(
     principal: Principal,
     Path(id): Path<String>,
 ) -> ScimResult<StatusCode> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     state.metastore.scim().delete_group(&id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1254,7 +1292,7 @@ pub async fn bulk(
     BaseUrl(base): BaseUrl,
     ScimBody(body): ScimBody,
 ) -> ScimResult<Scim> {
-    authz::require_admin(&state, &principal.username).await?;
+    authz::require_admin(&state, &principal).await?;
     let req: ScimBulkRequest = serde_json::from_value(bulk_names(body)).map_err(|e| {
         ScimError::bad_request("invalidSyntax", format!("Invalid BulkRequest: {e}"))
     })?;
@@ -1438,7 +1476,7 @@ async fn apply_bulk_op(
             Ok((StatusCode::OK, resource(&GROUPS, id)))
         }
         ("DELETE", Some(id)) if users => {
-            state.metastore.scim().delete_user(id).await?;
+            delete_user_with(state, id).await?;
             Ok((StatusCode::NO_CONTENT, None))
         }
         ("DELETE", Some(id)) => {

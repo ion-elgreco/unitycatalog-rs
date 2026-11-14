@@ -244,6 +244,61 @@ tests:
             name: UC_AUTH_FORWARD_LOGOUT_URL
             value: /oauth2/sign_out
 
+  - it: lets Open Policy Agent decide privileges
+    set:
+      auth.enabled: true
+      auth.opa.url: http://opa:8181/v1/data/uc/authz
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_ENGINE
+            value: opa
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_OPA_URL
+            value: http://opa:8181/v1/data/uc/authz
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_OPA_TIMEOUT
+            value: 5s
+
+  - it: asks Open Policy Agent only with authorization on
+    set:
+      auth.opa.url: http://opa:8181/v1/data/uc/authz
+    asserts:
+      - failedTemplate:
+          errorPattern: auth.opa.url needs auth.enabled
+
+  - it: sends Open Policy Agent the token of a secret
+    set:
+      auth.enabled: true
+      auth.opa.url: https://opa:8181/v1/data/uc/authz
+      auth.opa.tokenSecretName: opa-token
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content: {name: UC_AUTH_OPA_TOKEN_FILE, value: /etc/uc/opa/token}
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content: {name: opa-token, mountPath: /etc/uc/opa, readOnly: true}
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: opa-token
+            secret:
+              secretName: opa-token
+
+  - it: sends no token without Open Policy Agent
+    set:
+      auth.enabled: true
+      auth.opa.tokenSecretName: opa-token
+    asserts:
+      - failedTemplate:
+          errorPattern: auth.opa.tokenSecretName needs auth.opa.url
+
   - it: takes one sign-in, not both
     set:
       auth.enabled: true

@@ -20,6 +20,7 @@ fn lineage_of(info: &ExternalLocationInfo) -> Lineage {
     authz::object(
         SecurableType::ExternalLocation,
         info.id.as_deref(),
+        info.name.as_deref().unwrap_or_default(),
         info.owner.as_deref(),
     )
 }
@@ -81,6 +82,7 @@ pub async fn list_external_locations(
             kept.push(location.into_browse_only());
         }
     }
+    access.failed()?;
     let external_locations = kept;
     Ok(Json(ListExternalLocationsResponse {
         external_locations,
