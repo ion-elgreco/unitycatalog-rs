@@ -5,6 +5,9 @@
 //! point ([`HttpAuthorizer`]), or by the host's own rules. A request carries
 //! the context of the HTTP request ([`AuthContext`]), so policies can look
 //! at more than who the caller is.
+//!
+//! [`OpaClient`] asks an Open Policy Agent server, with the host's own
+//! input.
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -18,10 +21,12 @@ use crate::Identity;
 
 mod cedar;
 mod http;
+mod opa;
 pub mod wire;
 
 pub use cedar::{CedarAuthorizer, CedarConfigError, EntityLoader, NoEntities};
 pub use http::HttpAuthorizer;
+pub use opa::OpaClient;
 pub use wire::{AuthorizeRequest, AuthorizeResponse, Decision, EntityRef};
 
 /// The answer of an authorizer that could not reach a decision, which the

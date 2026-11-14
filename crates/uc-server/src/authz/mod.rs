@@ -10,8 +10,9 @@
 //!   external locations have no parents.
 //! - Each endpoint combines these as upstream's expression does, see
 //!   [`rules`]. A denial is 403 "Access denied.".
-//! - An [`Authorizer`], such as Cedar's ([`cedar`]), can decide the
-//!   privileges instead of the grants alone.
+//! - An [`Engine`] decides each privilege: the grants; an [`Authorizer`],
+//!   such as Cedar's ([`cedar`]); or OPA ([`opa`]), which decides `OWNER`
+//!   and the admin too.
 //!
 //! With authorization off every check passes, as upstream's
 //! `AllowingAuthorizer`.
@@ -30,6 +31,7 @@ pub use uc_metastore::{Lineage, Node, PathOwner};
 use crate::{authn::principal::Principal, server::state::AppState};
 
 pub mod cedar;
+pub mod opa;
 
 /// The entity type of principals.
 pub const USER: &str = "User";
@@ -65,6 +67,90 @@ fn entity(node: &Node) -> EntityRef {
     EntityRef::new(entity_type(node.kind), node.id.clone())
 }
 
+/// What decides each privilege when authorization is on
+/// (`auth.engine`).
+#[derive(Clone, Default)]
+pub enum Engine {
+    /// The grants on the securable and its parents; owners and admins by
+    /// the `owner` fields and `auth.admin_principals`.
+    #[default]
+    Grants,
+    /// An [`Authorizer`], such as Cedar's ([`cedar`]), for the privileges;
+    /// owners and admins as with the grants.
+    Authorizer(Arc<dyn Authorizer>),
+    /// OPA for every privilege, `OWNER` and the admin ([`opa`]). Grants,
+    /// `owner` fields and `auth.admin_principals` do not count.
+    Opa(Arc<opa::Opa>),
+}
+
+/// `auth.engine` with the settings that it takes, checked at start.
+pub enum EngineSettings {
+    Grants,
+    /// The `.cedar` files of `auth.cedar_policies`.
+    Cedar(Vec<std::path::PathBuf>),
+    Opa(opa::Opa),
+}
+
+impl EngineSettings {
+    /// The engine of `auth`. A setting of another engine than the chosen
+    /// one is an error, as is an engine other than the grants with
+    /// authorization off, and `auth.admin_principals` with OPA, which
+    /// decides who the admin is.
+    pub fn new(auth: &uc_common::settings::Auth) -> std::result::Result<Self, String> {
+        use uc_common::settings::{PolicyEngine, name};
+        let engine = match auth.engine {
+            PolicyEngine::Grants => "grants",
+            PolicyEngine::Cedar => "cedar",
+            PolicyEngine::Opa => "opa",
+        };
+        let only_with = |key: &str, wanted: &str| {
+            format!(
+                "{} takes effect only with {} = \"{wanted}\"",
+                name(key),
+                name("auth.engine")
+            )
+        };
+        if auth.engine != PolicyEngine::Grants && !auth.enabled {
+            return Err(format!(
+                "{} = \"{engine}\" needs {} = true",
+                name("auth.engine"),
+                name("auth.enabled")
+            ));
+        }
+        if auth.engine != PolicyEngine::Cedar && !auth.cedar_policies.is_empty() {
+            return Err(only_with("auth.cedar_policies", "cedar"));
+        }
+        if auth.engine != PolicyEngine::Opa && auth.opa_url.is_some() {
+            return Err(only_with("auth.opa_url", "opa"));
+        }
+        Ok(match auth.engine {
+            PolicyEngine::Grants => Self::Grants,
+            PolicyEngine::Cedar => {
+                Self::Cedar(auth.cedar_policies.iter().map(Into::into).collect())
+            }
+            PolicyEngine::Opa => {
+                if !auth.admin_principals.is_empty() {
+                    return Err(format!(
+                        "{} takes no effect with {} = \"opa\": OPA decides who the admin is",
+                        name("auth.admin_principals"),
+                        name("auth.engine")
+                    ));
+                }
+                let url = (auth.opa_url.as_deref()).ok_or_else(|| {
+                    format!(
+                        "{} = \"opa\" needs {}",
+                        name("auth.engine"),
+                        name("auth.opa_url")
+                    )
+                })?;
+                let opa = opa::Opa::new(url, auth.opa_timeout)
+                    .map_err(|e| format!("{}: {e}", name("auth.opa_url")))?;
+                Self::Opa(opa)
+            }
+        })
+    }
+}
+
 /// Upstream's denial.
 pub fn denied() -> Error {
     Error::new(ErrorCode::PermissionDenied, "Access denied.")
@@ -80,22 +166,30 @@ pub enum Level {
 }
 
 /// One caller's authorization for a request: who the caller is, its grants,
-/// read once per request, and the authorizer that decides each privilege.
+/// read once per request, and the engine that decides each privilege.
 pub struct Access {
     enabled: bool,
     principal: String,
+    /// The admin by the metastore's owner and `auth.admin_principals`;
+    /// with OPA, OPA decides ([`Self::admin`]).
     admin: bool,
     metastore: Node,
-    /// What is granted to the caller and its groups, by securable id.
+    /// What is granted to the caller and its groups, by securable id. Empty
+    /// with OPA.
     grants: HashMap<String, HashSet<Privilege>>,
-    /// The authorizer; with none, the grants decide.
-    authorizer: Option<Arc<dyn Authorizer>>,
-    /// The authorizer's answers for this request, by the ids of the
-    /// securable and its parents, and the privilege: the checks of a list
-    /// ask for the same parents each time.
-    decided: Mutex<HashMap<(Vec<String>, Privilege), bool>>,
+    engine: Engine,
+    /// With OPA: the caller in OPA's input; `None` when no user has the
+    /// caller's principal, whose checks all fail, as upstream's do.
+    caller: Option<Value>,
+    /// The engine's answers for this request, by the ids of the securable
+    /// and its parents, and the privilege: the checks of a list ask for
+    /// the same parents each time.
+    decided: Mutex<HashMap<(Vec<String>, String), bool>>,
     /// The context of the request ([`Principal::context`]).
     context: Map<String, Value>,
+    /// The first decision that OPA failed to make. The request then fails
+    /// with 503 ([`Self::failed`]), and OPA is not asked again.
+    failure: Mutex<Option<String>>,
 }
 
 impl Access {
@@ -111,35 +205,54 @@ impl Access {
                 metastore: Node {
                     kind: SecurableType::Metastore,
                     id: String::new(),
+                    name: String::new(),
                     owner: None,
                 },
                 grants: HashMap::new(),
-                authorizer: None,
+                engine: Engine::Grants,
+                caller: None,
                 decided: Mutex::default(),
                 context: Map::new(),
+                failure: Mutex::default(),
             });
         }
         let permissions = state.metastore.permissions();
-        let (metastore_id, owner, grants) = tokio::try_join!(
-            permissions.metastore_id(),
-            permissions.metastore_owner(),
-            permissions.grants_of(name, &principal.groups),
-        )?;
+        let (metastore_id, owner) =
+            tokio::try_join!(permissions.metastore_id(), permissions.metastore_owner())?;
+        let metastore = Node {
+            kind: SecurableType::Metastore,
+            id: metastore_id,
+            name: String::new(),
+            owner,
+        };
+        let (grants, caller) = match &state.engine {
+            Engine::Opa(_) => {
+                let user = state.metastore.scim().find_user_by_principal(name).await?;
+                if user.is_none() {
+                    tracing::warn!(principal = %name, "no user has the caller's principal: OPA is not asked");
+                }
+                let caller = user.map(|user| opa::principal(&user, &principal.groups));
+                (HashMap::new(), caller)
+            }
+            _ => {
+                let grants = permissions.grants_of(name, &principal.groups).await?;
+                let grants = (grants.into_iter())
+                    .map(|(id, privileges)| (id, privileges.into_iter().collect()))
+                    .collect();
+                (grants, None)
+            }
+        };
         Ok(Self {
             enabled: true,
             principal: name.to_string(),
-            admin: is_metastore_admin(state, name, owner.as_deref()),
-            metastore: Node {
-                kind: SecurableType::Metastore,
-                id: metastore_id,
-                owner,
-            },
-            grants: (grants.into_iter())
-                .map(|(id, privileges)| (id, privileges.into_iter().collect()))
-                .collect(),
-            authorizer: state.authorizer.clone(),
+            admin: is_metastore_admin(state, name, metastore.owner.as_deref()),
+            metastore,
+            grants,
+            engine: state.engine.clone(),
+            caller,
             decided: Mutex::default(),
             context: principal.context.as_map().clone(),
+            failure: Mutex::default(),
         })
     }
 
@@ -151,17 +264,35 @@ impl Access {
         &self.principal
     }
 
-    /// `Ok` when authorization is off or `allowed`, else "Access denied.".
+    /// `Ok` when authorization is off or `allowed`, else "Access denied.";
+    /// 503 when OPA failed to decide ([`Self::failed`]).
     pub fn check(&self, allowed: bool) -> Result<()> {
+        self.failed()?;
         match !self.enabled || allowed {
             true => Ok(()),
             false => Err(denied()),
         }
     }
 
+    /// 503 when OPA failed to make a decision of this request: its checks
+    /// then answered no, which must not reach the caller as a denial or as
+    /// a shorter list.
+    pub fn failed(&self) -> Result<()> {
+        match self.failure().as_deref() {
+            Some(cause) => Err(opa::unavailable(cause)),
+            None => Ok(()),
+        }
+    }
+
     /// `#authorize(#principal, #metastore, OWNER)`.
-    pub fn admin(&self) -> bool {
-        self.admin
+    pub async fn admin(&self) -> bool {
+        if !self.enabled {
+            return true;
+        }
+        match &self.engine {
+            Engine::Opa(opa) => self.ask_opa(opa, &[&self.metastore], opa::OWNER).await,
+            _ => self.admin,
+        }
     }
 
     /// What the caller reads of the object of `lineage`: all of it by
@@ -175,9 +306,12 @@ impl Access {
         browse: impl AsyncFnOnce(&Access, &Lineage) -> bool,
     ) -> Result<Read> {
         if !self.enabled || rule(self, lineage).await {
+            self.failed()?;
             return Ok(Read::Full);
         }
-        match include_browse && browse(self, lineage).await {
+        let browse = include_browse && browse(self, lineage).await;
+        self.failed()?;
+        match browse {
             true => Ok(Read::BrowseOnly),
             false => Err(denied()),
         }
@@ -192,28 +326,64 @@ impl Access {
         }
     }
 
-    /// `#authorize(#principal, #<level>, OWNER)`.
+    /// `#authorize(#principal, #<level>, OWNER)`: the securable's `owner`,
+    /// or with OPA, OPA's answer.
     pub async fn owner(&self, lineage: &Lineage, level: Level) -> bool {
         if !self.enabled {
             return true;
         }
         if level == Level::Metastore {
-            return self.admin;
+            return self.admin().await;
+        }
+        if let Engine::Opa(opa) = &self.engine {
+            return match self.chain(lineage, level) {
+                Some(chain) => self.ask_opa(opa, &chain, opa::OWNER).await,
+                None => false,
+            };
         }
         self.node(lineage, level)
             .is_some_and(|n| n.owner.as_deref() == Some(self.principal.as_str()))
     }
 
-    /// `#authorize(#principal, #<level>, privilege)`: what the authorizer
-    /// says, else whether it is granted there or on a parent. An answer
-    /// with errors is a denial.
+    /// `#authorize(#principal, #<level>, privilege)`: what the engine says.
+    /// With the grants, whether it is granted there or on a parent. An
+    /// authorizer's answer with errors is a denial.
     pub async fn has(&self, lineage: &Lineage, level: Level, privilege: Privilege) -> bool {
         if !self.enabled {
             return true;
         }
-        let Some(node) = self.node(lineage, level) else {
+        let Some(chain) = self.chain(lineage, level) else {
             return false;
         };
+        let authorizer = match &self.engine {
+            Engine::Grants => {
+                return (chain.iter()).any(|n| {
+                    (self.grants.get(&n.id)).is_some_and(|held| held.contains(&privilege))
+                });
+            }
+            Engine::Opa(opa) => return self.ask_opa(opa, &chain, &opa::privilege(privilege)).await,
+            Engine::Authorizer(authorizer) => authorizer,
+        };
+        let key = (
+            chain.iter().map(|n| n.id.clone()).collect(),
+            format!("{privilege:?}"),
+        );
+        if let Some(allowed) = self.decided().get(&key) {
+            return *allowed;
+        }
+        let answer = authorizer.authorize(&self.request(&chain, privilege)).await;
+        if !answer.errors.is_empty() {
+            tracing::warn!(errors = ?answer.errors, "authorization errors; denying");
+        }
+        let allowed = answer.is_allowed();
+        self.decided().insert(key, allowed);
+        allowed
+    }
+
+    /// The securable of `level` and its parents, nearest first: none for a
+    /// level that `lineage` does not have.
+    fn chain<'a>(&'a self, lineage: &'a Lineage, level: Level) -> Option<Vec<&'a Node>> {
+        let node = self.node(lineage, level)?;
         let mut chain = vec![node];
         let parents: &[Level] = match level {
             Level::Metastore => &[],
@@ -234,25 +404,51 @@ impl Access {
                 }
             }
         }
-        let Some(authorizer) = &self.authorizer else {
-            return (chain.iter())
-                .any(|n| (self.grants.get(&n.id)).is_some_and(|held| held.contains(&privilege)));
-        };
-        let key = (chain.iter().map(|n| n.id.clone()).collect(), privilege);
+        Some(chain)
+    }
+
+    /// OPA's answer to `privilege` on `chain[0]`, whose parents are the
+    /// rest of `chain`. No answer is a no: without a user, or after a
+    /// failed decision, which [`Self::failed`] reports.
+    async fn ask_opa(&self, opa: &opa::Opa, chain: &[&Node], privilege: &str) -> bool {
+        let key = (
+            chain.iter().map(|n| n.id.clone()).collect(),
+            privilege.to_string(),
+        );
         if let Some(allowed) = self.decided().get(&key) {
             return *allowed;
         }
-        let answer = authorizer.authorize(&self.request(&chain, privilege)).await;
-        if !answer.errors.is_empty() {
-            tracing::warn!(errors = ?answer.errors, "authorization errors; denying");
+        let Some(caller) = &self.caller else {
+            return false;
+        };
+        if self.failure().is_some() {
+            return false;
         }
-        let allowed = answer.is_allowed();
-        self.decided().insert(key, allowed);
-        allowed
+        let input = opa::input(
+            caller,
+            privilege,
+            opa::resource(chain),
+            &opa::context(&self.context),
+        );
+        match opa.decide(&input).await {
+            Ok(allowed) => {
+                self.decided().insert(key, allowed);
+                allowed
+            }
+            Err(cause) => {
+                tracing::warn!(%cause, "OPA failed to decide");
+                self.failure().get_or_insert(cause);
+                false
+            }
+        }
     }
 
-    fn decided(&self) -> std::sync::MutexGuard<'_, HashMap<(Vec<String>, Privilege), bool>> {
+    fn decided(&self) -> std::sync::MutexGuard<'_, HashMap<(Vec<String>, String), bool>> {
         self.decided.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn failure(&self) -> std::sync::MutexGuard<'_, Option<String>> {
+        self.failure.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// The request for `privilege` on `chain[0]`, whose parents are the rest
@@ -405,7 +601,9 @@ pub async fn check_create(
         None => None,
     };
     let access = Access::load(state, principal).await?;
-    match (rule(&access, &lineage, owner.as_ref()).await, location) {
+    let allowed = rule(&access, &lineage, owner.as_ref()).await;
+    access.failed()?;
+    match (allowed, location) {
         (true, _) => Ok(()),
         (false, Some(location)) if owner == Some(PathOwner::Unowned) => Err(uncovered(location)),
         (false, _) => Err(denied()),
@@ -446,8 +644,8 @@ where
 }
 
 /// Keep the schema children the caller may read: `rule` on each item's
-/// lineage. `keys` gives an item's schema full name, id and owner. Schema
-/// lineages are looked up once each. With `browse_only`, the request has
+/// lineage. `keys` gives an item's schema full name, id, name and owner.
+/// Schema lineages are looked up once each. With `browse_only`, the request has
 /// `include_browse`: an item of a catalog that the caller may browse
 /// stays as what `browse_only` makes of it.
 pub async fn filter_children<T>(
@@ -455,7 +653,7 @@ pub async fn filter_children<T>(
     access: &Access,
     kind: SecurableType,
     items: Vec<T>,
-    keys: impl Fn(&T) -> (String, Option<String>, Option<String>),
+    keys: impl Fn(&T) -> (String, Option<String>, String, Option<String>),
     rule: impl AsyncFn(&Access, &Lineage) -> bool,
     browse_only: Option<fn(T) -> T>,
 ) -> Result<Vec<T>> {
@@ -465,13 +663,13 @@ pub async fn filter_children<T>(
     let mut schemas: HashMap<String, Lineage> = HashMap::new();
     let mut kept = Vec::with_capacity(items.len());
     for item in items {
-        let (schema, id, owner) = keys(&item);
+        let (schema, id, name, owner) = keys(&item);
         if !schemas.contains_key(&schema) {
             let lineage = lineage(state, SecurableType::Schema, &schema).await?;
             schemas.insert(schema.clone(), lineage);
         }
         let lineage = Lineage {
-            object: node(kind, id.as_deref(), owner.as_deref()),
+            object: node(kind, id.as_deref(), &name, owner.as_deref()),
             ..schemas[&schema].clone()
         };
         if rule(access, &lineage).await {
@@ -482,6 +680,7 @@ pub async fn filter_children<T>(
             kept.push(browse_only(item));
         }
     }
+    access.failed()?;
     Ok(kept)
 }
 
@@ -507,11 +706,17 @@ pub async fn path_owner(state: &AppState, url: &str) -> Result<PathOwner> {
     state.metastore.permissions().path_owner(&url).await
 }
 
-/// A node from an API object's id and owner.
-pub fn node(kind: SecurableType, id: Option<&str>, owner: Option<&str>) -> Option<Node> {
+/// A node from an API object's id, name and owner.
+pub fn node(
+    kind: SecurableType,
+    id: Option<&str>,
+    name: &str,
+    owner: Option<&str>,
+) -> Option<Node> {
     id.map(|id| Node {
         kind,
         id: id.to_string(),
+        name: name.to_string(),
         owner: owner.map(str::to_string),
     })
 }
@@ -521,6 +726,7 @@ pub fn schema_lineage(catalog: &Lineage, info: &uc_api::SchemaInfo) -> Lineage {
     let schema = node(
         SecurableType::Schema,
         info.schema_id.as_deref(),
+        info.name.as_deref().unwrap_or_default(),
         info.owner.as_deref(),
     );
     Lineage {
@@ -532,16 +738,16 @@ pub fn schema_lineage(catalog: &Lineage, info: &uc_api::SchemaInfo) -> Lineage {
 
 /// The lineage of a securable with no parents: an external location or a
 /// credential.
-pub fn object(kind: SecurableType, id: Option<&str>, owner: Option<&str>) -> Lineage {
+pub fn object(kind: SecurableType, id: Option<&str>, name: &str, owner: Option<&str>) -> Lineage {
     Lineage {
-        object: node(kind, id, owner),
+        object: node(kind, id, name, owner),
         ..Default::default()
     }
 }
 
 /// Metastore admin only (`#authorize(#principal, #metastore, OWNER)`):
 /// SCIM and sharing endpoints.
-pub async fn require_admin(state: &AppState, principal: &str) -> Result<()> {
+pub async fn require_admin(state: &AppState, principal: &Principal) -> Result<()> {
     match is_admin(state, principal).await? {
         true => Ok(()),
         false => Err(denied()),
@@ -549,14 +755,66 @@ pub async fn require_admin(state: &AppState, principal: &str) -> Result<()> {
 }
 
 /// Whether the checks let `principal` do what the metastore admin does:
-/// the metastore owner and `auth.admin_principals`; with authorization
-/// off, everyone.
-pub async fn is_admin(state: &AppState, principal: &str) -> Result<bool> {
+/// the metastore owner and `auth.admin_principals`, or whom OPA names;
+/// with authorization off, everyone.
+pub async fn is_admin(state: &AppState, principal: &Principal) -> Result<bool> {
     if !state.authorization_enabled {
         return Ok(true);
     }
+    if let Engine::Opa(_) = &state.engine {
+        let access = Access::load(state, principal).await?;
+        let admin = access.admin().await;
+        access.failed()?;
+        return Ok(admin);
+    }
     let owner = state.metastore.permissions().metastore_owner().await?;
-    Ok(is_metastore_admin(state, principal, owner.as_deref()))
+    Ok(is_metastore_admin(
+        state,
+        &principal.username,
+        owner.as_deref(),
+    ))
+}
+
+/// With OPA, upstream's `checkNotMetastoreOwner`: a user that OPA names
+/// the admin (`OWNER` on the metastore) is not deleted or deactivated.
+/// The metastore checks its native owner on its own.
+pub async fn protect_metastore_owner(state: &AppState, user: &uc_api::ScimUser) -> Result<()> {
+    let Engine::Opa(engine) = &state.engine else {
+        return Ok(());
+    };
+    if !state.authorization_enabled {
+        return Ok(());
+    }
+    let permissions = state.metastore.permissions();
+    let (id, owner) = tokio::try_join!(permissions.metastore_id(), permissions.metastore_owner())?;
+    let metastore = Node {
+        kind: SecurableType::Metastore,
+        id,
+        name: String::new(),
+        owner,
+    };
+    let input = opa::input(
+        &opa::principal(user, &[]),
+        opa::OWNER,
+        opa::resource(&[&metastore]),
+        &json!({}),
+    );
+    match engine.decide(&input).await {
+        Ok(false) => Ok(()),
+        Ok(true) => Err(Error::new(
+            ErrorCode::FailedPrecondition,
+            format!(
+                "The metastore owner can't be deleted or deactivated: {}",
+                user.principal()
+            ),
+        )),
+        Err(cause) => Err(opa::unavailable(&cause)),
+    }
+}
+
+/// Whether OPA decides the privileges.
+pub fn asks_opa(state: &AppState) -> bool {
+    state.authorization_enabled && matches!(state.engine, Engine::Opa(_))
 }
 
 /// Backups hold credentials, token hashes and users, and restores replace
@@ -567,8 +825,14 @@ pub async fn is_admin(state: &AppState, principal: &str) -> Result<bool> {
 pub async fn require_signed_in_admin(state: &AppState, principal: &Principal) -> Result<()> {
     let caller = principal.signed_in()?;
     let service = !state.authorization_enabled && caller == crate::authn::security::ADMIN;
-    let owner = state.metastore.permissions().metastore_owner().await?;
-    match service || is_metastore_admin(state, caller, owner.as_deref()) {
+    let admin = match asks_opa(state) {
+        true => is_admin(state, principal).await?,
+        false => {
+            let owner = state.metastore.permissions().metastore_owner().await?;
+            is_metastore_admin(state, caller, owner.as_deref())
+        }
+    };
+    match service || admin {
         true => Ok(()),
         false => Err(Error::permission_denied(format!(
             "principal '{caller}' is not an admin"
@@ -591,7 +855,7 @@ pub mod rules {
     /// The metastore tier of the read rules: the admin, or `READ METADATA`
     /// on the metastore.
     async fn reads_metastore(a: &Access) -> bool {
-        a.admin() || a.has(&Lineage::default(), Metastore, ReadMetadata).await
+        a.admin().await || a.has(&Lineage::default(), Metastore, ReadMetadata).await
     }
 
     /// `GET_CATALOG`: catalog reads and the Delta/Iceberg config.
@@ -611,7 +875,7 @@ pub mod rules {
     /// whether it is allowed (see [`managed_storage`]).
     pub async fn create_catalog(a: &Access, storage_root_allowed: Option<bool>) -> bool {
         let empty = Lineage::default();
-        (a.admin() || a.has(&empty, Metastore, CreateCatalog).await)
+        (a.admin().await || a.has(&empty, Metastore, CreateCatalog).await)
             && storage_root_allowed.unwrap_or(true)
     }
 
@@ -621,13 +885,13 @@ pub mod rules {
         a.owner_or_any(l, Catalog, &[Manage]).await
             && (!rename
                 || a.owner(l, Catalog).await
-                || a.admin()
+                || a.admin().await
                 || a.has(&Lineage::default(), Metastore, CreateCatalog).await)
     }
 
     /// `deleteCatalog`.
     pub async fn delete_catalog(a: &Access, l: &Lineage) -> bool {
-        a.admin() || a.owner_or_any(l, Catalog, &[Manage]).await
+        a.admin().await || a.owner_or_any(l, Catalog, &[Manage]).await
     }
 
     /// A storage root under an external location that the caller owns or
@@ -876,12 +1140,12 @@ pub mod rules {
     /// Changes and deletes of a credential or an external location: the
     /// admin, its owner or `MANAGE`.
     pub async fn admin_or_manage(a: &Access, l: &Lineage) -> bool {
-        a.admin() || a.owner_or_any(l, Object, &[Manage]).await
+        a.admin().await || a.owner_or_any(l, Object, &[Manage]).await
     }
 
     /// `createCredential`.
     pub async fn create_credential(a: &Access) -> bool {
-        a.admin()
+        a.admin().await
             || a.has(&Lineage::default(), Metastore, CreateStorageCredential)
                 .await
     }
@@ -912,7 +1176,7 @@ pub mod rules {
 
     /// `createExternalLocation`, `credential` being the credential's lineage.
     pub async fn create_external_location(a: &Access, credential: &Lineage) -> bool {
-        a.admin()
+        a.admin().await
             || (a
                 .has(&Lineage::default(), Metastore, CreateExternalLocation)
                 .await
@@ -927,7 +1191,7 @@ pub mod rules {
         l: &Lineage,
         credential: Option<&Lineage>,
     ) -> bool {
-        a.admin()
+        a.admin().await
             || (a.owner_or_any(l, Object, &[Manage]).await
                 && match credential {
                     Some(c) => a.owner_or_any(c, Object, &[CreateExternalLocation]).await,
@@ -941,7 +1205,7 @@ pub mod rules {
     /// above it, with the usage grants above that. Others see their own
     /// grants only.
     pub async fn see_permissions(a: &Access, kind: SecurableType, l: &Lineage) -> bool {
-        if a.admin()
+        if a.admin().await
             || a.owner(l, Object).await
             || a.owner(l, Schema).await
             || a.owner(l, Catalog).await
@@ -975,7 +1239,7 @@ pub mod rules {
 
     /// `update<Securable>Authorization`.
     pub async fn update_permissions(a: &Access, kind: SecurableType, l: &Lineage) -> bool {
-        a.admin()
+        a.admin().await
             || match kind {
                 SecurableType::Metastore => false,
                 SecurableType::Catalog => a.owner_or_any(l, Catalog, &[Manage]).await,

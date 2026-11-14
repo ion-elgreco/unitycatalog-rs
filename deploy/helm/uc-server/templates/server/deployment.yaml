@@ -81,6 +81,17 @@ spec:
             - name: UC_AUTH_TRUSTED_PROXIES
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.auth.opa.url }}
+            # Open Policy Agent decides each privilege.
+            - name: UC_AUTH_ENGINE
+              value: opa
+            - name: UC_AUTH_OPA_URL
+              value: {{ . | quote }}
+            - name: UC_AUTH_OPA_TIMEOUT
+              value: {{ $.Values.auth.opa.timeout | quote }}
+            {{- end }}
+            {{- else if .Values.auth.opa.url }}
+            {{- fail "auth.opa.url needs auth.enabled: OPA decides privileges only with sign-in" }}
             {{- end }}
             {{- with .Values.storage.tableStorageRoot }}
             - name: UC_STORAGE_TABLES_ROOT

@@ -80,7 +80,10 @@ pub async fn list_functions(
         &access,
         SecurableType::Function,
         functions,
-        |f| (schema.clone(), f.function_id.clone(), f.owner.clone()),
+        |f| {
+            let name = f.name.clone().unwrap_or_default();
+            (schema.clone(), f.function_id.clone(), name, f.owner.clone())
+        },
         rules::get_function,
         browse
             .include_browse

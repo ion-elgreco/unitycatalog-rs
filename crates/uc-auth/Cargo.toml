@@ -1,6 +1,6 @@
 [package]
 name = "uc-auth"
-description = "Who sent a request and what it may do: a chain of resolvers (trusted headers, OIDC JWTs, AWS signed requests) behind an axum layer, and an Authorizer port (Cedar, remote policy decision point)"
+description = "Who sent a request and what it may do: a chain of resolvers (trusted headers, OIDC JWTs, AWS signed requests) behind an axum layer, an Authorizer port (Cedar, remote policy decision point) and an Open Policy Agent client"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

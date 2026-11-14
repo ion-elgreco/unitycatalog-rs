@@ -78,6 +78,7 @@ pub async fn search_objects(
                 results.push(hit.result);
             }
         }
+        access.failed()?;
     }
     Ok(Json(SearchObjectsResponse {
         results,

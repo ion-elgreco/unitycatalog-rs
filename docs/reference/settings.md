@@ -101,8 +101,10 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 | `enabled` | `UC_AUTH_ENABLED` | `false` | Require sign-in, and check privileges. |
 | `admin_principals` | `UC_AUTH_ADMIN_PRINCIPALS` | none | The emails of the admins, besides the metastore's owner: see [Privileges](../server/auth.md#privileges). |
 | `users` | none | none | `[[auth.users]]`: the users that the server makes at each start when they are missing. Only in `uc.toml`. See [The first users](../server/auth.md#the-first-users). |
-| `cedar` | `UC_AUTH_CEDAR` | `false` | Check privileges with the Cedar policy engine. |
-| `cedar_policies` | `UC_AUTH_CEDAR_POLICIES` | none | Files of Cedar policies, on top of the default policies. |
+| `engine` | `UC_AUTH_ENGINE` | `grants` | What decides each privilege: `grants`, `cedar` (see [Cedar policies](../server/auth.md#cedar-policies)) or `opa` (see [Open Policy Agent](../server/auth.md#open-policy-agent)). `cedar` and `opa` need `enabled = true`. |
+| `cedar_policies` | `UC_AUTH_CEDAR_POLICIES` | none | With `engine = "cedar"`: files of Cedar policies, on top of the default policy. |
+| `opa_url` | `UC_AUTH_OPA_URL` | none | With `engine = "opa"`: the URL of the policy's decision in OPA's data API, such as `http://opa:8181/v1/data/uc/authz`. |
+| `opa_timeout` | `UC_AUTH_OPA_TIMEOUT` | `5s` | With `engine = "opa"`: how long one decision may take. |
 | `trusted_proxies` | `UC_AUTH_TRUSTED_PROXIES` | none | The proxies in front of the server that add the client's address to `X-Forwarded-For`, such as an ingress: CIDRs or addresses. The limits per client count by that address. See [Behind a proxy](../server/auth.md#behind-a-proxy). |
 | **Tokens** |  |  | The server's own tokens, and the identity providers whose tokens it takes. |
 | `signing_key_file` | `UC_AUTH_SIGNING_KEY_FILE` | none | The PEM file of the RSA keys of the server's tokens, newest first: the first signs. Without it, the server makes a key in memory at each start. See [The signing key](../server/auth.md#the-signing-key). |

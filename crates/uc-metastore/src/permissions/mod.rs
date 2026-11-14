@@ -7,11 +7,14 @@ use async_trait::async_trait;
 use uc_api::{PermissionsList, Privilege, UpdatePermissions};
 use uc_common::{NormalizedUrl, Result, SecurableType};
 
-/// A securable in an authorization check: its kind, id and owner.
+/// A securable in an authorization check: its kind, id, name and owner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Node {
     pub kind: SecurableType,
     pub id: String,
+    /// The securable's own name, such as `orders` of `main.sales.orders`;
+    /// empty for the metastore.
+    pub name: String,
     pub owner: Option<String>,
 }
 

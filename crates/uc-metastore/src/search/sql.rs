@@ -96,19 +96,22 @@ fn hit(row: &Row) -> StorageResult<SearchHit> {
         catalog: Some(Node {
             kind: SecurableType::Catalog,
             id: row.text(10)?,
+            name: catalog_name.clone(),
             owner: row.opt_text(11)?,
         }),
-        schema: match row.opt_text(12)? {
-            Some(id) => Some(Node {
+        schema: match (row.opt_text(12)?, &schema_name) {
+            (Some(id), Some(schema)) => Some(Node {
                 kind: SecurableType::Schema,
                 id,
+                name: schema.clone(),
                 owner: row.opt_text(13)?,
             }),
-            None => None,
+            _ => None,
         },
         object: Some(Node {
             kind,
             id: id.clone(),
+            name: name.clone(),
             owner: owner.clone(),
         }),
     };

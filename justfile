@@ -20,6 +20,9 @@ upstream_image := "unitycatalog/unitycatalog:v0.7.0"
 # The Azure emulator that `just test-azure` and CI run: Floci AZ, with ADLS Gen2.
 floci_az_image := "floci/floci-az:0.15.0"
 
+# The Open Policy Agent that `just test-opa` and CI run.
+opa_image := "openpolicyagent/opa:1.22.4-static"
+
 # mike, which publishes a version of the docs site: zensical's fork of it
 # (squidfunk/mike), at a fixed commit.
 mike := "git+https://github.com/squidfunk/mike.git@2d4ad799442f4592db8ad53b179bfb33db8c69ac"
@@ -149,6 +152,16 @@ test-azure:
     url=http://127.0.0.1:14577
     curl -fs --retry 60 --retry-all-errors --retry-delay 1 "$url/metadata/identity/oauth2/token?resource=https://storage.azure.com" -H "Metadata: true" > /dev/null
     UC_TEST_FLOCI_AZ_URL="$url" cargo test --profile {{ profile }} -p uc-server --test azure_emulator
+
+# Run the OPA tests of the server (crates/uc-server/tests/opa.rs) against a real Open Policy Agent in Docker (opa_image), with upstream's example policy, unchanged (crates/uc-server/tests/fixtures/opa)
+test-opa:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    id=$(docker run -d -p 127.0.0.1:18181:8181 -v "$PWD/crates/uc-server/tests/fixtures/opa:/policies:ro" {{ opa_image }} run --server --addr :8181 /policies)
+    trap 'status=$?; [ $status -eq 0 ] || docker logs "$id"; docker rm -f -v "$id" > /dev/null; exit $status' EXIT
+    url=http://127.0.0.1:18181
+    curl -fs --retry 30 --retry-all-errors --retry-delay 1 "$url/health" > /dev/null
+    UC_TEST_OPA_URL="$url" cargo test --profile {{ profile }} -p uc-server --test opa
 
 # Run the authentik tests (python/client/tests/integrations/test_authentik.py) against a uc-server of this repository: authentik, an identity provider, in Docker (its compose.yaml in integrations/authentik), pushes users and groups to the server over SCIM; needs the client in .venv (just develop-client)
 test-authentik:
