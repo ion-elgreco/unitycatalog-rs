@@ -25,7 +25,7 @@ serde.workspace = true
 # Upstream field order in output.
 serde_json = { workspace = true, features = ["preserve_order"] }
 anyhow.workspace = true
-# The `--columns` patterns of upstream's CLI.
+# The `--columns` pattern of upstream's CLI.
 regex.workspace = true
 tracing-subscriber.workspace = true
 reqwest = { workspace = true, features = ["stream"] }

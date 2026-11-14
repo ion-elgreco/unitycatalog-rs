@@ -63,8 +63,8 @@ pub struct TableCreate {
     /// The columns, in the SQL-like format "column_name column_data_type",
     /// separated by commas: "id INT, price DECIMAL(10,2)". Supported data
     /// types are BOOLEAN, BYTE, SHORT, INT, LONG, FLOAT, DOUBLE, DATE,
-    /// TIMESTAMP, TIMESTAMP_NTZ, STRING, BINARY and DECIMAL(p,s). A bare
-    /// DECIMAL is DECIMAL(10,0)
+    /// TIMESTAMP, TIMESTAMP_NTZ, STRING, BINARY and DECIMAL(p,s). A DECIMAL
+    /// needs both a precision and a scale
     #[arg(long)]
     pub columns: String,
     /// The format of the data source

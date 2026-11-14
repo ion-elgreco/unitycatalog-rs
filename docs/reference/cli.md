@@ -54,8 +54,8 @@ there are more.
 
 - `--columns`: `"id INT, price DECIMAL(10,2)"`. The types are `BOOLEAN`, `BYTE`, `SHORT`, `INT`,
   `LONG`, `FLOAT`, `DOUBLE`, `DATE`, `TIMESTAMP`, `TIMESTAMP_NTZ`, `STRING`, `BINARY` and
-  `DECIMAL(p,s)`. A precision `p` is 1 to 38 and a scale `s` is 0 to `p`. `DECIMAL(p)` is
-  `DECIMAL(p,0)`, and a bare `DECIMAL` is `DECIMAL(10,0)`.
+  `DECIMAL(p,s)`. A `DECIMAL` needs both a precision `p` from 1 to 38 and a scale `s` from 0
+  to `p`.
 - `--format`: `DELTA` (the default), `ICEBERG`, `CSV`, `JSON`, `AVRO`, `PARQUET`, `ORC`, `TEXT` or `LANCE`.
   Only `DELTA` gets a Delta table at the location; `read` and `write` work with Delta tables.
 - `--table_type`: `EXTERNAL` (the default), which needs `--storage_location`, or `MANAGED`.

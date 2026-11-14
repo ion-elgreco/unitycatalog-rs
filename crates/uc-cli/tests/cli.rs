@@ -489,8 +489,8 @@ async fn external_tables_over_a_delta_table() {
     assert!(err.contains("404"), "{err}");
 }
 
-/// A bare DECIMAL is DECIMAL(10,0), in the catalog and in the Delta log; a
-/// DECIMAL out of range makes no table.
+/// A DECIMAL(p,s) is in the catalog and in the Delta log; a DECIMAL out of
+/// range makes no table.
 #[tokio::test(flavor = "multi_thread")]
 async fn decimal_columns() {
     let s = Server::start().await;
@@ -510,18 +510,18 @@ async fn decimal_columns() {
             location,
         ]
     };
-    let args = create("t", "d DECIMAL, p DECIMAL (7)", location.clone());
+    let args = create("t", "d DECIMAL(10,0), p DECIMAL (7, 2)", location.clone());
     s.ok(&args.each_ref().map(String::as_str)).await;
     let got = s.ok(&["table", "get", "--full_name", "c.s.t"]).await;
     assert!(
-        got.contains("decimal(10,0)") && got.contains("decimal(7,0)"),
+        got.contains("decimal(10,0)") && got.contains("decimal(7,2)"),
         "{got}"
     );
     let log = std::fs::read_to_string(format!("{location}/_delta_log/00000000000000000000.json"))
         .unwrap();
     assert!(
         log.contains(r#"\"type\":\"decimal(10,0)\""#)
-            && log.contains(r#"\"type\":\"decimal(7,0)\""#),
+            && log.contains(r#"\"type\":\"decimal(7,2)\""#),
         "{log}"
     );
 
@@ -529,7 +529,8 @@ async fn decimal_columns() {
     let err = s.fails(&args.each_ref().map(String::as_str)).await;
     assert!(
         err.contains(
-            "Invalid column definition: d DECIMAL(39,0): DECIMAL precision must be between 1 and 38: 39"
+            "Invalid column definition: d DECIMAL(39,0): Invalid decimal: precision must be in \
+             range 1..38 inclusive, found: 39."
         ),
         "{err}"
     );
