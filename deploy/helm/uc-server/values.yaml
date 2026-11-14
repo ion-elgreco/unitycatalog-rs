@@ -132,6 +132,15 @@ auth:
     namesWithCommas: false
     # -- The proxy's sign-out, where the UI's "Log out" goes.
     logoutUrl: ""
+  # -- Open Policy Agent decides each privilege, `OWNER` and the admin
+  # (`UC_AUTH_ENGINE=opa`), with `enabled`. Grants and `users[].privileges`
+  # do not count then.
+  opa:
+    # -- The URL of the policy's decision in OPA's data API, such as
+    # `http://opa:8181/v1/data/uc/authz`. Empty: the grants decide.
+    url: ""
+    # -- How long one decision may take.
+    timeout: 5s
   cookieTimeout: 5d
   accessTokenTimeout: 24h
 

@@ -109,6 +109,7 @@ async fn the_default_policy_permits_what_is_granted(
     let schema = Node {
         kind: SecurableType::Schema,
         id: "s-1".into(),
+        name: "sales".into(),
         owner: None,
     };
     let in_main = Lineage {

@@ -101,7 +101,9 @@ async fn load_privileges(
     }
     let access = authz::Access::load(state, principal).await?;
     let lineage = authz::lineage(state, SecurableType::Table, full_name).await?;
-    if !rules::vend_table(&access, &lineage, false).await {
+    let can_read = rules::vend_table(&access, &lineage, false).await;
+    access.failed()?;
+    if !can_read {
         return Ok(None);
     }
     let can_write = native
@@ -113,6 +115,7 @@ async fn load_privileges(
                     &[Privilege::Select, Privilege::Modify],
                 )
                 .await);
+    access.failed()?;
     Ok(Some(match can_write {
         true => VendOp::ReadWrite,
         false => VendOp::Read,
@@ -188,7 +191,10 @@ pub async fn list_tables(
         &access,
         SecurableType::Table,
         tables,
-        |t| (schema.clone(), Some(t.table_id.clone()), t.owner.clone()),
+        |t| {
+            let id = Some(t.table_id.clone());
+            (schema.clone(), id, t.name.clone(), t.owner.clone())
+        },
         rules::get_table,
         None,
     )

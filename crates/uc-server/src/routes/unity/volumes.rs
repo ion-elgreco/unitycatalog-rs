@@ -75,7 +75,10 @@ pub async fn list_volumes(
         &access,
         SecurableType::Volume,
         volumes,
-        |v| (schema.clone(), v.volume_id.clone(), v.owner.clone()),
+        |v| {
+            let name = v.name.clone().unwrap_or_default();
+            (schema.clone(), v.volume_id.clone(), name, v.owner.clone())
+        },
         rules::get_volume,
         browse
             .include_browse

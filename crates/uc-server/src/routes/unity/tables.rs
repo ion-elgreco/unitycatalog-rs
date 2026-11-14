@@ -82,7 +82,10 @@ pub async fn list_tables(
         &access,
         SecurableType::Table,
         tables,
-        |t| (schema.clone(), t.table_id.clone(), t.owner.clone()),
+        |t| {
+            let name = t.name.clone().unwrap_or_default();
+            (schema.clone(), t.table_id.clone(), name, t.owner.clone())
+        },
         rules::get_table,
         browse.include_browse.then_some(TableInfo::into_browse_only),
     )

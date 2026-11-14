@@ -173,6 +173,21 @@ pub enum SignInMode {
     Forward,
 }
 
+/// What decides each privilege when authorization is on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PolicyEngine {
+    /// The grants, the owners and the admins.
+    #[default]
+    Grants,
+    /// Cedar policies in the server: by default what the grants allow,
+    /// with the policies of `cedar_policies` on top.
+    Cedar,
+    /// An Open Policy Agent server at `opa_url`: every privilege, `OWNER`
+    /// and the admin. Grants do not count.
+    Opa,
+}
+
 /// `[auth]`: sign-in and authorization.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -200,12 +215,20 @@ pub struct Auth {
     /// Users with every privilege.
     #[serde(deserialize_with = "list")]
     pub admin_principals: Vec<String>,
-    /// The Cedar policy engine, with `cedar_policies` on top of its
-    /// defaults (default false).
-    #[serde(deserialize_with = "scalar")]
-    pub cedar: bool,
+    /// What decides each privilege: `grants`, `cedar` or `opa` (default
+    /// `grants`).
+    pub engine: PolicyEngine,
+    /// With `engine = "cedar"`: files of Cedar policies, on top of the
+    /// default policy.
     #[serde(deserialize_with = "list")]
     pub cedar_policies: Vec<String>,
+    /// With `engine = "opa"`: the URL of the policy's decision in OPA's
+    /// data API, such as `http://opa:8181/v1/data/uc/authz`.
+    pub opa_url: Option<String>,
+    /// With `engine = "opa"`: how long one decision may take (default
+    /// `5s`).
+    #[serde(deserialize_with = "duration")]
+    pub opa_timeout: Duration,
     /// The proxies in front of the server, such as an ingress, that add
     /// the client's address to `X-Forwarded-For`: CIDRs or addresses. The
     /// limits per client count by that address then, not by the proxy's.
@@ -256,8 +279,10 @@ impl Default for Auth {
             access_token_timeout: Duration::from_secs(24 * 3600),
             cookie_timeout: Duration::from_secs(5 * 24 * 3600),
             admin_principals: Vec::new(),
-            cedar: false,
+            engine: PolicyEngine::Grants,
             cedar_policies: Vec::new(),
+            opa_url: None,
+            opa_timeout: Duration::from_secs(5),
             trusted_proxies: Vec::new(),
             mode: SignInMode::None,
             public_url: None,

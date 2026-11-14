@@ -17,6 +17,7 @@ fn lineage_of(info: &CatalogInfo) -> Lineage {
     let catalog = authz::node(
         SecurableType::Catalog,
         info.id.as_deref(),
+        info.name.as_deref().unwrap_or_default(),
         info.owner.as_deref(),
     );
     Lineage {
@@ -82,6 +83,7 @@ pub async fn list_catalogs(
             kept.push(catalog.into_browse_only());
         }
     }
+    access.failed()?;
     let catalogs = kept;
     Ok(Json(ListCatalogsResponse {
         catalogs,

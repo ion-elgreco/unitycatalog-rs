@@ -89,6 +89,7 @@ pub async fn list_schemas(
                     kept.push(schema.into_browse_only());
                 }
             }
+            access.failed()?;
             kept
         }
     };

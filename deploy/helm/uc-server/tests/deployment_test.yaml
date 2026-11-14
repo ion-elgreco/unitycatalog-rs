@@ -244,6 +244,34 @@ tests:
             name: UC_AUTH_FORWARD_LOGOUT_URL
             value: /oauth2/sign_out
 
+  - it: lets Open Policy Agent decide privileges
+    set:
+      auth.enabled: true
+      auth.opa.url: http://opa:8181/v1/data/uc/authz
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_ENGINE
+            value: opa
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_OPA_URL
+            value: http://opa:8181/v1/data/uc/authz
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UC_AUTH_OPA_TIMEOUT
+            value: 5s
+
+  - it: asks Open Policy Agent only with authorization on
+    set:
+      auth.opa.url: http://opa:8181/v1/data/uc/authz
+    asserts:
+      - failedTemplate:
+          errorPattern: auth.opa.url needs auth.enabled
+
   - it: takes one sign-in, not both
     set:
       auth.enabled: true
