@@ -92,10 +92,10 @@ pub enum EngineSettings {
 }
 
 impl EngineSettings {
-    /// The engine of `auth`. A setting of another engine than the chosen
-    /// one is an error, as is an engine other than the grants with
-    /// authorization off, and `auth.admin_principals` with OPA, which
-    /// decides who the admin is.
+    /// The engine of `auth`, with OPA's token read from its file. A setting
+    /// of another engine than the chosen one is an error, as is an engine
+    /// other than the grants with authorization off, and
+    /// `auth.admin_principals` with OPA, which decides who the admin is.
     pub fn new(auth: &uc_common::settings::Auth) -> std::result::Result<Self, String> {
         use uc_common::settings::{PolicyEngine, name};
         let engine = match auth.engine {
@@ -123,6 +123,9 @@ impl EngineSettings {
         if auth.engine != PolicyEngine::Opa && auth.opa_url.is_some() {
             return Err(only_with("auth.opa_url", "opa"));
         }
+        if auth.engine != PolicyEngine::Opa && auth.opa_token_file.is_some() {
+            return Err(only_with("auth.opa_token_file", "opa"));
+        }
         Ok(match auth.engine {
             PolicyEngine::Grants => Self::Grants,
             PolicyEngine::Cedar => {
@@ -143,8 +146,15 @@ impl EngineSettings {
                         name("auth.opa_url")
                     )
                 })?;
-                let opa = opa::Opa::new(url, auth.opa_timeout)
+                let mut opa = opa::Opa::new(url, auth.opa_timeout)
                     .map_err(|e| format!("{}: {e}", name("auth.opa_url")))?;
+                if let Some(path) = &auth.opa_token_file {
+                    let setting = name("auth.opa_token_file");
+                    let token = std::fs::read_to_string(path)
+                        .map_err(|e| format!("{setting}: cannot read {}: {e}", path.display()))?;
+                    opa = (opa.with_token(token.trim()))
+                        .map_err(|e| format!("{setting}: {}: {e}", path.display()))?;
+                }
                 Self::Opa(opa)
             }
         })

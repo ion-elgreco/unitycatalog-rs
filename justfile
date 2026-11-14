@@ -153,11 +153,11 @@ test-azure:
     curl -fs --retry 60 --retry-all-errors --retry-delay 1 "$url/metadata/identity/oauth2/token?resource=https://storage.azure.com" -H "Metadata: true" > /dev/null
     UC_TEST_FLOCI_AZ_URL="$url" cargo test --profile {{ profile }} -p uc-server --test azure_emulator
 
-# Run the OPA tests of the server (crates/uc-server/tests/opa.rs) against a real Open Policy Agent in Docker (opa_image), with upstream's example policy, unchanged (crates/uc-server/tests/fixtures/opa)
+# Run the OPA tests of the server (crates/uc-server/tests/opa.rs) against a real Open Policy Agent in Docker (opa_image), with upstream's example policy, unchanged, and access rules that take only the test tokens (crates/uc-server/tests/fixtures/opa)
 test-opa:
     #!/usr/bin/env bash
     set -euo pipefail
-    id=$(docker run -d -p 127.0.0.1:18181:8181 -v "$PWD/crates/uc-server/tests/fixtures/opa:/policies:ro" {{ opa_image }} run --server --addr :8181 /policies)
+    id=$(docker run -d -p 127.0.0.1:18181:8181 -e OPA_CATALOG_TOKEN=uc-test-catalog-token -e OPA_ADMIN_TOKEN=uc-test-admin-token -v "$PWD/crates/uc-server/tests/fixtures/opa:/policies:ro" {{ opa_image }} run --server --addr :8181 --authentication=token --authorization=basic /policies)
     trap 'status=$?; [ $status -eq 0 ] || docker logs "$id"; docker rm -f -v "$id" > /dev/null; exit $status' EXIT
     url=http://127.0.0.1:18181
     curl -fs --retry 30 --retry-all-errors --retry-delay 1 "$url/health" > /dev/null

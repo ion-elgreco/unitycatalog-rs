@@ -74,6 +74,7 @@ The chart sets the server's settings as `UC_*` environment variables. For the
 | `auth.forward.logoutUrl` | `""` | The proxy's sign-out, for the web UI's "Log out". |
 | `auth.opa.url` | `""` | Open Policy Agent decides each privilege, `OWNER` and the admin: the URL of the policy's decision in OPA's data API, such as `http://opa:8181/v1/data/uc/authz`. Needs `auth.enabled`. See [Open Policy Agent](../server/auth.md#open-policy-agent). |
 | `auth.opa.timeout` | `5s` | How long one OPA decision may take. |
+| `auth.opa.tokenSecretName` | `""` | A secret with `token`: the token that the server sends to OPA, for an OPA that takes tokens. Needs `auth.opa.url`. See [Protect OPA](../server/auth.md#protect-opa). |
 | `auth.cookieTimeout` | `5d` | The life of the web UI's sign-in. |
 | `auth.accessTokenTimeout` | `24h` | The life of the server's tokens. |
 | `storage.tableStorageRoot` | `""` | Where managed tables go when their catalog and schema have no storage root. |

@@ -64,14 +64,19 @@ jobs:
       - name: Run clippy
         run: cargo clippy --profile "$PROFILE" --workspace --all-targets -- -D warnings
 
-      # Open Policy Agent with upstream's example policy, for the OPA tests
-      # (crates/uc-server/tests/opa.rs). The image is the opa_image of the
-      # justfile. Not a service: a service cannot take OPA's arguments.
+      # Open Policy Agent with upstream's example policy and access rules
+      # that take only the test tokens, for the OPA tests
+      # (crates/uc-server/tests/opa.rs), as `just test-opa` runs it. The
+      # image is the opa_image of the justfile. Not a service: a service
+      # cannot take OPA's arguments.
       - name: Start Open Policy Agent
         run: >-
           docker run -d -p 127.0.0.1:8181:8181
+          -e OPA_CATALOG_TOKEN=uc-test-catalog-token
+          -e OPA_ADMIN_TOKEN=uc-test-admin-token
           -v "$PWD/crates/uc-server/tests/fixtures/opa:/policies:ro"
-          openpolicyagent/opa:1.22.4-static run --server --addr :8181 /policies
+          openpolicyagent/opa:1.22.4-static run --server --addr :8181
+          --authentication=token --authorization=basic /policies
 
       - name: Run Rust tests
         env:

@@ -47,6 +47,18 @@ impl Opa {
         })
     }
 
+    /// The OPA server that takes `token` (`--authentication=token`).
+    pub fn with_token(self, token: &str) -> std::result::Result<Self, String> {
+        Ok(Self {
+            client: self.client.with_token(token)?,
+        })
+    }
+
+    /// Whether the token goes over plain `http`.
+    pub fn sends_token_in_clear(&self) -> bool {
+        self.client.sends_token_in_clear()
+    }
+
     /// OPA's decision on `input`, or why it made none ([`unavailable`]).
     pub async fn decide(&self, input: &Value) -> std::result::Result<bool, String> {
         self.client.allow(input).await

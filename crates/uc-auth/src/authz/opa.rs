@@ -1,7 +1,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use reqwest::header::CONTENT_TYPE;
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 use reqwest::{Url, redirect};
 use serde_json::{Value, json};
 
@@ -14,6 +14,10 @@ const MAX_ANSWER: usize = 64 * 1024;
 /// `http://opa:8181/v1/data/uc/authz`, and reads the boolean `result.allow`
 /// of the answer.
 ///
+/// With a token ([`OpaClient::with_token`]), each request carries
+/// `Authorization: Bearer <token>`, for an OPA that takes tokens
+/// (`opa run --authentication=token`).
+///
 /// It follows no redirects. The answer must come within the timeout and be
 /// at most 64 KiB. Any other answer is an error, not a denial: the caller
 /// decides what a failed decision means.
@@ -22,6 +26,7 @@ pub struct OpaClient {
     client: reqwest::Client,
     url: Url,
     timeout: Duration,
+    token: Option<HeaderValue>,
 }
 
 impl fmt::Debug for OpaClient {
@@ -29,6 +34,7 @@ impl fmt::Debug for OpaClient {
         f.debug_struct("OpaClient")
             .field("url", &self.url.as_str())
             .field("timeout", &self.timeout)
+            .field("token", &self.token.as_ref().map(|_| "…"))
             .finish()
     }
 }
@@ -62,6 +68,22 @@ impl OpaClient {
             client,
             url,
             timeout,
+            token: None,
+        })
+    }
+
+    /// The client that sends `token` as `Authorization: Bearer <token>`. An
+    /// error does not show the token.
+    pub fn with_token(self, token: &str) -> Result<Self, String> {
+        if token.is_empty() {
+            return Err("the token is empty".into());
+        }
+        let mut value = HeaderValue::from_str(&format!("Bearer {token}"))
+            .map_err(|_| "the token holds characters that cannot go in an HTTP header")?;
+        value.set_sensitive(true);
+        Ok(Self {
+            token: Some(value),
+            ..self
         })
     }
 
@@ -70,20 +92,32 @@ impl OpaClient {
         self.url.as_str()
     }
 
+    /// Whether the token goes over plain `http`.
+    pub fn sends_token_in_clear(&self) -> bool {
+        self.token.is_some() && self.url.scheme() == "http"
+    }
+
     /// OPA's `result.allow` for `input`.
     pub async fn allow(&self, input: &Value) -> Result<bool, String> {
         let body = serde_json::to_vec(&json!({ "input": input }))
             .map_err(|e| format!("encoding the input: {e}"))?;
-        let mut response = self
-            .client
-            .post(self.url.clone())
+        let mut request = (self.client.post(self.url.clone()))
             .header(CONTENT_TYPE, "application/json")
             .body(body)
-            .timeout(self.timeout)
-            .send()
-            .await
-            .map_err(|e| self.failed("OPA is unreachable", e))?;
+            .timeout(self.timeout);
+        if let Some(token) = &self.token {
+            request = request.header(AUTHORIZATION, token.clone());
+        }
+        let mut response =
+            (request.send().await).map_err(|e| self.failed("OPA is unreachable", e))?;
         let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            let given = match self.token {
+                Some(_) => "the server's token",
+                None => "a request without a token",
+            };
+            return Err(format!("OPA answered HTTP 401: it refused {given}"));
+        }
         if !status.is_success() {
             return Err(format!("OPA answered HTTP {}", status.as_u16()));
         }
@@ -180,6 +214,17 @@ mod tests {
                 }),
             )
             .route(
+                "/v1/data/token",
+                post(|headers: header::HeaderMap| async move {
+                    match headers.get(header::AUTHORIZATION) {
+                        Some(value) if value == "Bearer s3cret" => {
+                            Json(json!({ "result": { "allow": true } })).into_response()
+                        }
+                        _ => StatusCode::UNAUTHORIZED.into_response(),
+                    }
+                }),
+            )
+            .route(
                 "/v1/data/slow",
                 post(|| async {
                     tokio::time::sleep(Duration::from_secs(5)).await;
@@ -244,6 +289,34 @@ mod tests {
         ] {
             let error = client(&base, path).allow(&input).await.unwrap_err();
             assert!(error.contains(expected), "{path}: {error}");
+        }
+    }
+
+    #[tokio::test]
+    async fn sends_the_token() {
+        let base = opa().await;
+        let input = json!({});
+        let error = client(&base, "token").allow(&input).await.unwrap_err();
+        assert_eq!(
+            error,
+            "OPA answered HTTP 401: it refused a request without a token"
+        );
+        let opa = client(&base, "token").with_token("s3cret").unwrap();
+        assert_eq!(opa.allow(&input).await, Ok(true));
+        assert!(!format!("{opa:?}").contains("s3cret"));
+        assert!(opa.sends_token_in_clear());
+        let wrong = client(&base, "token").with_token("other").unwrap();
+        let error = wrong.allow(&input).await.unwrap_err();
+        assert_eq!(
+            error,
+            "OPA answered HTTP 401: it refused the server's token"
+        );
+
+        let https = OpaClient::new("https://opa/v1/data/uc", Duration::from_secs(1)).unwrap();
+        assert!(!https.with_token("s3cret").unwrap().sends_token_in_clear());
+        for token in ["", "s3cret\nX-Other: 1"] {
+            let error = client(&base, "token").with_token(token).unwrap_err();
+            assert!(!error.contains("s3cret"), "{error}");
         }
     }
 

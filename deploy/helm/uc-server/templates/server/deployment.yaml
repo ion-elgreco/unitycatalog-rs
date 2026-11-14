@@ -89,9 +89,16 @@ spec:
               value: {{ . | quote }}
             - name: UC_AUTH_OPA_TIMEOUT
               value: {{ $.Values.auth.opa.timeout | quote }}
+            {{- if $.Values.auth.opa.tokenSecretName }}
+            - name: UC_AUTH_OPA_TOKEN_FILE
+              value: /etc/uc/opa/token
+            {{- end }}
             {{- end }}
             {{- else if .Values.auth.opa.url }}
             {{- fail "auth.opa.url needs auth.enabled: OPA decides privileges only with sign-in" }}
+            {{- end }}
+            {{- if and .Values.auth.opa.tokenSecretName (not .Values.auth.opa.url) }}
+            {{- fail "auth.opa.tokenSecretName needs auth.opa.url" }}
             {{- end }}
             {{- with .Values.storage.tableStorageRoot }}
             - name: UC_STORAGE_TABLES_ROOT
@@ -294,6 +301,11 @@ spec:
               mountPath: /etc/uc/identity/gcp
               readOnly: true
             {{- end }}
+            {{- if and .Values.auth.enabled .Values.auth.opa.url .Values.auth.opa.tokenSecretName }}
+            - name: opa-token
+              mountPath: /etc/uc/opa
+              readOnly: true
+            {{- end }}
             {{- range $index, $config := .Values.storage.locations }}
             {{- if and $config.credentialsSecretName (hasPrefix "gs://" $config.url) }}
             - name: location-{{ $index }}
@@ -347,6 +359,12 @@ spec:
         - name: identity-gcp
           secret:
             secretName: {{ . | quote }}
+        {{- end }}
+        {{- if and .Values.auth.enabled .Values.auth.opa.url .Values.auth.opa.tokenSecretName }}
+        # The token that the server sends to OPA.
+        - name: opa-token
+          secret:
+            secretName: {{ .Values.auth.opa.tokenSecretName | quote }}
         {{- end }}
         {{- range $index, $config := .Values.storage.locations }}
         {{- if and $config.credentialsSecretName (hasPrefix "gs://" $config.url) }}
