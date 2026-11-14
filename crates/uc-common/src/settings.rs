@@ -229,6 +229,10 @@ pub struct Auth {
     /// `5s`).
     #[serde(deserialize_with = "duration")]
     pub opa_timeout: Duration,
+    /// With `engine = "opa"`: a file with the token that the server sends
+    /// to OPA as `Authorization: Bearer <token>`, for an OPA that takes
+    /// tokens (`--authentication=token`). Without it, no token.
+    pub opa_token_file: Option<PathBuf>,
     /// The proxies in front of the server, such as an ingress, that add
     /// the client's address to `X-Forwarded-For`: CIDRs or addresses. The
     /// limits per client count by that address then, not by the proxy's.
@@ -283,6 +287,7 @@ impl Default for Auth {
             cedar_policies: Vec::new(),
             opa_url: None,
             opa_timeout: Duration::from_secs(5),
+            opa_token_file: None,
             trusted_proxies: Vec::new(),
             mode: SignInMode::None,
             public_url: None,

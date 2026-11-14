@@ -204,7 +204,14 @@ async fn run(options: options::Options) -> Result<(), String> {
             );
         }
         EngineSettings::Opa(opa) => {
-            info!(timeout = ?cfg.auth.opa_timeout, "OPA decides privileges");
+            let token = cfg.auth.opa_token_file.is_some();
+            info!(timeout = ?cfg.auth.opa_timeout, token, "OPA decides privileges");
+            if opa.sends_token_in_clear() {
+                warn!(
+                    "auth.opa_url is http://: the token of auth.opa_token_file goes to OPA \
+                     unencrypted. Use https:// unless the network to OPA is encrypted."
+                );
+            }
             state = state.with_opa(opa);
         }
     }

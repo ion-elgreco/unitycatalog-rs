@@ -105,6 +105,7 @@ the server reads a name of only digits, such as `UC_LOCATIONS_0_URL`, as a list 
 | `cedar_policies` | `UC_AUTH_CEDAR_POLICIES` | none | With `engine = "cedar"`: files of Cedar policies, on top of the default policy. |
 | `opa_url` | `UC_AUTH_OPA_URL` | none | With `engine = "opa"`: the URL of the policy's decision in OPA's data API, such as `http://opa:8181/v1/data/uc/authz`. |
 | `opa_timeout` | `UC_AUTH_OPA_TIMEOUT` | `5s` | With `engine = "opa"`: how long one decision may take. |
+| `opa_token_file` | `UC_AUTH_OPA_TOKEN_FILE` | none | With `engine = "opa"`: a file with the token that the server sends to OPA as `Authorization: Bearer <token>`, for an OPA that takes tokens. See [Protect OPA](../server/auth.md#protect-opa). |
 | `trusted_proxies` | `UC_AUTH_TRUSTED_PROXIES` | none | The proxies in front of the server that add the client's address to `X-Forwarded-For`, such as an ingress: CIDRs or addresses. The limits per client count by that address. See [Behind a proxy](../server/auth.md#behind-a-proxy). |
 | **Tokens** |  |  | The server's own tokens, and the identity providers whose tokens it takes. |
 | `signing_key_file` | `UC_AUTH_SIGNING_KEY_FILE` | none | The PEM file of the RSA keys of the server's tokens, newest first: the first signs. Without it, the server makes a key in memory at each start. See [The signing key](../server/auth.md#the-signing-key). |

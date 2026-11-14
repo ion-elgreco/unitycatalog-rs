@@ -408,18 +408,62 @@ fn the_engine_takes_only_its_own_settings() {
     }
 }
 
-/// A real OPA with upstream's `etc/conf/opa-example.rego`, unchanged
-/// (`tests/fixtures/opa`), at `UC_TEST_OPA_URL`, such as
-/// `http://127.0.0.1:18181` (`just test-opa`); skipped without it.
-#[tokio::test]
-async fn upstreams_example_policy_works_unchanged() {
-    let Some(base) = std::env::var("UC_TEST_OPA_URL")
-        .ok()
-        .filter(|url| !url.is_empty())
-    else {
-        eprintln!("skipped: UC_TEST_OPA_URL is not set");
-        return;
+#[test]
+fn the_token_comes_from_its_file() {
+    let folder = tempfile::tempdir().unwrap();
+    let file = |name: &str, content: &str| {
+        let path = folder.path().join(name);
+        std::fs::write(&path, content).unwrap();
+        path.display().to_string()
     };
+    let opa = |token_file: &str| {
+        engine(&format!(
+            "[auth]\nenabled = true\nengine = \"opa\"\n\
+             opa_url = \"https://opa:8181/v1/data/uc/authz\"\nopa_token_file = \"{token_file}\"\n"
+        ))
+    };
+    let token = file("token", "s3cret\n");
+    assert!(matches!(opa(&token), Ok(EngineSettings::Opa(o)) if !o.sends_token_in_clear()));
+    let grants = format!("[auth]\nenabled = true\nopa_token_file = \"{token}\"\n");
+    for (result, expected) in [
+        (
+            engine(&grants),
+            "auth.opa_token_file (UC_AUTH_OPA_TOKEN_FILE) takes effect only with",
+        ),
+        (opa(&format!("{token}.missing")), "cannot read"),
+        (opa(&file("empty", " \n")), "the token is empty"),
+        (
+            opa(&file("bad", "s3cret\u{7f}")),
+            "cannot go in an HTTP header",
+        ),
+    ] {
+        let error = result.err().expect("an error");
+        assert!(error.contains(expected), "{error}");
+        assert!(!error.contains("s3cret"), "{error}");
+    }
+}
+
+/// The tokens that OPA takes in `just test-opa` and CI (its environment
+/// `OPA_CATALOG_TOKEN` and `OPA_ADMIN_TOKEN`, read by
+/// `tests/fixtures/opa/system-authz.rego`).
+const OPA_TOKEN: &str = "uc-test-catalog-token";
+const OPA_ADMIN_TOKEN: &str = "uc-test-admin-token";
+
+/// The URL of the real OPA of `just test-opa`, which runs the policies of
+/// `tests/fixtures/opa` and takes tokens: `UC_TEST_OPA_URL`, such as
+/// `http://127.0.0.1:18181`. None without it: the test is skipped.
+fn real_opa() -> Option<String> {
+    let url = std::env::var("UC_TEST_OPA_URL").ok();
+    let url = url.filter(|url| !url.is_empty());
+    if url.is_none() {
+        eprintln!("skipped: UC_TEST_OPA_URL is not set");
+    }
+    url
+}
+
+/// A server whose engine is the real OPA at `base`, with `token`, and its
+/// metastore.
+async fn with_real_opa(base: &str, token: Option<&str>) -> (Router, uc_metastore::DynMetastore) {
     let metastore = SqlMetastore::connect(MetastoreConfig::for_tests())
         .await
         .unwrap();
@@ -427,14 +471,64 @@ async fn upstreams_example_policy_works_unchanged() {
     uc_server::authn::security::initialize_admin(&dyn_metastore)
         .await
         .unwrap();
-    let alice = common::active_user(&dyn_metastore, "alice@example.com").await;
-    let url = format!("{base}/v1/data/uc/authz");
+    let mut opa = Opa::new(&format!("{base}/v1/data/uc/authz"), Duration::from_secs(5)).unwrap();
+    if let Some(token) = token {
+        opa = opa.with_token(token).unwrap();
+    }
     let app = build_app(
         AppState::new(metastore)
             .with_authz(true)
             .with_security(common::security())
-            .with_opa(Opa::new(&url, Duration::from_secs(5)).unwrap()),
+            .with_opa(opa),
     );
+    (app, dyn_metastore)
+}
+
+/// OPA's access rules of `system-authz.rego`: the server's token only asks
+/// for decisions; without it, or with a wrong one, a request fails.
+#[tokio::test]
+async fn the_real_opa_takes_only_the_servers_token() {
+    let Some(base) = real_opa() else { return };
+    // Making a catalog asks OPA for `CREATE_CATALOG` on the metastore.
+    let create = || {
+        let body = json!({ "name": "c" });
+        signed(
+            Method::POST,
+            "/catalogs",
+            Some(body),
+            &common::admin_token(),
+        )
+    };
+    for (token, refused) in [
+        (None, "it refused a request without a token"),
+        (Some("wrong"), "it refused the server's token"),
+    ] {
+        let (app, _) = with_real_opa(&base, token).await;
+        let response = app.oneshot(create()).await.unwrap();
+        let error =
+            common::assert_error(response, StatusCode::SERVICE_UNAVAILABLE, "UNAVAILABLE").await;
+        let message = error["message"].as_str().unwrap();
+        assert!(message.ends_with(refused), "{message}");
+    }
+    let (app, _) = with_real_opa(&base, Some(OPA_TOKEN)).await;
+    let response = app.oneshot(create()).await.unwrap();
+    assert_status(response, StatusCode::OK, "create").await;
+    // The server's token cannot change OPA's data.
+    let response = (reqwest::Client::new().put(format!("{base}/v1/data/grants")))
+        .bearer_auth(OPA_TOKEN)
+        .json(&json!([{ "principal": "alice@example.com" }]))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// A real OPA with upstream's `etc/conf/opa-example.rego`, unchanged.
+#[tokio::test]
+async fn upstreams_example_policy_works_unchanged() {
+    let Some(base) = real_opa() else { return };
+    let (app, dyn_metastore) = with_real_opa(&base, Some(OPA_TOKEN)).await;
+    let alice = common::active_user(&dyn_metastore, "alice@example.com").await;
     let call = |token: String, method: Method, path: &str, body: Option<Value>| {
         let request = signed(method, path, body, &token);
         let app = app.clone();
@@ -444,6 +538,7 @@ async fn upstreams_example_policy_works_unchanged() {
     let opa = reqwest::Client::new();
     let put_grants = async |grants: Value| {
         let response = (opa.put(format!("{base}/v1/data/grants")))
+            .bearer_auth(OPA_ADMIN_TOKEN)
             .json(&grants)
             .send()
             .await

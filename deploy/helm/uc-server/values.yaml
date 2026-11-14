@@ -141,6 +141,10 @@ auth:
     url: ""
     # -- How long one decision may take.
     timeout: 5s
+    # -- A secret with `token`: the token that the server sends to OPA,
+    # for an OPA that takes tokens (`--authentication=token`). Empty: no
+    # token.
+    tokenSecretName: ""
   cookieTimeout: 5d
   accessTokenTimeout: 24h
 
