@@ -18,9 +18,10 @@ use std::path::{Path, PathBuf};
 
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde_json::{Value, json};
+use tracing::warn;
 
 use uc_api::{GcpOauthToken, TemporaryCredentials};
-use uc_common::{Error, Result, now_epoch_millis};
+use uc_common::{Error, NormalizedUrl, Result, now_epoch_millis};
 use uc_metastore::SecretValue;
 
 use super::{CredentialContext, StorageCredential};
@@ -28,6 +29,13 @@ use crate::http::outbound::SendOnIo;
 
 const CLOUD_PLATFORM: &str = "https://www.googleapis.com/auth/cloud-platform";
 const GOOGLE_TOKEN_URI: &str = "https://oauth2.googleapis.com/token";
+
+/// Google's limit on the condition of an access boundary rule.
+const MAX_CONDITION_LENGTH: usize = 2048;
+
+/// The step that downscopes a token, for the log.
+const DOWNSCOPING: &str = "GCP token downscoping";
+
 /// Who gets the token that STS downscopes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Identity {
@@ -72,6 +80,52 @@ struct Token {
     value: String,
     expires_at: Option<i64>,
 }
+
+/// Why there is no token.
+#[derive(Debug)]
+enum TokenError {
+    /// The settings or a stored key cannot be used. The error says which.
+    Setup(Error),
+    /// A call to Google failed.
+    Call(CallError),
+}
+
+/// A call to Google that failed. Google's text can name accounts and
+/// endpoints, so it is for the log.
+#[derive(Debug)]
+struct CallError {
+    /// The OAuth `error` of the answer, such as `invalid_request`.
+    code: Option<String>,
+    /// The OAuth `error_description` of the answer.
+    description: Option<String>,
+    /// The status and body of the answer, or why there is none.
+    text: String,
+}
+
+impl TokenError {
+    /// A call that got no answer, or one that cannot be read.
+    fn call(text: impl std::fmt::Display) -> Self {
+        Self::Call(CallError {
+            code: None,
+            description: None,
+            text: text.to_string(),
+        })
+    }
+
+    fn setup(message: impl Into<String>) -> Self {
+        Self::Setup(Error::failed_precondition(message))
+    }
+
+    /// The text for the log.
+    fn text(&self) -> &str {
+        match self {
+            Self::Setup(e) => e.message(),
+            Self::Call(call) => &call.text,
+        }
+    }
+}
+
+type TokenResult = std::result::Result<Token, TokenError>;
 
 impl GcpVendor {
     /// The vendor whose own identity is the key of `key_file`, else
@@ -132,26 +186,36 @@ impl GcpVendor {
             Identity::Key(json) => {
                 let key: Value = serde_json::from_str(json.as_sensitive_str())
                     .map_err(|e| Error::failed_precondition(format!("service account key: {e}")))?;
-                return self.service_account_token(&key).await;
+                return self.service_account_token(&key).await.map_err(|e| match e {
+                    TokenError::Setup(e) => e,
+                    TokenError::Call(call) => {
+                        warn!(cause = %call.text, "GCP refused a service account key");
+                        Error::failed_precondition(
+                            "GCP did not take the service account key of the storage credential.",
+                        )
+                    }
+                });
             }
             Identity::ServiceAccount(email) => email,
         };
         let own = self
             .source_token(self.key_file.as_deref())
             .await
-            .map_err(|e| match &self.key_file {
-                Some(_) => Error::failed_precondition(format!(
-                    "The server's GCP identity, identity.gcp.json_key_file: {}",
-                    e.message()
-                )),
-                None => Error::failed_precondition(format!(
-                    "The server could not get its GCP identity: set [identity.gcp] \
-                     (UC_IDENTITY_GCP_JSON_KEY_FILE), or run it with an identity in its \
-                     environment (GOOGLE_APPLICATION_CREDENTIALS, gcloud's application default \
-                     credentials, GKE Workload Identity, the service account of the VM). \
-                     Cause: {}",
-                    e.message()
-                )),
+            .map_err(|e| {
+                warn!(cause = %e.text(), "the server could not get its GCP identity");
+                match &self.key_file {
+                    Some(_) => Error::failed_precondition(
+                        "The server could not get its GCP identity with the key of \
+                         identity.gcp.json_key_file.",
+                    ),
+                    None => Error::failed_precondition(
+                        "The server could not get its GCP identity: set [identity.gcp] \
+                         (UC_IDENTITY_GCP_JSON_KEY_FILE), or run it with an identity in its \
+                         environment (GOOGLE_APPLICATION_CREDENTIALS, gcloud's application \
+                         default credentials, GKE Workload Identity, the service account of \
+                         the VM).",
+                    ),
+                }
             })?;
         match email {
             Some(email) => self.impersonate(&own, email).await,
@@ -160,7 +224,7 @@ impl GcpVendor {
     }
 
     /// The key file, else Application Default Credentials.
-    async fn source_token(&self, key_file: Option<&Path>) -> Result<Token> {
+    async fn source_token(&self, key_file: Option<&Path>) -> TokenResult {
         let file = key_file.map(Path::to_path_buf).or_else(|| {
             self.credentials_files
                 .then(default_credentials_file)
@@ -172,9 +236,9 @@ impl GcpVendor {
         };
         let text = tokio::fs::read_to_string(&file)
             .await
-            .map_err(|e| Error::failed_precondition(format!("{}: {e}", file.display())))?;
+            .map_err(|e| TokenError::setup(format!("{}: {e}", file.display())))?;
         let key: Value = serde_json::from_str(&text)
-            .map_err(|e| Error::failed_precondition(format!("{}: {e}", file.display())))?;
+            .map_err(|e| TokenError::setup(format!("{}: {e}", file.display())))?;
         match key["type"].as_str() {
             Some("service_account") => self.service_account_token(&key).await,
             Some("authorized_user") => {
@@ -192,7 +256,7 @@ impl GcpVendor {
                 ];
                 self.token_request(GOOGLE_TOKEN_URI, &form).await
             }
-            other => Err(Error::failed_precondition(format!(
+            other => Err(TokenError::setup(format!(
                 "unsupported credential type {other:?} in {}",
                 file.display()
             ))),
@@ -200,15 +264,15 @@ impl GcpVendor {
     }
 
     /// The OAuth JWT bearer grant of a service account key.
-    async fn service_account_token(&self, key: &Value) -> Result<Token> {
+    async fn service_account_token(&self, key: &Value) -> TokenResult {
         let field = |name: &str| {
-            key[name].as_str().ok_or_else(|| {
-                Error::failed_precondition(format!("service account key without {name}"))
-            })
+            key[name]
+                .as_str()
+                .ok_or_else(|| TokenError::setup(format!("service account key without {name}")))
         };
         let token_uri = key["token_uri"].as_str().unwrap_or(GOOGLE_TOKEN_URI);
         let signing_key = EncodingKey::from_rsa_pem(field("private_key")?.as_bytes())
-            .map_err(|e| Error::failed_precondition(format!("service account private key: {e}")))?;
+            .map_err(|e| TokenError::setup(format!("service account private key: {e}")))?;
         let now = now_epoch_millis() / 1000;
         let claims = json!({
             "iss": field("client_email")?,
@@ -220,7 +284,7 @@ impl GcpVendor {
         let mut header = Header::new(Algorithm::RS256);
         header.kid = key["private_key_id"].as_str().map(str::to_string);
         let assertion = jsonwebtoken::encode(&header, &claims, &signing_key)
-            .map_err(|e| Error::internal(format!("service account JWT: {e}")))?;
+            .map_err(|e| TokenError::Setup(Error::internal(format!("service account JWT: {e}"))))?;
         let form = [
             ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
             ("assertion", assertion.as_str()),
@@ -229,7 +293,7 @@ impl GcpVendor {
     }
 
     /// The default service account's token from the metadata server.
-    async fn metadata_token(&self) -> Result<Token> {
+    async fn metadata_token(&self) -> TokenResult {
         let url = format!(
             "{}/computeMetadata/v1/instance/service-accounts/default/token",
             self.metadata
@@ -241,7 +305,7 @@ impl GcpVendor {
             .header("Metadata-Flavor", "Google")
             .send_on_io()
             .await
-            .map_err(|e| Error::failed_precondition(format!("metadata server: {e}")))?;
+            .map_err(|e| TokenError::call(format_args!("metadata server: {e}")))?;
         token_response(response).await
     }
 
@@ -254,7 +318,12 @@ impl GcpVendor {
             self.iam
         );
         let failed = |reason: String| {
-            Error::failed_precondition(format!("Impersonation of {email} failed: {reason}"))
+            warn!(email, cause = %reason, "cannot impersonate a GCP service account");
+            Error::failed_precondition(
+                "The server could not impersonate the GCP service account of the storage \
+                 credential. Its identity needs the role Service Account Token Creator on the \
+                 account.",
+            )
         };
         let response = self
             .http
@@ -278,14 +347,14 @@ impl GcpVendor {
         }
     }
 
-    async fn token_request(&self, url: &str, form: &[(&str, &str)]) -> Result<Token> {
+    async fn token_request(&self, url: &str, form: &[(&str, &str)]) -> TokenResult {
         let response = self
             .http
             .post(url)
             .form(form)
             .send_on_io()
             .await
-            .map_err(|e| Error::failed_precondition(format!("{url}: {e}")))?;
+            .map_err(|e| TokenError::call(format_args!("{url}: {e}")))?;
         token_response(response).await
     }
 
@@ -301,19 +370,18 @@ impl GcpVendor {
             ],
             false => &["inRole:roles/storage.objectViewer"],
         };
-        let rules: Vec<Value> = ctx
+        let rules = ctx
             .locations
             .iter()
             .map(|location| {
                 let bucket = location.storage_base().as_str().trim_start_matches("gs://").to_string();
-                let path = location.path().trim_start_matches('/').to_string();
-                json!({
+                Ok(json!({
                     "availableResource": format!("//storage.googleapis.com/projects/_/buckets/{bucket}"),
                     "availablePermissions": roles,
-                    "availabilityCondition": { "expression": within(&bucket, &path) },
-                })
+                    "availabilityCondition": { "expression": condition(location)? },
+                }))
             })
-            .collect();
+            .collect::<Result<Vec<Value>>>()?;
         let options = json!({ "accessBoundary": { "accessBoundaryRules": rules } }).to_string();
         let form = [
             (
@@ -337,22 +405,43 @@ impl GcpVendor {
             .form(&form)
             .send_on_io()
             .await
-            .map_err(|e| Error::internal(format!("GCP token downscoping failed: {e}")))?;
-        let mut token = token_response(response).await.map_err(|e| {
-            Error::internal(format!("GCP token downscoping failed: {}", e.message()))
-        })?;
+            .map_err(not_found)?;
+        let mut token = token_response(response).await.map_err(downscope_error)?;
         token.expires_at = token.expires_at.or(source.expires_at);
         Ok(token)
     }
 }
 
+/// The error of a downscoping that failed, as upstream. `invalid_request`
+/// says the request is wrong, such as an access boundary over Google's size
+/// limit: the location is the cause, so the client gets Google's
+/// description. Any other failure goes to the log.
+fn downscope_error(e: TokenError) -> Error {
+    match e {
+        TokenError::Setup(e) => e,
+        TokenError::Call(call) if call.code.as_deref() == Some("invalid_request") => {
+            Error::invalid_argument(format!(
+                "GCS rejected the downscoped credential request (invalid_request): {}",
+                call.description.as_deref().unwrap_or_default()
+            ))
+        }
+        TokenError::Call(call) => not_found(call.text),
+    }
+}
+
+/// A downscoping that failed for a reason the client cannot fix.
+fn not_found(cause: impl std::fmt::Display) -> Error {
+    warn!(step = DOWNSCOPING, %cause, "cannot vend storage credentials");
+    Error::failed_precondition("GCS credentials not found.")
+}
+
 /// `access_token` and `expires_in` of an OAuth token response.
-async fn token_response(response: reqwest::Response) -> Result<Token> {
+async fn token_response(response: reqwest::Response) -> TokenResult {
     let status = response.status();
     let body: Value = response
         .json()
         .await
-        .map_err(|e| Error::failed_precondition(format!("token response: {e}")))?;
+        .map_err(|e| TokenError::call(format_args!("token response ({status}): {e}")))?;
     match body["access_token"].as_str() {
         Some(value) if status.is_success() => Ok(Token {
             value: value.to_string(),
@@ -360,10 +449,29 @@ async fn token_response(response: reqwest::Response) -> Result<Token> {
                 .as_i64()
                 .map(|s| now_epoch_millis() + s * 1000),
         }),
-        _ => Err(Error::failed_precondition(format!(
-            "token request failed ({status}): {body}"
-        ))),
+        _ => Err(TokenError::Call(CallError {
+            code: body["error"].as_str().map(str::to_string),
+            description: body["error_description"].as_str().map(str::to_string),
+            text: format!("token request failed ({status}): {body}"),
+        })),
     }
+}
+
+/// The condition of the access boundary rule of `location`. A location
+/// whose condition is over Google's limit gets no credentials.
+fn condition(location: &NormalizedUrl) -> Result<String> {
+    let (base, path) = (location.storage_base(), location.path());
+    let bucket = base.as_str().trim_start_matches("gs://");
+    let condition = within(bucket, path.trim_start_matches('/'));
+    let length = condition.chars().count();
+    if length > MAX_CONDITION_LENGTH {
+        return Err(Error::invalid_argument(format!(
+            "GCS location {location} is too long for a downscoped credential: its access \
+             boundary condition is {length} characters, and the limit is \
+             {MAX_CONDITION_LENGTH}."
+        )));
+    }
+    Ok(condition)
 }
 
 /// `GOOGLE_APPLICATION_CREDENTIALS`, else gcloud's application default
@@ -435,5 +543,53 @@ mod tests {
     fn quotes_cel_strings() {
         assert_eq!(cel_string("a/b"), "\"a/b\"");
         assert_eq!(cel_string("q\"x\\y\n"), "\"q\\\"x\\\\y\\n\"");
+    }
+
+    #[test]
+    fn a_condition_over_the_limit_gets_no_credentials() {
+        let location =
+            |n: usize| NormalizedUrl::parse(&format!("gs://b/{}", "a".repeat(n))).unwrap();
+        // Each character of the path is 4 of the condition.
+        let longest = (1..MAX_CONDITION_LENGTH)
+            .take_while(|n| condition(&location(*n)).is_ok())
+            .last()
+            .unwrap();
+        let length = condition(&location(longest)).unwrap().len();
+        assert!(length > MAX_CONDITION_LENGTH - 4 && length <= MAX_CONDITION_LENGTH);
+        let err = condition(&location(longest + 1)).unwrap_err();
+        assert_eq!(err.code(), uc_common::ErrorCode::InvalidArgument);
+        assert_eq!(
+            err.message(),
+            format!(
+                "GCS location {} is too long for a downscoped credential: its access boundary \
+                 condition is {} characters, and the limit is 2048.",
+                location(longest + 1),
+                length + 4
+            )
+        );
+        // The limit counts characters, not bytes.
+        let accented = NormalizedUrl::parse(&format!("gs://b/{}", "é".repeat(longest))).unwrap();
+        assert_eq!(condition(&accented).unwrap().chars().count(), length);
+    }
+
+    #[test]
+    fn invalid_request_names_the_request() {
+        let refused = |code: &str| {
+            downscope_error(TokenError::Call(CallError {
+                code: Some(code.into()),
+                description: Some("The access boundary is too long.".into()),
+                text: "token request failed (400 Bad Request): {…}".into(),
+            }))
+        };
+        let err = refused("invalid_request");
+        assert_eq!(err.code(), uc_common::ErrorCode::InvalidArgument);
+        assert_eq!(
+            err.message(),
+            "GCS rejected the downscoped credential request (invalid_request): The access \
+             boundary is too long."
+        );
+        let err = refused("invalid_grant");
+        assert_eq!(err.code(), uc_common::ErrorCode::FailedPrecondition);
+        assert_eq!(err.message(), "GCS credentials not found.");
     }
 }

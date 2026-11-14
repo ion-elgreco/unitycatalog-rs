@@ -62,7 +62,10 @@ impl PyExternalLocationClient {
     ///     url: New URL of the storage path.
     ///     new_name: New name of the external location.
     ///     comment: User-provided free-form text description.
-    ///     credential_name: Name of the new credential that gives access to the path.
+    ///     credential_name: Name of the new credential that gives access to the path. It repairs an
+    ///                      external location whose credential was deleted with `force`.
+    ///     owner: The owner of the external location. Accepted for compatibility with the upstream API; the
+    ///            owner does not change.
     ///
     /// Returns:
     ///     An external location: a storage path and the credential that gives access to it.
@@ -72,7 +75,8 @@ impl PyExternalLocationClient {
             url = None,
             new_name = None,
             comment = None,
-            credential_name = None
+            credential_name = None,
+            owner = None
         )
     )]
     pub fn update(
@@ -82,6 +86,7 @@ impl PyExternalLocationClient {
         new_name: Option<String>,
         comment: Option<String>,
         credential_name: Option<String>,
+        owner: Option<String>,
     ) -> PyUnityCatalogResult<PyExternalLocationInfo> {
         let request = self
             .client
@@ -89,7 +94,8 @@ impl PyExternalLocationClient {
             .with_url(url)
             .with_new_name(new_name)
             .with_comment(comment)
-            .with_credential_name(credential_name);
+            .with_credential_name(credential_name)
+            .with_owner(owner);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
         Ok(PyExternalLocationInfo::from(result))
@@ -102,7 +108,8 @@ impl PyExternalLocationClient {
             url = None,
             new_name = None,
             comment = None,
-            credential_name = None
+            credential_name = None,
+            owner = None
         )
     )]
     pub fn update_async<'py>(
@@ -112,6 +119,7 @@ impl PyExternalLocationClient {
         new_name: Option<String>,
         comment: Option<String>,
         credential_name: Option<String>,
+        owner: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyExternalLocationInfo>> {
         let request = self
             .client
@@ -119,7 +127,8 @@ impl PyExternalLocationClient {
             .with_url(url)
             .with_new_name(new_name)
             .with_comment(comment)
-            .with_credential_name(credential_name);
+            .with_credential_name(credential_name)
+            .with_owner(owner);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

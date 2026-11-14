@@ -67,9 +67,21 @@ fn is_word(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
-/// Each match of `(\w+)\s+(\w+)(\(([^)]+)\))?`: name, type and the text in
-/// parentheses.
-fn matches(text: &str) -> Vec<(String, String, Option<String>, String)> {
+/// One column of `--columns`: what upstream's
+/// `(\w+)\s+(\w+)(?:\(([^)]+)\)|(?<=(?i:decimal))\s*\(([^)]*)\))?` matches.
+struct ColumnMatch {
+    name: String,
+    type_name: String,
+    /// The text in parentheses. Only `DECIMAL` takes blanks before them, or
+    /// nothing in them.
+    params: Option<String>,
+    /// The matched text.
+    text: String,
+    /// The text after the match starts like parameters (`\s*[(\[\d]`).
+    params_follow: bool,
+}
+
+fn matches(text: &str) -> Vec<ColumnMatch> {
     let chars: Vec<char> = text.chars().collect();
     let take = |from: usize, keep: fn(char) -> bool| {
         let mut end = from;
@@ -77,6 +89,15 @@ fn matches(text: &str) -> Vec<(String, String, Option<String>, String)> {
             end += 1;
         }
         end
+    };
+    // The text in the parentheses that open at `open`, and the end of the `)`.
+    let parenthesized = |open: usize| {
+        if chars.get(open) != Some(&'(') {
+            return None;
+        }
+        let close = chars[open + 1..].iter().position(|c| *c == ')')?;
+        let params: String = chars[open + 1..open + 1 + close].iter().collect();
+        Some((params, open + close + 2))
     };
     let mut found = Vec::new();
     let mut pos = 0;
@@ -92,55 +113,95 @@ fn matches(text: &str) -> Vec<(String, String, Option<String>, String)> {
             pos = name_end;
             continue;
         }
-        let mut end = type_end;
-        let mut params = None;
-        if chars.get(type_end) == Some(&'(')
-            && let Some(close) = chars[type_end + 1..].iter().position(|c| *c == ')')
-            && close > 0
-        {
-            params = Some(chars[type_end + 1..type_end + 1 + close].iter().collect());
-            end = type_end + close + 2;
-        }
-        found.push((
-            chars[pos..name_end].iter().collect(),
-            chars[type_start..type_end].iter().collect(),
-            params,
-            chars[pos..end].iter().collect(),
-        ));
+        let type_name: String = chars[type_start..type_end].iter().collect();
+        let decimal = type_name.eq_ignore_ascii_case("decimal");
+        let params = match parenthesized(type_end) {
+            Some((params, end)) if !params.is_empty() => Some((params, end)),
+            _ if decimal => parenthesized(take(type_end, |c| c.is_ascii_whitespace())),
+            _ => None,
+        };
+        let end = params.as_ref().map_or(type_end, |(_, end)| *end);
+        let after = take(end, |c| c.is_ascii_whitespace());
+        let params_follow = chars
+            .get(after)
+            .is_some_and(|c| matches!(c, '(' | '[') || c.is_ascii_digit());
+        found.push(ColumnMatch {
+            name: chars[pos..name_end].iter().collect(),
+            type_name,
+            params: params.map(|(params, _)| params),
+            text: chars[pos..end].iter().collect(),
+            params_follow,
+        });
         pos = end;
     }
     found
 }
 
+/// Upstream `setPrecisionAndScale`: the precision and scale of a column,
+/// and the `(p,s)` that its type text gets. A bare `DECIMAL` is
+/// `DECIMAL(10,0)`, as in Spark. Other types take no parameters.
+fn precision_and_scale(
+    decimal: bool,
+    params: Option<&str>,
+) -> anyhow::Result<(Option<i32>, Option<i32>, String)> {
+    if !decimal {
+        return Ok(match params {
+            Some(_) => (None, None, String::new()),
+            None => (Some(0), Some(0), String::new()),
+        });
+    }
+    let parts: Vec<&str> = params.map_or(vec![], |p| p.split(',').collect());
+    let params = params.unwrap_or_default();
+    if parts.len() > 2 {
+        anyhow::bail!("DECIMAL takes at most 2 parameters: ({params})");
+    }
+    let parse = |part: &str| {
+        let part = part.trim();
+        if part.is_empty() || part.len() > 9 || !part.bytes().all(|b| b.is_ascii_digit()) {
+            anyhow::bail!("Invalid DECIMAL parameters: ({params})");
+        }
+        Ok(part.parse::<i32>()?)
+    };
+    let precision = parts.first().map_or(Ok(10), |p| parse(p))?;
+    let scale = parts.get(1).map_or(Ok(0), |s| parse(s))?;
+    if !(1..=38).contains(&precision) {
+        anyhow::bail!("DECIMAL precision must be between 1 and 38: {precision}");
+    }
+    if !(0..=precision).contains(&scale) {
+        anyhow::bail!("DECIMAL scale must be between 0 and precision {precision}: {scale}");
+    }
+    Ok((
+        Some(precision),
+        Some(scale),
+        format!("({precision},{scale})"),
+    ))
+}
+
 /// The columns of `--columns`, as upstream's `ColumnInfo`s.
 pub fn parse_columns(text: &str) -> anyhow::Result<Vec<ColumnInfo>> {
     let mut columns = Vec::new();
-    for (position, (name, type_name, params, matched)) in matches(text).into_iter().enumerate() {
-        let type_name = type_name.to_uppercase();
+    for (position, column) in matches(text).into_iter().enumerate() {
+        let type_name = column.type_name.to_uppercase();
+        let invalid =
+            |e: anyhow::Error| anyhow::anyhow!("Invalid column definition: {}: {e}", column.text);
         let Some(column_type) = type_named(&type_name) else {
-            anyhow::bail!("Invalid column definition: {matched}");
+            anyhow::bail!("Invalid column definition: {}", column.text);
         };
-        // Upstream `setPrecisionAndScale`.
-        let (mut precision, mut scale) = (0, 0);
-        let mut suffix = String::new();
-        if let Some(params) = params {
-            let parts: Vec<&str> = params.split(',').map(str::trim).collect();
-            if column_type == ColumnTypeName::Decimal && parts.len() == 2 {
-                let parse = |p: &str| {
-                    p.parse::<i32>()
-                        .map_err(|_| anyhow::anyhow!("Invalid column definition: {matched}"))
-                };
-                (precision, scale) = (parse(parts[0])?, parse(parts[1])?);
-                suffix = format!("({},{})", parts[0], parts[1]);
-            }
+        let decimal = column_type == ColumnTypeName::Decimal;
+        if decimal && column.params.is_none() && column.params_follow {
+            return Err(invalid(anyhow::anyhow!(
+                "Malformed DECIMAL parameters, expected DECIMAL(p) or DECIMAL(p,s)"
+            )));
         }
+        let (precision, scale, suffix) =
+            precision_and_scale(decimal, column.params.as_deref()).map_err(invalid)?;
         columns.push(ColumnInfo {
-            type_text: Some(type_text(&type_name)),
-            type_json: type_json(&name, &format!("{}{suffix}", json_type(&type_name))),
-            name,
+            type_text: Some(format!("{}{suffix}", type_text(&type_name))),
+            type_json: type_json(&column.name, &format!("{}{suffix}", json_type(&type_name))),
+            name: column.name,
             type_name: Some(column_type.into()),
-            type_precision: Some(precision),
-            type_scale: Some(scale),
+            type_precision: precision,
+            type_scale: scale,
             position: Some(position as i32),
             // As in type_json, and as upstream's client sends by default;
             // without it, the server stores false.
@@ -191,7 +252,7 @@ mod tests {
         assert_eq!(columns[0].type_precision, Some(0));
         assert_eq!(columns[0].nullable, Some(true));
         assert_eq!(columns[1].type_name, Some(ColumnTypeName::String.into()));
-        assert_eq!(columns[2].type_text.as_deref(), Some("decimal"));
+        assert_eq!(columns[2].type_text.as_deref(), Some("decimal(10,2)"));
         assert_eq!(columns[2].type_precision, Some(10));
         assert_eq!(columns[2].type_scale, Some(2));
         assert_eq!(
@@ -202,6 +263,113 @@ mod tests {
         assert_eq!(columns[3].position, Some(3));
         assert!(parse_columns("id NUMBER").is_err());
         assert!(parse_columns("lonely").unwrap().is_empty());
+    }
+
+    /// After upstream `CliUtilsTest`.
+    #[test]
+    fn decimals_take_a_precision_and_a_scale() {
+        let decimal = |text: &str| {
+            let columns = parse_columns(text).unwrap();
+            let c = &columns[0];
+            (
+                c.type_text.clone().unwrap(),
+                c.type_precision,
+                c.type_scale,
+                c.type_json.clone(),
+            )
+        };
+        let json =
+            |t: &str| format!(r#"{{"name":"d","type":"{t}","nullable":true,"metadata":{{}}}}"#);
+        assert_eq!(
+            decimal("d DECIMAL(12, 3)"),
+            (
+                "decimal(12,3)".into(),
+                Some(12),
+                Some(3),
+                json("decimal(12,3)")
+            )
+        );
+        assert_eq!(decimal("d decimal (10,2)").0, "decimal(10,2)");
+        assert_eq!(
+            decimal("d DECIMAL(7)"),
+            (
+                "decimal(7,0)".into(),
+                Some(7),
+                Some(0),
+                json("decimal(7,0)")
+            )
+        );
+        assert_eq!(
+            decimal("d DECIMAL"),
+            (
+                "decimal(10,0)".into(),
+                Some(10),
+                Some(0),
+                json("decimal(10,0)")
+            )
+        );
+        assert_eq!(decimal("d DECIMAL(38,38)").0, "decimal(38,38)");
+        assert_eq!(decimal("d DECIMAL(1,0)").0, "decimal(1,0)");
+        let columns = parse_columns("id INT, d DECIMAL(5,1), s STRING").unwrap();
+        assert_eq!(columns[1].type_text.as_deref(), Some("decimal(5,1)"));
+        assert_eq!(columns[2].position, Some(2));
+
+        for (text, reason) in [
+            (
+                "d DECIMAL(12,3,4)",
+                "DECIMAL takes at most 2 parameters: (12,3,4)",
+            ),
+            ("d DECIMAL(12,)", "Invalid DECIMAL parameters: (12,)"),
+            ("d DECIMAL(,)", "Invalid DECIMAL parameters: (,)"),
+            ("d DECIMAL()", "Invalid DECIMAL parameters: ()"),
+            ("d DECIMAL(a,1)", "Invalid DECIMAL parameters: (a,1)"),
+            ("d DECIMAL(-1,0)", "Invalid DECIMAL parameters: (-1,0)"),
+            (
+                "d DECIMAL(39,0)",
+                "DECIMAL precision must be between 1 and 38: 39",
+            ),
+            (
+                "d DECIMAL(0)",
+                "DECIMAL precision must be between 1 and 38: 0",
+            ),
+            (
+                "d DECIMAL(5,6)",
+                "DECIMAL scale must be between 0 and precision 5: 6",
+            ),
+        ] {
+            let err = parse_columns(text).unwrap_err().to_string();
+            assert_eq!(err, format!("Invalid column definition: {text}: {reason}"));
+        }
+        let malformed = "Malformed DECIMAL parameters, expected DECIMAL(p) or DECIMAL(p,s)";
+        for text in ["d DECIMAL(12,3", "d DECIMAL[10,2]", "d DECIMAL 10"] {
+            let err = parse_columns(text).unwrap_err().to_string();
+            assert_eq!(
+                err,
+                format!("Invalid column definition: d DECIMAL: {malformed}"),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn other_types_stay_lenient() {
+        // A blank before, or nothing in, the parentheses: no parameters.
+        for text in ["id INT (5)", "id INT()"] {
+            let columns = parse_columns(text).unwrap();
+            assert_eq!(columns[0].type_text.as_deref(), Some("int"), "{text}");
+            assert_eq!(
+                (columns[0].type_precision, columns[0].type_scale),
+                (Some(0), Some(0))
+            );
+        }
+        // Parameters of other types are dropped, with no precision.
+        let columns = parse_columns("id INT(5)").unwrap();
+        assert_eq!(columns[0].type_text.as_deref(), Some("int"));
+        assert_eq!(columns[0].type_precision, None);
+        // Text after a column is ignored, as upstream.
+        let columns = parse_columns("price DECIMAL extra").unwrap();
+        assert_eq!(columns.len(), 1);
+        assert_eq!(columns[0].type_text.as_deref(), Some("decimal(10,0)"));
     }
 
     #[test]

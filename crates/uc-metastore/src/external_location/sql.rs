@@ -277,11 +277,12 @@ impl ExternalLocationOps for SqlMetastore {
             }
             existing.name = new_name;
         }
-        // Upstream checks a new URL for overlaps only (no managed-prefix
-        // check on update).
+        // A new URL gets the checks of create. A location whose stored URL
+        // would fail them can still change its other fields.
         let new_url = req.url.is_some();
         if let Some(raw) = req.url {
             let url = NormalizedUrl::parse(&raw)?;
+            url.validate_not_under_managed_prefix()?;
             self.validate_url_not_used(&url, Some(&existing.id_string))
                 .await?;
             existing.url = url.into_string();
@@ -289,19 +290,22 @@ impl ExternalLocationOps for SqlMetastore {
         if let Some(c) = req.comment {
             existing.comment = Some(c);
         }
-        let url = NormalizedUrl::parse(&existing.url)?;
         if let Some(credential_name) = req.credential_name {
+            let url = NormalizedUrl::parse(&existing.url)?;
             existing.credential_id = self.credential_id_for(&credential_name, &url).await?;
         } else if new_url {
-            let credential: CredentialRow = select_one(
+            // The credential is gone after a forced delete. The location
+            // then has none to check, until an update names a new one.
+            let credential: Option<CredentialRow> = select_one(
                 self.db.as_ref(),
                 &CREDENTIAL,
                 "WHERE id_string = $1",
                 &[existing.credential_id.as_str().into()],
             )
-            .await?
-            .ok_or_else(|| Error::internal("external_location row without its credential"))?;
-            credential.check_reaches(&url)?;
+            .await?;
+            if let Some(credential) = credential {
+                credential.check_reaches(&NormalizedUrl::parse(&existing.url)?)?;
+            }
         }
         touch_audit(
             &mut existing.updated_at,

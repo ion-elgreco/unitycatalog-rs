@@ -50,6 +50,8 @@ pub struct ServerConfig {
     /// `[identity]` and `[locations]`: the server's cloud identities, and
     /// the identities of paths without an external location.
     pub credentials: crate::storage::vendor::StorageConfig,
+    /// `storage.credential_cache_*`: none when the cache is off.
+    pub credential_cache: Option<crate::storage::vendor::cache::CredentialCacheConfig>,
     /// `identity.aws.arn`.
     pub aws_identity_arn: Option<String>,
     /// `[auth]`: sign-in, privilege checks and the web UI's sign-in
@@ -136,6 +138,8 @@ impl ServerConfig {
             }
         }
         let cleanup = crate::storage::cleanup::CleanupConfig::from_settings(storage)?;
+        let credential_cache =
+            crate::storage::vendor::cache::CredentialCacheConfig::from_settings(storage)?;
         let secrets = crate::storage::secrets::SecretsConfig::from_settings(&settings.secrets)?;
         let credentials = crate::storage::vendor::StorageConfig {
             sign_in_cache: secrets.cache,
@@ -163,6 +167,7 @@ impl ServerConfig {
             io_threads: server.io_threads,
             cleanup,
             credentials,
+            credential_cache,
             aws_identity_arn: identity.aws.arn.clone(),
             auth: auth.clone(),
             secrets,

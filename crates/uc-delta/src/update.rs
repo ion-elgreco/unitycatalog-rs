@@ -18,6 +18,7 @@ use uc_api::{
 };
 use uc_common::{Error, ErrorCode, Result};
 
+use crate::column_mapping::{self, ColumnMappingMode};
 use crate::contract::{
     self as contract, CLUSTERING_DOMAIN, FEATURE_PREFIX, LAST_COMMIT_TIMESTAMP,
     LAST_UPDATE_VERSION, ROW_TRACKING_DOMAIN,
@@ -191,6 +192,15 @@ impl Collected {
         self.has_managed_table_metadata_change() || self.update_snapshot_version.is_some()
     }
 
+    /// The commit of an `add-commit` that comes with `set-columns`. Its
+    /// version is settled before the columns are checked, so a replay keeps
+    /// its first outcome.
+    pub fn set_columns_commit(&self) -> Option<DeltaCommitInfo> {
+        self.set_columns.as_ref()?;
+        let commit = self.add_commit.as_ref()?.0.as_ref()?;
+        Some(commit_info(commit))
+    }
+
     /// Upstream `checkTableUuidRequirement`.
     pub fn check_table_uuid(&self, table_id: &str) -> Result<()> {
         if let Some(Some(expected)) = &self.assert_table_uuid {
@@ -247,7 +257,34 @@ pub fn apply_updates(
     c: &Collected,
     allow_missing_dv: bool,
 ) -> Result<Option<CommitDispatch>> {
-    apply_columns(state, c)?;
+    // set-columns is checked against the stored mode and properties, before
+    // this request's property changes, and against the mode the request
+    // sets, which only enabling reads. The modes are parsed only for
+    // set-columns, so an unknown mode never blocks other updates.
+    let stored_mode = state.properties.get(column_mapping::MODE).cloned();
+    let requested_mode = match &c.set_properties {
+        Some(Some(updates)) => updates.get(column_mapping::MODE).cloned(),
+        _ => None,
+    };
+    let modes = match c.set_columns {
+        Some(_) => Some((
+            column_mapping::parse_mode(stored_mode.as_deref())?,
+            column_mapping::parse_mode(requested_mode.as_deref())?,
+        )),
+        None => {
+            // Delta sends set-columns with identities on every field when
+            // it turns column mapping on; without it the table would store
+            // mapped columns without identities.
+            if column_mapping::turns_on(stored_mode.as_deref(), requested_mode.as_deref()) {
+                return Err(invalid(
+                    "Turning on column mapping requires set-columns with a physical column name \
+                     and a column mapping id for every column and nested field.",
+                ));
+            }
+            None
+        }
+    };
+    apply_columns(state, c, modes)?;
     if let Some(protocol) = &c.set_protocol {
         let protocol = protocol
             .as_ref()
@@ -338,11 +375,17 @@ pub fn apply_updates(
 }
 
 /// Upstream `applySchemaAndPartitionColumns`: build the new column list
-/// once. The action that is absent keeps its current state.
-fn apply_columns(state: &mut TableState, c: &Collected) -> Result<()> {
+/// once. The action that is absent keeps its current state. `modes` are the
+/// stored and the requested column-mapping modes, present with set-columns.
+fn apply_columns(
+    state: &mut TableState,
+    c: &Collected,
+    modes: Option<(ColumnMappingMode, ColumnMappingMode)>,
+) -> Result<()> {
     if c.set_columns.is_none() && c.set_partition_columns.is_none() {
         return Ok(());
     }
+    let table_mode = modes.map_or(ColumnMappingMode::None, |(stored, _)| stored);
     let mut columns = match &c.set_columns {
         Some(columns) => {
             let columns = columns
@@ -357,7 +400,17 @@ fn apply_columns(state: &mut TableState, c: &Collected) -> Result<()> {
                 }
                 _ => {}
             }
-            column_infos(&struct_fields(Some(columns), "columns")?)?
+            let fields = struct_fields(Some(columns), "columns")?;
+            let requested_mode = modes.map_or(ColumnMappingMode::None, |(_, requested)| requested);
+            column_mapping::validate_set_columns(
+                state.table_type,
+                &state.columns,
+                &fields,
+                table_mode,
+                requested_mode,
+                &state.properties,
+            )?;
+            column_infos(&fields)?
         }
         None => {
             let mut current = state.columns.clone();
@@ -367,15 +420,28 @@ fn apply_columns(state: &mut TableState, c: &Collected) -> Result<()> {
             current
         }
     };
+    // The partition columns of the request, else the current ones under
+    // their names in the new schema, so a renamed partition column keeps
+    // its partition.
     let partitions = match &c.set_partition_columns {
         Some(names) => names
             .clone()
             .ok_or_else(|| invalid("set-partition-columns requires a partition-columns list."))?,
-        None => crate::table::partition_columns(&state.columns),
+        None => column_mapping::resolve_partition_columns(&state.columns, &columns, table_mode)?,
     };
     apply_partition_columns(&mut columns, &partitions)?;
     state.columns = columns;
     Ok(())
+}
+
+fn commit_info(commit: &DeltaCommitWire) -> DeltaCommitInfo {
+    DeltaCommitInfo {
+        version: commit.version,
+        timestamp: commit.timestamp,
+        file_name: commit.file_name.clone(),
+        file_size: commit.file_size,
+        file_modification_timestamp: commit.file_modification_timestamp,
+    }
 }
 
 /// Upstream `prepareCommitAndBackfill`.
@@ -406,13 +472,7 @@ fn prepare_commit(state: &mut TableState, c: &Collected) -> Result<CommitDispatc
                 .properties
                 .insert(LAST_COMMIT_TIMESTAMP.into(), stamp(commit.timestamp));
         }
-        dispatch.commit = Some(DeltaCommitInfo {
-            version: commit.version,
-            timestamp: commit.timestamp,
-            file_name: commit.file_name.clone(),
-            file_size: commit.file_size,
-            file_modification_timestamp: commit.file_modification_timestamp,
-        });
+        dispatch.commit = Some(commit_info(commit));
         dispatch.uniform = uniform;
     }
     if let Some(version) = c.set_latest_backfilled_version {

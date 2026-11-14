@@ -149,7 +149,11 @@ async fn dropped_managed_data_is_cleaned_up_after_the_delay() {
         }),
         ..Default::default()
     };
-    metastore.delta_tables().commit(commit, None).await.unwrap();
+    metastore
+        .delta_tables()
+        .commit(commit, None, false)
+        .await
+        .unwrap();
 
     let volume = ok(
         &app,

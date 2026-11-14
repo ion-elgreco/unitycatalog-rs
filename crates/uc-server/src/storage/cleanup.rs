@@ -148,7 +148,7 @@ impl CleanupStorage for DefaultCleanupStorage {
             .storage
             .open(location, VendOp::ReadWrite)
             .await
-            .map_err(|e| CleanupError::Storage(e.0))?;
+            .map_err(|e| CleanupError::Storage(e.to_string()))?;
         delete_objects(store.as_ref(), &prefix).await
     }
 }

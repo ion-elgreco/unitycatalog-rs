@@ -49,7 +49,14 @@ pub struct IcebergError {
     status: StatusCode,
     error_type: &'static str,
     message: String,
+    /// The UC error this one was made from, if any.
+    code: Option<ErrorCode>,
 }
+
+/// Marks the answer to a request whose schema does not exist, for
+/// [`missing_namespace_as_table`].
+#[derive(Debug, Clone, Copy)]
+struct MissingSchema;
 
 impl IcebergError {
     fn new(status: StatusCode, error_type: &'static str, message: impl Into<String>) -> Self {
@@ -57,6 +64,7 @@ impl IcebergError {
             status,
             error_type,
             message: message.into(),
+            code: None,
         }
     }
     pub fn bad_request(message: impl Into<String>) -> Self {
@@ -86,7 +94,10 @@ impl IcebergError {
     }
     /// The Iceberg exception a client raises for a UC error `code`.
     fn of_code(code: ErrorCode, message: impl Into<String>) -> Self {
-        Self::new(code.iceberg_status(), code.iceberg_error_type(), message)
+        Self {
+            code: Some(code),
+            ..Self::new(code.iceberg_status(), code.iceberg_error_type(), message)
+        }
     }
 }
 
@@ -108,8 +119,32 @@ impl IntoResponse for IcebergError {
                 code: self.status.as_u16(),
             },
         };
-        (self.status, axum::Json(body)).into_response()
+        let mut response = (self.status, axum::Json(body)).into_response();
+        if self.code == Some(ErrorCode::SchemaNotFound) {
+            response.extensions_mut().insert(MissingSchema);
+        }
+        response
     }
+}
+
+/// Upstream `IcebergRestExceptionHandler.handleException`: a route of one
+/// table answers a missing namespace as a missing table, as the REST
+/// specification does. An Iceberg client loads `db.orders.snapshots` as the
+/// `snapshots` metadata table of `db.orders` only after
+/// `NoSuchTableException`. The check is here and not in each handler,
+/// because the permission check finds the missing schema first.
+async fn missing_namespace_as_table(
+    Path((_catalog, namespace, table)): Path<(String, String, String)>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let response = next.run(req).await;
+    if response.extensions().get::<MissingSchema>().is_none() {
+        return response;
+    }
+    let namespace = namespace.replace('\u{1f}', ".");
+    IcebergError::no_such_table(format!("Table does not exist: {namespace}.{table}"))
+        .into_response()
 }
 
 pub type IcebergResult<T> = Result<T, IcebergError>;
@@ -582,20 +617,24 @@ pub async fn update_namespace_properties(
 }
 
 pub fn router() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new()
-        .routes(routes!(config))
-        .routes(routes!(list_namespaces, create_namespace))
-        .routes(routes!(get_namespace, namespace_exists, drop_namespace))
-        .routes(routes!(update_namespace_properties))
-        .routes(routes!(tables::list_tables, tables::create_table))
+    // The routes with a `{table}` in their path.
+    let one_table = OpenApiRouter::new()
         .routes(routes!(
             tables::load_table,
             tables::table_exists,
             tables::commit_table,
             tables::drop_table
         ))
-        .routes(routes!(tables::rename_table))
         .routes(routes!(tables::load_credentials))
         .routes(routes!(tables::report_metrics))
+        .route_layer(axum::middleware::from_fn(missing_namespace_as_table));
+    OpenApiRouter::new()
+        .routes(routes!(config))
+        .routes(routes!(list_namespaces, create_namespace))
+        .routes(routes!(get_namespace, namespace_exists, drop_namespace))
+        .routes(routes!(update_namespace_properties))
+        .routes(routes!(tables::list_tables, tables::create_table))
+        .merge(one_table)
+        .routes(routes!(tables::rename_table))
         .routes(routes!(tables::load_view))
 }

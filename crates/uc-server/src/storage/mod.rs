@@ -26,8 +26,9 @@ use object_store::{
     path::Path as ObjectPath,
 };
 
+use tracing::warn;
 use uc_api::TemporaryCredentials;
-use uc_common::{NormalizedUrl, UriScheme, now_epoch_millis};
+use uc_common::{Error, ErrorCode, NormalizedUrl, UriScheme, now_epoch_millis};
 use uc_metastore::DynMetastore;
 use uc_storage::runtime::io_handle;
 
@@ -35,21 +36,51 @@ use crate::storage::vendor::{
     CredentialContext, DynVendor, VendOp, aws::S3Store, credential_for_url,
 };
 
+/// What a client gets when the server's own call to storage fails, as
+/// upstream.
+pub const STORAGE_FAILED: &str = "Failed to access storage.";
+
 /// Storage could not be reached or read.
-#[derive(Debug, thiserror::Error)]
-#[error("{0}")]
-pub struct StorageError(pub String);
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum StorageError {
+    /// A check or a vend of the server failed. Its error is what the client
+    /// gets.
+    #[error("{1}")]
+    Server(ErrorCode, String),
+    /// The store, or the client of the store, failed. Its text can name
+    /// endpoints, accounts and keys, so it is for the log.
+    #[error("{0}")]
+    Store(String),
+}
 
 impl From<object_store::Error> for StorageError {
     fn from(e: object_store::Error) -> Self {
-        Self(e.to_string())
+        Self::Store(e.to_string())
     }
 }
 
 impl From<uc_common::Error> for StorageError {
     fn from(e: uc_common::Error) -> Self {
-        Self(e.message().to_string())
+        Self::Server(e.code(), e.message().to_string())
     }
+}
+
+impl StorageError {
+    /// What the client gets: the server's own error, else the general
+    /// [`STORAGE_FAILED`], with the store's text in the log.
+    pub fn to_error(&self, location: &dyn std::fmt::Display) -> Error {
+        match self {
+            Self::Server(code, message) => Error::new(*code, message.clone()),
+            Self::Store(text) => storage_failed(location, text),
+        }
+    }
+}
+
+/// The error of a failed call to the store of `location`. The store's text
+/// goes to the log and not into the answer.
+pub fn storage_failed(location: &dyn std::fmt::Display, cause: impl std::fmt::Display) -> Error {
+    warn!(%location, %cause, "storage call failed");
+    Error::internal(STORAGE_FAILED)
 }
 
 /// Opens object stores for storage locations.
@@ -243,7 +274,7 @@ impl StoreCache {
         self.0
             .try_get_with(key, open)
             .await
-            .map_err(|e| StorageError(e.0.clone()))
+            .map_err(|e| e.as_ref().clone())
     }
 }
 
@@ -428,6 +459,23 @@ mod tests {
         assert!(!same_content(&store, &p("a"), &p("c")).await.unwrap());
         assert!(!same_content(&store, &p("a"), &p("d")).await.unwrap());
         assert!(same_content(&store, &p("a"), &p("missing")).await.is_err());
+    }
+
+    #[test]
+    fn the_client_gets_the_servers_errors_but_not_the_stores() {
+        let location = "s3://bucket/t";
+        let vend = StorageError::from(Error::failed_precondition("No location covers it."));
+        let err = vend.to_error(&location);
+        assert_eq!(
+            (err.code(), err.message()),
+            (ErrorCode::FailedPrecondition, "No location covers it.")
+        );
+        let store = StorageError::Store("https://bucket.s3.amazonaws.com said no".into());
+        let err = store.to_error(&location);
+        assert_eq!(
+            (err.code(), err.message()),
+            (ErrorCode::Internal, STORAGE_FAILED)
+        );
     }
 
     /// With `identity.aws.endpoint`, S3 requests go to the store, path-style.

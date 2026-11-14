@@ -50,7 +50,7 @@ const MAX_PARAMS: usize = 999;
 fn restore_err(e: StorageError) -> Error {
     match e {
         StorageError::Unique(m) => Error::invalid_argument(format!("restore: duplicate key: {m}")),
-        e => Error::internal(format!("restore: {e}")),
+        e => db_err("restore")(e),
     }
 }
 

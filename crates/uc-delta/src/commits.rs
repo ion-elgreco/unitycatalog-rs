@@ -1,13 +1,25 @@
 //! The Delta commit coordinator rules. Upstream `DeltaCommitRepository`.
 //!
-//! The server tracks the commits of a MANAGED Delta table until the client
-//! backfills them into `_delta_log`. The newest commit is never deleted:
-//! when a backfill reaches it, it stays as a marker
-//! (`is_backfilled_latest_commit`), so the latest version is always known.
+//! The server tracks the commits of a MANAGED Delta table. A backfill flags
+//! rows (`is_backfilled`) instead of deleting them. The unflagged rows are
+//! the live window: what get-commits returns and what the commit limit
+//! counts. New rows are unflagged and only a backfill flags rows, so the
+//! flagged rows are one block at the bottom of the log. The backfilled
+//! version is the highest flagged row, or one below the oldest row when no
+//! row is flagged.
 //!
-//! For example: commit v1, v2, v3 gives `[v1, v2, v3]`; backfill v1 gives
-//! `[v2, v3]`; commit v4 with backfill v3 gives `[v4]`; backfill v4 gives
-//! `[v4 (marker)]`; commit v5 gives `[v4 (marker), v5]`.
+//! Flagged rows are kept for [`BACKFILLED_COMMITS_RETAINED`] versions, so a
+//! retry of a backfilled commit is answered from its file name: the same
+//! name is a replay, another name a conflict. An older retry is settled by
+//! comparing the staged file with the published one.
+//!
+//! For example, with 2 versions kept (flagged rows marked `*`): commit v1,
+//! v2, v3 gives `[v1, v2, v3]`; backfill v1 gives `[v1*, v2, v3]`; commit
+//! v4 with backfill v3 gives `[v1*, v2*, v3*, v4]`; commit v5 with backfill
+//! v4 deletes v1 and gives `[v2*, v3*, v4*, v5]`.
+//!
+//! A backfill flags rows only after the server has seen the published
+//! `_delta_log/<version>.json` of each newly backfilled version.
 //!
 //! This module holds the backend-free part: request validation and the
 //! plan for one request against the tracked commits.
@@ -23,8 +35,10 @@ use uc_common::{Error, ErrorCode, NormalizedUrl, Result, SecurablePropertiesMap}
 /// they commit, so this is a safety limit.
 pub const MAX_COMMITS_PER_TABLE: i64 = 10;
 
-/// Most commits read for one table in one query.
-pub const COMMITS_PER_BATCH: usize = 20;
+/// Versions below the backfilled version that keep their row. A retry
+/// targets the version its writer just committed, and Delta stops retrying
+/// within minutes, so this covers nearly all retries.
+pub const BACKFILLED_COMMITS_RETAINED: i64 = 100;
 
 /// A tracked commit, as stored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,7 +49,8 @@ pub struct StoredCommit {
     pub commit_filesize: i64,
     pub commit_file_modification_timestamp: i64,
     pub commit_timestamp: i64,
-    pub is_backfilled_latest_commit: bool,
+    #[serde(rename = "is_backfilled_latest_commit")]
+    pub is_backfilled: bool,
 }
 
 impl StoredCommit {
@@ -51,7 +66,7 @@ impl StoredCommit {
                 .file_modification_timestamp
                 .unwrap_or_default(),
             commit_timestamp: info.timestamp.unwrap_or_default(),
-            is_backfilled_latest_commit: false,
+            is_backfilled: false,
         }
     }
 
@@ -71,14 +86,23 @@ impl StoredCommit {
 pub enum CommitOutcome {
     /// Applied, or recognized as a replay of an accepted commit.
     Done,
-    /// The version was backfilled and is no longer tracked. The caller must
-    /// compare `_delta_log/_staged_commits/<staged_file_name>` with the
-    /// published `_delta_log/<version>.json`; see [`replay_unknown`] and
+    /// The version is no longer tracked. The caller must compare
+    /// `_delta_log/_staged_commits/<staged_file_name>` with the published
+    /// `_delta_log/<version>.json`; see [`replay_unknown`] and
     /// [`published_by_other_writer`].
     ContentCheck {
         table_location: String,
         version: i64,
         staged_file_name: String,
+    },
+    /// Nothing was written: the request backfills versions `from..=to`, and
+    /// the caller must first check that their published files exist (see
+    /// [`missing_published_file`]), then send the request again with the
+    /// files marked as checked.
+    VerifyPublished {
+        table_location: String,
+        from: i64,
+        to: i64,
     },
 }
 
@@ -86,10 +110,11 @@ pub enum CommitOutcome {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CommitPlan {
     pub save: Option<StoredCommit>,
-    /// Delete the tracked commits up to and including this version.
-    pub delete_up_to: Option<i64>,
-    /// Mark this version as the backfilled newest commit.
-    pub mark_backfilled: Option<i64>,
+    /// Delete the tracked commits up to and including this version: they
+    /// are more than [`BACKFILLED_COMMITS_RETAINED`] versions behind.
+    pub prune_through: Option<i64>,
+    /// Flag the tracked commits in `(from, to]` as backfilled.
+    pub flag: Option<(i64, i64)>,
     /// Apply the request's metadata to the table.
     pub update_table: bool,
 }
@@ -105,6 +130,34 @@ pub enum Planned {
         version: i64,
         staged_file_name: String,
     },
+    /// See [`CommitOutcome::VerifyPublished`].
+    VerifyPublished {
+        from: i64,
+        to: i64,
+    },
+}
+
+/// The state of a table's commit log, from the lowest and highest tracked
+/// version and the highest flagged one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommitLog {
+    pub last_version: i64,
+    pub backfilled_version: i64,
+}
+
+impl CommitLog {
+    /// None for an empty log.
+    pub fn new(
+        first: Option<i64>,
+        last: Option<i64>,
+        highest_flagged: Option<i64>,
+    ) -> Option<Self> {
+        let (first, last) = (first?, last?);
+        Some(Self {
+            last_version: last,
+            backfilled_version: highest_flagged.unwrap_or(first - 1),
+        })
+    }
 }
 
 fn invalid(message: impl Into<String>) -> Error {
@@ -231,40 +284,31 @@ pub fn validate_table_uri(commit_uri: &str, location: &str) -> Result<()> {
     Ok(())
 }
 
-/// Upstream `postCommitCore`. `first` and `last` are the tracked commits
-/// with the lowest and highest version; `at_version` is the tracked commit
-/// at the request's version, if any. `commit` must have passed
-/// [`validate_commit`].
+/// Upstream `postCommitCore`. `log` is the state of the tracked commits,
+/// none before the first commit; `at_version` is the tracked commit at the
+/// request's version, if any. `files_checked` says that the published files
+/// of the versions this request backfills were seen. `commit` must have
+/// passed [`validate_commit`].
 pub fn plan_commit(
     table_id: &str,
     commit: &DeltaCommit,
-    first: Option<&StoredCommit>,
-    last: Option<&StoredCommit>,
+    log: Option<CommitLog>,
     at_version: Option<&StoredCommit>,
+    files_checked: bool,
 ) -> Result<Planned> {
     let update_table = commit.metadata.is_some();
-    let (first, last) = match (first, last) {
-        (Some(f), Some(l)) => (f, l),
+    let Some(log) = log else {
         // Onboarding: the first commit the server sees for this table.
-        _ => {
-            let info = commit.commit_info.as_ref().ok_or_else(|| {
-                invalid(
-                    "Backfill request requires a prior commit; the table's commit log is empty.",
-                )
-            })?;
-            return Ok(Planned::Apply(CommitPlan {
-                save: Some(StoredCommit::new(table_id, info)),
-                update_table,
-                ..Default::default()
-            }));
-        }
+        let info = commit.commit_info.as_ref().ok_or_else(|| {
+            invalid("Backfill request requires a prior commit; the table's commit log is empty.")
+        })?;
+        return Ok(Planned::Apply(CommitPlan {
+            save: Some(StoredCommit::new(table_id, info)),
+            update_table,
+            ..Default::default()
+        }));
     };
-    if first.commit_version > last.commit_version {
-        return Err(invalid(
-            "Inconsistent commit log: first commit version > last commit version.",
-        ));
-    }
-    let (first_v, last_v) = (first.commit_version, last.commit_version);
+    let last_v = log.last_version;
     let Some(info) = &commit.commit_info else {
         // Backfill only.
         let backfilled = commit.latest_backfilled_version.unwrap_or_default();
@@ -273,15 +317,18 @@ pub fn plan_commit(
                 "Should not backfill version {backfilled} while the last version committed is {last_v}"
             )));
         }
+        if let Some(verify) = verify_published(log, backfilled, files_checked) {
+            return Ok(verify);
+        }
         let mut plan = CommitPlan::default();
-        backfill(&mut plan, backfilled, first_v, last_v, None);
+        backfill(&mut plan, backfilled, log);
         return Ok(Planned::Apply(plan));
     };
 
     let new_v = info.version.unwrap_or_default();
     let file_name = info.file_name.clone().unwrap_or_default();
-    if new_v <= last_v {
-        return already_taken(table_id, new_v, file_name, first, last, at_version);
+    if let Some(taken) = taken_version(table_id, new_v, file_name, log, at_version)? {
+        return Ok(taken);
     }
     if new_v > last_v + 1 {
         return Err(invalid(format!(
@@ -294,48 +341,50 @@ pub fn plan_commit(
             "Latest backfilled version {b} cannot be greater than the last commit version = {last_v}"
         )));
     }
-    check_commit_limit(table_id, new_v, backfilled, first, last)?;
+    check_commit_limit(table_id, new_v, backfilled, log)?;
+    // The files are checked before anything is written.
+    if let Some(verify) = backfilled.and_then(|b| verify_published(log, b, files_checked)) {
+        return Ok(verify);
+    }
     let mut plan = CommitPlan {
         save: Some(StoredCommit::new(table_id, info)),
         update_table,
         ..Default::default()
     };
     if let Some(b) = backfilled {
-        backfill(&mut plan, b, first_v, last_v, Some(new_v));
+        backfill(&mut plan, b, log);
     }
     Ok(Planned::Apply(plan))
 }
 
-/// Upstream `exceptionForAlreadyTakenVersion`. A tracked version with the
-/// same file name is a replay, with another name a conflict. A version below
-/// the tracked range was backfilled and purged, so only the file contents
-/// can tell.
-fn already_taken(
+/// Upstream `exceptionForAlreadyTakenVersion`, for a commit at `version`:
+/// none when the version is free. A tracked version with the same file name
+/// is a replay, with another name a conflict. A version that is no longer
+/// tracked was backfilled, so only the file contents can tell.
+pub fn taken_version(
     table_id: &str,
     version: i64,
     file_name: String,
-    first: &StoredCommit,
-    last: &StoredCommit,
+    log: CommitLog,
     at_version: Option<&StoredCommit>,
-) -> Result<Planned> {
-    let existing = if version == last.commit_version {
-        last
-    } else if version == first.commit_version {
-        first
-    } else if version > first.commit_version {
-        at_version.filter(|c| c.commit_version == version).ok_or_else(|| {
-            Error::internal(format!(
+) -> Result<Option<Planned>> {
+    if version > log.last_version {
+        return Ok(None);
+    }
+    let Some(existing) = at_version.filter(|c| c.commit_version == version) else {
+        if version > log.backfilled_version {
+            // The live window has no gaps, so the log is inconsistent.
+            return Err(Error::internal(format!(
                 "Inconsistent uc_delta_commits table for table {table_id}: no row tracked at in-range commit version {version}"
-            ))
-        })?
-    } else {
-        return Ok(Planned::ContentCheck {
+            )));
+        }
+        return Ok(Some(Planned::ContentCheck {
             version,
             staged_file_name: file_name,
-        });
+        }));
     };
     if existing.commit_filename == file_name {
-        return Ok(Planned::Replay);
+        return Ok(Some(Planned::Replay));
     }
     Err(Error::new(
         ErrorCode::CommitVersionConflict,
@@ -346,34 +395,16 @@ fn already_taken(
     ))
 }
 
-/// Upstream `getEffectiveBackfilledVersion`: the backfilled version once
-/// the request is done.
-fn effective_backfilled_version(
-    backfilled: Option<i64>,
-    first: &StoredCommit,
-    last: &StoredCommit,
-) -> i64 {
-    if last.is_backfilled_latest_commit {
-        last.commit_version
-    } else if let Some(b) = backfilled.filter(|b| *b >= first.commit_version) {
-        b
-    } else if first.is_backfilled_latest_commit {
-        first.commit_version
-    } else {
-        first.commit_version - 1
-    }
-}
-
-/// Upstream `checkCommitLimit`.
+/// Upstream `checkCommitLimit`. A request only moves the backfilled version
+/// forward, so the live window after it starts above the higher of the two.
 fn check_commit_limit(
     table_id: &str,
     new_v: i64,
     backfilled: Option<i64>,
-    first: &StoredCommit,
-    last: &StoredCommit,
+    log: CommitLog,
 ) -> Result<()> {
-    let first_after = effective_backfilled_version(backfilled, first, last) + 1;
-    if new_v - first_after + 1 > MAX_COMMITS_PER_TABLE {
+    let backfilled_after = log.backfilled_version.max(backfilled.unwrap_or(i64::MIN));
+    if new_v - backfilled_after > MAX_COMMITS_PER_TABLE {
         return Err(Error::new(
             ErrorCode::ResourceExhausted,
             format!("Max number of commits per table reached: {table_id}"),
@@ -382,20 +413,54 @@ fn check_commit_limit(
     Ok(())
 }
 
-/// Upstream `backfillCommits`. The newest commit is never deleted; a
-/// backfill-only request that reaches it marks it instead.
-fn backfill(plan: &mut CommitPlan, backfilled: i64, first_v: i64, last_v: i64, new_v: Option<i64>) {
-    if backfilled < first_v {
+/// Upstream `ensurePublishedRangeVerified`: the versions that a backfill to
+/// `backfilled` still has to see published.
+fn verify_published(log: CommitLog, backfilled: i64, files_checked: bool) -> Option<Planned> {
+    (!files_checked && backfilled > log.backfilled_version).then_some(Planned::VerifyPublished {
+        from: log.backfilled_version + 1,
+        to: backfilled,
+    })
+}
+
+/// Upstream `backfillCommits`: prune the rows that aged out, and flag the
+/// newly backfilled ones. A version that is already backfilled changes
+/// nothing.
+fn backfill(plan: &mut CommitPlan, backfilled: i64, log: CommitLog) {
+    if backfilled <= log.backfilled_version {
         return;
     }
-    let highest = new_v.unwrap_or(last_v);
-    let delete_up_to = backfilled.min(highest - 1);
-    if new_v.is_none() && backfilled == last_v {
-        plan.mark_backfilled = Some(last_v);
+    if backfilled > BACKFILLED_COMMITS_RETAINED {
+        plan.prune_through = Some(backfilled - BACKFILLED_COMMITS_RETAINED - 1);
     }
-    if delete_up_to >= first_v {
-        plan.delete_up_to = Some(delete_up_to);
-    }
+    plan.flag = Some((log.backfilled_version, backfilled));
+}
+
+/// The path of the published commit file of `version` under a table.
+pub fn published_path(table_location: &str, version: i64) -> String {
+    format!(
+        "{}/_delta_log/{version:020}.json",
+        table_location.trim_end_matches('/')
+    )
+}
+
+/// Upstream `requirePublishedCommitFiles`: a backfill reported a version
+/// whose published file does not exist.
+pub fn missing_published_file(to: i64, path: &str) -> Error {
+    invalid(format!(
+        "Cannot backfill through version {to}: published commit file is missing: {path}"
+    ))
+}
+
+/// Upstream `findMissingPublishedCommitFile` when storage cannot tell
+/// whether a file exists: the client should retry.
+pub fn published_unknown(table_location: &str, to: i64) -> Error {
+    Error::new(
+        ErrorCode::CommitStateUnknown,
+        format!(
+            "Could not verify the published commit files under {}/_delta_log for backfill through version {to}; retry the request.",
+            table_location.trim_end_matches('/')
+        ),
+    )
 }
 
 /// Upstream `getCommits` argument checks. Returns the canonical table id.
@@ -417,32 +482,22 @@ pub fn validate_get_commits(req: &DeltaGetCommits) -> Result<String> {
     Ok(id)
 }
 
-/// Upstream `getCommits` over the newest [`COMMITS_PER_BATCH`] tracked
-/// commits (`newest_first`). At most [`MAX_COMMITS_PER_TABLE`] commits are
+/// Upstream `getCommits` over the unbackfilled commits (newest first) and
+/// the latest version. At most [`MAX_COMMITS_PER_TABLE`] commits are
 /// returned, the oldest in range first to go into the page.
 pub fn commits_response(
     req: &DeltaGetCommits,
-    newest_first: &[StoredCommit],
+    unbackfilled: &[StoredCommit],
+    latest_table_version: i64,
 ) -> DeltaGetCommitsResponse {
-    let (Some(newest), Some(oldest)) = (newest_first.first(), newest_first.last()) else {
-        return DeltaGetCommitsResponse {
-            commits: vec![],
-            latest_table_version: 0,
-        };
-    };
-    let latest_table_version = newest.commit_version;
-    if newest.is_backfilled_latest_commit {
-        return DeltaGetCommitsResponse {
-            commits: vec![],
-            latest_table_version,
-        };
-    }
+    let oldest = unbackfilled
+        .last()
+        .map_or(latest_table_version, |c| c.commit_version);
     let start = req.start_version.unwrap_or_default();
-    let page_end = start.max(oldest.commit_version) + MAX_COMMITS_PER_TABLE - 1;
+    let page_end = start.max(oldest) + MAX_COMMITS_PER_TABLE - 1;
     let end = req.end_version.unwrap_or(i64::MAX).min(page_end);
-    let commits = newest_first
+    let commits = unbackfilled
         .iter()
-        .filter(|c| !c.is_backfilled_latest_commit)
         .filter(|c| (start..=end).contains(&c.commit_version))
         .map(StoredCommit::to_info)
         .collect();
@@ -498,7 +553,7 @@ pub fn published_by_other_writer(version: i64) -> Error {
 mod tests {
     use super::*;
 
-    fn stored(v: i64, marker: bool) -> StoredCommit {
+    fn stored(v: i64, backfilled: bool) -> StoredCommit {
         StoredCommit {
             table_id: "t".into(),
             commit_version: v,
@@ -506,7 +561,7 @@ mod tests {
             commit_filesize: 1,
             commit_file_modification_timestamp: 1,
             commit_timestamp: 1,
-            is_backfilled_latest_commit: marker,
+            is_backfilled: backfilled,
         }
     }
 
@@ -526,78 +581,142 @@ mod tests {
         }
     }
 
-    fn plan(c: &DeltaCommit, first: i64, last: i64) -> Result<Planned> {
-        plan_commit(
-            "t",
-            c,
-            Some(&stored(first, false)),
-            Some(&stored(last, false)),
-            None,
-        )
+    /// A log of versions `first..=last`, backfilled through `backfilled`.
+    fn log(first: i64, last: i64, backfilled: Option<i64>) -> Option<CommitLog> {
+        CommitLog::new(Some(first), Some(last), backfilled)
+    }
+
+    fn plan(c: &DeltaCommit, log: Option<CommitLog>) -> Result<Planned> {
+        let at_version = c
+            .commit_info
+            .as_ref()
+            .and_then(|i| i.version)
+            .map(|v| stored(v, false));
+        let at_version =
+            at_version.filter(|a| log.is_some_and(|l| a.commit_version <= l.last_version));
+        plan_commit("t", c, log, at_version.as_ref(), true)
+    }
+
+    fn applied(planned: Result<Planned>) -> CommitPlan {
+        match planned.unwrap() {
+            Planned::Apply(p) => p,
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
-    fn backfill_keeps_the_newest_commit() {
-        // [1..=3] + commit 4 with backfill 3: delete up to 3.
-        let Planned::Apply(p) = plan(&commit(Some(4), Some(3)), 1, 3).unwrap() else {
-            panic!()
-        };
-        assert_eq!(p.delete_up_to, Some(3));
-        assert_eq!(p.mark_backfilled, None);
-        // [2..=4] + backfill-only 4: delete up to 3, mark 4.
-        let Planned::Apply(p) = plan(&commit(None, Some(4)), 2, 4).unwrap() else {
-            panic!()
-        };
-        assert_eq!((p.delete_up_to, p.mark_backfilled), (Some(3), Some(4)));
-        // A backfill below the tracked range changes nothing.
-        let Planned::Apply(p) = plan(&commit(None, Some(1)), 2, 4).unwrap() else {
-            panic!()
-        };
+    fn the_backfilled_version_is_the_highest_flagged_row() {
+        assert_eq!(CommitLog::new(None, None, None), None);
+        assert_eq!(log(3, 5, None).unwrap().backfilled_version, 2);
+        assert_eq!(log(1, 5, Some(4)).unwrap().backfilled_version, 4);
+    }
+
+    #[test]
+    fn a_backfill_flags_rows_and_prunes_old_ones() {
+        // [1..=3] + commit 4 with backfill 3: flag (0, 3].
+        let p = applied(plan(&commit(Some(4), Some(3)), log(1, 3, None)));
+        assert_eq!((p.flag, p.prune_through), (Some((0, 3)), None));
+        assert!(p.save.is_some());
+        // A backfill-only request that reaches the newest commit flags it.
+        let p = applied(plan(&commit(None, Some(4)), log(2, 4, Some(2))));
+        assert_eq!(p.flag, Some((2, 4)));
+        // A version that is already backfilled changes nothing.
+        let p = applied(plan(&commit(None, Some(1)), log(1, 4, Some(2))));
         assert_eq!(p, CommitPlan::default());
+        // The version exactly 100 behind is kept.
+        let p = applied(plan(&commit(None, Some(150)), log(1, 150, None)));
+        assert_eq!((p.flag, p.prune_through), (Some((0, 150)), Some(49)));
+    }
+
+    #[test]
+    fn a_backfill_waits_for_its_files() {
+        let unchecked = |c: &DeltaCommit, log| plan_commit("t", c, log, None, false).unwrap();
+        assert_eq!(
+            unchecked(&commit(None, Some(4)), log(1, 4, Some(1))),
+            Planned::VerifyPublished { from: 2, to: 4 }
+        );
+        assert_eq!(
+            unchecked(&commit(Some(5), Some(3)), log(1, 4, None)),
+            Planned::VerifyPublished { from: 1, to: 3 }
+        );
+        // Nothing new to backfill: nothing to check.
+        assert!(matches!(
+            unchecked(&commit(None, Some(1)), log(1, 4, Some(2))),
+            Planned::Apply(_)
+        ));
+        assert!(matches!(
+            unchecked(&commit(Some(5), None), log(1, 4, None)),
+            Planned::Apply(_)
+        ));
     }
 
     #[test]
     fn the_limit_counts_commits_after_the_backfill() {
-        let err = plan(&commit(Some(11), None), 1, 10).unwrap_err();
+        let err = plan(&commit(Some(11), None), log(1, 10, None)).unwrap_err();
         assert_eq!(err.code(), ErrorCode::ResourceExhausted);
-        assert!(plan(&commit(Some(11), Some(1)), 1, 10).is_ok());
+        assert!(plan(&commit(Some(11), Some(1)), log(1, 10, None)).is_ok());
+        assert!(plan(&commit(Some(15), None), log(1, 14, Some(5))).is_ok());
     }
 
     #[test]
     fn taken_versions_are_replays_or_conflicts() {
-        assert_eq!(plan(&commit(Some(3), None), 1, 3).unwrap(), Planned::Replay);
-        assert_eq!(plan(&commit(Some(1), None), 1, 3).unwrap(), Planned::Replay);
-        let mut other = commit(Some(3), None);
-        other.commit_info.as_mut().unwrap().file_name = Some("x".into());
+        let at = |v| stored(v, false);
+        let taken = |v: i64, name: &str, log, at: Option<StoredCommit>| {
+            taken_version("t", v, name.into(), log, at.as_ref())
+        };
+        let l = log(1, 3, None).unwrap();
+        assert_eq!(taken(4, "file4", l, None).unwrap(), None);
         assert_eq!(
-            plan(&other, 1, 3).unwrap_err().code(),
+            taken(3, "file3", l, Some(at(3))).unwrap(),
+            Some(Planned::Replay)
+        );
+        assert_eq!(
+            taken(3, "x", l, Some(at(3))).unwrap_err().code(),
             ErrorCode::CommitVersionConflict
         );
-        // In range but untracked: the log is inconsistent.
+        // In the live window but untracked: the log is inconsistent.
         assert_eq!(
-            plan(&commit(Some(2), None), 1, 3).unwrap_err().code(),
+            taken(2, "file2", l, None).unwrap_err().code(),
             ErrorCode::Internal
         );
-        // Below the range: purged, so compare contents.
+        // A backfilled version that is still kept is answered by name.
+        let l = log(1, 3, Some(2)).unwrap();
         assert_eq!(
-            plan(&commit(Some(1), None), 2, 3).unwrap(),
-            Planned::ContentCheck {
-                version: 1,
-                staged_file_name: "file1".into()
-            }
+            taken(1, "file1", l, Some(stored(1, true))).unwrap(),
+            Some(Planned::Replay)
+        );
+        // Not kept: compare the contents.
+        let l = log(5, 8, Some(6)).unwrap();
+        assert_eq!(
+            taken(2, "file2", l, None).unwrap(),
+            Some(Planned::ContentCheck {
+                version: 2,
+                staged_file_name: "file2".into()
+            })
         );
     }
 
     #[test]
     fn pages_hold_at_most_ten_commits() {
-        let newest_first: Vec<_> = (1..=12).rev().map(|v| stored(v, false)).collect();
+        let unbackfilled: Vec<_> = (1..=12).rev().map(|v| stored(v, false)).collect();
         let req = DeltaGetCommits {
             start_version: Some(0),
             ..Default::default()
         };
-        let resp = commits_response(&req, &newest_first);
+        let resp = commits_response(&req, &unbackfilled, 12);
         assert_eq!(resp.latest_table_version, 12);
         let versions: Vec<_> = resp.commits.iter().map(|c| c.version.unwrap()).collect();
         assert_eq!(versions, (1..=10).rev().collect::<Vec<_>>());
+        let resp = commits_response(&req, &[], 12);
+        assert!(resp.commits.is_empty());
+        assert_eq!(resp.latest_table_version, 12);
+    }
+
+    #[test]
+    fn published_paths_are_zero_padded() {
+        assert_eq!(
+            published_path("s3://b/t/", 7),
+            "s3://b/t/_delta_log/00000000000000000007.json"
+        );
     }
 }

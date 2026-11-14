@@ -173,6 +173,10 @@ display_name = "{app_displayname}"
 | `cleanup_poll_interval` | `UC_STORAGE_CLEANUP_POLL_INTERVAL` | `1m` | How often the cleanup of dropped managed data looks for work. |
 | `cleanup_attempt_timeout` | `UC_STORAGE_CLEANUP_ATTEMPT_TIMEOUT` | `30m` | How long one cleanup can take. |
 | `cleanup_lease_duration` | `UC_STORAGE_CLEANUP_LEASE_DURATION` | `2h` | How long a server holds a cleanup task. |
+| **Credential cache** |  |  | Vended credentials given again in place of a new call to the cloud. See [The credential cache](../server/cloud-storage.md#the-credential-cache). |
+| `credential_cache_enabled` | `UC_STORAGE_CREDENTIAL_CACHE_ENABLED` | `false` | Give a vended credential again to requests for the same locations, operation and identity. |
+| `credential_cache_max_size` | `UC_STORAGE_CREDENTIAL_CACHE_MAX_SIZE` | `1000` | The most credentials kept. |
+| `credential_cache_max_age` | `UC_STORAGE_CREDENTIAL_CACHE_MAX_AGE` | `5m` | The longest a credential is given again, from when it was vended. |
 
 ## `[secrets]`
 

@@ -494,6 +494,23 @@ async fn view_like_tables_follow_upstream_rules(#[future(awt)] seeded: Router) {
             "Dependency table full name must be a three-part name (catalog.schema.table); got: x",
         ),
         (
+            view("VIEW", Some("select 1"), columns(), Some(table_dep("a..c"))),
+            StatusCode::BAD_REQUEST,
+            "INVALID_ARGUMENT",
+            "Dependency table full name must be a three-part name (catalog.schema.table); got: a..c",
+        ),
+        (
+            view(
+                "VIEW",
+                Some("select 1"),
+                columns(),
+                Some(table_dep("a.b.c.")),
+            ),
+            StatusCode::BAD_REQUEST,
+            "INVALID_ARGUMENT",
+            "Dependency table full name must be a three-part name (catalog.schema.table); got: a.b.c.",
+        ),
+        (
             view(
                 "VIEW",
                 Some("select 1"),
@@ -658,8 +675,8 @@ async fn column_type_json_is_validated(#[future(awt)] seeded: Router) {
         format!("{prefix}field nullable true does not match column nullable false")
     );
 
-    // Non-Delta tables accept Spark-only types; type_text is lowercased and
-    // nullable defaults to false.
+    // Non-Delta tables accept Spark-only types; type_text keeps its case
+    // and nullable defaults to false.
     let mut ok = column(Some(
         r#"{"name":"c","type":"varchar(10)","nullable":true,"metadata":{}}"#,
     ));
@@ -670,12 +687,13 @@ async fn column_type_json_is_validated(#[future(awt)] seeded: Router) {
         .await
         .unwrap();
     let created = json_body(assert_status(resp, StatusCode::OK, "parquet").await).await;
-    assert_eq!(created["columns"][0]["type_text"], "varchar(10)");
+    assert_eq!(created["columns"][0]["type_text"], "VARCHAR(10)");
     assert_eq!(created["columns"][0]["nullable"], false);
     let resp = seeded
         .oneshot(req(Method::GET, "/tables/main.default.t"))
         .await
         .unwrap();
     let got = json_body(assert_status(resp, StatusCode::OK, "get").await).await;
+    assert_eq!(got["columns"][0]["type_text"], "VARCHAR(10)");
     assert_eq!(got["columns"][0]["nullable"], false);
 }

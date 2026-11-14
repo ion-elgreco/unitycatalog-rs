@@ -52,6 +52,7 @@ class ExternalLocationClient:
         new_name: str | None = None,
         comment: str | None = None,
         credential_name: str | None = None,
+        owner: str | None = None,
     ) -> ExternalLocationInfo:
         """
         Change an external location.
@@ -60,7 +61,10 @@ class ExternalLocationClient:
             url: New URL of the storage path.
             new_name: New name of the external location.
             comment: User-provided free-form text description.
-            credential_name: Name of the new credential that gives access to the path.
+            credential_name: Name of the new credential that gives access to the path. It repairs an
+                             external location whose credential was deleted with `force`.
+            owner: The owner of the external location. Accepted for compatibility with the upstream API; the
+                   owner does not change.
 
         Returns:
             An external location: a storage path and the credential that gives access to it.
@@ -73,6 +77,7 @@ class ExternalLocationClient:
         new_name: str | None = None,
         comment: str | None = None,
         credential_name: str | None = None,
+        owner: str | None = None,
     ) -> Future[ExternalLocationInfo]:
         """
         Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.

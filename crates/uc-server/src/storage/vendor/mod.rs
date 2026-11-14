@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
+use tracing::warn;
 
 use uc_api::{AwsCredentials, CredentialInfo, TemporaryCredentials};
 use uc_common::{Error, NormalizedUrl, Result, UriScheme, now_epoch_millis};
@@ -23,6 +24,7 @@ use uc_common::settings::{self, Settings};
 
 pub mod aws;
 pub mod azure;
+pub mod cache;
 pub mod gcp;
 mod location;
 
@@ -47,7 +49,7 @@ impl VendOp {
 }
 
 /// Upstream `CredentialContext.Privilege`: what a vended credential allows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StoragePrivilege {
     Select,
     Update,
@@ -155,6 +157,18 @@ pub async fn vend_credential(
         .await?;
     credentials.url = Some(path.to_string());
     Ok(credentials)
+}
+
+/// What a client gets when a call to a cloud fails during a vend, as
+/// upstream.
+pub const VEND_FAILED: &str = "Failed to vend temporary storage credentials.";
+
+/// The error of a call to a cloud that failed at `step` of a vend. The
+/// cloud's text can name roles, accounts and endpoints, so it goes to the
+/// log and not into the answer.
+pub(crate) fn vend_failed(step: &str, cause: impl std::fmt::Display) -> Error {
+    warn!(step, %cause, "cannot vend storage credentials");
+    Error::internal(VEND_FAILED)
 }
 
 /// The text of the first `<tag>` element.

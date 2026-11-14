@@ -28,6 +28,40 @@ credentials = client.generate_temporary_table_credentials(table.table_id, "READ"
 
 The Delta REST API and the Iceberg REST catalog give credentials with their tables.
 
+When a call to the cloud fails, the client gets `Failed to vend temporary storage credentials.`
+(AWS and Azure) or `GCS credentials not found.` (GCP). The cloud's message is in the server log.
+A GCS location whose access boundary condition is longer than Google's limit of 2048 characters
+gets `INVALID_ARGUMENT`.
+
+### The credential cache
+
+Each request for credentials is a call to the cloud: STS `AssumeRole`, an Azure user delegation
+key, or a downscoped GCP token. With `storage.credential_cache_enabled`, the server gives a
+credential that it vended before to the next requests for the same locations, operation and
+identity:
+
+```toml
+[storage]
+credential_cache_enabled = true
+credential_cache_max_size = 1000  # credentials kept
+credential_cache_max_age = "5m"   # from when a credential was vended
+```
+
+The server still checks the user's privileges, and reads the external location and storage
+credential of the path, on each request. A changed role, external ID, service principal, managed
+identity, service account or key is a new call to the cloud.
+
+A credential is given again until `credential_cache_max_age` after it was vended, and never in
+the last minute before it expires; a credential that lives one minute or less is not kept. A
+client gets the time that is left: at least 55 minutes of a one-hour credential with the default
+`5m`. A failed call is not kept.
+
+The cache is off by default:
+
+- One STS session serves many requests, so a CloudTrail session name no longer names one request.
+- A change in the cloud that the server cannot see, such as a new trust policy of a role, applies
+  to new requests only after `credential_cache_max_age`.
+
 ## Identities and locations
 
 | Part | Its job | Who sets it |

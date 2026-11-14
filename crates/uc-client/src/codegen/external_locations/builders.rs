@@ -209,9 +209,17 @@ impl UpdateExternalLocationBuilder {
         self
     }
 
-    /// Name of the new credential that gives access to the path.
+    /// Name of the new credential that gives access to the path. It repairs an external location
+    /// whose credential was deleted with `force`.
     pub fn with_credential_name(mut self, credential_name: impl Into<Option<String>>) -> Self {
         self.request.credential_name = credential_name.into();
+        self
+    }
+
+    /// The owner of the external location. Accepted for compatibility with the upstream API; the
+    /// owner does not change.
+    pub fn with_owner(mut self, owner: impl Into<Option<String>>) -> Self {
+        self.request.owner = owner.into();
         self
     }
 }

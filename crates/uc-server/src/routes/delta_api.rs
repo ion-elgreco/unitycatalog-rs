@@ -222,13 +222,15 @@ pub async fn update_table(
         rules::update_table,
     )
     .await?;
-    let outcome = state
-        .metastore
-        .delta_tables()
-        .update_table(&full_name, req, principal.actor())
-        .await?;
-    // A replay of a purged version is settled by the file contents.
-    super::unity::commits::verify_replay(&state, outcome).await?;
+    let (actor, req, metastore, full_name) =
+        (principal.actor(), &req, &state.metastore, &full_name);
+    super::unity::commits::settle_commit(&state, |files_checked| async move {
+        metastore
+            .delta_tables()
+            .update_table(full_name, req.clone(), actor, files_checked)
+            .await
+    })
+    .await?;
     Ok(Json(load(&state, &catalog, &schema, &table).await?))
 }
 
@@ -261,7 +263,11 @@ pub async fn table_exists(
     delete, path = "/delta/v1/catalogs/{catalog}/schemas/{schema}/tables/{table}",
     operation_id = "delta_delete_table",
     params(("catalog" = String, Path), ("schema" = String, Path), ("table" = String, Path)),
-    responses((status = 204, description = "Deleted"), (status = 404, body = DeltaErrorResponse)),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 400, body = DeltaErrorResponse, description = "Not a Delta table"),
+        (status = 404, body = DeltaErrorResponse),
+    ),
     tag = "DeltaTables",
 )]
 pub async fn delete_table(
@@ -278,7 +284,11 @@ pub async fn delete_table(
         rules::manage_child,
     )
     .await?;
-    state.metastore.tables().delete(&full_name).await?;
+    state
+        .metastore
+        .delta_tables()
+        .delete_table(&full_name)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -289,6 +299,7 @@ pub async fn delete_table(
     request_body = DeltaRenameTableRequest,
     responses(
         (status = 204, description = "Renamed"),
+        (status = 400, body = DeltaErrorResponse, description = "Not a Delta table"),
         (status = 404, body = DeltaErrorResponse),
         (status = 409, body = DeltaErrorResponse),
     ),
@@ -315,8 +326,8 @@ pub async fn rename_table(
         .ok_or_else(|| Error::invalid_argument("New table name is required."))?;
     state
         .metastore
-        .tables()
-        .rename(&full_name, &new_name, principal.actor())
+        .delta_tables()
+        .rename_table(&full_name, &new_name, principal.actor())
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }

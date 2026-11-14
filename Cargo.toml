@@ -112,18 +112,19 @@ iceberg = { git = "https://github.com/apache/iceberg-rust", rev = "b03f4c2826116
 flate2 = "1"
 # Cloud object storage (managed-storage cleanup)
 object_store = { version = "0.14", default-features = false, features = ["aws", "gcp", "azure", "fs"] }
-# Delta tables in the CLI (`uc table create/read/write`): the Buoyant Data
-# distribution of delta-kernel-rs, under the `delta_kernel` names. Arrow 60 as iceberg.
-delta_kernel = { package = "buoyant_kernel", version = "0.30.1", default-features = false, features = ["arrow-60", "internal-api"] }
+# Delta tables in the CLI (`uc table create/read/write`) and the schema checks
+# of uc-delta: the Buoyant Data distribution of delta-kernel-rs, under the
+# `delta_kernel` names. Arrow 60 as iceberg.
+delta_kernel ={ package = "buoyant_kernel", version = "0.30.1", default-features = false, features = ["arrow-60", "internal-api"] }
 delta_kernel_default_engine = { package = "buoyant_kernel_engine", version = "0.30.1", default-features = false, features = ["arrow-60", "rustls"] }
 
 # Open Sharing / Delta Sharing: the protocol routes and the engine that
 # serves them, with the kernel, arrow and object_store versions above.
-opensharing-admin-api = { git = "https://github.com/ion-elgreco/distributary", rev = "83ce08e6a75eaa635565271d9c9c96d7e58cc741" }
-opensharing-api = { git = "https://github.com/ion-elgreco/distributary", rev = "83ce08e6a75eaa635565271d9c9c96d7e58cc741", default-features = false, features = ["axum"] }
-opensharing-client = { git = "https://github.com/ion-elgreco/distributary", rev = "83ce08e6a75eaa635565271d9c9c96d7e58cc741" }
-opensharing-common = { git = "https://github.com/ion-elgreco/distributary", rev = "83ce08e6a75eaa635565271d9c9c96d7e58cc741" }
-opensharing-engine = { git = "https://github.com/ion-elgreco/distributary", rev = "83ce08e6a75eaa635565271d9c9c96d7e58cc741", default-features = false, features = ["delta"] }
+opensharing-admin-api = { git = "https://github.com/ion-elgreco/distributary", rev = "3c885a4ed03621bfa4316681c8f736553ed542cf" }
+opensharing-api = { git = "https://github.com/ion-elgreco/distributary", rev = "3c885a4ed03621bfa4316681c8f736553ed542cf", default-features = false, features = ["axum"] }
+opensharing-client = { git = "https://github.com/ion-elgreco/distributary", rev = "3c885a4ed03621bfa4316681c8f736553ed542cf" }
+opensharing-common = { git = "https://github.com/ion-elgreco/distributary", rev = "3c885a4ed03621bfa4316681c8f736553ed542cf" }
+opensharing-engine = { git = "https://github.com/ion-elgreco/distributary", rev = "3c885a4ed03621bfa4316681c8f736553ed542cf", default-features = false, features = ["delta"] }
 
 # Errors / logging
 thiserror = "2"
@@ -171,6 +172,11 @@ tracing-opentelemetry = "0.32"
 pyo3 = { version = "0.30", features = ["abi3-py312", "chrono", "experimental-inspect"] }
 pyo3-async-runtimes = { version = "0.30", features = ["tokio-runtime"] }
 pyo3-build-config = "0.30"
+
+[patch.crates-io]
+# buoyant_kernel 0.30.1 with its schema diff public under `internal-api`, for
+# the set-columns checks of uc-delta. Back to crates.io when a release has it.
+buoyant_kernel = { git = "https://github.com/ion-elgreco/delta-kernel-rs", rev = "9234d39f1c84a272df9de4f9e02bb0b3fe59df47" }
 
 [profile.release]
 opt-level = 3

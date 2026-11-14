@@ -241,6 +241,15 @@ async fn managed_tables() {
     assert_eq!(table.comment.as_deref(), Some("sales"));
 }
 
+/// Writes the published `_delta_log` file of `version` under the table
+/// `location`. A backfill through a version needs its file.
+fn publish(location: &str, version: i64) {
+    let root = url::Url::parse(location).unwrap().to_file_path().unwrap();
+    let log = root.join("_delta_log");
+    std::fs::create_dir_all(&log).unwrap();
+    std::fs::write(log.join(format!("{version:020}.json")), "{}\n").unwrap();
+}
+
 /// The commit coordinator: a commit with a metadata change, the commits a
 /// client reads back, and a backfill.
 #[tokio::test]
@@ -293,6 +302,7 @@ async fn commits() {
     let table = uc.table("c.s.m").get().await.unwrap();
     assert_eq!(table.comment.as_deref(), Some("sales, v1"));
 
+    publish(&uri, 1);
     uc.commit_delta(&id, &uri)
         .with_latest_backfilled_version(1)
         .await
@@ -326,6 +336,7 @@ async fn updates_of_managed_tables() {
         .unwrap();
     assert_eq!(committed.commits, [api_commit(1)]);
     assert_eq!(committed.latest_table_version, Some(1));
+    publish(&table.metadata.as_option().unwrap().location, 1);
     let backfilled = uc
         .update_delta_table(
             "c",

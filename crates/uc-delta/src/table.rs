@@ -129,6 +129,16 @@ pub fn create_table_request(
     let location = req.location.clone().filter(|l| !l.trim().is_empty());
     let location = location.ok_or_else(|| invalid("Table location is required."))?;
     let fields = struct_fields(req.columns.as_ref(), "columns")?;
+    // A column-mapped table starts with the identities that set-columns
+    // requires on every update.
+    let mode = req
+        .properties
+        .as_ref()
+        .and_then(|p| p.get(crate::column_mapping::MODE));
+    crate::column_mapping::validate_identities(
+        &fields,
+        crate::column_mapping::parse_mode(mode.map(String::as_str))?,
+    )?;
     let table_type = match req.table_type {
         Some(DeltaTableType::Managed) => TableType::Managed,
         Some(DeltaTableType::External) => TableType::External,
@@ -273,26 +283,6 @@ pub fn table_metadata(info: &TableInfo, full_name: &str) -> DeltaTableMetadata {
         last_commit_timestamp_ms: long(LAST_COMMIT_TIMESTAMP),
         properties,
     }
-}
-
-/// Upstream `getUnbackfilledCommits` over the newest tracked commits:
-/// the unbackfilled ones, newest first, and the latest version (0 before
-/// the first commit).
-pub fn unbackfilled(newest_first: Vec<StoredCommit>) -> (Vec<StoredCommit>, i64) {
-    let Some(newest) = newest_first.first() else {
-        return (vec![], 0);
-    };
-    let latest = newest.commit_version;
-    if newest.is_backfilled_latest_commit {
-        return (vec![], latest);
-    }
-    (
-        newest_first
-            .into_iter()
-            .filter(|c| !c.is_backfilled_latest_commit)
-            .collect(),
-        latest,
-    )
 }
 
 /// Upstream `buildLoadTableResponse`. `commits` is the unbackfilled

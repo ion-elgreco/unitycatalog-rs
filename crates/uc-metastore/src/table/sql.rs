@@ -160,13 +160,11 @@ pub(crate) async fn drop_managed_tables<E: Exec + ?Sized>(
 }
 
 /// Upstream column handling on create: `ColumnUtils.validateTypeJson` on
-/// each column, `type_text` lowercased, and `nullable` defaulting to false.
+/// each column, and `nullable` defaulting to false. `type_text` is stored
+/// as sent, so the names of nested fields keep their case.
 fn validate_columns(columns: &mut [ColumnInfo], format: Option<DataSourceFormat>) -> Result<()> {
     for column in columns.iter_mut() {
         validate_type_json(column, format)?;
-        if let Some(text) = column.type_text.as_mut() {
-            *text = text.to_lowercase();
-        }
         column.nullable.get_or_insert(false);
     }
     Ok(())
@@ -261,17 +259,13 @@ fn parse_dependency(dep: &uc_api::Dependency) -> Result<(&'static str, Vec<Strin
             "Dependency {kind} full name must not be null or empty"
         )));
     }
-    let parts: Vec<String> = crate::sql::split_dotted(full_name)
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    if parts.len() != 3 {
-        return Err(Error::invalid_argument(format!(
+    let parts: [&str; 3] = crate::sql::split_full_name(full_name).ok_or_else(|| {
+        Error::invalid_argument(format!(
             "Dependency {kind} full name must be a three-part name (catalog.schema.{kind}); got: \
              {full_name}"
-        )));
-    }
-    Ok((kind, parts))
+        ))
+    })?;
+    Ok((kind, parts.map(str::to_string).to_vec()))
 }
 
 impl SqlMetastore {
@@ -379,6 +373,56 @@ impl SqlMetastore {
     }
 }
 
+impl SqlMetastore {
+    /// Delete a resolved table, with its grants and, for a MANAGED table,
+    /// its tracked commits.
+    pub(crate) async fn delete_row(&self, row: &TableRow) -> Result<()> {
+        let failed = db_err("delete table");
+        let tx = self.db.begin().await.map_err(&failed)?;
+        let id = [row.id_string.as_str().into()];
+        drop_managed_tables(tx.as_ref(), "id_string = $1", &id).await?;
+        for sql in [
+            "DELETE FROM permission WHERE resource_id = $1",
+            "DELETE FROM tbl WHERE id_string = $1",
+        ] {
+            tx.execute(sql, &id).await.map_err(&failed)?;
+        }
+        tx.commit().await.map_err(&failed)
+    }
+
+    /// Rename a resolved table.
+    pub(crate) async fn rename_row(
+        &self,
+        full_name: &str,
+        schema: &SchemaRef,
+        mut row: TableRow,
+        new_name: &str,
+        updated_by: Option<&str>,
+    ) -> Result<TableInfo> {
+        validate_sql_object_name(new_name)?;
+        if row.name == new_name {
+            return row.into_info(schema);
+        }
+        if self.table_row(&schema.schema_id, new_name).await?.is_some() {
+            return Err(table_exists(new_name));
+        }
+        row.name = new_name.to_string();
+        crate::sql::touch_audit(&mut row.updated_at, &mut row.updated_by, updated_by);
+        let written = update(self.db.as_ref(), &TBL, &row)
+            .await
+            .map_err(create_err_as(
+                ErrorCode::TableAlreadyExists,
+                format!("Table already exists: {new_name}"),
+            ))?;
+        if written == 0 {
+            return Err(Error::table_not_found(format!(
+                "Table not found: {full_name}"
+            )));
+        }
+        row.into_info(schema)
+    }
+}
+
 #[async_trait]
 impl TableOps for SqlMetastore {
     async fn create(&self, req: CreateTable, created_by: Option<&str>) -> Result<TableInfo> {
@@ -466,17 +510,7 @@ impl TableOps for SqlMetastore {
 
     async fn delete(&self, full_name: &str) -> Result<()> {
         let (_, row) = self.resolve_table(full_name).await?;
-        let failed = db_err("delete table");
-        let tx = self.db.begin().await.map_err(&failed)?;
-        let id = [row.id_string.as_str().into()];
-        drop_managed_tables(tx.as_ref(), "id_string = $1", &id).await?;
-        for sql in [
-            "DELETE FROM permission WHERE resource_id = $1",
-            "DELETE FROM tbl WHERE id_string = $1",
-        ] {
-            tx.execute(sql, &id).await.map_err(&failed)?;
-        }
-        tx.commit().await.map_err(&failed)
+        self.delete_row(&row).await
     }
 
     async fn rename(
@@ -485,28 +519,9 @@ impl TableOps for SqlMetastore {
         new_name: &str,
         updated_by: Option<&str>,
     ) -> Result<TableInfo> {
-        validate_sql_object_name(new_name)?;
-        let (schema, mut row) = self.resolve_table(full_name).await?;
-        if row.name == new_name {
-            return row.into_info(&schema);
-        }
-        if self.table_row(&schema.schema_id, new_name).await?.is_some() {
-            return Err(table_exists(new_name));
-        }
-        row.name = new_name.to_string();
-        crate::sql::touch_audit(&mut row.updated_at, &mut row.updated_by, updated_by);
-        let written = update(self.db.as_ref(), &TBL, &row)
+        let (schema, row) = self.resolve_table(full_name).await?;
+        self.rename_row(full_name, &schema, row, new_name, updated_by)
             .await
-            .map_err(create_err_as(
-                ErrorCode::TableAlreadyExists,
-                format!("Table already exists: {new_name}"),
-            ))?;
-        if written == 0 {
-            return Err(Error::table_not_found(format!(
-                "Table not found: {full_name}"
-            )));
-        }
-        row.into_info(&schema)
     }
 
     async fn list(

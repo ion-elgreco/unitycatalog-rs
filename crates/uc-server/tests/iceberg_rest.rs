@@ -680,9 +680,57 @@ async fn tables_with_iceberg_metadata_are_served() {
 
     let resp = get(&app, &format!("{TABLES}/nope")).await;
     assert_iceberg_error(resp, StatusCode::NOT_FOUND, "NoSuchTableException").await;
-    let resp = get(&app, "/v1/catalogs/main/namespaces/nope/tables/uni").await;
-    assert_iceberg_error(resp, StatusCode::NOT_FOUND, "NoSuchNamespaceException").await;
     let resp = get(&app, "/v1/catalogs/main/namespaces/nope/tables").await;
+    assert_iceberg_error(resp, StatusCode::NOT_FOUND, "NoSuchNamespaceException").await;
+}
+
+/// After upstream `testTableRoutesReportAMissingNamespaceAsAMissingTable`:
+/// an Iceberg client asks for the metadata table `default.uni.snapshots` as
+/// the table `snapshots` in the namespace `default<0x1F>uni`, and tries the
+/// metadata table only after `NoSuchTableException`.
+#[tokio::test]
+async fn table_routes_answer_a_missing_namespace_as_a_missing_table() {
+    let (app, _root) = writable_app().await;
+    let table = "/v1/catalogs/main/namespaces/default%1Funi/tables/snapshots";
+    let commit = json!({ "requirements": [], "updates": [] });
+    let report = json!({ "report-type": "scan-report", "table-name": "snapshots", "snapshot-id": 1,
+        "filter": true, "schema-id": 0, "projected-field-ids": [1], "projected-field-names": ["x"],
+        "metrics": {} });
+    let probes = [
+        (Method::GET, table.to_string(), None),
+        (Method::GET, format!("{table}/credentials"), None),
+        (Method::DELETE, table.to_string(), None),
+        (Method::POST, table.to_string(), Some(commit)),
+        (Method::POST, format!("{table}/metrics"), Some(report)),
+    ];
+    for (method, path, body) in probes {
+        let resp = send(&app, method.clone(), &path, body).await;
+        let err = assert_iceberg_error(resp, StatusCode::NOT_FOUND, "NoSuchTableException").await;
+        assert_eq!(
+            err["message"], "Table does not exist: default.uni.snapshots",
+            "{method} {path}"
+        );
+    }
+    let resp = send(&app, Method::HEAD, table, None).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let resp = get(&app, "/v1/catalogs/main/namespaces/nope/tables/t").await;
+    let err = assert_iceberg_error(resp, StatusCode::NOT_FOUND, "NoSuchTableException").await;
+    assert_eq!(err["message"], "Table does not exist: nope.t");
+
+    // Routes of a namespace, and of a view, keep the namespace error.
+    let resp = get(&app, "/v1/catalogs/main/namespaces/nope/tables").await;
+    assert_iceberg_error(resp, StatusCode::NOT_FOUND, "NoSuchNamespaceException").await;
+    let body = json!({ "name": "t", "schema": id_data_schema() });
+    let resp = send(
+        &app,
+        Method::POST,
+        "/v1/catalogs/main/namespaces/nope/tables",
+        Some(body),
+    )
+    .await;
+    assert_iceberg_error(resp, StatusCode::NOT_FOUND, "NoSuchNamespaceException").await;
+    // A missing catalog is not a missing table.
+    let resp = get(&app, "/v1/catalogs/nope/namespaces/default/tables/t").await;
     assert_iceberg_error(resp, StatusCode::NOT_FOUND, "NoSuchNamespaceException").await;
 }
 

@@ -20,7 +20,10 @@ use tower::ServiceExt;
 use uc_metastore::{MetastoreConfig, SqlMetastore};
 use uc_server::{
     AppState, build_app,
-    storage::vendor::{CloudVendor, Endpoints, StorageConfig},
+    storage::vendor::{
+        CloudVendor, CredentialVendor, Endpoints, StorageConfig,
+        cache::{CachingVendor, CredentialCacheConfig},
+    },
 };
 
 use common::{assert_error, assert_status, json_body, req_json};
@@ -43,6 +46,16 @@ type Log = Arc<Mutex<Vec<Seen>>>;
 
 /// A mock cloud endpoint answering every request with `answer`.
 async fn mock(content_type: &'static str, answer: String) -> (String, Log) {
+    mock_status(StatusCode::OK, content_type, answer).await
+}
+
+/// A mock cloud endpoint answering every request with `status` and
+/// `answer`.
+async fn mock_status(
+    status: StatusCode,
+    content_type: &'static str,
+    answer: String,
+) -> (String, Log) {
     let log: Log = Arc::default();
     let seen = log.clone();
     let app = Router::new().fallback(move |uri: Uri, headers: HeaderMap, body: Bytes| {
@@ -58,7 +71,7 @@ async fn mock(content_type: &'static str, answer: String) -> (String, Log) {
                 headers,
                 body: String::from_utf8_lossy(&body).into_owned(),
             });
-            ([("content-type", content_type)], answer).into_response()
+            (status, [("content-type", content_type)], answer).into_response()
         }
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -69,14 +82,20 @@ async fn mock(content_type: &'static str, answer: String) -> (String, Log) {
 
 /// The app with the credentials of the settings `settings` (uc.toml).
 async fn app(settings: &str, endpoints: Endpoints) -> Router {
+    let settings = uc_common::settings::Settings::from_toml(settings).unwrap();
+    let config = StorageConfig::from_settings(&settings).unwrap();
+    let vendor = CloudVendor::new(config).with_endpoints(endpoints);
+    match CredentialCacheConfig::from_settings(&settings.storage).unwrap() {
+        Some(cache) => app_with(CachingVendor::new(vendor, cache)).await,
+        None => app_with(vendor).await,
+    }
+}
+
+async fn app_with(vendor: impl CredentialVendor) -> Router {
     let metastore = SqlMetastore::connect(MetastoreConfig::for_tests())
         .await
         .unwrap();
-    let settings = uc_common::settings::Settings::from_toml(settings).unwrap();
-    let config = StorageConfig::from_settings(&settings).unwrap();
-    let state =
-        AppState::new(metastore).with_vendor(CloudVendor::new(config).with_endpoints(endpoints));
-    build_app(state)
+    build_app(AppState::new(metastore).with_vendor(vendor))
 }
 
 async fn post(app: &Router, path: &str, body: Value) -> axum::response::Response {
@@ -875,4 +894,187 @@ async fn local_paths_vend_nothing() {
     let root = common::temp_storage_root();
     let body = ok(vend(&app, &format!("{root}/t"), "PATH_READ").await).await;
     assert_eq!(body, json!({ "url": format!("{root}/t") }));
+}
+
+/// The settings `extra`, and the server's AWS identity.
+fn aws_settings(extra: &str) -> String {
+    format!(
+        r#"
+        {extra}
+
+        [identity.aws]
+        region = "us-west-2"
+        access_key = "AKMASTER"
+        secret_key = "master-secret"
+        "#
+    )
+}
+
+/// Upstream: a failed AssumeRole is a general error. The role and the text
+/// of STS go to the log only.
+#[tokio::test]
+async fn a_failed_assume_role_does_not_name_the_role() {
+    let refusal = "<ErrorResponse><Error><Code>AccessDenied</Code><Message>User \
+                   arn:aws:iam::123456789012:user/uc is not authorized to perform: \
+                   sts:AssumeRole on resource: arn:aws:iam::123456789012:role/data</Message>\
+                   </Error></ErrorResponse>";
+    let (sts, log) = mock_status(StatusCode::FORBIDDEN, "text/xml", refusal.into()).await;
+    let endpoints = Endpoints {
+        aws_sts: Some(sts),
+        ..Default::default()
+    };
+    let app = app(&aws_settings(""), endpoints).await;
+    external_location(&app, "el", "s3://bucket/data", aws_role()).await;
+    let err = assert_error(
+        vend(&app, "s3://bucket/data/t1", "PATH_READ").await,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "INTERNAL",
+    )
+    .await;
+    assert_eq!(
+        err["message"],
+        "Failed to vend temporary storage credentials."
+    );
+    assert!(!err.to_string().contains("arn:aws"), "{err}");
+    assert_eq!(log.lock().unwrap().len(), 1);
+}
+
+/// A GCS location reached with the server's own identity, from a metadata
+/// server, and Google STS at `sts`.
+async fn gcs_app(sts: String) -> Router {
+    let (metadata, _) = mock(
+        "application/json",
+        json!({ "access_token": "source", "expires_in": 3600 }).to_string(),
+    )
+    .await;
+    let settings = r#"
+        [locations.lake]
+        url = "gs://lake"
+        gcp_service_account = true
+    "#;
+    let endpoints = Endpoints {
+        gcp_metadata: Some(metadata),
+        gcp_sts: Some(format!("{sts}/v1/token")),
+        ..Default::default()
+    };
+    app(settings, endpoints).await
+}
+
+/// Upstream: Google refuses an access boundary condition over 2048
+/// characters, so the server refuses such a location before it asks.
+#[tokio::test]
+async fn a_gcs_location_too_long_for_a_downscoped_token_gets_400() {
+    let (sts, exchanges) = mock(
+        "application/json",
+        json!({ "access_token": "downscoped", "expires_in": 1800 }).to_string(),
+    )
+    .await;
+    let app = gcs_app(sts).await;
+    let url = format!("gs://lake/{}", "a".repeat(600));
+    let err = assert_error(
+        vend(&app, &url, "PATH_READ").await,
+        StatusCode::BAD_REQUEST,
+        "INVALID_ARGUMENT",
+    )
+    .await;
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        message.starts_with(&format!(
+            "GCS location {url} is too long for a downscoped credential: its access boundary \
+             condition is "
+        )) && message.ends_with("characters, and the limit is 2048."),
+        "{message}"
+    );
+    assert!(exchanges.lock().unwrap().is_empty());
+}
+
+/// Upstream: Google STS refusing the request as `invalid_request` is a 400
+/// with its description; any other refusal is "GCS credentials not found.",
+/// without Google's text.
+#[tokio::test]
+async fn gcs_refusals_of_the_request_get_400() {
+    let refusal = json!({ "error": "invalid_request", "error_description": "The access boundary is too long." });
+    let (sts, _) = mock_status(
+        StatusCode::BAD_REQUEST,
+        "application/json",
+        refusal.to_string(),
+    )
+    .await;
+    let app = gcs_app(sts).await;
+    let err = assert_error(
+        vend(&app, "gs://lake/t", "PATH_READ").await,
+        StatusCode::BAD_REQUEST,
+        "INVALID_ARGUMENT",
+    )
+    .await;
+    assert_eq!(
+        err["message"],
+        "GCS rejected the downscoped credential request (invalid_request): The access boundary \
+         is too long."
+    );
+
+    let refusal =
+        json!({ "error": "invalid_grant", "error_description": "uc@project is disabled" });
+    let (sts, _) = mock_status(
+        StatusCode::BAD_REQUEST,
+        "application/json",
+        refusal.to_string(),
+    )
+    .await;
+    let app = gcs_app(sts).await;
+    let err = assert_error(
+        vend(&app, "gs://lake/t", "PATH_READ").await,
+        StatusCode::BAD_REQUEST,
+        "FAILED_PRECONDITION",
+    )
+    .await;
+    assert_eq!(err["message"], "GCS credentials not found.");
+}
+
+/// `storage.credential_cache_enabled`: a request for the same path,
+/// operation and identity gets the credential vended before, on any route
+/// that vends; another operation or path asks STS again.
+#[tokio::test]
+async fn the_credential_cache_saves_calls_to_the_cloud() {
+    let (sts, log) = mock("text/xml", ASSUME_ROLE.to_string()).await;
+    let endpoints = Endpoints {
+        aws_sts: Some(sts),
+        ..Default::default()
+    };
+    let settings = aws_settings("[storage]\ncredential_cache_enabled = true");
+    let app = app(&settings, endpoints).await;
+    external_location(&app, "el", "s3://bucket/data", aws_role()).await;
+    let calls = || log.lock().unwrap().len();
+
+    let first = ok(vend(&app, "s3://bucket/data/t1", "PATH_READ").await).await;
+    let again = ok(vend(&app, "s3://bucket/data/t1", "PATH_READ").await).await;
+    assert_eq!(first, again);
+    assert_eq!(calls(), 1);
+    ok(vend(&app, "s3://bucket/data/t1", "PATH_READ_WRITE").await).await;
+    ok(vend(&app, "s3://bucket/data/t10", "PATH_READ").await).await;
+    assert_eq!(calls(), 3);
+
+    // The table route gives the credential of its location from the cache.
+    for (path, body) in [
+        (
+            "/catalogs",
+            json!({ "name": "cloud", "storage_root": "s3://bucket/data/root" }),
+        ),
+        ("/schemas", json!({ "name": "s", "catalog_name": "cloud" })),
+    ] {
+        assert_status(post(&app, path, body).await, StatusCode::OK, path).await;
+    }
+    let staging = json!({ "name": "t", "catalog_name": "cloud", "schema_name": "s" });
+    let staging = ok(post(&app, "/staging-tables", staging).await).await;
+    let location = staging["staging_location"].as_str().unwrap();
+    let table = json!({ "table_id": staging["id"], "operation": "READ_WRITE" });
+    let by_table = ok(post(&app, "/temporary-table-credentials", table.clone()).await).await;
+    assert_eq!(calls(), 4);
+    ok(post(&app, "/temporary-table-credentials", table).await).await;
+    let by_path = ok(vend(&app, location, "PATH_READ_WRITE").await).await;
+    assert_eq!(
+        by_table["aws_temp_credentials"],
+        by_path["aws_temp_credentials"]
+    );
+    assert_eq!(calls(), 4);
 }
