@@ -182,13 +182,19 @@ pub enum StorageError {
     /// Another writer holds the lock, or the transaction lost a race:
     /// trying again can work.
     Busy(String),
+    /// A value of the request is over a limit of the database, such as
+    /// the size of an index entry: the same request fails again.
+    TooLarge(String),
     Other(String),
 }
 
 impl StorageError {
     pub fn message(&self) -> &str {
         match self {
-            StorageError::Unique(m) | StorageError::Busy(m) | StorageError::Other(m) => m,
+            StorageError::Unique(m)
+            | StorageError::Busy(m)
+            | StorageError::TooLarge(m)
+            | StorageError::Other(m) => m,
         }
     }
 }

@@ -26,19 +26,23 @@ use object_store::{
 };
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use sha2::{Digest, Sha256};
+use tracing::warn;
 
 use uc_api::{AzureUserDelegationSAS, TemporaryCredentials};
 use uc_common::{Error, NormalizedUrl, Result};
 use uc_metastore::SecretValue;
 use uc_storage::runtime::io_handle;
 
-use super::{CredentialContext, StorageCredential, StoragePrivilege, xml_text};
+use super::{CredentialContext, StorageCredential, StoragePrivilege, vend_failed, xml_text};
 use crate::http::outbound::SendOnIo;
 use crate::storage::secrets::CacheConfig;
 
 /// The SAS version signed: its string-to-sign is the one of
 /// [`user_delegation_sas`].
 const SAS_VERSION: &str = "2021-08-06";
+
+/// The step that gets a user delegation key, for the log.
+const DELEGATION_KEY: &str = "Azure user delegation key";
 
 pub struct AzureVendor {
     /// The server's own identity: `[identity.azure]`, else the identity of
@@ -71,7 +75,7 @@ pub enum Identity {
 /// The key of a sign-in: its identity, with the digest of a client secret
 /// in place of the secret.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum SignInKey {
+pub(super) enum SignInKey {
     ServicePrincipal {
         tenant_id: String,
         client_id: String,
@@ -356,12 +360,15 @@ impl AzureVendor {
     async fn access_token(&self, account: &str, identity: &Identity) -> Result<String> {
         let failed = |e: String| match identity {
             // The identity of the environment, without `[identity.azure]`.
-            Identity::Managed(None) => Error::failed_precondition(format!(
-                "The server could not get its Azure identity: set [identity.azure] \
-                 (UC_IDENTITY_AZURE_*), or run it with an identity in its environment (AZURE_* \
-                 variables, AKS workload identity, the managed identity of the VM). Cause: {e}"
-            )),
-            _ => Error::internal(format!("Azure sign-in failed: {e}")),
+            Identity::Managed(None) => {
+                warn!(cause = %e, "the server could not get its Azure identity");
+                Error::failed_precondition(
+                    "The server could not get its Azure identity: set [identity.azure] \
+                     (UC_IDENTITY_AZURE_*), or run it with an identity in its environment \
+                     (AZURE_* variables, AKS workload identity, the managed identity of the VM).",
+                )
+            }
+            _ => vend_failed("Azure sign-in", e),
         };
         let credential = self
             .sign_in(account, identity)
@@ -445,18 +452,19 @@ impl AzureVendor {
             .body(body)
             .send_on_io()
             .await
-            .map_err(|e| Error::internal(format!("Azure user delegation key failed: {e}")))?;
+            .map_err(|e| vend_failed(DELEGATION_KEY, e))?;
         let status = response.status();
         let xml = response.text().await.unwrap_or_default();
         if !status.is_success() {
-            return Err(Error::internal(format!(
-                "Azure user delegation key failed ({status}): {xml}"
-            )));
+            return Err(vend_failed(
+                DELEGATION_KEY,
+                format_args!("({status}) {xml}"),
+            ));
         }
         let field = |tag: &str| {
             xml_text(&xml, tag)
                 .map(str::to_string)
-                .ok_or_else(|| Error::internal(format!("Azure user delegation key without {tag}")))
+                .ok_or_else(|| vend_failed(DELEGATION_KEY, format_args!("no {tag} in the answer")))
         };
         Ok(DelegationKey {
             signed_oid: field("SignedOid")?,

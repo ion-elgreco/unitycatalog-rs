@@ -444,6 +444,9 @@ async fn external_tables_over_a_delta_table() {
         &location,
     ];
     s.ok(&create).await;
+    // The type text keeps the precision and scale.
+    let got = s.ok(&["table", "get", "--full_name", "c.s.t"]).await;
+    assert!(got.contains("decimal(10,2)"), "{got}");
     s.ok(&["table", "write", "--full_name", "c.s.t"]).await;
     // DECIMAL columns get values too: from 0 to 999.99.
     let read = s.ok(&["table", "read", "--full_name", "c.s.t"]).await;
@@ -482,6 +485,55 @@ async fn external_tables_over_a_delta_table() {
             "{err}"
         );
     }
+    let err = s.fails(&["table", "get", "--full_name", "c.s.u"]).await;
+    assert!(err.contains("404"), "{err}");
+}
+
+/// A DECIMAL(p,s) is in the catalog and in the Delta log; a DECIMAL out of
+/// range makes no table.
+#[tokio::test(flavor = "multi_thread")]
+async fn decimal_columns() {
+    let s = Server::start().await;
+    s.ok(&["catalog", "create", "--name", "c"]).await;
+    s.ok(&["schema", "create", "--catalog", "c", "--name", "s"])
+        .await;
+    let location = s.path("t");
+    let create = |name: &'static str, columns: &'static str, location: String| {
+        [
+            "table".to_string(),
+            "create".into(),
+            "--full_name".into(),
+            format!("c.s.{name}"),
+            "--columns".into(),
+            columns.into(),
+            "--storage_location".into(),
+            location,
+        ]
+    };
+    let args = create("t", "d DECIMAL(10,0), p DECIMAL (7, 2)", location.clone());
+    s.ok(&args.each_ref().map(String::as_str)).await;
+    let got = s.ok(&["table", "get", "--full_name", "c.s.t"]).await;
+    assert!(
+        got.contains("decimal(10,0)") && got.contains("decimal(7,2)"),
+        "{got}"
+    );
+    let log = std::fs::read_to_string(format!("{location}/_delta_log/00000000000000000000.json"))
+        .unwrap();
+    assert!(
+        log.contains(r#"\"type\":\"decimal(10,0)\""#)
+            && log.contains(r#"\"type\":\"decimal(7,2)\""#),
+        "{log}"
+    );
+
+    let args = create("u", "d DECIMAL(39,0)", s.path("u"));
+    let err = s.fails(&args.each_ref().map(String::as_str)).await;
+    assert!(
+        err.contains(
+            "Invalid column definition: d DECIMAL(39,0): Invalid decimal: precision must be in \
+             range 1..38 inclusive, found: 39."
+        ),
+        "{err}"
+    );
     let err = s.fails(&["table", "get", "--full_name", "c.s.u"]).await;
     assert!(err.contains("404"), "{err}");
 }

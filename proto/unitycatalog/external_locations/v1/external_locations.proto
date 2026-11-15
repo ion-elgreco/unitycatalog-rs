@@ -88,8 +88,12 @@ message UpdateExternalLocation {
   optional string new_name = 3;
   // User-provided free-form text description.
   optional string comment = 4;
-  // Name of the new credential that gives access to the path.
+  // Name of the new credential that gives access to the path. It repairs an external location
+  // whose credential was deleted with `force`.
   optional string credential_name = 5;
+  // The owner of the external location. Accepted for compatibility with the upstream API; the
+  // owner does not change.
+  optional string owner = 6;
 }
 
 message DeleteExternalLocationRequest {

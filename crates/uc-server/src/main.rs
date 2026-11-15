@@ -17,7 +17,9 @@ use uc_server::{
     observability::telemetry::init_tracing,
     server::{banner, options, serve},
     storage::secrets::Secrets,
-    storage::vendor::{CloudVendor, Location, S3Location, credential_for_url},
+    storage::vendor::{
+        CloudVendor, Location, S3Location, cache::CachingVendor, credential_for_url,
+    },
 };
 
 /// The life of a token of `uc-server token` without `--ttl`.
@@ -286,6 +288,7 @@ async fn run(options: options::Options) -> Result<(), String> {
         locations = storage.locations.len(),
         s3_endpoint = storage.s3_store.as_ref().map(|s| s.endpoint.as_str()),
         gcp_endpoint = storage.gcp_endpoint.as_deref(),
+        credential_cache = ?cfg.credential_cache,
         "credential vending configured"
     );
     for location in &storage.locations {
@@ -323,7 +326,11 @@ async fn run(options: options::Options) -> Result<(), String> {
              get no credentials for the data under it"
         );
     }
-    state = state.with_vendor(CloudVendor::new(storage));
+    let vendor = CloudVendor::new(storage);
+    state = match cfg.credential_cache {
+        Some(cache) => state.with_vendor(CachingVendor::new(vendor, cache)),
+        None => state.with_vendor(vendor),
+    };
 
     // Upstream `StorageCleanupWorker`: reclaims the files of dropped
     // managed tables, volumes and models.

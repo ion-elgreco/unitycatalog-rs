@@ -308,6 +308,13 @@ impl UpdateCredentialBuilder {
         };
         self
     }
+
+    /// Username of the current owner of the credential. Accepted for compatibility with the
+    /// upstream API; the owner does not change.
+    pub fn with_owner(mut self, owner: impl Into<Option<String>>) -> Self {
+        self.request.owner = owner.into();
+        self
+    }
 }
 
 impl IntoFuture for UpdateCredentialBuilder {

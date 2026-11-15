@@ -414,6 +414,18 @@ pub struct Storage {
     pub cleanup_initial_delay: Option<Duration>,
     #[serde(deserialize_with = "some_duration")]
     pub cleanup_retry_backoff: Option<Duration>,
+    /// Give a vended credential again to requests for the same location,
+    /// operation and identity, in place of a new call to the cloud (default
+    /// false).
+    #[serde(deserialize_with = "scalar")]
+    pub credential_cache_enabled: bool,
+    /// The most vended credentials kept (default 1000).
+    #[serde(deserialize_with = "some")]
+    pub credential_cache_max_size: Option<u64>,
+    /// The longest a vended credential is given again, from when it was
+    /// vended (default `5m`).
+    #[serde(deserialize_with = "some_duration")]
+    pub credential_cache_max_age: Option<Duration>,
 }
 
 /// `[tables]`.

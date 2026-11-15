@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use uc_common::{Error, ErrorCode, NormalizedUrl, Result, UriScheme};
 
-use crate::{storage::ServerStorage, storage::vendor::VendOp};
+use crate::storage::{ServerStorage, storage_failed, vendor::VendOp};
 
 /// Iceberg's `write.metadata.path` table property.
 pub const WRITE_METADATA_LOCATION: &str = "write.metadata.path";
@@ -237,7 +237,7 @@ pub async fn write(
             let (store, path) = storage
                 .open(metadata_location, VendOp::ReadWrite)
                 .await
-                .map_err(|e| failed(&e))?;
+                .map_err(|e| e.to_error(metadata_location))?;
             let options = PutOptions {
                 mode: PutMode::Create,
                 ..Default::default()
@@ -245,7 +245,7 @@ pub async fn write(
             store
                 .put_opts(&path, PutPayload::from(json), options)
                 .await
-                .map_err(|e| failed(&e))?;
+                .map_err(|e| storage_failed(metadata_location, e))?;
             Ok(())
         }
     }
@@ -271,7 +271,7 @@ pub async fn delete(
                 let (store, path) = storage
                     .open(metadata_location, VendOp::ReadWrite)
                     .await
-                    .map_err(|e| Error::internal(e.0))?;
+                    .map_err(|e| Error::internal(e.to_string()))?;
                 store
                     .delete(&path)
                     .await

@@ -266,6 +266,151 @@ async fn only_storage_credentials_back_locations(#[future(awt)] with_cred: Route
     assert_eq!(err["message"], "Credential not of type storage: sp");
 }
 
+/// PostgreSQL limits an index entry to about 2.7 kB, and the URL of an
+/// external location is indexed: a longer URL is the request's fault. Turso
+/// has no such limit.
+#[rstest]
+#[tokio::test]
+async fn database_limits_are_invalid_arguments(#[future(awt)] with_cred: Router) {
+    // Random text, which PostgreSQL cannot compress below the limit.
+    let long: String = (0..200)
+        .map(|_| uuid::Uuid::new_v4().simple().to_string())
+        .collect();
+    let url = format!("s3://bucket/{long}");
+    let resp = post_location(&with_cred, "long", &url).await;
+    if std::env::var("UC_TEST_POSTGRES_URL").is_ok_and(|u| !u.trim().is_empty()) {
+        let err = assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+        let message = err["message"].as_str().unwrap();
+        assert!(message.contains("index row"), "{message}");
+    } else {
+        assert_status(resp, StatusCode::OK, "create").await;
+    }
+}
+
+async fn patch_location(
+    app: &Router,
+    name: &str,
+    body: serde_json::Value,
+) -> axum::response::Response {
+    let path = format!("/external-locations/{name}");
+    app.clone()
+        .oneshot(req_json(Method::PATCH, &path, body))
+        .await
+        .unwrap()
+}
+
+async fn get_location(app: &Router, name: &str) -> serde_json::Value {
+    let path = format!("/external-locations/{name}");
+    let resp = app.clone().oneshot(req(Method::GET, &path)).await.unwrap();
+    json_body(assert_status(resp, StatusCode::OK, "get").await).await
+}
+
+/// A new URL gets the managed storage check of create, and a refused
+/// update changes nothing.
+#[rstest]
+#[tokio::test]
+async fn url_updates_refuse_managed_storage_prefixes(#[future(awt)] with_cred: Router) {
+    let resp = post_location(&with_cred, "loc", "s3://bucket/data").await;
+    let created = json_body(assert_status(resp, StatusCode::OK, "create").await).await;
+
+    for url in [
+        "s3://bucket/__unitystorage",
+        "s3://bucket/__unitystorage/tables",
+    ] {
+        let resp = patch_location(&with_cred, "loc", json!({ "url": url, "comment": "moved" }));
+        let err = assert_error(resp.await, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+        assert_eq!(
+            err["message"],
+            format!("Input path '{url}' contains managed storage prefix __unitystorage.")
+        );
+    }
+    let kept = get_location(&with_cred, "loc").await;
+    assert_eq!(kept["url"], "s3://bucket/data");
+    assert_eq!(kept["comment"], created["comment"]);
+    assert_eq!(kept["updated_at"], created["updated_at"]);
+
+    let resp = patch_location(&with_cred, "loc", json!({ "url": "s3://bucket/other" })).await;
+    let moved = json_body(assert_status(resp, StatusCode::OK, "move").await).await;
+    assert_eq!(moved["url"], "s3://bucket/other");
+
+    // `owner` is accepted, as upstream, and changes nothing.
+    let resp = patch_location(&with_cred, "loc", json!({ "owner": "someone@example.com" })).await;
+    let updated = json_body(assert_status(resp, StatusCode::OK, "owner").await).await;
+    assert_eq!(updated["owner"], created["owner"]);
+    let resp = with_cred
+        .clone()
+        .oneshot(req_json(
+            Method::PATCH,
+            "/credentials/c1",
+            json!({ "owner": "someone@example.com" }),
+        ))
+        .await
+        .unwrap();
+    let credential = json_body(assert_status(resp, StatusCode::OK, "credential owner").await).await;
+    assert_ne!(credential["owner"], "someone@example.com");
+}
+
+/// After upstream `testExternalLocationSurvivesForceDeletedCredential`: a
+/// forced delete of the credential keeps its locations, which have no
+/// credential until an update names a new one.
+#[rstest]
+#[tokio::test]
+async fn locations_outlive_a_force_deleted_credential(#[future(awt)] with_cred: Router) {
+    let resp = post_location(&with_cred, "loc", "s3://bucket/data").await;
+    assert_status(resp, StatusCode::OK, "create").await;
+    let resp = with_cred
+        .clone()
+        .oneshot(req(Method::DELETE, "/credentials/c1?force=true"))
+        .await
+        .unwrap();
+    assert_status(resp, StatusCode::OK, "force delete").await;
+
+    let got = get_location(&with_cred, "loc").await;
+    assert_eq!(got["url"], "s3://bucket/data");
+    assert!(got.get("credential_name").is_none(), "{got}");
+    let resp = with_cred
+        .clone()
+        .oneshot(req(Method::GET, "/external-locations"))
+        .await
+        .unwrap();
+    let list = json_body(assert_status(resp, StatusCode::OK, "list").await).await;
+    let listed = &list["external_locations"][0];
+    assert_eq!(listed["name"], "loc");
+    assert!(listed.get("credential_name").is_none(), "{listed}");
+
+    // The other fields can change while the credential is missing.
+    let resp = patch_location(&with_cred, "loc", json!({ "comment": "orphan" })).await;
+    let updated = json_body(assert_status(resp, StatusCode::OK, "comment").await).await;
+    assert_eq!(updated["comment"], "orphan");
+    assert!(updated.get("credential_name").is_none(), "{updated}");
+    let resp = patch_location(&with_cred, "loc", json!({ "url": "s3://bucket/moved" })).await;
+    let updated = json_body(assert_status(resp, StatusCode::OK, "url").await).await;
+    assert_eq!(updated["url"], "s3://bucket/moved");
+    assert!(updated.get("credential_name").is_none(), "{updated}");
+
+    // A new credential repairs the location.
+    make_cred(&with_cred, "c2").await;
+    let resp = patch_location(&with_cred, "loc", json!({ "credential_name": "c2" })).await;
+    let repaired = json_body(assert_status(resp, StatusCode::OK, "repair").await).await;
+    assert_eq!(repaired["credential_name"], "c2");
+    assert_eq!(
+        get_location(&with_cred, "loc").await["credential_name"],
+        "c2"
+    );
+
+    let resp = with_cred
+        .clone()
+        .oneshot(req(Method::DELETE, "/credentials/c2?force=true"))
+        .await
+        .unwrap();
+    assert_status(resp, StatusCode::OK, "force delete").await;
+    let resp = with_cred
+        .oneshot(req(Method::DELETE, "/external-locations/loc"))
+        .await
+        .unwrap();
+    assert_status(resp, StatusCode::OK, "delete").await;
+}
+
 /// After upstream `testExternalLocationDeletion`.
 #[rstest]
 #[tokio::test]

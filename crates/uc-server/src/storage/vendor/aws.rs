@@ -23,12 +23,13 @@ use object_store::{
     client::{HttpRequest, SpawnedReqwestConnector},
 };
 use serde_json::{Value, json};
+use tracing::warn;
 
 use uc_api::{AwsCredentials, TemporaryCredentials};
 use uc_common::{Error, NormalizedUrl, Result};
 use uc_storage::runtime::io_handle;
 
-use super::{CredentialContext, StorageCredential, StoragePrivilege, xml_text};
+use super::{CredentialContext, StorageCredential, StoragePrivilege, vend_failed, xml_text};
 use crate::http::outbound::SendOnIo;
 
 /// The server's AWS identity (`[identity.aws]`): keys, else the identity of
@@ -42,7 +43,7 @@ pub struct AwsIdentity {
 
 /// The role that the server's identity assumes, with the external ID that
 /// the role's trust policy requires, if any.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Role {
     pub arn: String,
     pub external_id: Option<String>,
@@ -109,11 +110,12 @@ impl AwsVendor {
     pub async fn vend(&self, ctx: &CredentialContext, role: &Role) -> Result<TemporaryCredentials> {
         let (signer, region) = self.signer()?;
         let identity = signer.get_credential().await.map_err(|e| {
-            Error::failed_precondition(format!(
+            warn!(cause = %e, "the server could not get its AWS identity");
+            Error::failed_precondition(
                 "The server could not get its AWS identity: set [identity.aws] \
                  (UC_IDENTITY_AWS_*), or run it with an identity in its environment (AWS_* \
-                 variables, IRSA, EKS Pod Identity, an instance role). Cause: {e}"
-            ))
+                 variables, IRSA, EKS Pod Identity, an instance role).",
+            )
         })?;
         let session_policy = policy(
             &ctx.privileges,
@@ -124,7 +126,7 @@ impl AwsVendor {
         )?;
         self.assume_role(&identity, &region, role, &session_policy)
             .await
-            .map_err(|e| Error::internal(format!("AWS AssumeRole of {} failed: {e}", role.arn)))
+            .map_err(|e| vend_failed("AWS AssumeRole", format_args!("{}: {e}", role.arn)))
     }
 
     /// STS `AssumeRole` for an hour, signed by `object_store`.
@@ -229,7 +231,7 @@ impl AwsVendor {
                 .with_region(&region)
                 .with_http_connector(SpawnedReqwestConnector::new(io_handle()))
                 .build()
-                .map_err(|e| Error::internal(format!("The server's AWS identity: {e}")))?
+                .map_err(|e| vend_failed("the server's AWS identity", e))?
                 .credentials()
                 .clone(),
         };

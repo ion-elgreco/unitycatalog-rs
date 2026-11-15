@@ -128,15 +128,20 @@ impl Metastore for SqlMetastore {
     }
 }
 
+/// A database error in `context`: `INTERNAL`, except for a value over a
+/// limit of the database, which the request caused (`INVALID_ARGUMENT`).
 pub(crate) fn db_err(context: &'static str) -> impl Fn(StorageError) -> Error {
-    move |e| Error::internal(format!("{context}: {e}"))
+    move |e| match e {
+        StorageError::TooLarge(_) => Error::invalid_argument(format!("{context}: {e}")),
+        e => Error::internal(format!("{context}: {e}")),
+    }
 }
 
 /// A unique key that already holds the value is `ALREADY_EXISTS`.
 pub(crate) fn create_err(e: StorageError) -> Error {
     match e {
         StorageError::Unique(m) => Error::already_exists(m),
-        e => Error::internal(format!("create: {e}")),
+        e => db_err("create")(e),
     }
 }
 
@@ -145,7 +150,7 @@ pub(crate) fn create_err(e: StorageError) -> Error {
 pub(crate) fn create_err_as(code: ErrorCode, msg: String) -> impl FnOnce(StorageError) -> Error {
     move |e| match e {
         StorageError::Unique(_) => Error::new(code, msg),
-        e => Error::internal(format!("create: {e}")),
+        e => db_err("create")(e),
     }
 }
 
@@ -268,21 +273,22 @@ pub(crate) fn char_len(s: &str) -> Value {
     Value::Int(s.chars().count() as i64)
 }
 
-/// Java `String.split("\\.")`, which upstream uses on full names: split on
-/// `.` and drop trailing empty parts.
-pub(crate) fn split_dotted(s: &str) -> Vec<&str> {
-    let mut parts: Vec<&str> = s.split('.').collect();
-    while parts.last() == Some(&"") {
-        parts.pop();
+/// Upstream `ValidationUtils.splitFullName`: the `N` parts of a dotted full
+/// name. A name with another number of parts or with an empty part
+/// (`a..c`, `a.b.c.`) has none.
+pub(crate) fn split_full_name<const N: usize>(full: &str) -> Option<[&str; N]> {
+    let parts: Vec<&str> = full.split('.').collect();
+    if parts.iter().any(|p| p.is_empty()) {
+        return None;
     }
-    parts
+    parts.try_into().ok()
 }
 
 /// `<catalog>.<schema>`; anything else is upstream's `INVALID_ARGUMENT`.
 pub(crate) fn split_schema_name(full: &str) -> Result<(&str, &str)> {
-    match split_dotted(full).as_slice() {
-        [c, s] => Ok((c, s)),
-        _ => Err(Error::invalid_argument(format!(
+    match split_full_name(full) {
+        Some([c, s]) => Ok((c, s)),
+        None => Err(Error::invalid_argument(format!(
             "Invalid schema full name: {full}"
         ))),
     }
@@ -294,9 +300,9 @@ pub(crate) fn split_three_part<'a>(
     full: &'a str,
     what: &str,
 ) -> Result<(&'a str, &'a str, &'a str)> {
-    match split_dotted(full).as_slice() {
-        [c, s, n] => Ok((c, s, n)),
-        _ => Err(Error::invalid_argument(format!(
+    match split_full_name(full) {
+        Some([c, s, n]) => Ok((c, s, n)),
+        None => Err(Error::invalid_argument(format!(
             "Invalid {what} name: {full}"
         ))),
     }

@@ -214,6 +214,65 @@ async fn malformed_full_names_are_invalid(#[future(awt)] seeded: Router) {
 
 #[rstest]
 #[tokio::test]
+async fn full_names_with_an_empty_part_are_invalid(#[future(awt)] seeded: Router) {
+    let cases = [
+        ("/schemas/main.", "Invalid schema full name: main."),
+        ("/schemas/.default", "Invalid schema full name: .default"),
+        (
+            "/schemas/main.default.",
+            "Invalid schema full name: main.default.",
+        ),
+        ("/tables/main..t", "Invalid table name: main..t"),
+        (
+            "/tables/main.default.t.",
+            "Invalid table name: main.default.t.",
+        ),
+        ("/tables/.default.t", "Invalid table name: .default.t"),
+        (
+            "/volumes/main.default.",
+            "Invalid volume name: main.default.",
+        ),
+        ("/functions/main..f", "Invalid function name: main..f"),
+        (
+            "/models/main.default.m.",
+            "Invalid registered model name: main.default.m.",
+        ),
+        (
+            "/models/main..m/versions",
+            "Invalid registered model name: main..m",
+        ),
+    ];
+    for (path, message) in cases {
+        let resp = call(&seeded, Method::GET, path, None).await;
+        let err = assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+        assert_eq!(err["message"], message, "{path}");
+    }
+
+    // A trailing dot does not name the schema without it.
+    let resp = call(&seeded, Method::DELETE, "/schemas/main.default.", None).await;
+    assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    ok(&seeded, Method::GET, "/schemas/main.default", None).await;
+    let resp = call(
+        &seeded,
+        Method::PATCH,
+        "/schemas/main.default.",
+        Some(json!({ "comment": "x" })),
+    )
+    .await;
+    assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    let resp = call(
+        &seeded,
+        Method::GET,
+        "/permissions/table/main.default.t.",
+        None,
+    )
+    .await;
+    let err = assert_error(resp, StatusCode::BAD_REQUEST, "INVALID_ARGUMENT").await;
+    assert_eq!(err["message"], "Invalid table name: main.default.t.");
+}
+
+#[rstest]
+#[tokio::test]
 async fn lists_under_missing_parents_are_not_found(#[future(awt)] seeded: Router) {
     let resp = call(&seeded, Method::GET, "/schemas?catalog_name=nope", None).await;
     assert_error(resp, StatusCode::NOT_FOUND, "CATALOG_NOT_FOUND").await;

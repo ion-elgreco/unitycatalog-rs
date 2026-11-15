@@ -2,8 +2,7 @@
 //! `api/delta.yaml`. Field names are kebab-case.
 //!
 //! Column schemas (`columns`) travel as Delta type JSON; they are kept as
-//! [`serde_json::Value`] here and parsed with
-//! [`crate::delta_types`] ([`KeyStyle::Kebab`](crate::delta_types::KeyStyle)).
+//! [`serde_json::Value`] here, and uc-delta's `fields` module reads them.
 //! Request fields are optional so that missing fields get upstream's
 //! validation messages, not a parse error.
 

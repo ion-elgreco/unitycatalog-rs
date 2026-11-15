@@ -14,4 +14,7 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+url.workspace = true
 chrono.workspace = true
+# Column-mapping checks and the schema diff of set-columns.
+delta_kernel = { workspace = true, features = ["schema-diff"] }

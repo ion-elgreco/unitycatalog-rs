@@ -52,8 +52,10 @@ there are more.
 | `read` | **`--full_name`**, `--max_results` (rows; default 100) |
 | `write` | **`--full_name`**: writes 15 random rows |
 
-- `--columns`: `"id INT, name STRING"`. The types are `BOOLEAN`, `BYTE`, `SHORT`, `INT`, `LONG`,
-  `FLOAT`, `DOUBLE`, `DATE`, `TIMESTAMP`, `TIMESTAMP_NTZ`, `STRING`, `BINARY` and `DECIMAL`.
+- `--columns`: `"id INT, price DECIMAL(10,2)"`. The types are `BOOLEAN`, `BYTE`, `SHORT`, `INT`,
+  `LONG`, `FLOAT`, `DOUBLE`, `DATE`, `TIMESTAMP`, `TIMESTAMP_NTZ`, `STRING`, `BINARY` and
+  `DECIMAL(p,s)`. A `DECIMAL` needs both a precision `p` from 1 to 38 and a scale `s` from 0
+  to `p`.
 - `--format`: `DELTA` (the default), `ICEBERG`, `CSV`, `JSON`, `AVRO`, `PARQUET`, `ORC`, `TEXT` or `LANCE`.
   Only `DELTA` gets a Delta table at the location; `read` and `write` work with Delta tables.
 - `--table_type`: `EXTERNAL` (the default), which needs `--storage_location`, or `MANAGED`.

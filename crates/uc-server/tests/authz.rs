@@ -2069,4 +2069,12 @@ async fn iceberg_credentials_take_the_table_read_rule() {
         w.status(&w.admin, Method::GET, &credentials, None).await,
         StatusCode::OK
     );
+
+    // The permission check finds a missing namespace first; a table route
+    // still answers it as a missing table.
+    let metadata_table = "/iceberg/v1/catalogs/c/namespaces/s%1Ft/tables/snapshots";
+    let resp = w.call(&w.alice, Method::GET, metadata_table, None).await;
+    let err =
+        common::assert_iceberg_error(resp, StatusCode::NOT_FOUND, "NoSuchTableException").await;
+    assert_eq!(err["message"], "Table does not exist: s.t.snapshots");
 }

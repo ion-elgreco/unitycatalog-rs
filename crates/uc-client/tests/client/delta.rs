@@ -138,11 +138,16 @@ fn uniform_metadata(location: &str, file: &str, version: i64) -> DeltaUniformMet
     }
 }
 
+/// The staged commit file name of `version`: `<version>.<uuid>.json`.
+fn staged(version: i64) -> String {
+    format!("{version:020}.00000000-0000-0000-0000-000000000000.json")
+}
+
 fn api_commit(version: i64) -> DeltaApiCommit {
     DeltaApiCommit {
         version,
         timestamp: 1_700_000_000_000 + version,
-        file_name: format!("{version}.json"),
+        file_name: staged(version),
         file_size: 7,
         file_modification_timestamp: 1_700_000_000_000 + version,
         ..Default::default()
@@ -241,6 +246,15 @@ async fn managed_tables() {
     assert_eq!(table.comment.as_deref(), Some("sales"));
 }
 
+/// Writes the published `_delta_log` file of `version` under the table
+/// `location`. A backfill through a version needs its file.
+fn publish(location: &str, version: i64) {
+    let root = url::Url::parse(location).unwrap().to_file_path().unwrap();
+    let log = root.join("_delta_log");
+    std::fs::create_dir_all(&log).unwrap();
+    std::fs::write(log.join(format!("{version:020}.json")), "{}\n").unwrap();
+}
+
 /// The commit coordinator: a commit with a metadata change, the commits a
 /// client reads back, and a backfill.
 #[tokio::test]
@@ -258,7 +272,7 @@ async fn commits() {
     let commit = DeltaCommitInfo {
         version: 1,
         timestamp: 11,
-        file_name: "c1.json".into(),
+        file_name: staged(1),
         file_size: 7,
         file_modification_timestamp: 12,
         ..Default::default()
@@ -289,10 +303,11 @@ async fn commits() {
     assert_eq!(before.latest_table_version, 1);
     let loaded = uc.load_delta_table("c", "s", "m").await.unwrap();
     assert_eq!(loaded.latest_table_version, Some(1));
-    assert_eq!(loaded.commits[0].file_name, "c1.json");
+    assert_eq!(loaded.commits[0].file_name, staged(1));
     let table = uc.table("c.s.m").get().await.unwrap();
     assert_eq!(table.comment.as_deref(), Some("sales, v1"));
 
+    publish(&uri, 1);
     uc.commit_delta(&id, &uri)
         .with_latest_backfilled_version(1)
         .await
@@ -326,6 +341,7 @@ async fn updates_of_managed_tables() {
         .unwrap();
     assert_eq!(committed.commits, [api_commit(1)]);
     assert_eq!(committed.latest_table_version, Some(1));
+    publish(&table.metadata.as_option().unwrap().location, 1);
     let backfilled = uc
         .update_delta_table(
             "c",
@@ -430,7 +446,7 @@ async fn uniform_tables() {
     let commit = DeltaCommitInfo {
         version: 2,
         timestamp: 1,
-        file_name: "2.json".into(),
+        file_name: staged(2),
         file_size: 1,
         file_modification_timestamp: 1,
         ..Default::default()

@@ -206,6 +206,7 @@ class CredentialClient:
         azure_managed_identity: AzureManagedIdentity | None = None,
         gcp_service_account: GcpServiceAccount | None = None,
         gcp_service_account_key: GcpServiceAccountKeyRequest | None = None,
+        owner: str | None = None,
     ) -> CredentialInfo:
         """
         Change a credential.
@@ -221,6 +222,8 @@ class CredentialClient:
             azure_managed_identity: New Azure managed identity of the credential.
             gcp_service_account: New GCP service account of the credential.
             gcp_service_account_key: New GCP service account key of the credential.
+            owner: Username of the current owner of the credential. Accepted for compatibility with the
+                   upstream API; the owner does not change.
 
         Returns:
             A credential that gives access to storage or to external services.
@@ -236,6 +239,7 @@ class CredentialClient:
         azure_managed_identity: AzureManagedIdentity | None = None,
         gcp_service_account: GcpServiceAccount | None = None,
         gcp_service_account_key: GcpServiceAccountKeyRequest | None = None,
+        owner: str | None = None,
     ) -> Future[CredentialInfo]:
         """
         Like `update`, but returns an `asyncio.Future` of the result. Call it in a running event loop.

@@ -55,6 +55,8 @@ impl PyCredentialClient {
     ///     azure_managed_identity: New Azure managed identity of the credential.
     ///     gcp_service_account: New GCP service account of the credential.
     ///     gcp_service_account_key: New GCP service account key of the credential.
+    ///     owner: Username of the current owner of the credential. Accepted for compatibility with the
+    ///            upstream API; the owner does not change.
     ///
     /// Returns:
     ///     A credential that gives access to storage or to external services.
@@ -67,7 +69,8 @@ impl PyCredentialClient {
             azure_service_principal = None,
             azure_managed_identity = None,
             gcp_service_account = None,
-            gcp_service_account_key = None
+            gcp_service_account_key = None,
+            owner = None
         )
     )]
     pub fn update(
@@ -80,6 +83,7 @@ impl PyCredentialClient {
         azure_managed_identity: ::core::option::Option<PyAzureManagedIdentity>,
         gcp_service_account: ::core::option::Option<PyGcpServiceAccount>,
         gcp_service_account_key: ::core::option::Option<PyGcpServiceAccountKeyRequest>,
+        owner: Option<String>,
     ) -> PyUnityCatalogResult<PyCredentialInfo> {
         let request = self
             .client
@@ -90,7 +94,8 @@ impl PyCredentialClient {
             .with_azure_service_principal(azure_service_principal.map(::core::convert::Into::into))
             .with_azure_managed_identity(azure_managed_identity.map(::core::convert::Into::into))
             .with_gcp_service_account(gcp_service_account.map(::core::convert::Into::into))
-            .with_gcp_service_account_key(gcp_service_account_key.map(::core::convert::Into::into));
+            .with_gcp_service_account_key(gcp_service_account_key.map(::core::convert::Into::into))
+            .with_owner(owner);
         #[allow(clippy::let_unit_value)]
         let result = crate::codegen::runtime::block_on(py, request.into_future())??;
         Ok(PyCredentialInfo::from(result))
@@ -106,7 +111,8 @@ impl PyCredentialClient {
             azure_service_principal = None,
             azure_managed_identity = None,
             gcp_service_account = None,
-            gcp_service_account_key = None
+            gcp_service_account_key = None,
+            owner = None
         )
     )]
     pub fn update_async<'py>(
@@ -119,6 +125,7 @@ impl PyCredentialClient {
         azure_managed_identity: ::core::option::Option<PyAzureManagedIdentity>,
         gcp_service_account: ::core::option::Option<PyGcpServiceAccount>,
         gcp_service_account_key: ::core::option::Option<PyGcpServiceAccountKeyRequest>,
+        owner: Option<String>,
     ) -> ::pyo3::PyResult<crate::codegen::py_future::PyFuture<'py, PyCredentialInfo>> {
         let request = self
             .client
@@ -129,7 +136,8 @@ impl PyCredentialClient {
             .with_azure_service_principal(azure_service_principal.map(::core::convert::Into::into))
             .with_azure_managed_identity(azure_managed_identity.map(::core::convert::Into::into))
             .with_gcp_service_account(gcp_service_account.map(::core::convert::Into::into))
-            .with_gcp_service_account_key(gcp_service_account_key.map(::core::convert::Into::into));
+            .with_gcp_service_account_key(gcp_service_account_key.map(::core::convert::Into::into))
+            .with_owner(owner);
         crate::codegen::py_future::PyFuture::new(py, async move {
             #[allow(clippy::let_unit_value, unused_variables)]
             let result = request

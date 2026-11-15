@@ -11,7 +11,7 @@ use rstest::rstest;
 use serde_json::json;
 use tower::ServiceExt;
 
-use common::{assert_delta_error, assert_status, json_body, req, seeded};
+use common::{assert_delta_error, assert_status, json_body, other_staged, req, seeded, staged};
 
 #[rstest]
 #[tokio::test]
@@ -522,7 +522,7 @@ async fn load_table_lists_unbackfilled_commits() {
 
     let commit = json!({
         "table_id": table["table_id"], "table_uri": table["storage_location"],
-        "commit_info": { "version": 1, "timestamp": 11, "file_name": "c1.json", "file_size": 7,
+        "commit_info": { "version": 1, "timestamp": 11, "file_name": staged(1), "file_size": 7,
             "file_modification_timestamp": 12 },
     });
     let resp = app
@@ -541,7 +541,7 @@ async fn load_table_lists_unbackfilled_commits() {
     assert_eq!(
         loaded["commits"],
         json!([
-            { "version": 1, "timestamp": 11, "file-name": "c1.json", "file-size": 7, "file-modification-timestamp": 12 },
+            { "version": 1, "timestamp": 11, "file-name": staged(1), "file-size": 7, "file-modification-timestamp": 12 },
         ])
     );
     assert_eq!(loaded["metadata"]["table-type"], "MANAGED");
@@ -676,7 +676,7 @@ async fn create_table_follows_upstream() {
         (with(&|b| b["columns"] = json!({ "type": "struct", "fields": [] })),
             "columns.fields must contain at least one field.".into()),
         (with(&|b| b["columns"]["fields"][0]["type"] = json!("int")),
-            "columns.fields[0].type: Unsupported Delta primitive type: int".into()),
+            "columns.fields[0].type: Unsupported Delta table type: 'int'".into()),
         (with(&|b| b["columns"]["fields"][0]["type"] = json!({ "type": "decimal", "scale": 2 })),
             "columns.fields[0].type.precision is required.".into()),
         (with(&|b| { b.as_object_mut().unwrap().remove("table-type"); }), "table-type is required.".into()),
@@ -684,7 +684,7 @@ async fn create_table_follows_upstream() {
         (with(&|b| { b.as_object_mut().unwrap().remove("last-commit-timestamp-ms"); }),
             "last-commit-timestamp-ms is required.".into()),
         (with(&|b| b["protocol"]["writer-features"] = json!(["deletionVectors"])),
-            "Feature 'catalogManaged' is in reader-features but not writer-features. Per the Delta protocol, every reader-feature must also be a writer-feature.".into()),
+            "Reader features must contain only ReaderWriter features that are also listed in writer features, but CatalogManaged is not (readerFeatures=[CatalogManaged, DeletionVectors, V2Checkpoint, VacuumProtocolCheck], writerFeatures=[DeletionVectors], minReaderVersion=3, minWriterVersion=7)".into()),
         (with(&|b| b["domain-metadata"] = json!({ "delta.rowTracking": { "rowIdHighWaterMark": 100 } })),
             "domain-metadata.delta.rowTracking requires the 'rowTracking' writer feature.".into()),
         (with(&|b| b["partition-columns"] = json!(["nope"])),
@@ -826,6 +826,7 @@ async fn update_fails(
             StatusCode::CONFLICT
         }
         "NoSuchTableException" => StatusCode::NOT_FOUND,
+        "NotImplementedException" => StatusCode::NOT_IMPLEMENTED,
         _ => StatusCode::BAD_REQUEST,
     };
     let err = assert_delta_error(update(app, h, updates).await, status, error_type).await;
@@ -1030,7 +1031,7 @@ async fn update_table_metadata_actions() {
         json!([{ "action": "set-columns", "columns": { "type": "struct", "fields": [
         { "name": "id2", "type": "long", "nullable": false, "metadata": {} } ] } }]),
         IVE,
-        "partition-columns references unknown column: id",
+        "partition column 'id' dropped: not in the new schema.",
     )
     .await;
     for (updates, message) in [
@@ -1164,7 +1165,7 @@ async fn update_table_rejects_bad_requests() {
         (
             json!([{ "action": "set-protocol", "protocol": { "min-reader-version": 3, "min-writer-version": 7,
             "reader-features": ["v2Checkpoint"], "writer-features": ["v2Checkpoint"] } }]),
-            "MANAGED table missing required reader-feature 'catalogManaged'.",
+            "MANAGED table missing required writer-feature 'catalogManaged'.",
         ),
         (json!([{ "action": "no-such-action" }]), "unknown variant"),
     ];
@@ -1219,25 +1220,28 @@ async fn update_table_commits() {
     let mut h = delta_managed(&app, "commits", json!({})).await;
     let t0 = h.etag.clone();
     // A data-only commit leaves the metadata (and the etag) alone.
-    let r1 = updated(&app, &mut h, json!([add_commit(1, "00000001.json")])).await;
+    let r1 = updated(&app, &mut h, json!([add_commit(1, &staged(1))])).await;
     assert_eq!(r1["latest-table-version"], 1);
-    assert_eq!(r1["commits"][0]["file-name"], "00000001.json");
+    assert_eq!(r1["commits"][0]["file-name"], staged(1));
     assert_eq!(h.etag, t0);
     // A replay is a whole-request no-op.
-    let replay = updated(&app, &mut h, json!([add_commit(1, "00000001.json")])).await;
+    let replay = updated(&app, &mut h, json!([add_commit(1, &staged(1))])).await;
     assert_eq!(replay["commits"].as_array().unwrap().len(), 1);
     update_fails(
         &app,
         &h,
-        json!([add_commit(1, "00000001b.json")]),
+        json!([add_commit(1, &other_staged(1))]),
         "CommitVersionConflictException",
-        "Commit version already accepted. Version 1 was accepted with commit file 00000001.json",
+        &format!(
+            "Commit version already accepted. Version 1 was accepted with commit file {}",
+            staged(1)
+        ),
     )
     .await;
     update_fails(
         &app,
         &h,
-        json!([add_commit(3, "00000003.json")]),
+        json!([add_commit(3, &staged(3))]),
         IVE,
         "Commit version must be the next version after the latest commit 1, but got 3",
     )
@@ -1245,19 +1249,14 @@ async fn update_table_commits() {
 
     // Middle versions replay by name too.
     for v in 2..=3 {
-        updated(
-            &app,
-            &mut h,
-            json!([add_commit(v, &format!("{v:08}.json"))]),
-        )
-        .await;
+        updated(&app, &mut h, json!([add_commit(v, &staged(v))])).await;
     }
-    let r = updated(&app, &mut h, json!([add_commit(2, "00000002.json")])).await;
+    let r = updated(&app, &mut h, json!([add_commit(2, &staged(2))])).await;
     assert_eq!(r["commits"].as_array().unwrap().len(), 3);
     update_fails(
         &app,
         &h,
-        json!([add_commit(2, "other.json")]),
+        json!([add_commit(2, &other_staged(2))]),
         "CommitVersionConflictException",
         "already accepted",
     )
@@ -1267,7 +1266,7 @@ async fn update_table_commits() {
     let r = updated(
         &app,
         &mut h,
-        json!([add_commit(4, "00000004.json"),
+        json!([add_commit(4, &staged(4)),
         { "action": "set-properties", "updates": { "k": "v" } }]),
     )
     .await;
@@ -1282,19 +1281,25 @@ async fn update_table_commits() {
     let resp = update(
         &app,
         &stale,
-        json!([add_commit(4, "00000004.json"),
+        json!([add_commit(4, &staged(4)),
         { "action": "set-properties", "updates": { "k": "v" } }]),
     )
     .await;
     assert_status(resp, StatusCode::OK, "stale replay").await;
 
-    // Backfill through the update endpoint.
-    let r = updated(
+    // Backfill through the update endpoint, once the published files exist.
+    let backfill =
+        json!([{ "action": "set-latest-backfilled-version", "latest-published-version": 4 }]);
+    update_fails(
         &app,
-        &mut h,
-        json!([{ "action": "set-latest-backfilled-version", "latest-published-version": 4 }]),
+        &h,
+        backfill.clone(),
+        IVE,
+        "Cannot backfill through version 4: published commit file is missing: ",
     )
     .await;
+    common::publish(r["metadata"]["location"].as_str().unwrap(), 1..=4);
+    let r = updated(&app, &mut h, backfill).await;
     assert_eq!(
         (r["commits"].clone(), r["latest-table-version"].clone()),
         (json!([]), json!(4))
@@ -1329,7 +1334,7 @@ async fn update_table_commits() {
     update_fails(
         &app,
         &ext,
-        json!([add_commit(1, "1.json")]),
+        json!([add_commit(1, &staged(1))]),
         IVE,
         "add-commit and set-latest-backfilled-version require a MANAGED Delta table.",
     )
@@ -1437,7 +1442,7 @@ async fn uniform_metadata_on_create_and_commit() {
         .unwrap()
         .to_string();
     let commit = |v: i64, uniform: Option<serde_json::Value>| {
-        let mut c = add_commit(v, &format!("{v}.json"));
+        let mut c = add_commit(v, &staged(v));
         if let Some(u) = uniform {
             c["uniform"] = u;
         }
@@ -1485,7 +1490,7 @@ async fn uniform_metadata_on_create_and_commit() {
     };
     let rest_commit = |v: i64, uniform: Option<serde_json::Value>| {
         let mut c = json!({ "table_id": h.id, "table_uri": uni_loc,
-            "commit_info": { "version": v, "timestamp": 1, "file_name": format!("{v}.json"), "file_size": 1,
+            "commit_info": { "version": v, "timestamp": 1, "file_name": staged(v), "file_size": 1,
                 "file_modification_timestamp": 1 } });
         if let Some(u) = uniform {
             c["uniform"] = u;
@@ -1526,4 +1531,354 @@ async fn uniform_metadata_on_create_and_commit() {
         loaded["uniform"]["iceberg"]["converted-delta-timestamp"],
         1_735_960_391_423i64
     );
+}
+
+/// A field with a column-mapping id and physical name.
+fn mapped(name: &str, ty: &str, nullable: bool, id: i64, physical: &str) -> serde_json::Value {
+    json!({ "name": name, "type": ty, "nullable": nullable,
+        "metadata": { "delta.columnMapping.id": id, "delta.columnMapping.physicalName": physical } })
+}
+
+fn set_columns(fields: Vec<serde_json::Value>) -> serde_json::Value {
+    json!({ "action": "set-columns", "columns": { "type": "struct", "fields": fields } })
+}
+
+/// The column names and physical names of a load answer.
+fn names(loaded: &serde_json::Value) -> Vec<(String, String)> {
+    loaded["metadata"]["columns"]["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            let physical = &f["metadata"]["delta.columnMapping.physicalName"];
+            (
+                f["name"].as_str().unwrap().to_string(),
+                physical.as_str().unwrap_or_default().to_string(),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn set_columns_keeps_column_mapping_identities() {
+    let app = managed_schema().await;
+    let mut h = delta_managed(&app, "cm", json!({})).await;
+    let enable = json!({ "action": "set-properties", "updates": {
+        "delta.columnMapping.mode": "name", "delta.columnMapping.maxColumnId": "2" } });
+    let id = |name: &str| mapped(name, "long", false, 1, "id");
+    let amount = |name: &str| mapped(name, "decimal(10,2)", true, 2, "amount");
+
+    // Turning column mapping on takes identities on every field, and no
+    // rename in the same request.
+    update_fails(&app, &h, json!([enable]), IVE,
+        "Turning on column mapping requires set-columns with a physical column name and a column mapping id for every column and nested field.").await;
+    update_fails(&app, &h, json!([enable, set_columns(vec![
+        json!({ "name": "id", "type": "long", "nullable": false, "metadata": {} }),
+        json!({ "name": "amount", "type": "decimal(10,2)", "nullable": true, "metadata": {} })])]), IVE,
+        "Column mapping is enabled but field 'id' lacks the delta.columnMapping.physicalName annotation").await;
+    update_fails(&app, &h, json!([enable, set_columns(vec![id("key"), amount("amount")])]), IVE,
+        "set-columns: renaming a column while enabling column mapping is not supported in a single request.").await;
+    update_fails(
+        &app,
+        &h,
+        json!([
+            enable,
+            set_columns(vec![
+                id("id"),
+                mapped("amount", "decimal(10,2)", true, 1, "amount")
+            ])
+        ]),
+        IVE,
+        "Duplicate column mapping ID 1 assigned to both 'id' and 'amount'",
+    )
+    .await;
+    updated(
+        &app,
+        &mut h,
+        json!([enable, set_columns(vec![id("id"), amount("amount")])]),
+    )
+    .await;
+
+    let cases = [
+        (
+            json!([set_columns(vec![
+                json!({ "name": "id", "type": "long", "nullable": false, "metadata": { "delta.columnMapping.id": 1 } }),
+                amount("amount")
+            ])]),
+            "Column mapping is enabled but field 'id' lacks the delta.columnMapping.physicalName annotation",
+        ),
+        (
+            json!([set_columns(vec![
+                json!({ "name": "id", "type": "long", "nullable": false, "metadata": {} }),
+                json!({ "name": "amount", "type": "decimal(10,2)", "nullable": true, "metadata": {} })
+            ])]),
+            "Column mapping is enabled but field 'id' lacks the delta.columnMapping.physicalName annotation",
+        ),
+        (
+            json!([set_columns(vec![id("a"), amount("b")])]),
+            "Only a single top-level column rename is supported per request; this request renames 2 columns [amount->b, id->a]. Split them into separate ALTER statements.",
+        ),
+        (
+            json!([set_columns(vec![
+                id("key"),
+                mapped("amount", "decimal(10,2)", true, 2, "col-9")
+            ])]),
+            "set-columns: Field with ID 2 at path 'amount' has inconsistent physical names: 'amount' -> 'col-9'",
+        ),
+        (
+            json!([set_columns(vec![
+                id("id"),
+                amount("amount"),
+                mapped("other", "long", true, 3, "AMOUNT")
+            ])]),
+            "Duplicate column mapping physicalName 'AMOUNT' on top-level columns",
+        ),
+        (
+            json!([set_columns(vec![
+                json!({ "name": "id", "type": "long", "nullable": false,
+                    "metadata": { "delta.columnMapping.id": "1", "delta.columnMapping.physicalName": "id" } }),
+                amount("amount")
+            ])]),
+            "The delta.columnMapping.id annotation on field 'id' must be a number",
+        ),
+    ];
+    for (updates, message) in cases {
+        update_fails(&app, &h, updates, IVE, message).await;
+    }
+    // A rename with a type change or a new field needs checks that
+    // delta-kernel-rs lacks.
+    let cases = [
+        (
+            json!([set_columns(vec![
+                mapped("key", "string", false, 1, "id"),
+                amount("amount")
+            ])]),
+            "set-columns: changing the type of field key from long to string in a request that \
+             renames a column is not supported, as delta-kernel-rs cannot check type changes yet.",
+        ),
+        (
+            json!([set_columns(vec![
+                id("key"),
+                amount("amount"),
+                mapped("x", "long", true, 3, "col-x")
+            ])]),
+            "set-columns: adding field x in a request that renames a column is not supported",
+        ),
+    ];
+    for (updates, message) in cases {
+        update_fails(&app, &h, updates, "NotImplementedException", message).await;
+    }
+
+    // One rename keeps the identity, and a partition column follows it.
+    updated(
+        &app,
+        &mut h,
+        json!([{ "action": "set-partition-columns", "partition-columns": ["amount"] }]),
+    )
+    .await;
+    let r = updated(
+        &app,
+        &mut h,
+        json!([set_columns(vec![id("id"), amount("total")])]),
+    )
+    .await;
+    assert_eq!(
+        names(&r),
+        [
+            ("id".to_string(), "id".to_string()),
+            ("total".into(), "amount".into())
+        ]
+    );
+    assert_eq!(r["metadata"]["partition-columns"], json!(["total"]));
+    // A partition column that keeps its name while its identity moves: the
+    // rename comes with a new column, which a MANAGED table refuses first.
+    let moved = || {
+        json!([set_columns(vec![
+            id("id"),
+            mapped("total", "decimal(10,2)", true, 3, "col-3"),
+            mapped("c", "decimal(10,2)", true, 2, "amount")
+        ])])
+    };
+    update_fails(
+        &app,
+        &h,
+        moved(),
+        "NotImplementedException",
+        "set-columns: adding field total in a request that renames a column is not supported",
+    )
+    .await;
+    let mut ext = delta_external(&app, "cm_ext").await;
+    let ext_id = || mapped("id", "long", false, 1, "id");
+    updated(
+        &app,
+        &mut ext,
+        json!([
+            enable,
+            set_columns(vec![
+                ext_id(),
+                mapped("amount", "double", true, 2, "amount")
+            ])
+        ]),
+    )
+    .await;
+    updated(
+        &app,
+        &mut ext,
+        json!([{ "action": "set-partition-columns", "partition-columns": ["amount"] }]),
+    )
+    .await;
+    update_fails(&app, &ext, json!([set_columns(vec![
+        ext_id(), mapped("amount", "double", true, 3, "col-3"), mapped("c", "double", true, 2, "amount")])]), IVE,
+        "partition column 'amount' keeps its name, but its column mapping identity moved to 'c'; send set-partition-columns with this update.").await;
+    // Replaced under the same name with a new identity, as REPLACE TABLE
+    // sends it: the partition stays.
+    let r = updated(
+        &app,
+        &mut h,
+        json!([set_columns(vec![
+            id("id"),
+            mapped("total", "string", true, 3, "col-3")
+        ])]),
+    )
+    .await;
+    assert_eq!(r["metadata"]["partition-columns"], json!(["total"]));
+}
+
+#[tokio::test]
+async fn a_set_columns_replay_keeps_its_outcome() {
+    let app = managed_schema().await;
+    let mut h = delta_managed(&app, "replay", json!({})).await;
+    let plain = set_columns(vec![
+        json!({ "name": "id", "type": "long", "nullable": false, "metadata": {} }),
+        json!({ "name": "amount", "type": "decimal(10,2)", "nullable": true, "metadata": {} }),
+    ]);
+    let v1 = json!([add_commit(1, &staged(1)), plain]);
+    updated(&app, &mut h, v1.clone()).await;
+    updated(&app, &mut h, json!([add_commit(2, &staged(2)),
+        { "action": "set-properties", "updates": { "delta.columnMapping.mode": "name", "delta.columnMapping.maxColumnId": "2" } },
+        set_columns(vec![mapped("id", "long", false, 1, "id"), mapped("amount", "decimal(10,2)", true, 2, "amount")])])).await;
+    // The replay of v1 would now drop the identities; it is settled as a
+    // replay before the columns are checked.
+    let r = updated(&app, &mut h, v1).await;
+    assert_eq!(r["latest-table-version"], 2);
+    update_fails(
+        &app,
+        &h,
+        json!([add_commit(1, &other_staged(1)), plain]),
+        "CommitVersionConflictException",
+        &format!("Version 1 was accepted with commit file {}", staged(1)),
+    )
+    .await;
+    // A new version is still checked.
+    update_fails(
+        &app,
+        &h,
+        json!([add_commit(3, &staged(3)), plain]),
+        IVE,
+        "Column mapping is enabled but field 'id' lacks the delta.columnMapping.physicalName annotation",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn delta_create_checks_column_mapping_identities() {
+    let app = managed_schema().await;
+    let create = |name: &str, mode: &str, fields: serde_json::Value| {
+        let name = name.to_string();
+        let mode = mode.to_string();
+        let app = app.clone();
+        async move {
+            let staging = delta_staging(&app, &name).await;
+            let mut body = managed_request(&name, &staging);
+            body["columns"]["fields"] = fields;
+            body["properties"]["delta.columnMapping.mode"] = json!(mode);
+            app.oneshot(common::req_json(Method::POST, TABLES, body))
+                .await
+                .unwrap()
+        }
+    };
+    let cases = [
+        (
+            "missing",
+            "name",
+            json!([{ "name": "id", "type": "long", "nullable": false, "metadata": {} }]),
+            "Column mapping is enabled but field 'id' lacks the delta.columnMapping.physicalName annotation",
+        ),
+        (
+            "shared",
+            "id",
+            json!([
+                mapped("a", "long", true, 1, "p"),
+                mapped("b", "long", true, 2, "P")
+            ]),
+            "Duplicate column mapping physicalName 'P' on top-level columns",
+        ),
+        (
+            "unknown",
+            "foo",
+            json!([mapped("a", "long", true, 1, "p")]),
+            "Invalid column mapping mode: foo",
+        ),
+        (
+            "upper",
+            "Name",
+            json!([mapped("a", "long", true, 1, "p")]),
+            "Invalid column mapping mode: Name",
+        ),
+    ];
+    for (name, mode, fields, message) in cases {
+        let err = assert_delta_error(
+            create(name, mode, fields).await,
+            StatusCode::BAD_REQUEST,
+            IVE,
+        )
+        .await;
+        let got = err["message"].as_str().unwrap();
+        assert!(got.contains(message), "{got:?} should contain {message:?}");
+    }
+}
+
+#[tokio::test]
+async fn delta_drop_and_rename_refuse_other_formats() {
+    let app = managed_schema().await;
+    let resp = app
+        .clone()
+        .oneshot(common::req_json(
+            Method::POST,
+            "/tables",
+            json!({
+                "name": "pq", "catalog_name": "c", "schema_name": "s", "table_type": "EXTERNAL",
+                "data_source_format": "PARQUET", "storage_location": "s3://lake/pq",
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_status(resp, StatusCode::OK, "parquet").await;
+    for (method, path, body) in [
+        (Method::DELETE, format!("{TABLES}/pq"), None),
+        (
+            Method::POST,
+            format!("{TABLES}/pq/rename"),
+            Some(json!({ "new-name": "pq2" })),
+        ),
+    ] {
+        let request = match body {
+            Some(body) => common::req_json(method, &path, body),
+            None => req(method, &path),
+        };
+        let resp = app.clone().oneshot(request).await.unwrap();
+        let err = assert_delta_error(
+            resp,
+            StatusCode::BAD_REQUEST,
+            "UnsupportedTableFormatException",
+        )
+        .await;
+        assert_eq!(err["message"], "Table is not a Delta table: c.s.pq");
+    }
+    let resp = app
+        .clone()
+        .oneshot(req(Method::GET, "/tables/c.s.pq"))
+        .await
+        .unwrap();
+    assert_status(resp, StatusCode::OK, "the table is still there").await;
 }

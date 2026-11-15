@@ -246,7 +246,7 @@ async fn iceberg_compat_v2_tables_may_skip_deletion_vectors() {
             .await;
             assert_eq!(
                 err["message"],
-                "MANAGED table missing required reader-feature 'deletionVectors'."
+                "MANAGED table missing required writer-feature 'deletionVectors'."
             );
         }
     }

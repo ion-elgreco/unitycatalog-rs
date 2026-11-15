@@ -1467,7 +1467,8 @@ pub struct UpdateExternalLocation {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub comment: ::core::option::Option<::buffa::alloc::string::String>,
-    /// Name of the new credential that gives access to the path.
+    /// Name of the new credential that gives access to the path. It repairs an external location
+    /// whose credential was deleted with `force`.
     ///
     /// Field 5: `credential_name`
     #[serde(
@@ -1476,6 +1477,15 @@ pub struct UpdateExternalLocation {
         skip_serializing_if = "::core::option::Option::is_none"
     )]
     pub credential_name: ::core::option::Option<::buffa::alloc::string::String>,
+    /// The owner of the external location. Accepted for compatibility with the upstream API; the
+    /// owner does not change.
+    ///
+    /// Field 6: `owner`
+    #[serde(
+        rename = "owner",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub owner: ::core::option::Option<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -1489,6 +1499,7 @@ impl ::core::fmt::Debug for UpdateExternalLocation {
             .field("new_name", &self.new_name)
             .field("comment", &self.comment)
             .field("credential_name", &self.credential_name)
+            .field("owner", &self.owner)
             .finish()
     }
 }
@@ -1537,6 +1548,14 @@ impl UpdateExternalLocation {
         self.credential_name = Some(value.into());
         self
     }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::owner`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_owner(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.owner = Some(value.into());
+        self
+    }
 }
 
 impl ::buffa::DefaultInstance for UpdateExternalLocation {
@@ -1581,6 +1600,9 @@ impl ::buffa::Message for UpdateExternalLocation {
         if let Some(ref v) = self.credential_name {
             size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
         }
+        if let Some(ref v) = self.owner {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -1610,6 +1632,11 @@ impl ::buffa::Message for UpdateExternalLocation {
         }
         if let Some(ref v) = self.credential_name {
             ::buffa::encoding::Tag::new(5u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
+        }
+        if let Some(ref v) = self.owner {
+            ::buffa::encoding::Tag::new(6u32, ::buffa::encoding::WireType::LengthDelimited)
                 .encode(buf);
             ::buffa::types::encode_string(v, buf);
         }
@@ -1694,6 +1721,20 @@ impl ::buffa::Message for UpdateExternalLocation {
                     buf,
                 )?;
             }
+            6u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 6u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.owner
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -1708,6 +1749,7 @@ impl ::buffa::Message for UpdateExternalLocation {
         self.new_name = ::core::option::Option::None;
         self.comment = ::core::option::Option::None;
         self.credential_name = ::core::option::Option::None;
+        self.owner = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }

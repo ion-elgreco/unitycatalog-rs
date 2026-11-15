@@ -3987,6 +3987,15 @@ pub struct UpdateCredentialRequest {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_unset_message_field"
     )]
     pub gcp_service_account_key: ::buffa::MessageField<GcpServiceAccountKeyRequest>,
+    /// Username of the current owner of the credential. Accepted for compatibility with the
+    /// upstream API; the owner does not change.
+    ///
+    /// Field 9: `owner`
+    #[serde(
+        rename = "owner",
+        skip_serializing_if = "::core::option::Option::is_none"
+    )]
+    pub owner: ::core::option::Option<::buffa::alloc::string::String>,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -4003,6 +4012,7 @@ impl ::core::fmt::Debug for UpdateCredentialRequest {
             .field("azure_managed_identity", &self.azure_managed_identity)
             .field("gcp_service_account", &self.gcp_service_account)
             .field("gcp_service_account_key", &self.gcp_service_account_key)
+            .field("owner", &self.owner)
             .finish()
     }
 }
@@ -4030,6 +4040,14 @@ impl UpdateCredentialRequest {
     ///Sets [`Self::new_name`] to `Some(value)`, consuming and returning `self`.
     pub fn with_new_name(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
         self.new_name = Some(value.into());
+        self
+    }
+
+    #[must_use = "with_* setters return `self` by value; assign or chain the result"]
+    #[inline]
+    ///Sets [`Self::owner`] to `Some(value)`, consuming and returning `self`.
+    pub fn with_owner(mut self, value: impl Into<::buffa::alloc::string::String>) -> Self {
+        self.owner = Some(value.into());
         self
     }
 }
@@ -4100,6 +4118,9 @@ impl ::buffa::Message for UpdateCredentialRequest {
             __cache.set(__slot, inner_size);
             size += 1u32 + ::buffa::encoding::varint_len(inner_size as u64) as u32 + inner_size;
         }
+        if let Some(ref v) = self.owner {
+            size += 1u32 + ::buffa::types::string_encoded_len(v) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -4151,6 +4172,11 @@ impl ::buffa::Message for UpdateCredentialRequest {
                 .encode(buf);
             ::buffa::encoding::encode_varint(__cache.consume_next() as u64, buf);
             self.gcp_service_account_key.write_to(__cache, buf);
+        }
+        if let Some(ref v) = self.owner {
+            ::buffa::encoding::Tag::new(9u32, ::buffa::encoding::WireType::LengthDelimited)
+                .encode(buf);
+            ::buffa::types::encode_string(v, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -4275,6 +4301,20 @@ impl ::buffa::Message for UpdateCredentialRequest {
                     depth,
                 )?;
             }
+            9u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 9u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(
+                    self.owner
+                        .get_or_insert_with(::buffa::alloc::string::String::new),
+                    buf,
+                )?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -4292,6 +4332,7 @@ impl ::buffa::Message for UpdateCredentialRequest {
         self.azure_managed_identity = ::buffa::MessageField::none();
         self.gcp_service_account = ::buffa::MessageField::none();
         self.gcp_service_account_key = ::buffa::MessageField::none();
+        self.owner = ::core::option::Option::None;
         self.__buffa_unknown_fields.clear();
     }
 }

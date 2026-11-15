@@ -19,6 +19,9 @@ use delta_kernel::committer::{
 use delta_kernel::engine::arrow_conversion::TryIntoArrow as _;
 use delta_kernel::engine::arrow_data::ArrowEngineData;
 use delta_kernel::schema::{DataType, PrimitiveType, StructField, StructType};
+use delta_kernel::table_features::{
+    SET_TABLE_FEATURE_SUPPORTED_PREFIX, SET_TABLE_FEATURE_SUPPORTED_VALUE, TableFeature,
+};
 use delta_kernel::transaction::create_table::create_table as kernel_create_table;
 use delta_kernel::transaction::{CommitResult, UpdateTableOperation};
 use delta_kernel::{
@@ -32,13 +35,11 @@ use rand::rngs::ThreadRng;
 use uc_client::Client;
 use uc_client::models::credentials::v1::{PathOperation, TableOperation, TemporaryCredentials};
 use uc_client::models::delta::v1::DeltaCommitInfo;
-use uc_client::models::tables::v1::{
-    ColumnInfo, ColumnTypeName, DataSourceFormat, TableInfo, TableType,
-};
+use uc_client::models::tables::v1::{ColumnInfo, DataSourceFormat, TableInfo, TableType};
 use url::Url;
 
 use super::storage::{S3Store, directory_url, path_credentials, store_for, table_credentials};
-use crate::commands::columns::parse_columns;
+use crate::commands::columns::{basic_type, parse_columns};
 use crate::commands::options::{ThreePartName, wire_name};
 use crate::commands::table::{TableCreate, get_table};
 use crate::commands::{Context, upstream};
@@ -57,34 +58,17 @@ fn engine(
     Ok(DefaultEngineBuilder::new(store_for(url, credentials, s3)?).build())
 }
 
-/// Upstream `findBasicTypeFromString`: the Delta type of a column.
+/// The Delta type of a column: a basic type only, as upstream.
 fn data_type(column: &ColumnInfo) -> anyhow::Result<DataType> {
     let name = column.name.as_str();
     let type_name = column
         .type_name
         .ok_or_else(|| anyhow!("Column type is missing: {name}"))?;
-    Ok(match type_name.as_known() {
-        Some(ColumnTypeName::Int) => DataType::INTEGER,
-        Some(ColumnTypeName::String) => DataType::STRING,
-        Some(ColumnTypeName::Double) => DataType::DOUBLE,
-        Some(ColumnTypeName::Boolean) => DataType::BOOLEAN,
-        Some(ColumnTypeName::Long) => DataType::LONG,
-        Some(ColumnTypeName::Float) => DataType::FLOAT,
-        Some(ColumnTypeName::Short) => DataType::SHORT,
-        Some(ColumnTypeName::Byte) => DataType::BYTE,
-        Some(ColumnTypeName::Date) => DataType::DATE,
-        Some(ColumnTypeName::Timestamp) => DataType::TIMESTAMP,
-        Some(ColumnTypeName::TimestampNtz) => DataType::TIMESTAMP_NTZ,
-        Some(ColumnTypeName::Binary) => DataType::BINARY,
-        Some(ColumnTypeName::Decimal) => {
-            let precision = column.type_precision.filter(|p| *p > 0);
-            DataType::decimal(
-                precision.map_or(10, |p| p as u8),
-                column.type_scale.map_or(0, |s| s as u8),
-            )?
-        }
-        _ => bail!("Unsupported basic data type: {}", wire_name(&type_name)),
-    })
+    let data_type = match type_name.as_known() {
+        Some(known) => basic_type(known, column.type_precision, column.type_scale)?,
+        None => None,
+    };
+    data_type.ok_or_else(|| anyhow!("Unsupported basic data type: {}", wire_name(&type_name)))
 }
 
 fn schema(columns: &[ColumnInfo]) -> anyhow::Result<Arc<StructType>> {
@@ -247,11 +231,15 @@ fn create_delta_table(
         return Ok(None);
     };
     make_local_directory(&url)?;
-    table_properties.insert("delta.feature.catalogManaged".into(), "supported".into());
-    table_properties.insert(
-        "delta.feature.vacuumProtocolCheck".into(),
-        "supported".into(),
-    );
+    for feature in [
+        TableFeature::CatalogManaged,
+        TableFeature::VacuumProtocolCheck,
+    ] {
+        table_properties.insert(
+            feature_key(&feature),
+            SET_TABLE_FEATURE_SUPPORTED_VALUE.into(),
+        );
+    }
     table_properties.insert(UC_TABLE_ID.into(), table_id.clone());
     let committer = UcCommitter {
         client,
@@ -288,14 +276,15 @@ fn create_delta_table(
 /// Write version 0 of a Delta table at `url`, unless one is there; true
 /// when this call wrote it.
 fn create_if_missing(engine: &Kernel, url: &Url, schema: Arc<StructType>) -> anyhow::Result<bool> {
-    if has_delta_log(engine, url)? {
-        return Ok(false);
-    }
     make_local_directory(url)?;
-    let result = kernel_create_table(url.as_str(), schema, ENGINE_INFO, true)
-        .build(engine, Box::new(FileSystemCommitter::new()))?
-        .commit(engine)?;
-    match result {
+    let transaction = match kernel_create_table(url.as_str(), schema, ENGINE_INFO, true)
+        .build(engine, Box::new(FileSystemCommitter::new()))
+    {
+        Ok(transaction) => transaction,
+        Err(KernelError::TableAlreadyExistsAtPath(_)) => return Ok(false),
+        Err(e) => return Err(e.into()),
+    };
+    match transaction.commit(engine)? {
         CommitResult::Committed(_) => Ok(true),
         CommitResult::Retryable(retry) => Err(retry.error.into()),
         // Another writer made version 0 first.
@@ -317,7 +306,7 @@ fn check_columns(engine: &Kernel, url: &Url, schema: &StructType) -> anyhow::Res
     if columns(&there) != columns(schema) {
         let theirs: Vec<String> = there
             .fields()
-            .map(|f| format!("{} {}", f.name(), type_name(f.data_type())))
+            .map(|f| format!("{} {}", f.name(), f.data_type()))
             .collect();
         bail!(
             "the Delta table there has other columns: {}",
@@ -375,12 +364,25 @@ fn load_snapshot(
     builder.build(engine)
 }
 
-/// Whether the table's properties mark it catalog-managed.
+/// The table property that turns on support for `feature`.
+fn feature_key(feature: &TableFeature) -> String {
+    format!("{SET_TABLE_FEATURE_SUPPORTED_PREFIX}{feature}")
+}
+
+/// Whether the table's properties mark it catalog-managed, with either
+/// feature name the kernel reads as catalog-managed.
 fn is_catalog_managed(info: &TableInfo) -> bool {
-    info.properties
-        .get("delta.feature.catalogManaged")
-        .map(String::as_str)
-        == Some("supported")
+    [
+        TableFeature::CatalogManaged,
+        TableFeature::CatalogOwnedPreview,
+    ]
+    .iter()
+    .any(|feature| {
+        info.properties
+            .get(&feature_key(feature))
+            .map(String::as_str)
+            == Some(SET_TABLE_FEATURE_SUPPORTED_VALUE)
+    })
 }
 
 struct TableTarget {
@@ -457,7 +459,7 @@ fn read_rows(target: TableTarget, max_results: usize) -> anyhow::Result<String> 
         .iter()
         .zip(snapshot.schema().fields())
         .map(|(field, column)| {
-            let header = format!("{}({})", column.name(), type_name(column.data_type()));
+            let header = format!("{}({})", column.name(), column.data_type());
             field.as_ref().clone().with_name(header)
         })
         .collect();
@@ -475,14 +477,6 @@ fn read_rows(target: TableTarget, max_results: usize) -> anyhow::Result<String> 
     }
     let table = pretty_format_batches_with_schema(Arc::new(ArrowSchema::new(headers)), &batches)?;
     Ok(table.to_string())
-}
-
-/// The kernel's name of a type: `integer`, `decimal(10,2)`, ….
-fn type_name(data_type: &DataType) -> String {
-    match data_type {
-        DataType::Primitive(p) => p.to_string(),
-        other => serde_json::to_string(other).unwrap_or_default(),
-    }
 }
 
 pub async fn write_table(c: &Context<'_>, full_name: &str) -> anyhow::Result<String> {
@@ -551,15 +545,6 @@ fn make_local_directory(url: &Url) -> anyhow::Result<()> {
         std::fs::create_dir_all(&path).with_context(|| format!("Creating {}", path.display()))?;
     }
     Ok(())
-}
-
-fn has_delta_log(engine: &dyn Engine, url: &Url) -> anyhow::Result<bool> {
-    let log = url.join("_delta_log/")?;
-    match engine.storage_handler().list_from(&log)?.next() {
-        Some(Ok(_)) => Ok(true),
-        None | Some(Err(KernelError::FileNotFound(_))) => Ok(false),
-        Some(Err(e)) => Err(e.into()),
-    }
 }
 
 /// Random values as upstream's `generateRandomValues`.

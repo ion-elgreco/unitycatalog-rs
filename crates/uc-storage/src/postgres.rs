@@ -427,6 +427,7 @@ fn map_err(e: tokio_postgres::Error) -> StorageError {
         SqlState::T_R_SERIALIZATION_FAILURE
         | SqlState::T_R_DEADLOCK_DETECTED
         | SqlState::LOCK_NOT_AVAILABLE => StorageError::Busy(message),
+        SqlState::PROGRAM_LIMIT_EXCEEDED => StorageError::TooLarge(message),
         _ => StorageError::Other(message),
     }
 }

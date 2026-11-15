@@ -242,6 +242,33 @@ pub fn signed(method: Method, path: &str, body: Option<Value>, token: &str) -> R
     request
 }
 
+pub const ZERO_UUID: &str = "00000000-0000-0000-0000-000000000000";
+pub const OTHER_UUID: &str = "11111111-1111-1111-1111-111111111111";
+
+/// The staged commit file name of `version`: `<version>.<uuid>.json`.
+pub fn staged(version: i64) -> String {
+    format!("{version:020}.{ZERO_UUID}.json")
+}
+
+/// Another writer's staged commit file name of `version`.
+pub fn other_staged(version: i64) -> String {
+    format!("{version:020}.{OTHER_UUID}.json")
+}
+
+/// Publish `_delta_log/<v>.json` for each version under the local table
+/// `location`, as a client does before it reports a backfill.
+pub fn publish(location: &str, versions: std::ops::RangeInclusive<i64>) {
+    let log = std::path::Path::new(location.strip_prefix("file://").unwrap()).join("_delta_log");
+    std::fs::create_dir_all(&log).unwrap();
+    for v in versions {
+        std::fs::write(
+            log.join(format!("{v:020}.json")),
+            format!("delta-commit-v{v}\n"),
+        )
+        .unwrap();
+    }
+}
+
 /// A fresh local directory to use as a storage root. Kept after the test
 /// (the OS cleans up its temp dir).
 pub fn temp_storage_root() -> String {

@@ -31,6 +31,7 @@ use object_store::{
 use percent_encoding::percent_decode_str;
 use serde::Deserialize;
 use tokio::io::AsyncWriteExt;
+use tracing::warn;
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 
@@ -47,7 +48,7 @@ use crate::{
         extract::{Json, Path, Query},
     },
     server::state::AppState,
-    storage::{Opened, delete_all, vendor::VendOp},
+    storage::{Opened, delete_all, storage_failed, vendor::VendOp},
 };
 
 /// The most entries of a page, and the size of a page without
@@ -350,9 +351,10 @@ fn storage_error(path: &FilesPath, e: &object_store::Error) -> Error {
         }
         object_store::Error::PermissionDenied { .. }
         | object_store::Error::Unauthenticated { .. } => {
-            Error::permission_denied(format!("The storage refused access to {path}: {e}"))
+            warn!(%path, cause = %e, "the storage refused access");
+            Error::permission_denied(format!("The storage refused access to {path}."))
         }
-        e => Error::internal(format!("Storage error on {path}: {e}")),
+        e => storage_failed(path, e),
     }
 }
 
@@ -415,7 +417,7 @@ async fn open(
         .stores
         .open(&state.metastore, &state.vendor, &location, op)
         .await
-        .map_err(|e| Error::internal(format!("Cannot open the storage of {path}: {}", e.0)))?;
+        .map_err(|e| e.to_error(&path))?;
     let key = path
         .rest
         .iter()
@@ -855,7 +857,7 @@ async fn write_body(target: &Target, body: Body) -> Result<(), Error> {
             .and_then(|inner| inner.downcast_ref::<object_store::Error>())
         {
             Some(inner) => target.error(inner),
-            None => Error::internal(format!("Storage error on {}: {e}", target.path)),
+            None => storage_failed(&target.path, e),
         }
     })
 }
@@ -914,6 +916,34 @@ mod tests {
         ] {
             assert!(FilesPath::parse(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn store_errors_do_not_reach_the_client() {
+        let path = FilesPath::parse("Volumes/c/s/v/a.txt").unwrap();
+        let source = || "https://acct.blob.core.windows.net said no".into();
+        let err = storage_error(
+            &path,
+            &object_store::Error::Generic {
+                store: "MicrosoftAzure",
+                source: source(),
+            },
+        );
+        assert_eq!(
+            (err.code(), err.message()),
+            (uc_common::ErrorCode::Internal, "Failed to access storage.")
+        );
+        let err = storage_error(
+            &path,
+            &object_store::Error::PermissionDenied {
+                path: "a.txt".into(),
+                source: source(),
+            },
+        );
+        assert_eq!(
+            err.message(),
+            "The storage refused access to /Volumes/c/s/v/a.txt."
+        );
     }
 
     #[test]

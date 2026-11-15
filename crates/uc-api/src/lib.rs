@@ -10,7 +10,6 @@ pub mod catalog;
 pub mod credential;
 pub mod delta;
 pub mod delta_api;
-pub mod delta_types;
 pub mod external_location;
 pub mod files;
 pub mod function;

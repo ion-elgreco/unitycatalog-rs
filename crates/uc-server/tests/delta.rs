@@ -9,9 +9,9 @@ use axum::{
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use common::{assert_error, assert_status, json_body, req, req_json};
-
-const ZERO_UUID: &str = "00000000-0000-0000-0000-000000000000";
+use common::{
+    ZERO_UUID, assert_error, assert_status, json_body, other_staged, req, req_json, staged,
+};
 
 /// An app with a MANAGED Delta table `c.s.t` in a temp directory.
 async fn managed_table() -> (Router, Value) {
@@ -78,7 +78,8 @@ fn uri(table: &Value) -> &str {
     table["storage_location"].as_str().unwrap()
 }
 
-/// Upstream `createCommitObject`: file `file<v>`, timestamps `1700000000 + v`,
+/// Upstream `createCommitObject`, with the file named as Delta names it
+/// ([`staged`]): timestamps `1700000000 + v`,
 /// and metadata that carries the table id property.
 fn commit(table: &Value, version: i64) -> Value {
     let ts = 1_700_000_000 + version;
@@ -86,7 +87,7 @@ fn commit(table: &Value, version: i64) -> Value {
         "table_id": id(table),
         "table_uri": uri(table),
         "commit_info": {
-            "version": version, "file_name": format!("file{version}"), "file_size": 100,
+            "version": version, "file_name": staged(version), "file_size": 100,
             "timestamp": ts, "file_modification_timestamp": ts,
         },
         "metadata": { "properties": { "properties": { "io.unitycatalog.tableId": id(table) } } },
@@ -175,15 +176,15 @@ async fn basic_coordinated_commits() {
     assert_eq!(
         resp["commits"][0],
         json!({
-            "version": 1, "file_name": "file1", "file_size": 100,
+            "version": 1, "file_name": staged(1), "file_size": 100,
             "timestamp": 1_700_000_001, "file_modification_timestamp": 1_700_000_001,
         })
     );
 
     let mut other = commit(&t, 1);
-    other["commit_info"]["file_name"] = json!("some_other_filename");
+    other["commit_info"]["file_name"] = json!(other_staged(1));
     fails(&app, &other, StatusCode::CONFLICT, "COMMIT_VERSION_CONFLICT",
-        "Commit version already accepted. Version 1 was accepted with commit file file1, but the request carried some_other_filename.").await;
+        &format!("Commit version already accepted. Version 1 was accepted with commit file {}, but the request carried {}.", staged(1), other_staged(1))).await;
     fails(
         &app,
         &commit(&t, 3),
@@ -227,6 +228,7 @@ async fn basic_coordinated_commits() {
     assert_eq!(commits(&app, &t, 2, Some(2)).await, (3, vec![2]));
 
     // Commit 4 and backfill up to 1 in one request.
+    common::publish(uri(&t), 1..=4);
     let mut c4 = commit(&t, 4);
     c4["latest_backfilled_version"] = json!(1);
     ok(&app, &c4).await;
@@ -235,37 +237,14 @@ async fn basic_coordinated_commits() {
     assert_eq!(commits(&app, &t, 0, None).await, (4, vec![4, 3, 2]));
     ok(&app, &backfill(&t, 4)).await;
     assert_eq!(commits(&app, &t, 0, None).await, (4, vec![]));
-    // The backfilled newest commit stays as a marker, so its replay is
-    // still recognized by name.
+    // Backfilled commits are kept, so a replay is still answered by name,
+    // with no staged file to read.
     ok(&app, &commit(&t, 4)).await;
-
-    // Purged versions are settled by comparing the staged file with the
-    // published one.
-    write(
-        &t,
-        "_delta_log/00000000000000000002.json",
-        "delta-commit-v2\n",
-    );
-    write(&t, "_delta_log/_staged_commits/file2", "delta-commit-v2\n");
     ok(&app, &commit(&t, 2)).await;
-    write(&t, "_delta_log/_staged_commits/file2", "different\n");
-    fails(
-        &app,
-        &commit(&t, 2),
-        StatusCode::CONFLICT,
-        "COMMIT_VERSION_CONFLICT",
-        "Commit version already accepted. Version 2 is already published.",
-    )
-    .await;
-    // Nothing published for v3: unknown, so the client should retry.
-    fails(
-        &app,
-        &commit(&t, 3),
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "COMMIT_STATE_UNKNOWN",
-        "retry the request",
-    )
-    .await;
+    let mut other2 = commit(&t, 2);
+    other2["commit_info"]["file_name"] = json!(other_staged(2));
+    fails(&app, &other2, StatusCode::CONFLICT, "COMMIT_VERSION_CONFLICT",
+        &format!("Commit version already accepted. Version 2 was accepted with commit file {}, but the request carried {}.", staged(2), other_staged(2))).await;
 
     ok(&app, &commit(&t, 5)).await;
     assert_eq!(commits(&app, &t, 0, None).await, (5, vec![5]));
@@ -356,6 +335,14 @@ async fn invalid_requests_follow_upstream() {
         (
             bad(&|c| c["commit_info"]["file_name"] = json!("../1.json")),
             "Field must be a single file name without path separators: file_name",
+        ),
+        (
+            bad(&|c| c["commit_info"]["file_name"] = json!("file1")),
+            "Field must be a staged commit file name <version>.<uuid>.json of version 1: file_name",
+        ),
+        (
+            bad(&|c| c["commit_info"]["file_name"] = json!(staged(2))),
+            "Field must be a staged commit file name <version>.<uuid>.json of version 1: file_name",
         ),
         (
             bad(&|c| c["commit_info"]["file_size"] = json!(0)),
@@ -498,6 +485,7 @@ async fn backfills_at_different_versions() {
         "metadata shouldn't be set for backfill only commit",
     )
     .await;
+    common::publish(uri(&t), 1..=5);
     ok(&app, &backfill(&t, 2)).await;
     assert_eq!(commits(&app, &t, 0, None).await, (5, vec![5, 4, 3]));
 
@@ -550,6 +538,7 @@ async fn at_most_ten_unbackfilled_commits() {
     )
     .await;
 
+    common::publish(uri(&t), 1..=14);
     ok(&app, &backfill(&t, 6)).await;
     assert_eq!(commits(&app, &t, 0, None).await, (10, vec![10, 9, 8, 7]));
     for v in 11..=14 {
@@ -564,6 +553,126 @@ async fn at_most_ten_unbackfilled_commits() {
     for v in 15..=24 {
         ok(&app, &commit(&t, v)).await;
     }
+}
+
+#[tokio::test]
+async fn untracked_versions_are_settled_by_file_contents() {
+    let (app, t) = managed_table().await;
+    // The server first sees the table at version 3, so versions 1 and 2
+    // were never tracked.
+    ok(&app, &commit(&t, 3)).await;
+    common::publish(uri(&t), 2..=2);
+    let staged_file = format!("_delta_log/_staged_commits/{}", staged(2));
+    write(&t, &staged_file, "delta-commit-v2\n");
+    ok(&app, &commit(&t, 2)).await;
+    write(&t, &staged_file, "different\n");
+    fails(
+        &app,
+        &commit(&t, 2),
+        StatusCode::CONFLICT,
+        "COMMIT_VERSION_CONFLICT",
+        "Commit version already accepted. Version 2 is already published.",
+    )
+    .await;
+    // Nothing published for v1: unknown, so the client should retry.
+    fails(
+        &app,
+        &commit(&t, 1),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "COMMIT_STATE_UNKNOWN",
+        "retry the request",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn a_backfill_needs_the_published_files() {
+    let (app, t) = managed_table().await;
+    for v in 1..=3 {
+        ok(&app, &commit(&t, v)).await;
+    }
+    let missing = format!(
+        "Cannot backfill through version 2: published commit file is missing: {}/_delta_log/00000000000000000001.json",
+        uri(&t).trim_end_matches('/')
+    );
+    fails(
+        &app,
+        &backfill(&t, 2),
+        StatusCode::BAD_REQUEST,
+        "INVALID_ARGUMENT",
+        &missing,
+    )
+    .await;
+    // Nothing is written, not even the commit of a combined request.
+    let mut c4 = commit(&t, 4);
+    c4["latest_backfilled_version"] = json!(2);
+    fails(
+        &app,
+        &c4,
+        StatusCode::BAD_REQUEST,
+        "INVALID_ARGUMENT",
+        &missing,
+    )
+    .await;
+    assert_eq!(commits(&app, &t, 0, None).await, (3, vec![3, 2, 1]));
+    // Only the versions not yet backfilled are checked.
+    common::publish(uri(&t), 2..=2);
+    fails(
+        &app,
+        &backfill(&t, 2),
+        StatusCode::BAD_REQUEST,
+        "INVALID_ARGUMENT",
+        &missing,
+    )
+    .await;
+    common::publish(uri(&t), 1..=1);
+    ok(&app, &c4).await;
+    assert_eq!(commits(&app, &t, 0, None).await, (4, vec![4, 3]));
+    // Log cleanup may remove the file of a backfilled version.
+    std::fs::remove_file(
+        std::path::Path::new(uri(&t).strip_prefix("file://").unwrap())
+            .join("_delta_log/00000000000000000001.json"),
+    )
+    .unwrap();
+    common::publish(uri(&t), 3..=3);
+    ok(&app, &backfill(&t, 3)).await;
+    assert_eq!(commits(&app, &t, 0, None).await, (4, vec![4]));
+    // A version that is already backfilled needs no file.
+    ok(&app, &backfill(&t, 1)).await;
+}
+
+#[tokio::test]
+async fn backfilled_commits_are_kept_for_100_versions() {
+    let (app, t) = managed_table().await;
+    ok(&app, &commit(&t, 1)).await;
+    for v in 2..=151 {
+        common::publish(uri(&t), v - 1..=v - 1);
+        let mut c = commit(&t, v);
+        c["latest_backfilled_version"] = json!(v - 1);
+        ok(&app, &c).await;
+    }
+    assert_eq!(commits(&app, &t, 0, None).await, (151, vec![151]));
+    // Backfilled through 150: version 50 is kept and answered by name.
+    ok(&app, &commit(&t, 50)).await;
+    let mut other = commit(&t, 50);
+    other["commit_info"]["file_name"] = json!(other_staged(50));
+    fails(
+        &app,
+        &other,
+        StatusCode::CONFLICT,
+        "COMMIT_VERSION_CONFLICT",
+        &format!("was accepted with commit file {}", staged(50)),
+    )
+    .await;
+    // Version 49 is gone, so only its files can tell; no staged file here.
+    fails(
+        &app,
+        &commit(&t, 49),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "COMMIT_STATE_UNKNOWN",
+        "retry the request",
+    )
+    .await;
 }
 
 #[tokio::test]
