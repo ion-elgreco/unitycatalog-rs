@@ -24,7 +24,10 @@
 //! This module holds the backend-free part: request validation and the
 //! plan for one request against the tracked commits.
 
+use delta_kernel::LogPath;
+use delta_kernel::path::ParsedLogPath;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use uc_api::{
     DeltaCommit, DeltaCommitInfo, DeltaGetCommits, DeltaGetCommitsResponse, DeltaMetadata,
@@ -236,16 +239,33 @@ pub fn validate_commit_info(info: &DeltaCommitInfo) -> Result<()> {
     }
     // The server reads `_delta_log/_staged_commits/<file_name>`, so the name
     // must not leave that directory.
-    if file_name.contains(['/', '\\']) || file_name == "." || file_name == ".." {
+    if file_name.contains(['/', '\\']) {
         return Err(invalid(
             "Field must be a single file name without path separators: file_name",
         ));
+    }
+    if staged_commit_version(file_name) != info.version.and_then(|v| u64::try_from(v).ok()) {
+        return Err(invalid(format!(
+            "Field must be a staged commit file name <version>.<uuid>.json of version {}: \
+             file_name",
+            info.version.unwrap_or_default()
+        )));
     }
     positive(info.file_size, "file_size")?;
     positive(
         info.file_modification_timestamp,
         "file_modification_timestamp",
     )
+}
+
+/// The version of a staged commit file name, `<version>.<uuid>.json`, as
+/// the kernel reads it from the log tail. The kernel parses a name only
+/// inside a table URL; any table root does. A name that the URL changes,
+/// such as one with `#`, is refused.
+fn staged_commit_version(file_name: &str) -> Option<u64> {
+    let root = Url::parse("file:///table/").ok()?;
+    let parsed = ParsedLogPath::from(LogPath::staged_commit(root, file_name, 0, 0).ok()?);
+    (parsed.filename == file_name).then_some(parsed.version)
 }
 
 /// Upstream `validateTable`: only MANAGED Delta tables with a location take
@@ -718,5 +738,24 @@ mod tests {
             published_path("s3://b/t/", 7),
             "s3://b/t/_delta_log/00000000000000000007.json"
         );
+    }
+
+    #[test]
+    fn staged_commit_names_carry_their_version() {
+        let uuid = "3a0d65cd-4a56-49a8-937b-95f9e3ee90e5";
+        let name = format!("00000000000000000010.{uuid}.json");
+        assert_eq!(staged_commit_version(&name), Some(10));
+        for name in [
+            "00000000000000000010.json".to_string(),
+            format!("10.{uuid}.json"),
+            format!("+0000000000000000010.{uuid}.json"),
+            "00000000000000000010.not-a-uuid.json".to_string(),
+            format!("00000000000000000010.{uuid}.parquet"),
+            format!("00000000000000000010.{uuid}.json#x"),
+            format!("00000000000000000010.{uuid}.json?x"),
+            "..".to_string(),
+        ] {
+            assert_eq!(staged_commit_version(&name), None, "{name}");
+        }
     }
 }

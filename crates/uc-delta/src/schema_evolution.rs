@@ -11,13 +11,12 @@
 use std::collections::HashMap;
 
 use delta_kernel::schema::diff::{FieldChangeType, FieldUpdate, SchemaDiff};
-use delta_kernel::schema::{MetadataValue, StructField, StructType};
+use delta_kernel::schema::{ColumnMetadataKey, MetadataValue, StructField, StructType};
 use serde_json::Value;
 
 use uc_api::ColumnInfo;
 use uc_common::{Error, Result, SecurablePropertiesMap};
 
-use crate::column_mapping::{PHYSICAL_NAME, column_id};
 use crate::fields::{kernel_message, nested_fields};
 use crate::table::struct_field;
 use crate::unsupported_changes;
@@ -119,11 +118,10 @@ fn keeps_an_id_under_a_new_identity(
         .any(|(id, identity)| current.get(id).is_some_and(|c| c != identity))
 }
 
-fn collect_identities(field: &StructField, by_id: &mut HashMap<i32, Identity>) {
-    if let Some(id) = column_id(field) {
+fn collect_identities(field: &StructField, by_id: &mut HashMap<i64, Identity>) {
+    if let Some(id) = field.column_mapping_id() {
         let physical = field
-            .metadata()
-            .get(PHYSICAL_NAME)
+            .get_config_value(&ColumnMetadataKey::ColumnMappingPhysicalName)
             .filter(|v| **v != MetadataValue::Other(Value::Null))
             .cloned();
         by_id.insert(id, (field.name().clone(), physical));

@@ -49,10 +49,10 @@ pub fn kernel_fields(fields: &[CheckedField]) -> Vec<StructField> {
 }
 
 /// The message of a kernel error, without the kernel's prefix for schema
-/// errors.
+/// and protocol errors.
 pub(crate) fn kernel_message(error: KernelError) -> String {
     match error {
-        KernelError::Schema(message) => message,
+        KernelError::Schema(message) | KernelError::InvalidProtocol(message) => message,
         error => error.to_string(),
     }
 }

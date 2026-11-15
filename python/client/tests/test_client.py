@@ -811,7 +811,13 @@ def test_delta_commits(uc: Calls, schema: tuple[str, str]) -> None:
     assert (commits.commits, commits.latest_table_version) == ([], 0)
 
     now = int(time.time() * 1000)
-    commit_info = DeltaCommitInfo(1, now, "00000000000000000001.uuid.json", 10, now)
+    commit_info = DeltaCommitInfo(
+        1,
+        now,
+        "00000000000000000001.00000000-0000-0000-0000-000000000000.json",
+        10,
+        now,
+    )
     assert (
         uc.commit_delta(table.table_id, table.storage_location, commit_info=commit_info)
         is None

@@ -3,12 +3,12 @@
 
 use std::sync::LazyLock;
 
-use delta_kernel::schema::PrimitiveType;
+use delta_kernel::schema::{DataType, PrimitiveType, StructField};
 use regex::Regex;
 use uc_client::models::functions::v1::FunctionParameterInfo;
 use uc_client::models::tables::v1::{ColumnInfo, ColumnTypeName};
 
-use super::options::from_wire;
+use super::options::{from_wire, wire_name};
 
 /// Upstream's `ColumnTypeName` values.
 pub const TYPE_NAMES: &[&str] = &[
@@ -55,16 +55,53 @@ pub fn type_text(type_name: &str) -> String {
     }
 }
 
-/// The Spark JSON type: `INT` is `integer`.
-fn json_type(type_name: &str) -> String {
-    match type_name {
-        "INT" => "integer".into(),
-        other => other.to_lowercase(),
-    }
+/// Upstream `findBasicTypeFromString`: the Delta type of a basic type,
+/// none for the others. A `DECIMAL` without a precision is `decimal(10,0)`.
+pub fn basic_type(
+    type_name: ColumnTypeName,
+    precision: Option<i32>,
+    scale: Option<i32>,
+) -> anyhow::Result<Option<DataType>> {
+    Ok(Some(match type_name {
+        ColumnTypeName::Int => DataType::INTEGER,
+        ColumnTypeName::String => DataType::STRING,
+        ColumnTypeName::Double => DataType::DOUBLE,
+        ColumnTypeName::Boolean => DataType::BOOLEAN,
+        ColumnTypeName::Long => DataType::LONG,
+        ColumnTypeName::Float => DataType::FLOAT,
+        ColumnTypeName::Short => DataType::SHORT,
+        ColumnTypeName::Byte => DataType::BYTE,
+        ColumnTypeName::Date => DataType::DATE,
+        ColumnTypeName::Timestamp => DataType::TIMESTAMP,
+        ColumnTypeName::TimestampNtz => DataType::TIMESTAMP_NTZ,
+        ColumnTypeName::Binary => DataType::BINARY,
+        ColumnTypeName::Decimal => DataType::decimal(
+            precision.filter(|p| *p > 0).map_or(10, |p| p as u8),
+            scale.map_or(0, |s| s as u8),
+        )?,
+        _ => return Ok(None),
+    }))
 }
 
-fn type_json(name: &str, json_type: &str) -> String {
-    format!("{{\"name\":\"{name}\",\"type\":\"{json_type}\",\"nullable\":true,\"metadata\":{{}}}}")
+/// The Spark JSON of a nullable field, written by the kernel. A type
+/// without a Delta type, such as a bare `ARRAY`, gets its name in lower
+/// case.
+fn type_json(
+    name: &str,
+    type_name: ColumnTypeName,
+    precision: Option<i32>,
+    scale: Option<i32>,
+) -> anyhow::Result<String> {
+    if let Some(data_type) = basic_type(type_name, precision, scale)? {
+        return Ok(serde_json::to_string(&StructField::nullable(
+            name, data_type,
+        ))?);
+    }
+    let type_name = wire_name(&type_name).to_lowercase();
+    let field = serde_json::json!({
+        "name": name, "type": type_name, "nullable": true, "metadata": {}
+    });
+    Ok(field.to_string())
 }
 
 /// Upstream's `(\w+)\s+(\w+)(?:\(([^)]+)\)|(?<=(?i:decimal))\s*\(([^)]*)\))?`:
@@ -130,7 +167,7 @@ pub fn parse_columns(text: &str) -> anyhow::Result<Vec<ColumnInfo>> {
         let (precision, scale, suffix) = precision_and_scale(decimal, params).map_err(invalid)?;
         columns.push(ColumnInfo {
             type_text: Some(format!("{}{suffix}", type_text(&type_name))),
-            type_json: type_json(name, &format!("{}{suffix}", json_type(&type_name))),
+            type_json: type_json(name, column_type, precision, scale)?,
             name: name.to_string(),
             type_name: Some(column_type.into()),
             type_precision: precision,
@@ -160,7 +197,7 @@ pub fn parse_input_params(text: &str) -> anyhow::Result<Vec<FunctionParameterInf
         parameters.push(FunctionParameterInfo {
             name: name.to_string(),
             type_text: type_text(&type_name),
-            type_json: Some(type_json(name, &json_type(&type_name))),
+            type_json: Some(type_json(name, parameter_type, None, None)?),
             type_name: parameter_type.into(),
             position: Some(position as i32),
             ..Default::default()
@@ -324,5 +361,16 @@ mod tests {
         assert_eq!(params[1].type_name, ColumnTypeName::String);
         assert_eq!(params[1].position, Some(1));
         assert!(parse_input_params("a").is_err());
+        // A type without a Delta type keeps its name; the JSON escapes the
+        // name.
+        let params = parse_input_params(r#"a"b ARRAY, d DECIMAL"#).unwrap();
+        assert_eq!(
+            params[0].type_json.as_deref(),
+            Some(r#"{"name":"a\"b","type":"array","nullable":true,"metadata":{}}"#)
+        );
+        assert_eq!(
+            params[1].type_json.as_deref(),
+            Some(r#"{"name":"d","type":"decimal(10,0)","nullable":true,"metadata":{}}"#)
+        );
     }
 }

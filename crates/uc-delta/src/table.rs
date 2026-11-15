@@ -158,14 +158,15 @@ pub fn create_table_request(
     let client_properties = req.properties.clone().unwrap_or_default();
     // EXTERNAL tables mirror what the client wrote; MANAGED ones must meet
     // the contract.
-    if table_type == TableType::Managed {
-        contract::validate(
+    let protocol = match table_type {
+        TableType::Managed => Some(contract::validate(
             req.protocol.as_ref(),
             req.domain_metadata.as_ref(),
             &client_properties,
             allow_missing_dv,
-        )?;
-    }
+        )?),
+        _ => None,
+    };
     contract::validate_uniform_consistency(&client_properties, req.uniform.is_some())?;
     let uniform = crate::uniform::from_delta_api(req.uniform.as_ref())?;
     crate::uniform::validate_create(uniform.as_ref(), &NormalizedUrl::parse(&location)?)?;
@@ -175,6 +176,14 @@ pub fn create_table_request(
         &mut columns,
         req.partition_columns.as_deref().unwrap_or_default(),
     )?;
+    if let Some(protocol) = protocol {
+        contract::validate_table_configuration(
+            protocol,
+            &fields::kernel_fields(&fields),
+            partition_columns(&columns),
+            &client_properties,
+        )?;
+    }
 
     // Upstream `buildStoredProperties`: client properties, overlaid with the
     // protocol and domain-metadata projections and the snapshot stamps.

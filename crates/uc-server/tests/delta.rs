@@ -12,6 +12,17 @@ use tower::ServiceExt;
 use common::{assert_error, assert_status, json_body, req, req_json};
 
 const ZERO_UUID: &str = "00000000-0000-0000-0000-000000000000";
+const OTHER_UUID: &str = "11111111-1111-1111-1111-111111111111";
+
+/// The staged commit file name of `version`: `<version>.<uuid>.json`.
+fn staged(version: i64) -> String {
+    format!("{version:020}.{ZERO_UUID}.json")
+}
+
+/// Another writer's staged commit file name of `version`.
+fn other_staged(version: i64) -> String {
+    format!("{version:020}.{OTHER_UUID}.json")
+}
 
 /// An app with a MANAGED Delta table `c.s.t` in a temp directory.
 async fn managed_table() -> (Router, Value) {
@@ -78,7 +89,8 @@ fn uri(table: &Value) -> &str {
     table["storage_location"].as_str().unwrap()
 }
 
-/// Upstream `createCommitObject`: file `file<v>`, timestamps `1700000000 + v`,
+/// Upstream `createCommitObject`, with the file named as Delta names it
+/// ([`staged`]): timestamps `1700000000 + v`,
 /// and metadata that carries the table id property.
 fn commit(table: &Value, version: i64) -> Value {
     let ts = 1_700_000_000 + version;
@@ -86,7 +98,7 @@ fn commit(table: &Value, version: i64) -> Value {
         "table_id": id(table),
         "table_uri": uri(table),
         "commit_info": {
-            "version": version, "file_name": format!("file{version}"), "file_size": 100,
+            "version": version, "file_name": staged(version), "file_size": 100,
             "timestamp": ts, "file_modification_timestamp": ts,
         },
         "metadata": { "properties": { "properties": { "io.unitycatalog.tableId": id(table) } } },
@@ -187,15 +199,15 @@ async fn basic_coordinated_commits() {
     assert_eq!(
         resp["commits"][0],
         json!({
-            "version": 1, "file_name": "file1", "file_size": 100,
+            "version": 1, "file_name": staged(1), "file_size": 100,
             "timestamp": 1_700_000_001, "file_modification_timestamp": 1_700_000_001,
         })
     );
 
     let mut other = commit(&t, 1);
-    other["commit_info"]["file_name"] = json!("some_other_filename");
+    other["commit_info"]["file_name"] = json!(other_staged(1));
     fails(&app, &other, StatusCode::CONFLICT, "COMMIT_VERSION_CONFLICT",
-        "Commit version already accepted. Version 1 was accepted with commit file file1, but the request carried some_other_filename.").await;
+        &format!("Commit version already accepted. Version 1 was accepted with commit file {}, but the request carried {}.", staged(1), other_staged(1))).await;
     fails(
         &app,
         &commit(&t, 3),
@@ -253,9 +265,9 @@ async fn basic_coordinated_commits() {
     ok(&app, &commit(&t, 4)).await;
     ok(&app, &commit(&t, 2)).await;
     let mut other2 = commit(&t, 2);
-    other2["commit_info"]["file_name"] = json!("some_other_filename");
+    other2["commit_info"]["file_name"] = json!(other_staged(2));
     fails(&app, &other2, StatusCode::CONFLICT, "COMMIT_VERSION_CONFLICT",
-        "Commit version already accepted. Version 2 was accepted with commit file file2, but the request carried some_other_filename.").await;
+        &format!("Commit version already accepted. Version 2 was accepted with commit file {}, but the request carried {}.", staged(2), other_staged(2))).await;
 
     ok(&app, &commit(&t, 5)).await;
     assert_eq!(commits(&app, &t, 0, None).await, (5, vec![5]));
@@ -346,6 +358,14 @@ async fn invalid_requests_follow_upstream() {
         (
             bad(&|c| c["commit_info"]["file_name"] = json!("../1.json")),
             "Field must be a single file name without path separators: file_name",
+        ),
+        (
+            bad(&|c| c["commit_info"]["file_name"] = json!("file1")),
+            "Field must be a staged commit file name <version>.<uuid>.json of version 1: file_name",
+        ),
+        (
+            bad(&|c| c["commit_info"]["file_name"] = json!(staged(2))),
+            "Field must be a staged commit file name <version>.<uuid>.json of version 1: file_name",
         ),
         (
             bad(&|c| c["commit_info"]["file_size"] = json!(0)),
@@ -565,9 +585,10 @@ async fn untracked_versions_are_settled_by_file_contents() {
     // were never tracked.
     ok(&app, &commit(&t, 3)).await;
     publish(&t, 2..=2);
-    write(&t, "_delta_log/_staged_commits/file2", "delta-commit-v2\n");
+    let staged_file = format!("_delta_log/_staged_commits/{}", staged(2));
+    write(&t, &staged_file, "delta-commit-v2\n");
     ok(&app, &commit(&t, 2)).await;
-    write(&t, "_delta_log/_staged_commits/file2", "different\n");
+    write(&t, &staged_file, "different\n");
     fails(
         &app,
         &commit(&t, 2),
@@ -657,13 +678,13 @@ async fn backfilled_commits_are_kept_for_100_versions() {
     // Backfilled through 150: version 50 is kept and answered by name.
     ok(&app, &commit(&t, 50)).await;
     let mut other = commit(&t, 50);
-    other["commit_info"]["file_name"] = json!("x");
+    other["commit_info"]["file_name"] = json!(other_staged(50));
     fails(
         &app,
         &other,
         StatusCode::CONFLICT,
         "COMMIT_VERSION_CONFLICT",
-        "was accepted with commit file file50",
+        &format!("was accepted with commit file {}", staged(50)),
     )
     .await;
     // Version 49 is gone, so only its files can tell; no staged file here.

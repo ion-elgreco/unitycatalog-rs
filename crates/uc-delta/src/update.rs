@@ -23,7 +23,9 @@ use crate::contract::{
     self as contract, CLUSTERING_DOMAIN, FEATURE_PREFIX, LAST_COMMIT_TIMESTAMP,
     LAST_UPDATE_VERSION, ROW_TRACKING_DOMAIN,
 };
-use crate::table::{apply_partition_columns, column_infos, struct_fields};
+use crate::table::{
+    apply_partition_columns, column_infos, partition_columns, struct_field, struct_fields,
+};
 
 fn invalid(message: impl Into<String>) -> Error {
     Error::invalid_argument(message)
@@ -356,11 +358,23 @@ pub fn apply_updates(
     if state.table_type == TableType::Managed {
         let dm = contract::domain_metadata_from_properties(&state.properties)?;
         if let Some(Some(protocol)) = &c.set_protocol {
-            contract::validate(
+            let protocol = contract::validate(
                 Some(protocol),
                 Some(&dm),
                 &state.properties,
                 allow_missing_dv,
+            )?;
+            let fields = state
+                .columns
+                .iter()
+                .map(struct_field)
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(|e| invalid(format!("the table schema cannot be read: {e}")))?;
+            contract::validate_table_configuration(
+                protocol,
+                &fields,
+                partition_columns(&state.columns),
+                &state.properties,
             )?;
         } else if c.set_domain_metadata.is_some() {
             let features = contract::features_from_properties(&state.properties);

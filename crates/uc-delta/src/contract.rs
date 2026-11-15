@@ -3,12 +3,21 @@
 //! `DeltaConsts` and `DeltaPropertyMapper`.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
+use delta_kernel::actions::{Metadata, Protocol};
+use delta_kernel::schema::{StructField, StructType};
+use delta_kernel::table_configuration::TableConfiguration;
+use delta_kernel::table_features::Operation;
 use uc_api::delta_api::{
     DeltaClusteringDomainMetadata, DeltaDomainMetadataUpdates, DeltaProtocol,
     DeltaRowTrackingDomainMetadata,
 };
 use uc_common::{Error, Result, SecurablePropertiesMap};
+
+use url::Url;
+
+use crate::fields::kernel_message;
 
 /// The table property that ties a MANAGED Delta table to its UC table id.
 /// Upstream `TableProperties.UC_TABLE_ID`.
@@ -148,62 +157,57 @@ pub fn skip_deletion_vectors(
 }
 
 /// Upstream `UcManagedDeltaContract.validate`: the protocol, domain
-/// metadata and properties of a MANAGED table.
+/// metadata and properties of a MANAGED table. Returns the protocol as the
+/// kernel reads it.
+///
+/// The kernel checks the protocol against Delta's rules: the feature lists
+/// fit the versions, a reader feature is a reader-writer feature that is
+/// also a writer feature, and a reader-writer feature is in both lists. So
+/// a required reader-writer feature in `writer-features` is also in
+/// `reader-features`.
 pub fn validate(
     protocol: Option<&DeltaProtocol>,
     domain_metadata: Option<&DeltaDomainMetadataUpdates>,
     properties: &BTreeMap<String, String>,
     allow_missing_dv: bool,
-) -> Result<()> {
+) -> Result<Protocol> {
     let skip_dv = skip_deletion_vectors(properties, allow_missing_dv);
     let protocol = protocol.ok_or_else(|| invalid("protocol is required."))?;
-    let readers: BTreeSet<&str> = protocol
-        .reader_features
-        .iter()
-        .flatten()
-        .map(String::as_str)
-        .collect();
+    let version = |v: Option<i32>| v.map_or("null".to_string(), |v| v.to_string());
+    let reader_version = protocol
+        .min_reader_version
+        .filter(|v| *v >= REQUIRED_MIN_READER_VERSION)
+        .ok_or_else(|| {
+            invalid(format!(
+                "MANAGED table minReaderVersion must be at least {REQUIRED_MIN_READER_VERSION} \
+                 (got {}).",
+                version(protocol.min_reader_version)
+            ))
+        })?;
+    let writer_version = protocol
+        .min_writer_version
+        .filter(|v| *v >= REQUIRED_MIN_WRITER_VERSION)
+        .ok_or_else(|| {
+            invalid(format!(
+                "MANAGED table minWriterVersion must be at least {REQUIRED_MIN_WRITER_VERSION} \
+                 (got {}).",
+                version(protocol.min_writer_version)
+            ))
+        })?;
+    let kernel_protocol = Protocol::try_new(
+        reader_version,
+        writer_version,
+        feature_names(&protocol.reader_features),
+        feature_names(&protocol.writer_features),
+    )
+    .map_err(|e| invalid(kernel_message(e)))?;
     let writers: BTreeSet<&str> = protocol
         .writer_features
         .iter()
         .flatten()
         .map(String::as_str)
         .collect();
-    for feature in protocol.reader_features.iter().flatten() {
-        if !writers.contains(feature.as_str()) {
-            return Err(invalid(format!(
-                "Feature '{feature}' is in reader-features but not writer-features. Per the Delta \
-                 protocol, every reader-feature must also be a writer-feature."
-            )));
-        }
-    }
-    let version = |v: Option<i32>| v.map_or("null".to_string(), |v| v.to_string());
-    if protocol
-        .min_reader_version
-        .is_none_or(|v| v < REQUIRED_MIN_READER_VERSION)
-    {
-        return Err(invalid(format!(
-            "MANAGED table minReaderVersion must be at least {REQUIRED_MIN_READER_VERSION} (got {}).",
-            version(protocol.min_reader_version)
-        )));
-    }
-    if protocol
-        .min_writer_version
-        .is_none_or(|v| v < REQUIRED_MIN_WRITER_VERSION)
-    {
-        return Err(invalid(format!(
-            "MANAGED table minWriterVersion must be at least {REQUIRED_MIN_WRITER_VERSION} (got {}).",
-            version(protocol.min_writer_version)
-        )));
-    }
     let dv = |f: &str| skip_dv && f == "deletionVectors";
-    for required in required_reader_features() {
-        if !dv(&required) && !readers.contains(required.as_str()) {
-            return Err(invalid(format!(
-                "MANAGED table missing required reader-feature '{required}'."
-            )));
-        }
-    }
     for required in required_writer_features() {
         if !dv(&required) && !writers.contains(required.as_str()) {
             return Err(invalid(format!(
@@ -232,7 +236,48 @@ pub fn validate(
             "MANAGED table required property '{UC_TABLE_ID_PROPERTY}' is missing."
         )));
     }
-    Ok(())
+    Ok(kernel_protocol)
+}
+
+/// The kernel's rules between the protocol, the properties and the schema
+/// of a table, as it checks them before it loads the table. Among them:
+/// the kernel can read each reader feature, a `timestamp_ntz` or variant
+/// column has its feature, row tracking is not both on and suspended, and
+/// each partition column is a column. The rules it checks only for writes,
+/// such as IcebergCompatV2 without deletion vectors, are not run: a client
+/// may write features that the kernel cannot write.
+pub fn validate_table_configuration(
+    protocol: Protocol,
+    fields: &[StructField],
+    partition_columns: Vec<String>,
+    properties: &BTreeMap<String, String>,
+) -> Result<()> {
+    let schema = StructType::try_new(fields.iter().cloned())
+        .map_err(|e| invalid(format!("the schema cannot be read: {}", kernel_message(e))))?;
+    let configuration = properties
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    let metadata = Metadata::try_new(
+        None,
+        None,
+        Arc::new(schema),
+        partition_columns,
+        0,
+        configuration,
+    )
+    .map_err(|e| invalid(kernel_message(e)))?;
+    // The checks read neither the table root nor the version.
+    let root = Url::parse("file:///table/").map_err(|e| Error::internal(e.to_string()))?;
+    TableConfiguration::try_new(metadata, protocol, root, 0)
+        .and_then(|configuration| configuration.ensure_operation_supported(Operation::SnapshotLoad))
+        .map_err(|e| invalid(kernel_message(e)))
+}
+
+fn feature_names(features: &Option<Vec<String>>) -> Option<Vec<&str>> {
+    features
+        .as_ref()
+        .map(|f| f.iter().map(String::as_str).collect())
 }
 
 /// Upstream `validateDomainMetadataAgainstWriterFeatures`: each domain
@@ -410,7 +455,8 @@ mod tests {
                     ..protocol()
                 },
                 properties(),
-                "Feature 'v2Checkpoint' is in reader-features but not writer-features.",
+                "Reader features must contain only ReaderWriter features that are also listed in \
+                 writer features, but V2Checkpoint is not",
             ),
             (
                 DeltaProtocol {
@@ -418,7 +464,33 @@ mod tests {
                     ..protocol()
                 },
                 properties(),
-                "MANAGED table missing required reader-feature 'catalogManaged'.",
+                "Writer features must be Writer-only or also listed in reader features, but \
+                 ReaderWriter feature CatalogManaged is listed in writerFeatures and missing from \
+                 readerFeatures",
+            ),
+            (
+                DeltaProtocol {
+                    reader_features: Some(
+                        [required_reader_features(), vec!["inCommitTimestamp".into()]].concat(),
+                    ),
+                    ..protocol()
+                },
+                properties(),
+                "Reader features must contain only ReaderWriter features that are also listed in \
+                 writer features, but InCommitTimestamp is not",
+            ),
+            (
+                DeltaProtocol {
+                    writer_features: Some(
+                        required_writer_features()
+                            .into_iter()
+                            .filter(|f| f != "inCommitTimestamp")
+                            .collect(),
+                    ),
+                    ..protocol()
+                },
+                properties(),
+                "MANAGED table missing required writer-feature 'inCommitTimestamp'.",
             ),
             (
                 protocol(),
@@ -458,6 +530,63 @@ mod tests {
         };
         assert!(validate(Some(&p), None, &props, true).is_ok());
         assert!(validate(Some(&p), None, &props, false).is_err());
+    }
+
+    /// The kernel's rules between the protocol, the properties and the
+    /// schema.
+    #[test]
+    fn the_kernel_checks_the_table_configuration() {
+        use delta_kernel::schema::DataType;
+
+        let check = |protocol: DeltaProtocol,
+                     fields: Vec<StructField>,
+                     props: BTreeMap<String, String>| {
+            let protocol = validate(Some(&protocol), None, &props, true)?;
+            validate_table_configuration(protocol, &fields, vec![], &props)
+        };
+        let id = || StructField::nullable("id", DataType::LONG);
+        assert!(check(protocol(), vec![id()], properties()).is_ok());
+
+        let with = |extra: &[&str], reader: bool| {
+            let mut p = protocol();
+            for feature in extra {
+                if reader {
+                    p.reader_features.as_mut().unwrap().push(feature.to_string());
+                }
+                p.writer_features.as_mut().unwrap().push(feature.to_string());
+            }
+            p
+        };
+        let ntz = StructField::nullable("at", DataType::TIMESTAMP_NTZ);
+        let mut suspended = properties();
+        suspended.insert("delta.enableRowTracking".into(), "true".into());
+        suspended.insert("delta.rowTrackingSuspended".into(), "true".into());
+        let cases = [
+            (
+                with(&[], false),
+                vec![id(), ntz.clone()],
+                properties(),
+                "Unsupported: Table contains TIMESTAMP_NTZ columns but does not have the \
+                 required 'timestampNtz' feature in reader and writer features",
+            ),
+            (
+                with(&["someFutureFeature"], true),
+                vec![id()],
+                properties(),
+                "Unsupported: Feature 'someFutureFeature' is not supported",
+            ),
+            (
+                with(&["rowTracking", "domainMetadata"], false),
+                vec![id()],
+                suspended,
+                "Row tracking cannot be enabled and suspended at the same time",
+            ),
+        ];
+        for (protocol, fields, props, message) in cases {
+            let err = check(protocol, fields, props).unwrap_err();
+            assert_eq!(err.message(), message);
+        }
+        assert!(check(with(&["timestampNtz"], true), vec![id(), ntz], properties()).is_ok());
     }
 
     #[test]

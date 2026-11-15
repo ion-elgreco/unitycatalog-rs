@@ -138,11 +138,16 @@ fn uniform_metadata(location: &str, file: &str, version: i64) -> DeltaUniformMet
     }
 }
 
+/// The staged commit file name of `version`: `<version>.<uuid>.json`.
+fn staged(version: i64) -> String {
+    format!("{version:020}.00000000-0000-0000-0000-000000000000.json")
+}
+
 fn api_commit(version: i64) -> DeltaApiCommit {
     DeltaApiCommit {
         version,
         timestamp: 1_700_000_000_000 + version,
-        file_name: format!("{version}.json"),
+        file_name: staged(version),
         file_size: 7,
         file_modification_timestamp: 1_700_000_000_000 + version,
         ..Default::default()
@@ -267,7 +272,7 @@ async fn commits() {
     let commit = DeltaCommitInfo {
         version: 1,
         timestamp: 11,
-        file_name: "c1.json".into(),
+        file_name: staged(1),
         file_size: 7,
         file_modification_timestamp: 12,
         ..Default::default()
@@ -298,7 +303,7 @@ async fn commits() {
     assert_eq!(before.latest_table_version, 1);
     let loaded = uc.load_delta_table("c", "s", "m").await.unwrap();
     assert_eq!(loaded.latest_table_version, Some(1));
-    assert_eq!(loaded.commits[0].file_name, "c1.json");
+    assert_eq!(loaded.commits[0].file_name, staged(1));
     let table = uc.table("c.s.m").get().await.unwrap();
     assert_eq!(table.comment.as_deref(), Some("sales, v1"));
 
@@ -441,7 +446,7 @@ async fn uniform_tables() {
     let commit = DeltaCommitInfo {
         version: 2,
         timestamp: 1,
-        file_name: "2.json".into(),
+        file_name: staged(2),
         file_size: 1,
         file_modification_timestamp: 1,
         ..Default::default()

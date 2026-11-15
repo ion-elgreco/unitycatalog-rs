@@ -9,86 +9,77 @@
 
 use std::collections::{HashMap, HashSet};
 
-use delta_kernel::schema::{DataType, MetadataValue, StructField, StructType};
+use delta_kernel::schema::diff::{FieldChangeType, SchemaDiff};
+use delta_kernel::schema::{ColumnMetadataKey, DataType, MetadataValue, StructField, StructType};
 use delta_kernel::table_features::validate_schema_column_mapping;
-use serde_json::Value;
 use tracing::warn;
 
 use uc_api::{ColumnInfo, TableType};
 use uc_common::{Error, Result, SecurablePropertiesMap};
 
 use crate::fields::{all_fields, kernel_message};
+use crate::schema_evolution;
 use crate::table::struct_field;
 
 pub use delta_kernel::table_features::ColumnMappingMode;
 
 pub const MODE: &str = "delta.columnMapping.mode";
-pub const ID: &str = "delta.columnMapping.id";
-pub const PHYSICAL_NAME: &str = "delta.columnMapping.physicalName";
 pub const MAX_COLUMN_ID: &str = "delta.columnMapping.maxColumnId";
+
+const PHYSICAL_NAME: ColumnMetadataKey = ColumnMetadataKey::ColumnMappingPhysicalName;
 
 fn invalid(message: impl Into<String>) -> Error {
     Error::invalid_argument(message)
 }
 
-/// The mode of a `delta.columnMapping.mode` value, case ignored. An absent
-/// value means no column mapping; an unknown value is refused.
+/// The mode of a `delta.columnMapping.mode` value, parsed by the kernel. An
+/// absent value means no column mapping; an unknown value is refused.
 pub fn parse_mode(raw: Option<&str>) -> Result<ColumnMappingMode> {
     let Some(raw) = raw else {
         return Ok(ColumnMappingMode::None);
     };
-    raw.trim()
-        .to_lowercase()
-        .parse()
+    ColumnMappingMode::try_from(raw)
         .map_err(|_| invalid(format!("Invalid column mapping mode: {raw}")))
 }
 
 /// The metadata key that identifies a column in `mode`. A table without
 /// column mapping is checked by physical name.
-fn identity_metadata_key(mode: ColumnMappingMode) -> &'static str {
+fn identity_metadata_key(mode: ColumnMappingMode) -> ColumnMetadataKey {
     match mode {
-        ColumnMappingMode::Id => ID,
+        ColumnMappingMode::Id => ColumnMetadataKey::ColumnMappingId,
         ColumnMappingMode::Name | ColumnMappingMode::None => PHYSICAL_NAME,
     }
 }
 
 /// Whether the request sets the mode to name or id while the stored mode is
-/// neither. Neither value is parsed, so an unknown mode does not block
-/// other updates.
+/// neither. An unknown mode counts as neither, so it does not block other
+/// updates.
 pub fn turns_on(stored: Option<&str>, requested: Option<&str>) -> bool {
     let name_or_id = |mode: Option<&str>| {
-        mode.map(str::trim)
-            .is_some_and(|m| m.eq_ignore_ascii_case("name") || m.eq_ignore_ascii_case("id"))
+        mode.and_then(|m| ColumnMappingMode::try_from(m).ok())
+            .is_some_and(|m| m != ColumnMappingMode::None)
     };
     !name_or_id(stored) && name_or_id(requested)
 }
 
-/// The column-mapping id of a field: an integer in the 32-bit range.
-pub(crate) fn column_id(field: &StructField) -> Option<i32> {
-    match field.metadata().get(ID)? {
-        MetadataValue::Number(id) => i32::try_from(*id).ok(),
-        _ => None,
-    }
-}
-
 /// The value of `key` in the metadata of a field, if it is a string.
-fn metadata_str<'a>(field: &'a StructField, key: &str) -> Option<&'a str> {
-    match field.metadata().get(key)? {
+fn metadata_str<'a>(field: &'a StructField, key: &ColumnMetadataKey) -> Option<&'a str> {
+    match field.get_config_value(key)? {
         MetadataValue::String(value) => Some(value),
         _ => None,
     }
 }
 
 /// The physical name of a field: a non-empty string.
-pub(crate) fn physical_name(field: &StructField) -> Option<&str> {
-    metadata_str(field, PHYSICAL_NAME).filter(|s| !s.is_empty())
+fn physical_name(field: &StructField) -> Option<&str> {
+    metadata_str(field, &PHYSICAL_NAME).filter(|s| !s.is_empty())
 }
 
 /// Whether some field, at any depth, has `key` in its metadata.
-fn carries_key(fields: &[StructField], key: &str) -> bool {
+fn carries_key(fields: &[StructField], key: &ColumnMetadataKey) -> bool {
     all_fields(fields)
         .iter()
-        .any(|f| f.metadata().contains_key(key))
+        .any(|f| f.get_config_value(key).is_some())
 }
 
 /// The table's stored columns as fields. A stored column that cannot be
@@ -108,80 +99,6 @@ pub(crate) fn readable_stored_fields(columns: &[ColumnInfo]) -> Vec<StructField>
     fields
 }
 
-/// Whether the metadata of a field has `key` with a value that is not null.
-fn has_key(field: &StructField, key: &str) -> bool {
-    field
-        .metadata()
-        .get(key)
-        .is_some_and(|v| *v != MetadataValue::Other(Value::Null))
-}
-
-/// The dotted paths of the fields that stay in `incoming` (by name, case
-/// ignored) but lost `key`. `prefix` is the path of the enclosing field.
-fn stripped_keys(
-    stored: &[&StructField],
-    incoming: &[&StructField],
-    key: &str,
-    prefix: &str,
-) -> Vec<String> {
-    let incoming_by_name: HashMap<String, &StructField> = incoming
-        .iter()
-        .map(|f| (f.name().to_lowercase(), *f))
-        .collect();
-    let mut stripped = vec![];
-    for stored in stored {
-        // A column that is gone was dropped, not stripped.
-        let Some(incoming) = incoming_by_name.get(&stored.name().to_lowercase()) else {
-            continue;
-        };
-        let path = format!("{prefix}{}", stored.name());
-        if has_key(stored, key) && !has_key(incoming, key) {
-            stripped.push(path.clone());
-        }
-        stripped.extend(stripped_keys_in_types(
-            stored.data_type(),
-            incoming.data_type(),
-            key,
-            &format!("{path}."),
-        ));
-    }
-    stripped
-}
-
-fn stripped_keys_in_types(
-    stored: &DataType,
-    incoming: &DataType,
-    key: &str,
-    prefix: &str,
-) -> Vec<String> {
-    match (stored, incoming) {
-        (DataType::Struct(stored), DataType::Struct(incoming)) => {
-            let stored: Vec<&StructField> = stored.fields().collect();
-            let incoming: Vec<&StructField> = incoming.fields().collect();
-            stripped_keys(&stored, &incoming, key, prefix)
-        }
-        (DataType::Array(stored), DataType::Array(incoming)) => {
-            stripped_keys_in_types(stored.element_type(), incoming.element_type(), key, prefix)
-        }
-        (DataType::Map(stored), DataType::Map(incoming)) => {
-            let mut stripped = stripped_keys_in_types(
-                stored.key_type(),
-                incoming.key_type(),
-                key,
-                &format!("{prefix}key."),
-            );
-            stripped.extend(stripped_keys_in_types(
-                stored.value_type(),
-                incoming.value_type(),
-                key,
-                &format!("{prefix}value."),
-            ));
-            stripped
-        }
-        _ => vec![],
-    }
-}
-
 /// Refuse an empty physical name at any depth, and a physical name that two
 /// top-level columns share with case ignored. Renames and partition columns
 /// are found by physical name in lowercase, and Delta reads partition values
@@ -189,7 +106,7 @@ fn stripped_keys_in_types(
 fn reject_unusable_physical_names(fields: &[StructField]) -> Result<()> {
     let empty: Vec<&str> = all_fields(fields)
         .into_iter()
-        .filter(|f| metadata_str(f, PHYSICAL_NAME) == Some(""))
+        .filter(|f| metadata_str(f, &PHYSICAL_NAME) == Some(""))
         .map(|f| f.name().as_str())
         .collect();
     if !empty.is_empty() {
@@ -200,7 +117,7 @@ fn reject_unusable_physical_names(fields: &[StructField]) -> Result<()> {
     }
     let mut seen = HashSet::new();
     for field in fields {
-        if let Some(physical) = metadata_str(field, PHYSICAL_NAME)
+        if let Some(physical) = metadata_str(field, &PHYSICAL_NAME)
             && !seen.insert(physical.to_lowercase())
         {
             return Err(invalid(format!(
@@ -273,30 +190,38 @@ fn type_renames_while_enabling(current: &DataType, incoming: &DataType) -> bool 
 /// mode, else the physical name in lowercase.
 fn identity_key(field: &StructField, mode: ColumnMappingMode) -> Option<String> {
     if mode == ColumnMappingMode::Id {
-        return column_id(field).map(|id| id.to_string());
+        return field.column_mapping_id().map(|id| id.to_string());
     }
-    metadata_str(field, PHYSICAL_NAME).map(str::to_lowercase)
+    metadata_str(field, &PHYSICAL_NAME).map(str::to_lowercase)
 }
 
-/// The top-level renames: columns whose identity stayed while the name
-/// changed. A change of case only is not a rename.
+/// The top-level renames as (old name, new name). The kernel's schema diff
+/// pairs the fields by column-mapping id; it refuses a field without an id
+/// and an id whose physical name changed. A change of case only is not a
+/// rename.
 fn top_level_renames(
     current: &[StructField],
     incoming: &[StructField],
-    mode: ColumnMappingMode,
-) -> Vec<(String, String)> {
-    let incoming_by_key: HashMap<String, &str> = incoming
-        .iter()
-        .filter_map(|f| Some((identity_key(f, mode)?, f.name().as_str())))
-        .collect();
-    current
-        .iter()
-        .filter_map(|f| {
-            let new_name = incoming_by_key.get(&identity_key(f, mode)?)?;
-            (new_name.to_lowercase() != f.name().to_lowercase())
-                .then(|| (f.name().clone(), new_name.to_string()))
+) -> Result<Vec<(String, String)>> {
+    let schema = |fields: &[StructField], which: &str| {
+        StructType::try_new(fields.iter().cloned()).map_err(|e| {
+            schema_evolution::invalid(format!(
+                "the {which} schema cannot be read: {}",
+                kernel_message(e)
+            ))
         })
-        .collect()
+    };
+    let current = schema(current, "table")?;
+    let incoming = schema(incoming, "requested")?;
+    let diff = SchemaDiff::new(&current, &incoming)
+        .map_err(|e| schema_evolution::invalid(e.to_string()))?;
+    let (_, _, updated) = diff.top_level_changes();
+    Ok(updated
+        .into_iter()
+        .filter(|u| u.change_types.contains(&FieldChangeType::Renamed))
+        .filter(|u| u.before.name().to_lowercase() != u.after.name().to_lowercase())
+        .map(|u| (u.before.name().clone(), u.after.name().clone()))
+        .collect())
 }
 
 /// Check a `set-columns` against the stored column-mapping mode
@@ -324,26 +249,10 @@ pub fn validate_set_columns(
 ) -> Result<()> {
     let key = identity_metadata_key(table_mode);
     let current = readable_stored_fields(stored_columns);
-    let current_has_keys = table_mode != ColumnMappingMode::None && carries_key(&current, key);
-    let incoming_has_keys = carries_key(incoming, key);
-    if current_has_keys {
-        let stored: Vec<&StructField> = current.iter().collect();
-        let requested: Vec<&StructField> = incoming.iter().collect();
-        let mut stripped = stripped_keys(&stored, &requested, key, "");
-        if !stripped.is_empty() {
-            stripped.sort();
-            return Err(invalid(format!(
-                "set-columns dropped column mapping metadata for column(s): {}",
-                stripped.join(", ")
-            )));
-        }
-        if !incoming_has_keys {
-            return Err(invalid(
-                "set-columns dropped column mapping metadata; removing column mapping is not \
-                 supported.",
-            ));
-        }
-    }
+    let current_has_keys = table_mode != ColumnMappingMode::None && carries_key(&current, &key);
+    let incoming_has_keys = carries_key(incoming, &key);
+    // With column mapping stored, this also refuses a field that lost its
+    // identity.
     validate_identities(incoming, table_mode)?;
     let enabling = table_mode == ColumnMappingMode::None
         && (requested_mode != ColumnMappingMode::None || incoming_has_keys);
@@ -373,11 +282,7 @@ pub fn validate_set_columns(
         }
         return Ok(());
     }
-    let mode = match table_mode {
-        ColumnMappingMode::None => ColumnMappingMode::Name,
-        mode => mode,
-    };
-    let renames = top_level_renames(&current, incoming, mode);
+    let renames = top_level_renames(&current, incoming)?;
     if renames.len() > 1 {
         let mut list: Vec<String> = renames
             .iter()
@@ -395,12 +300,7 @@ pub fn validate_set_columns(
     // stored schema can lag behind it, so only a MANAGED table gets the
     // schema evolution check.
     if table_type == TableType::Managed {
-        crate::schema_evolution::validate(
-            stored_columns,
-            incoming,
-            properties,
-            !renames.is_empty(),
-        )?;
+        schema_evolution::validate(stored_columns, incoming, properties, !renames.is_empty())?;
     }
     Ok(())
 }

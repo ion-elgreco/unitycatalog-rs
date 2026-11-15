@@ -522,7 +522,7 @@ async fn load_table_lists_unbackfilled_commits() {
 
     let commit = json!({
         "table_id": table["table_id"], "table_uri": table["storage_location"],
-        "commit_info": { "version": 1, "timestamp": 11, "file_name": "c1.json", "file_size": 7,
+        "commit_info": { "version": 1, "timestamp": 11, "file_name": staged(1), "file_size": 7,
             "file_modification_timestamp": 12 },
     });
     let resp = app
@@ -541,7 +541,7 @@ async fn load_table_lists_unbackfilled_commits() {
     assert_eq!(
         loaded["commits"],
         json!([
-            { "version": 1, "timestamp": 11, "file-name": "c1.json", "file-size": 7, "file-modification-timestamp": 12 },
+            { "version": 1, "timestamp": 11, "file-name": staged(1), "file-size": 7, "file-modification-timestamp": 12 },
         ])
     );
     assert_eq!(loaded["metadata"]["table-type"], "MANAGED");
@@ -684,7 +684,7 @@ async fn create_table_follows_upstream() {
         (with(&|b| { b.as_object_mut().unwrap().remove("last-commit-timestamp-ms"); }),
             "last-commit-timestamp-ms is required.".into()),
         (with(&|b| b["protocol"]["writer-features"] = json!(["deletionVectors"])),
-            "Feature 'catalogManaged' is in reader-features but not writer-features. Per the Delta protocol, every reader-feature must also be a writer-feature.".into()),
+            "Reader features must contain only ReaderWriter features that are also listed in writer features, but CatalogManaged is not (readerFeatures=[CatalogManaged, DeletionVectors, V2Checkpoint, VacuumProtocolCheck], writerFeatures=[DeletionVectors], minReaderVersion=3, minWriterVersion=7)".into()),
         (with(&|b| b["domain-metadata"] = json!({ "delta.rowTracking": { "rowIdHighWaterMark": 100 } })),
             "domain-metadata.delta.rowTracking requires the 'rowTracking' writer feature.".into()),
         (with(&|b| b["partition-columns"] = json!(["nope"])),
@@ -1165,7 +1165,7 @@ async fn update_table_rejects_bad_requests() {
         (
             json!([{ "action": "set-protocol", "protocol": { "min-reader-version": 3, "min-writer-version": 7,
             "reader-features": ["v2Checkpoint"], "writer-features": ["v2Checkpoint"] } }]),
-            "MANAGED table missing required reader-feature 'catalogManaged'.",
+            "MANAGED table missing required writer-feature 'catalogManaged'.",
         ),
         (json!([{ "action": "no-such-action" }]), "unknown variant"),
     ];
@@ -1209,6 +1209,16 @@ async fn update_table_rejects_bad_requests() {
     assert_eq!(err["message"], "Table is not a Delta table: c.s.pq");
 }
 
+/// The staged commit file name of `version`: `<version>.<uuid>.json`.
+fn staged(version: i64) -> String {
+    format!("{version:020}.00000000-0000-0000-0000-000000000000.json")
+}
+
+/// Another writer's staged commit file name of `version`.
+fn other_staged(version: i64) -> String {
+    format!("{version:020}.11111111-1111-1111-1111-111111111111.json")
+}
+
 fn add_commit(version: i64, file: &str) -> serde_json::Value {
     json!({ "action": "add-commit", "commit": { "version": version, "timestamp": 1_700_000_000 + version,
         "file-name": file, "file-size": 1024, "file-modification-timestamp": 1_700_000_000 + version } })
@@ -1220,25 +1230,28 @@ async fn update_table_commits() {
     let mut h = delta_managed(&app, "commits", json!({})).await;
     let t0 = h.etag.clone();
     // A data-only commit leaves the metadata (and the etag) alone.
-    let r1 = updated(&app, &mut h, json!([add_commit(1, "00000001.json")])).await;
+    let r1 = updated(&app, &mut h, json!([add_commit(1, &staged(1))])).await;
     assert_eq!(r1["latest-table-version"], 1);
-    assert_eq!(r1["commits"][0]["file-name"], "00000001.json");
+    assert_eq!(r1["commits"][0]["file-name"], staged(1));
     assert_eq!(h.etag, t0);
     // A replay is a whole-request no-op.
-    let replay = updated(&app, &mut h, json!([add_commit(1, "00000001.json")])).await;
+    let replay = updated(&app, &mut h, json!([add_commit(1, &staged(1))])).await;
     assert_eq!(replay["commits"].as_array().unwrap().len(), 1);
     update_fails(
         &app,
         &h,
-        json!([add_commit(1, "00000001b.json")]),
+        json!([add_commit(1, &other_staged(1))]),
         "CommitVersionConflictException",
-        "Commit version already accepted. Version 1 was accepted with commit file 00000001.json",
+        &format!(
+            "Commit version already accepted. Version 1 was accepted with commit file {}",
+            staged(1)
+        ),
     )
     .await;
     update_fails(
         &app,
         &h,
-        json!([add_commit(3, "00000003.json")]),
+        json!([add_commit(3, &staged(3))]),
         IVE,
         "Commit version must be the next version after the latest commit 1, but got 3",
     )
@@ -1249,16 +1262,16 @@ async fn update_table_commits() {
         updated(
             &app,
             &mut h,
-            json!([add_commit(v, &format!("{v:08}.json"))]),
+            json!([add_commit(v, &staged(v))]),
         )
         .await;
     }
-    let r = updated(&app, &mut h, json!([add_commit(2, "00000002.json")])).await;
+    let r = updated(&app, &mut h, json!([add_commit(2, &staged(2))])).await;
     assert_eq!(r["commits"].as_array().unwrap().len(), 3);
     update_fails(
         &app,
         &h,
-        json!([add_commit(2, "other.json")]),
+        json!([add_commit(2, &other_staged(2))]),
         "CommitVersionConflictException",
         "already accepted",
     )
@@ -1268,7 +1281,7 @@ async fn update_table_commits() {
     let r = updated(
         &app,
         &mut h,
-        json!([add_commit(4, "00000004.json"),
+        json!([add_commit(4, &staged(4)),
         { "action": "set-properties", "updates": { "k": "v" } }]),
     )
     .await;
@@ -1283,7 +1296,7 @@ async fn update_table_commits() {
     let resp = update(
         &app,
         &stale,
-        json!([add_commit(4, "00000004.json"),
+        json!([add_commit(4, &staged(4)),
         { "action": "set-properties", "updates": { "k": "v" } }]),
     )
     .await;
@@ -1341,7 +1354,7 @@ async fn update_table_commits() {
     update_fails(
         &app,
         &ext,
-        json!([add_commit(1, "1.json")]),
+        json!([add_commit(1, &staged(1))]),
         IVE,
         "add-commit and set-latest-backfilled-version require a MANAGED Delta table.",
     )
@@ -1449,7 +1462,7 @@ async fn uniform_metadata_on_create_and_commit() {
         .unwrap()
         .to_string();
     let commit = |v: i64, uniform: Option<serde_json::Value>| {
-        let mut c = add_commit(v, &format!("{v}.json"));
+        let mut c = add_commit(v, &staged(v));
         if let Some(u) = uniform {
             c["uniform"] = u;
         }
@@ -1497,7 +1510,7 @@ async fn uniform_metadata_on_create_and_commit() {
     };
     let rest_commit = |v: i64, uniform: Option<serde_json::Value>| {
         let mut c = json!({ "table_id": h.id, "table_uri": uni_loc,
-            "commit_info": { "version": v, "timestamp": 1, "file_name": format!("{v}.json"), "file_size": 1,
+            "commit_info": { "version": v, "timestamp": 1, "file_name": staged(v), "file_size": 1,
                 "file_modification_timestamp": 1 } });
         if let Some(u) = uniform {
             c["uniform"] = u;
@@ -1612,14 +1625,14 @@ async fn set_columns_keeps_column_mapping_identities() {
                 json!({ "name": "id", "type": "long", "nullable": false, "metadata": { "delta.columnMapping.id": 1 } }),
                 amount("amount")
             ])]),
-            "set-columns dropped column mapping metadata for column(s): id",
+            "Column mapping is enabled but field 'id' lacks the delta.columnMapping.physicalName annotation",
         ),
         (
             json!([set_columns(vec![
                 json!({ "name": "id", "type": "long", "nullable": false, "metadata": {} }),
                 json!({ "name": "amount", "type": "decimal(10,2)", "nullable": true, "metadata": {} })
             ])]),
-            "set-columns dropped column mapping metadata for column(s): amount, id",
+            "Column mapping is enabled but field 'id' lacks the delta.columnMapping.physicalName annotation",
         ),
         (
             json!([set_columns(vec![id("a"), amount("b")])]),
@@ -1759,9 +1772,9 @@ async fn a_set_columns_replay_keeps_its_outcome() {
         json!({ "name": "id", "type": "long", "nullable": false, "metadata": {} }),
         json!({ "name": "amount", "type": "decimal(10,2)", "nullable": true, "metadata": {} }),
     ]);
-    let v1 = json!([add_commit(1, "1.json"), plain]);
+    let v1 = json!([add_commit(1, &staged(1)), plain]);
     updated(&app, &mut h, v1.clone()).await;
-    updated(&app, &mut h, json!([add_commit(2, "2.json"),
+    updated(&app, &mut h, json!([add_commit(2, &staged(2)),
         { "action": "set-properties", "updates": { "delta.columnMapping.mode": "name", "delta.columnMapping.maxColumnId": "2" } },
         set_columns(vec![mapped("id", "long", false, 1, "id"), mapped("amount", "decimal(10,2)", true, 2, "amount")])])).await;
     // The replay of v1 would now drop the identities; it is settled as a
@@ -1771,18 +1784,18 @@ async fn a_set_columns_replay_keeps_its_outcome() {
     update_fails(
         &app,
         &h,
-        json!([add_commit(1, "other.json"), plain]),
+        json!([add_commit(1, &other_staged(1)), plain]),
         "CommitVersionConflictException",
-        "Version 1 was accepted with commit file 1.json",
+        &format!("Version 1 was accepted with commit file {}", staged(1)),
     )
     .await;
     // A new version is still checked.
     update_fails(
         &app,
         &h,
-        json!([add_commit(3, "3.json"), plain]),
+        json!([add_commit(3, &staged(3)), plain]),
         IVE,
-        "set-columns dropped column mapping metadata for column(s): amount, id",
+        "Column mapping is enabled but field 'id' lacks the delta.columnMapping.physicalName annotation",
     )
     .await;
 }
@@ -1825,6 +1838,12 @@ async fn delta_create_checks_column_mapping_identities() {
             "foo",
             json!([mapped("a", "long", true, 1, "p")]),
             "Invalid column mapping mode: foo",
+        ),
+        (
+            "upper",
+            "Name",
+            json!([mapped("a", "long", true, 1, "p")]),
+            "Invalid column mapping mode: Name",
         ),
     ];
     for (name, mode, fields, message) in cases {

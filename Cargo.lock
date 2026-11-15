@@ -9041,6 +9041,7 @@ dependencies = [
  "tracing",
  "uc-api",
  "uc-common",
+ "url",
  "uuid",
 ]
 
