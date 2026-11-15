@@ -9,20 +9,9 @@ use axum::{
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use common::{assert_error, assert_status, json_body, req, req_json};
-
-const ZERO_UUID: &str = "00000000-0000-0000-0000-000000000000";
-const OTHER_UUID: &str = "11111111-1111-1111-1111-111111111111";
-
-/// The staged commit file name of `version`: `<version>.<uuid>.json`.
-fn staged(version: i64) -> String {
-    format!("{version:020}.{ZERO_UUID}.json")
-}
-
-/// Another writer's staged commit file name of `version`.
-fn other_staged(version: i64) -> String {
-    format!("{version:020}.{OTHER_UUID}.json")
-}
+use common::{
+    ZERO_UUID, assert_error, assert_status, json_body, other_staged, req, req_json, staged,
+};
 
 /// An app with a MANAGED Delta table `c.s.t` in a temp directory.
 async fn managed_table() -> (Router, Value) {
@@ -165,18 +154,6 @@ fn write(table: &Value, relative: &str, content: &str) {
     std::fs::write(path, content).unwrap();
 }
 
-/// Publish `_delta_log/<v>.json` for each version, as a client does before
-/// it reports a backfill.
-fn publish(table: &Value, versions: std::ops::RangeInclusive<i64>) {
-    for v in versions {
-        write(
-            table,
-            &format!("_delta_log/{v:020}.json"),
-            &format!("delta-commit-v{v}\n"),
-        );
-    }
-}
-
 #[tokio::test]
 async fn basic_coordinated_commits() {
     let (app, t) = managed_table().await;
@@ -251,7 +228,7 @@ async fn basic_coordinated_commits() {
     assert_eq!(commits(&app, &t, 2, Some(2)).await, (3, vec![2]));
 
     // Commit 4 and backfill up to 1 in one request.
-    publish(&t, 1..=4);
+    common::publish(uri(&t), 1..=4);
     let mut c4 = commit(&t, 4);
     c4["latest_backfilled_version"] = json!(1);
     ok(&app, &c4).await;
@@ -508,7 +485,7 @@ async fn backfills_at_different_versions() {
         "metadata shouldn't be set for backfill only commit",
     )
     .await;
-    publish(&t, 1..=5);
+    common::publish(uri(&t), 1..=5);
     ok(&app, &backfill(&t, 2)).await;
     assert_eq!(commits(&app, &t, 0, None).await, (5, vec![5, 4, 3]));
 
@@ -561,7 +538,7 @@ async fn at_most_ten_unbackfilled_commits() {
     )
     .await;
 
-    publish(&t, 1..=14);
+    common::publish(uri(&t), 1..=14);
     ok(&app, &backfill(&t, 6)).await;
     assert_eq!(commits(&app, &t, 0, None).await, (10, vec![10, 9, 8, 7]));
     for v in 11..=14 {
@@ -584,7 +561,7 @@ async fn untracked_versions_are_settled_by_file_contents() {
     // The server first sees the table at version 3, so versions 1 and 2
     // were never tracked.
     ok(&app, &commit(&t, 3)).await;
-    publish(&t, 2..=2);
+    common::publish(uri(&t), 2..=2);
     let staged_file = format!("_delta_log/_staged_commits/{}", staged(2));
     write(&t, &staged_file, "delta-commit-v2\n");
     ok(&app, &commit(&t, 2)).await;
@@ -639,7 +616,7 @@ async fn a_backfill_needs_the_published_files() {
     .await;
     assert_eq!(commits(&app, &t, 0, None).await, (3, vec![3, 2, 1]));
     // Only the versions not yet backfilled are checked.
-    publish(&t, 2..=2);
+    common::publish(uri(&t), 2..=2);
     fails(
         &app,
         &backfill(&t, 2),
@@ -648,7 +625,7 @@ async fn a_backfill_needs_the_published_files() {
         &missing,
     )
     .await;
-    publish(&t, 1..=1);
+    common::publish(uri(&t), 1..=1);
     ok(&app, &c4).await;
     assert_eq!(commits(&app, &t, 0, None).await, (4, vec![4, 3]));
     // Log cleanup may remove the file of a backfilled version.
@@ -657,7 +634,7 @@ async fn a_backfill_needs_the_published_files() {
             .join("_delta_log/00000000000000000001.json"),
     )
     .unwrap();
-    publish(&t, 3..=3);
+    common::publish(uri(&t), 3..=3);
     ok(&app, &backfill(&t, 3)).await;
     assert_eq!(commits(&app, &t, 0, None).await, (4, vec![4]));
     // A version that is already backfilled needs no file.
@@ -669,7 +646,7 @@ async fn backfilled_commits_are_kept_for_100_versions() {
     let (app, t) = managed_table().await;
     ok(&app, &commit(&t, 1)).await;
     for v in 2..=151 {
-        publish(&t, v - 1..=v - 1);
+        common::publish(uri(&t), v - 1..=v - 1);
         let mut c = commit(&t, v);
         c["latest_backfilled_version"] = json!(v - 1);
         ok(&app, &c).await;

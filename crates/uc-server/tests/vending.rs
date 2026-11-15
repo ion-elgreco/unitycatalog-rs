@@ -171,14 +171,8 @@ fn sts_policy(seen: &Seen) -> Value {
 #[tokio::test]
 async fn s3_under_an_external_location_assumes_its_role() {
     let (sts, log) = mock("text/xml", ASSUME_ROLE.to_string()).await;
-    let master = r#"
-        [identity.aws]
-        region = "us-west-2"
-        access_key = "AKMASTER"
-        secret_key = "master-secret"
-    "#;
     let app = app(
-        master,
+        &aws_settings(""),
         Endpoints {
             aws_sts: Some(sts),
             ..Default::default()

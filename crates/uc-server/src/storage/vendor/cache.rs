@@ -14,18 +14,19 @@
 //! A credential without an expiry is bounded by the max age alone, and one
 //! that would be given for no time is not cached. A failed vend is not
 //! cached, and a stale entry is never given in place of a failed renewal.
-//! Requests that miss at the same time each vend; the last one stays.
+//! Requests that miss at the same time wait for one vend.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use moka::sync::Cache;
+use moka::future::Cache;
+use moka::ops::compute::{CompResult, Op};
 use sha2::{Digest, Sha256};
 
 use uc_api::TemporaryCredentials;
 use uc_common::settings::{self, Storage};
-use uc_common::{NormalizedUrl, Result, UriScheme, now_epoch_millis};
+use uc_common::{Error, NormalizedUrl, Result, UriScheme, now_epoch_millis};
 
 use super::{
     CredentialContext, CredentialVendor, DynVendor, StoragePrivilege, aws, aws::S3Store, azure, gcp,
@@ -83,16 +84,8 @@ enum Binding {
     /// A location of the settings, which do not change while the server
     /// runs.
     Settings,
-    Aws {
-        arn: String,
-        external_id: Option<String>,
-    },
-    AzurePrincipal {
-        tenant_id: String,
-        client_id: String,
-        secret_sha256: [u8; 32],
-    },
-    AzureManaged(Option<String>),
+    Aws(aws::Role),
+    Azure(azure::SignInKey),
     GcpAccount(Option<String>),
     GcpKey([u8; 32]),
 }
@@ -108,22 +101,11 @@ impl Binding {
             return Some(Self::Settings);
         };
         match ctx.scheme {
-            UriScheme::S3 => aws::Role::of(credential).ok().map(|role| Self::Aws {
-                arn: role.arn,
-                external_id: role.external_id,
-            }),
-            UriScheme::Abfs | UriScheme::Abfss => match azure::Identity::of(credential).ok()? {
-                azure::Identity::ServicePrincipal {
-                    tenant_id,
-                    client_id,
-                    client_secret,
-                } => Some(Self::AzurePrincipal {
-                    tenant_id,
-                    client_id,
-                    secret_sha256: Sha256::digest(client_secret.as_sensitive_bytes()).into(),
-                }),
-                azure::Identity::Managed(id) => Some(Self::AzureManaged(id)),
-            },
+            UriScheme::S3 => aws::Role::of(credential).ok().map(Self::Aws),
+            UriScheme::Abfs | UriScheme::Abfss => {
+                let identity = azure::Identity::of(credential).ok()?;
+                Some(Self::Azure((&identity).into()))
+            }
             UriScheme::Gs => match gcp::Identity::of(credential).ok()? {
                 gcp::Identity::ServiceAccount(email) => Some(Self::GcpAccount(email)),
                 gcp::Identity::Key(key) => Some(Self::GcpKey(
@@ -240,33 +222,46 @@ impl CredentialVendor for CachingVendor {
         let Some(key) = Key::of(ctx) else {
             return self.inner.vend(ctx).await;
         };
-        // The entry's own deadline too: a renewal can replace the entry
-        // while this read runs.
-        if let Some(entry) = self.entries.get(&key)
-            && entry.serve_until > (self.clock)()
+        let fresh = |entry: &Entry| entry.serve_until > (self.clock)();
+        // The entry's own deadline too: the cache drops it by the clock it
+        // read when the entry came.
+        if let Some(entry) = self.entries.get(&key).await
+            && fresh(&entry)
         {
             return Ok(entry.credentials);
         }
-        // The cloud checks the identity (the trust policy of a role, say)
-        // during the call, so the max age counts from before it.
-        let start = (self.clock)();
-        let credentials = self.inner.vend(ctx).await?;
-        let mut serve_until = start.saturating_add(self.max_age_ms);
-        if let Some(expires_at) = credentials.expiration_time {
-            serve_until = serve_until.min(expires_at - EXPIRY_MARGIN_MS);
-        }
-        // A credential already past its time is not cached, so it cannot
-        // replace a good entry that another request just cached.
-        if serve_until > (self.clock)() {
-            self.entries.insert(
-                key,
-                Entry {
-                    credentials: credentials.clone(),
+        // Requests for one key take turns here, so those that miss at the
+        // same time wait for one vend.
+        let result = self
+            .entries
+            .entry(key)
+            .and_try_compute_with(|cached| async move {
+                if cached.is_some_and(|entry| fresh(entry.value())) {
+                    return Ok(Op::Nop);
+                }
+                // The cloud checks the identity (the trust policy of a role,
+                // say) during the call, so the max age counts from before it.
+                let start = (self.clock)();
+                let credentials = self.inner.vend(ctx).await?;
+                let mut serve_until = start.saturating_add(self.max_age_ms);
+                if let Some(expires_at) = credentials.expiration_time {
+                    serve_until = serve_until.min(expires_at - EXPIRY_MARGIN_MS);
+                }
+                // A credential already past its time ends at once.
+                Ok::<_, Error>(Op::Put(Entry {
+                    credentials,
                     serve_until,
-                },
-            );
+                }))
+            })
+            .await?;
+        match result {
+            CompResult::Unchanged(entry)
+            | CompResult::Inserted(entry)
+            | CompResult::ReplacedWith(entry) => Ok(entry.into_value().credentials),
+            CompResult::StillNone(_) | CompResult::Removed(_) => {
+                Err(Error::internal("the credential cache lost an entry"))
+            }
         }
-        Ok(credentials)
     }
 
     fn s3_store(&self) -> Option<&S3Store> {
@@ -312,6 +307,8 @@ mod tests {
     impl CredentialVendor for Counting {
         async fn vend(&self, _ctx: &CredentialContext) -> Result<TemporaryCredentials> {
             let n = self.vends.fetch_add(1, Ordering::SeqCst) + 1;
+            // Let other requests run during the call, as a cloud call does.
+            tokio::task::yield_now().await;
             let answer = {
                 let mut answers = self.answers.lock().unwrap();
                 match answers.len() {
@@ -447,6 +444,15 @@ mod tests {
             assert_eq!(f.vend(request).await.unwrap(), (i + 1).to_string());
         }
         assert_eq!(f.vends(), requests.len());
+    }
+
+    #[tokio::test]
+    async fn requests_that_miss_together_wait_for_one_vend() {
+        let f = Fixture::new(vec![Ok(Some(at(60)))]);
+        let read = ctx("s3://b/t", READ, None);
+        let (a, b) = tokio::join!(f.vend(&read), f.vend(&read));
+        assert_eq!((a.unwrap(), b.unwrap()), ("1".into(), "1".into()));
+        assert_eq!(f.vends(), 1);
     }
 
     #[test]

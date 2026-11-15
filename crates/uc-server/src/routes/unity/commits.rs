@@ -2,6 +2,8 @@
 //! tables. Upstream `DeltaCommitsService`; the rules are in
 //! [`uc_delta::commits`].
 
+use std::sync::Arc;
+
 use axum::extract::State;
 use futures::TryStreamExt;
 use object_store::{ObjectStore, ObjectStoreExt, path::Path as ObjectPath};
@@ -19,7 +21,7 @@ use crate::{
     http::{EmptyObject, error::ApiResult},
     server::state::AppState,
     storage::vendor::VendOp,
-    storage::{ServerStorage, StorageError, same_content},
+    storage::{StorageError, same_content},
 };
 
 #[utoipa::path(
@@ -50,7 +52,7 @@ pub async fn commit(
     settle_commit(&state, |files_checked| async move {
         metastore
             .delta_tables()
-            .commit(req.clone(), actor, files_checked)
+            .commit(req, actor, files_checked)
             .await
     })
     .await?;
@@ -74,31 +76,24 @@ where
     F: Fn(bool) -> Fut,
     Fut: Future<Output = uc_common::Result<CommitOutcome>>,
 {
+    let mut rechecked = false;
     let mut outcome = attempt(false).await?;
-    if let CommitOutcome::VerifyPublished {
+    while let CommitOutcome::VerifyPublished {
         table_location,
         from,
         to,
     } = &outcome
     {
-        if missing_published(state, table_location, *from, *to)
-            .await?
-            .is_some()
-        {
-            outcome = attempt(false).await?;
-            if let CommitOutcome::VerifyPublished {
-                table_location,
-                from,
-                to,
-            } = &outcome
-            {
-                if let Some(path) = missing_published(state, table_location, *from, *to).await? {
-                    return Err(commits::missing_published_file(*to, &path));
-                }
+        match missing_published(state, table_location, *from, *to).await? {
+            None => {
                 outcome = attempt(true).await?;
+                break;
             }
-        } else {
-            outcome = attempt(true).await?;
+            Some(path) if rechecked => return Err(commits::missing_published_file(*to, &path)),
+            Some(_) => {
+                rechecked = true;
+                outcome = attempt(false).await?;
+            }
         }
     }
     verify_replay(state, outcome).await
@@ -120,9 +115,7 @@ async fn missing_published(
         commits::published_unknown(table_location, to)
     };
     let location = NormalizedUrl::parse(table_location).map_err(|e| unknown(e.message().into()))?;
-    let storage = ServerStorage::new(state.metastore.clone(), state.vendor.clone());
-    let (store, root) = storage
-        .open(&location, VendOp::Read)
+    let (store, log) = open_delta_log(state, &location)
         .await
         .map_err(|e| match e {
             StorageError::Server(
@@ -133,9 +126,8 @@ async fn missing_published(
             ) => Error::new(code, message),
             e => unknown(e.to_string()),
         })?;
-    let log = root.join("_delta_log");
     for version in from..=to {
-        let path = log.clone().join(format!("{version:020}.json"));
+        let path = log.clone().join(commits::published_file_name(version));
         if !published_exists(store.as_ref(), &path)
             .await
             .map_err(|e| unknown(e.to_string()))?
@@ -144,6 +136,18 @@ async fn missing_published(
         }
     }
     Ok(None)
+}
+
+/// The store of a table, and the path of its `_delta_log` in it.
+async fn open_delta_log(
+    state: &AppState,
+    location: &NormalizedUrl,
+) -> Result<(Arc<dyn ObjectStore>, ObjectPath), StorageError> {
+    let opened = state
+        .stores
+        .open(&state.metastore, &state.vendor, location, VendOp::Read)
+        .await?;
+    Ok((opened.store.clone(), opened.root.clone().join("_delta_log")))
 }
 
 /// Whether an object exists. S3 answers a HEAD on a missing key with 403
@@ -194,13 +198,10 @@ async fn verify_replay(state: &AppState, outcome: CommitOutcome) -> uc_common::R
         commits::replay_unknown(table_location, version)
     };
     let location = NormalizedUrl::parse(table_location).map_err(|e| unknown(e.message().into()))?;
-    let storage = ServerStorage::new(state.metastore.clone(), state.vendor.clone());
-    let (store, root) = storage
-        .open(&location, VendOp::Read)
+    let (store, log) = open_delta_log(state, &location)
         .await
         .map_err(|e| unknown(e.to_string()))?;
-    let log = root.join("_delta_log");
-    let published = log.clone().join(format!("{version:020}.json"));
+    let published = log.clone().join(commits::published_file_name(version));
     let staged = log.join("_staged_commits").join(staged_file_name.as_str());
     match same_content(store.as_ref(), &published, &staged).await {
         Ok(true) => Ok(()),

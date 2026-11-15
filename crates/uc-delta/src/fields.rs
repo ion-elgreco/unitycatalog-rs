@@ -11,7 +11,9 @@
 
 use delta_kernel::KernelError;
 use delta_kernel::schema::{DataType, MetadataValue, PrimitiveType, StructField, StructType};
+use serde::Deserialize;
 use serde_json::{Map, Value};
+use uc_api::ColumnTypeName;
 
 /// The JSON key style of a field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,20 +34,15 @@ impl KeyStyle {
     }
 }
 
-/// A field of a request after [`check_fields`].
+/// The struct type of a request after [`check_fields`].
 #[derive(Debug, Clone)]
-pub struct CheckedField {
-    /// The field as the kernel reads it.
-    pub field: StructField,
-    /// The field in camelCase, as a column stores it in `type_json`. It keeps
-    /// the key order of the request, which the kernel's metadata map does
-    /// not.
-    pub type_json: Value,
-}
-
-/// The kernel's fields of checked fields.
-pub fn kernel_fields(fields: &[CheckedField]) -> Vec<StructField> {
-    fields.iter().map(|f| f.field.clone()).collect()
+pub struct CheckedSchema {
+    /// The struct type as the kernel reads it.
+    pub schema: StructType,
+    /// Each top-level field in camelCase, as a column stores it in
+    /// `type_json`. It keeps the key order of the request, which the
+    /// kernel's metadata map does not.
+    pub type_jsons: Vec<Value>,
 }
 
 /// The message of a kernel error, without the kernel's prefix for schema
@@ -194,18 +191,17 @@ pub fn check(field: &Value, path: &str) -> Result<StructField, String> {
 /// Upstream `ColumnUtils.validateStructType` for the camelCase fields of a
 /// struct at `path`, then the kernel reads them. The kernel refuses two
 /// fields whose names differ only in case.
-pub fn check_fields(fields: Option<&[Value]>, path: &str) -> Result<Vec<StructField>, String> {
+pub fn check_fields(fields: Option<&[Value]>, path: &str) -> Result<StructType, String> {
     check_field_parts(fields, path)?;
     let fields = fields
         .unwrap_or_default()
         .iter()
         .enumerate()
         .map(|(i, field)| {
-            serde_json::from_value(field.clone()).map_err(|e| format!("{path}.fields[{i}]: {e}"))
+            StructField::deserialize(field).map_err(|e| format!("{path}.fields[{i}]: {e}"))
         })
         .collect::<Result<Vec<StructField>, _>>()?;
-    let schema = StructType::try_new(fields).map_err(|e| format!("{path}: {e}"))?;
-    Ok(schema.into_fields().collect())
+    StructType::try_new(fields).map_err(|e| format!("{path}: {e}"))
 }
 
 fn check_parts(field: &Value, path: &str) -> Result<(), String> {
@@ -278,28 +274,28 @@ fn check_type(t: &Value, path: &str) -> Result<(), String> {
     }
 }
 
-/// Upstream `ColumnUtils.resolveColumnTypeName`: the UC `ColumnTypeName`
-/// wire name of a Delta type.
-pub fn column_type_name(t: &DataType) -> Result<&'static str, String> {
+/// Upstream `ColumnUtils.resolveColumnTypeName`: the UC column type of a
+/// Delta type.
+pub fn column_type_name(t: &DataType) -> Result<ColumnTypeName, String> {
     Ok(match t {
-        DataType::Array(_) => "ARRAY",
-        DataType::Map(_) => "MAP",
-        DataType::Struct(_) => "STRUCT",
-        DataType::Variant(_) => "VARIANT",
+        DataType::Array(_) => ColumnTypeName::Array,
+        DataType::Map(_) => ColumnTypeName::Map,
+        DataType::Struct(_) => ColumnTypeName::Struct,
+        DataType::Variant(_) => ColumnTypeName::Variant,
         DataType::Primitive(p) => match p {
-            PrimitiveType::Boolean => "BOOLEAN",
-            PrimitiveType::Byte => "BYTE",
-            PrimitiveType::Short => "SHORT",
-            PrimitiveType::Integer => "INT",
-            PrimitiveType::Long => "LONG",
-            PrimitiveType::Float => "FLOAT",
-            PrimitiveType::Double => "DOUBLE",
-            PrimitiveType::Date => "DATE",
-            PrimitiveType::Timestamp => "TIMESTAMP",
-            PrimitiveType::TimestampNtz => "TIMESTAMP_NTZ",
-            PrimitiveType::String => "STRING",
-            PrimitiveType::Binary => "BINARY",
-            PrimitiveType::Decimal(_) => "DECIMAL",
+            PrimitiveType::Boolean => ColumnTypeName::Boolean,
+            PrimitiveType::Byte => ColumnTypeName::Byte,
+            PrimitiveType::Short => ColumnTypeName::Short,
+            PrimitiveType::Integer => ColumnTypeName::Int,
+            PrimitiveType::Long => ColumnTypeName::Long,
+            PrimitiveType::Float => ColumnTypeName::Float,
+            PrimitiveType::Double => ColumnTypeName::Double,
+            PrimitiveType::Date => ColumnTypeName::Date,
+            PrimitiveType::Timestamp => ColumnTypeName::Timestamp,
+            PrimitiveType::TimestampNtz => ColumnTypeName::TimestampNtz,
+            PrimitiveType::String => ColumnTypeName::String,
+            PrimitiveType::Binary => ColumnTypeName::Binary,
+            PrimitiveType::Decimal(_) => ColumnTypeName::Decimal,
             other => return Err(format!("Unsupported Delta primitive type: {other}")),
         },
         // Types behind kernel features that UC does not turn on.
@@ -312,9 +308,6 @@ pub fn column_type_name(t: &DataType) -> Result<&'static str, String> {
 /// (`bigint`, `decimal(10,2)`, `array<int>`, ...).
 pub fn catalog_string(t: &DataType) -> Result<String, String> {
     Ok(match t {
-        DataType::Primitive(PrimitiveType::Decimal(d)) => {
-            format!("decimal({},{})", d.precision(), d.scale())
-        }
         DataType::Array(array) => format!("array<{}>", catalog_string(array.element_type())?),
         DataType::Map(map) => format!(
             "map<{},{}>",
@@ -328,12 +321,15 @@ pub fn catalog_string(t: &DataType) -> Result<String, String> {
                 .collect::<Result<Vec<_>, String>>()?;
             format!("struct<{}>", fields.join(","))
         }
-        t => match column_type_name(t)? {
-            "LONG" => "bigint".into(),
-            "SHORT" => "smallint".into(),
-            "BYTE" => "tinyint".into(),
-            name => name.to_ascii_lowercase(),
-        },
+        DataType::Primitive(PrimitiveType::Byte) => "tinyint".into(),
+        DataType::Primitive(PrimitiveType::Short) => "smallint".into(),
+        DataType::Primitive(PrimitiveType::Integer) => "int".into(),
+        DataType::Primitive(PrimitiveType::Long) => "bigint".into(),
+        // Spark names the other types as the kernel does.
+        t => {
+            column_type_name(t)?;
+            t.to_string()
+        }
     })
 }
 
@@ -398,7 +394,10 @@ mod tests {
             catalog_string(field.data_type()).unwrap(),
             "map<string,array<decimal(10,2)>>"
         );
-        assert_eq!(column_type_name(field.data_type()).unwrap(), "MAP");
+        assert_eq!(
+            column_type_name(field.data_type()).unwrap(),
+            ColumnTypeName::Map
+        );
         let kebab = normalize(&v, KeyStyle::Camel, KeyStyle::Kebab).unwrap();
         assert_eq!(
             kebab["type"]["value-type"]["element-type"],
@@ -643,7 +642,10 @@ mod tests {
             "type_json.type: Invalid decimal: precision must be in range 1..38 inclusive, found: 0."
         );
         let fields = [json!({ "name": "id", "type": "long", "nullable": false, "metadata": {} })];
-        assert_eq!(check_fields(Some(&fields), "columns").unwrap().len(), 1);
+        assert_eq!(
+            check_fields(Some(&fields), "columns").unwrap().num_fields(),
+            1
+        );
     }
 
     #[test]
@@ -666,9 +668,7 @@ mod tests {
         ];
         for (primitive, type_name, catalog) in expected {
             let t = data_type(json!(primitive));
-            assert_eq!(column_type_name(&t).unwrap(), type_name);
-            // Also a `ColumnTypeName` on the wire.
-            serde_json::from_value::<uc_api::ColumnTypeName>(json!(type_name)).unwrap();
+            assert_eq!(json!(column_type_name(&t).unwrap()), json!(type_name));
             assert_eq!(catalog_string(&t).unwrap(), catalog);
         }
     }
@@ -703,7 +703,7 @@ mod tests {
         ];
         for (v, type_name, catalog) in cases {
             let t = data_type(v);
-            assert_eq!(column_type_name(&t).unwrap(), type_name);
+            assert_eq!(json!(column_type_name(&t).unwrap()), json!(type_name));
             assert_eq!(catalog_string(&t).unwrap(), catalog);
         }
         let void =

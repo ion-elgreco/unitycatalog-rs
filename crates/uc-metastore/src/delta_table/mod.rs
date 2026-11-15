@@ -18,7 +18,7 @@ pub trait DeltaTableOps: Send + Sync {
     /// [`CommitOutcome::VerifyPublished`] asked for.
     async fn commit(
         &self,
-        commit: DeltaCommit,
+        commit: &DeltaCommit,
         updated_by: Option<&str>,
         files_checked: bool,
     ) -> Result<CommitOutcome>;
@@ -58,7 +58,7 @@ pub trait DeltaTableOps: Send + Sync {
     async fn update_table(
         &self,
         full_name: &str,
-        req: DeltaUpdateTableRequest,
+        req: &DeltaUpdateTableRequest,
         updated_by: Option<&str>,
         files_checked: bool,
     ) -> Result<CommitOutcome>;

@@ -11,7 +11,7 @@ use uc_common::{Error, ErrorCode, Result, three_part_full_name};
 
 use crate::DeltaTableOps;
 use crate::sql::rows::{DELTA_COMMIT, TBL};
-use crate::sql::{SqlMetastore, by_id, db_err, insert, select, touch_audit};
+use crate::sql::{SqlMetastore, by_id, db_err, insert, select, select_one, touch_audit};
 use crate::table::sql::TableRow;
 use uc_delta::commits::{
     self as rules, CommitLog, CommitOutcome, CommitPlan, Planned, StoredCommit,
@@ -68,14 +68,13 @@ impl SqlMetastore {
 
     /// The tracked commit at `version`, if any.
     async fn commit_at(&self, table_id: &str, version: i64) -> Result<Option<StoredCommit>> {
-        let rows: Vec<StoredCommit> = select(
+        select_one(
             self.db.as_ref(),
             &DELTA_COMMIT,
             "WHERE table_id = $1 AND commit_version = $2",
             &[table_id.into(), version.into()],
         )
-        .await?;
-        Ok(rows.into_iter().next())
+        .await
     }
 
     /// The log of a table and its tracked commit at the version of `info`.
@@ -97,12 +96,12 @@ impl SqlMetastore {
     /// Upstream `postCommit`.
     async fn post_delta_commit(
         &self,
-        commit: DeltaCommit,
+        commit: &DeltaCommit,
         updated_by: Option<&str>,
         files_checked: bool,
     ) -> Result<CommitOutcome> {
         self.check_managed_enabled()?;
-        rules::validate_commit(&commit)?;
+        rules::validate_commit(commit)?;
         let uniform = uc_delta::uniform::from_commit(
             commit.uniform.as_ref(),
             commit.commit_info.as_ref().and_then(|i| i.version),
@@ -152,7 +151,7 @@ impl SqlMetastore {
             let (marks, at_version) = self.log_at(&table_id, commit.commit_info.as_ref()).await?;
             let planned = rules::plan_commit(
                 &table_id,
-                &commit,
+                commit,
                 marks.log(),
                 at_version.as_ref(),
                 files_checked,
@@ -402,20 +401,26 @@ impl SqlMetastore {
     }
 
     /// The unbackfilled commits of a table, newest first, and its latest
-    /// version (0 before the first commit).
+    /// version (0 before the first commit). One query reads them with the
+    /// highest flagged commit, if any, which gives the latest version when
+    /// all are backfilled. Flags only move upward, so the commits above it
+    /// are unbackfilled.
     async fn unbackfilled(&self, table_id: &str) -> Result<(Vec<StoredCommit>, i64)> {
-        let marks = log_marks(self.db.as_ref(), table_id).await?;
-        let Some(log) = marks.log() else {
-            return Ok((vec![], 0));
-        };
-        let commits = select(
+        let mut commits: Vec<StoredCommit> = select(
             self.db.as_ref(),
             &DELTA_COMMIT,
-            "WHERE table_id = $1 AND commit_version > $2 ORDER BY commit_version DESC",
-            &[table_id.into(), log.backfilled_version.into()],
+            "WHERE table_id = $1 AND commit_version >= COALESCE(\
+             (SELECT MAX(commit_version) FROM delta_commit \
+             WHERE table_id = $3 AND is_backfilled_latest_commit = $2), 0) \
+             ORDER BY commit_version DESC",
+            &[table_id.into(), true.into(), table_id.into()],
         )
         .await?;
-        Ok((commits, log.last_version))
+        let Some(latest) = commits.first().map(|c| c.commit_version) else {
+            return Ok((vec![], 0));
+        };
+        commits.retain(|c| !c.is_backfilled);
+        Ok((commits, latest))
     }
 
     /// Upstream `getCommits`.
@@ -437,15 +442,8 @@ impl SqlMetastore {
     }
 }
 
-/// Upstream `requireDeltaTable`: the Delta API serves only Delta tables.
 fn require_delta(row: &TableRow, full_name: &str) -> Result<()> {
-    if row.data_source_format.as_deref() != Some("DELTA") {
-        return Err(Error::new(
-            ErrorCode::UnsupportedTableFormat,
-            format!("Table is not a Delta table: {full_name}"),
-        ));
-    }
-    Ok(())
+    uc_delta::table::require_delta(row.data_source_format()?, full_name)
 }
 
 /// A plan to apply, or the outcome that ends the request without writes.
@@ -512,8 +510,8 @@ impl DeltaTableOps for SqlMetastore {
     async fn load_table(&self, full_name: &str) -> Result<DeltaLoadTableResponse> {
         let (schema, row) = self.resolve_table(full_name).await?;
         let uniform = row.uniform();
+        require_delta(&row, full_name)?;
         let info = row.into_info(&schema)?;
-        uc_delta::table::require_delta(&info, full_name)?;
         let commits = match (info.table_type, info.table_id.as_deref()) {
             (Some(TableType::Managed), Some(id)) => Some(self.unbackfilled(id).await?),
             _ => None,
@@ -525,7 +523,7 @@ impl DeltaTableOps for SqlMetastore {
 
     async fn commit(
         &self,
-        commit: DeltaCommit,
+        commit: &DeltaCommit,
         updated_by: Option<&str>,
         files_checked: bool,
     ) -> Result<CommitOutcome> {
@@ -540,12 +538,12 @@ impl DeltaTableOps for SqlMetastore {
     async fn update_table(
         &self,
         full_name: &str,
-        req: DeltaUpdateTableRequest,
+        req: &DeltaUpdateTableRequest,
         updated_by: Option<&str>,
         files_checked: bool,
     ) -> Result<CommitOutcome> {
         let allow_missing_dv = self.tables.allow_missing_deletion_vectors;
-        self.update_delta_table(full_name, &req, updated_by, allow_missing_dv, files_checked)
+        self.update_delta_table(full_name, req, updated_by, allow_missing_dv, files_checked)
             .await
     }
 }

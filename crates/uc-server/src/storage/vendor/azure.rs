@@ -75,7 +75,7 @@ pub enum Identity {
 /// The key of a sign-in: its identity, with the digest of a client secret
 /// in place of the secret.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum SignInKey {
+pub(super) enum SignInKey {
     ServicePrincipal {
         tenant_id: String,
         client_id: String,

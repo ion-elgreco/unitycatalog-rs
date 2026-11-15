@@ -8,17 +8,11 @@
 //! reports which kept fields changed nullability or type. The changes it
 //! does not check yet are refused in [`crate::unsupported_changes`].
 
-use std::collections::HashMap;
-
+use delta_kernel::schema::StructType;
 use delta_kernel::schema::diff::{FieldChangeType, FieldUpdate, SchemaDiff};
-use delta_kernel::schema::{ColumnMetadataKey, MetadataValue, StructField, StructType};
-use serde_json::Value;
 
-use uc_api::ColumnInfo;
 use uc_common::{Error, Result, SecurablePropertiesMap};
 
-use crate::fields::{kernel_message, nested_fields};
-use crate::table::struct_field;
 use crate::unsupported_changes;
 
 const ENABLE_ICEBERG_WRITER_COMPAT_V1: &str = "delta.enableIcebergWriterCompatV1";
@@ -27,55 +21,50 @@ pub(crate) fn invalid(message: impl AsRef<str>) -> Error {
     Error::invalid_argument(format!("set-columns: {}", message.as_ref()))
 }
 
-/// Run the check when the request renames a top-level column, or keeps the
-/// id of some field while its name or physical name changes at any depth.
-/// Other requests skip it: an `ALTER COLUMN TYPE` writes a new
+/// Run the check when the request renames a field at any depth, also by
+/// case only. Other requests skip it: an `ALTER COLUMN TYPE` writes a new
 /// `delta.typeChanges` entry, which the check refuses, while a rename
 /// carries the stored entries unchanged.
 ///
-/// `properties` are the table properties before the request.
+/// `current` holds the stored columns that can be read, `unreadable` the
+/// error of the first one that cannot, and `diff` goes from `current` to
+/// `new`. `properties` are the table properties before the request.
 pub fn validate(
-    current_columns: &[ColumnInfo],
-    incoming: &[StructField],
+    current: &StructType,
+    new: &StructType,
+    diff: &SchemaDiff,
+    unreadable: Option<String>,
     properties: &SecurablePropertiesMap,
-    renames_top_level_column: bool,
 ) -> Result<()> {
-    if !renames_top_level_column && !keeps_an_id_under_a_new_identity(current_columns, incoming) {
+    let (_, _, updated) = diff.all_changes();
+    let renames = updated
+        .iter()
+        .any(|u| u.change_types.contains(&FieldChangeType::Renamed));
+    if !renames {
         return Ok(());
     }
-    let current = current_columns
-        .iter()
-        .map(struct_field)
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .and_then(|fields| StructType::try_new(fields).map_err(kernel_message))
-        .map_err(|e| invalid(format!("the table schema cannot be read: {e}")))?;
-    let new = StructType::try_new(incoming.iter().cloned()).map_err(|e| {
-        invalid(format!(
-            "the requested schema cannot be read: {}",
-            kernel_message(e)
-        ))
-    })?;
+    if let Some(error) = unreadable {
+        return Err(invalid(format!("the table schema cannot be read: {error}")));
+    }
     let iceberg_writer_compat_v1 = properties
         .get(ENABLE_ICEBERG_WRITER_COMPAT_V1)
         .is_some_and(|v| v.eq_ignore_ascii_case("true"));
 
-    let diff = SchemaDiff::new(&current, &new).map_err(|e| invalid(e.to_string()))?;
-    let (_, _, updated) = diff.all_changes();
     // Changes that Delta refuses.
-    unsupported_changes::reject_moves(&current, &new)?;
+    unsupported_changes::reject_moves(current, new)?;
     for update in updated {
         unsupported_changes::reject_new_type_changes(update)?;
         reject_tightened_nullability(update)?;
     }
     if iceberg_writer_compat_v1 {
-        unsupported_changes::reject_map_key_changes(&current, &new)?;
+        unsupported_changes::reject_map_key_changes(current, new)?;
     }
     // Changes that Delta can take after a check the kernel lacks.
-    unsupported_changes::reject_added_fields(&diff)?;
+    unsupported_changes::reject_added_fields(diff)?;
     for update in updated {
         unsupported_changes::reject_type_change(update)?;
     }
-    unsupported_changes::reject_dropped_fields(&diff)
+    unsupported_changes::reject_dropped_fields(diff)
 }
 
 /// A kept field does not become non-nullable, also not by the elements or
@@ -96,45 +85,13 @@ fn reject_tightened_nullability(update: &FieldUpdate) -> Result<()> {
     Ok(())
 }
 
-/// A field's name and physical name: what a rename or a new physical name
-/// changes under an id.
-type Identity = (String, Option<MetadataValue>);
-
-fn keeps_an_id_under_a_new_identity(
-    current_columns: &[ColumnInfo],
-    incoming: &[StructField],
-) -> bool {
-    let mut current = HashMap::new();
-    // A stored column that cannot be read has no identity to compare.
-    for field in current_columns.iter().filter_map(|c| struct_field(c).ok()) {
-        collect_identities(&field, &mut current);
-    }
-    let mut requested = HashMap::new();
-    for field in incoming {
-        collect_identities(field, &mut requested);
-    }
-    requested
-        .iter()
-        .any(|(id, identity)| current.get(id).is_some_and(|c| c != identity))
-}
-
-fn collect_identities(field: &StructField, by_id: &mut HashMap<i64, Identity>) {
-    if let Some(id) = field.column_mapping_id() {
-        let physical = field
-            .get_config_value(&ColumnMetadataKey::ColumnMappingPhysicalName)
-            .filter(|v| **v != MetadataValue::Other(Value::Null))
-            .cloned();
-        by_id.insert(id, (field.name().clone(), physical));
-    }
-    for nested in nested_fields(field.data_type()) {
-        collect_identities(nested, by_id);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
+    use uc_api::ColumnInfo;
+
+    use crate::column_mapping::readable_stored_fields;
 
     fn fld(name: &str, data_type: Value, id: Option<i32>, physical: Option<&str>) -> Value {
         fld_nullable(name, data_type, true, id, physical)
@@ -188,9 +145,10 @@ mod tests {
         properties
     }
 
+    /// The check as `set-columns` runs it: on the stored columns that can be
+    /// read, after the kernel's schema diff.
     fn check(
         properties: &SecurablePropertiesMap,
-        rename: bool,
         current: Vec<Value>,
         incoming: Vec<Value>,
     ) -> Result<()> {
@@ -202,31 +160,34 @@ mod tests {
                 ..Default::default()
             })
             .collect();
-        let incoming: Vec<StructField> = incoming
-            .into_iter()
-            .map(|f| serde_json::from_value(f).unwrap())
-            .collect();
-        validate(&current, &incoming, properties, rename)
+        let (current, unreadable) = readable_stored_fields(&current);
+        let current = StructType::try_new(current).unwrap();
+        let new = StructType::try_new(
+            incoming
+                .into_iter()
+                .map(|f| serde_json::from_value(f).unwrap()),
+        )
+        .unwrap();
+        let diff = SchemaDiff::new(&current, &new).map_err(|e| invalid(e.to_string()))?;
+        validate(&current, &new, &diff, unreadable, properties)
     }
 
     fn rejected(
         properties: &SecurablePropertiesMap,
-        rename: bool,
         current: Vec<Value>,
         incoming: Vec<Value>,
     ) -> String {
-        let error = check(properties, rename, current, incoming).unwrap_err();
+        let error = check(properties, current, incoming).unwrap_err();
         assert_eq!(error.code(), uc_common::ErrorCode::InvalidArgument);
         error.message().to_string()
     }
 
     fn unsupported(
         properties: &SecurablePropertiesMap,
-        rename: bool,
         current: Vec<Value>,
         incoming: Vec<Value>,
     ) -> String {
-        let error = check(properties, rename, current, incoming).unwrap_err();
+        let error = check(properties, current, incoming).unwrap_err();
         assert_eq!(error.code(), uc_common::ErrorCode::Unimplemented);
         error.message().to_string()
     }
@@ -243,7 +204,6 @@ mod tests {
             assert!(
                 unsupported(
                     &p,
-                    true,
                     current(),
                     vec![fld("b", json!("string"), Some(1), Some("col-1"))]
                 )
@@ -252,7 +212,6 @@ mod tests {
             assert!(
                 rejected(
                     &p,
-                    true,
                     current(),
                     vec![fld_nullable(
                         "b",
@@ -265,10 +224,10 @@ mod tests {
                 .contains("Cannot tighten the nullability")
             );
             assert!(
-                rejected(&p, true, current(), vec![long("b", 1, "col-9")])
+                rejected(&p, current(), vec![long("b", 1, "col-9")])
                     .contains("inconsistent physical names: 'col-1' -> 'col-9'")
             );
-            assert!(check(&p, true, current(), vec![long("b", 1, "col-1")]).is_ok());
+            assert!(check(&p, current(), vec![long("b", 1, "col-1")]).is_ok());
         }
     }
 
@@ -280,7 +239,6 @@ mod tests {
             assert!(
                 unsupported(
                     &p,
-                    true,
                     current(),
                     vec![long("b", 1, "col-1"), long("c", 6, "col-6")]
                 )
@@ -289,7 +247,6 @@ mod tests {
             assert!(
                 rejected(
                     &p,
-                    true,
                     current(),
                     vec![
                         long("b", 1, "col-1"),
@@ -315,7 +272,6 @@ mod tests {
         assert!(
             unsupported(
                 &p,
-                true,
                 current(),
                 vec![fld(
                     "t",
@@ -329,7 +285,6 @@ mod tests {
         assert!(
             check(
                 &p,
-                true,
                 current(),
                 vec![fld(
                     "t",
@@ -345,7 +300,6 @@ mod tests {
         assert!(
             unsupported(
                 &p,
-                false,
                 current(),
                 vec![fld(
                     "s",
@@ -364,7 +318,6 @@ mod tests {
         assert!(
             rejected(
                 &id,
-                false,
                 vec![long("a", 1, "col-1")],
                 vec![long("a", 1, "col-new")]
             )
@@ -380,7 +333,7 @@ mod tests {
             )]
         };
         assert!(
-            rejected(&name, false, in_array("col-x"), in_array("col-z"))
+            rejected(&name, in_array("col-x"), in_array("col-z"))
                 .contains("inconsistent physical names: 'col-x' -> 'col-z'")
         );
         let in_map = |physical| {
@@ -392,7 +345,7 @@ mod tests {
             )]
         };
         assert!(
-            rejected(&name, false, in_map("col-x"), in_map("col-z"))
+            rejected(&name, in_map("col-x"), in_map("col-z"))
                 .contains("inconsistent physical names: 'col-x' -> 'col-z'")
         );
     }
@@ -418,7 +371,7 @@ mod tests {
                     ),
                 ]
             };
-            assert!(check(&p, true, schema("a"), schema("b")).is_ok());
+            assert!(check(&p, schema("a"), schema("b")).is_ok());
             let schema = |first: &str| {
                 vec![
                     long(first, 1, "col-1"),
@@ -430,7 +383,7 @@ mod tests {
                     ),
                 ]
             };
-            assert!(check(&p, true, schema("x"), schema("y")).is_ok());
+            assert!(check(&p, schema("x"), schema("y")).is_ok());
         }
     }
 
@@ -440,7 +393,6 @@ mod tests {
         assert!(
             unsupported(
                 &p,
-                true,
                 vec![long("a", 1, "col-1"), long("c", 2, "col-c")],
                 vec![long("b", 1, "col-1")]
             )
@@ -450,7 +402,6 @@ mod tests {
         assert!(
             unsupported(
                 &p,
-                true,
                 vec![long("a", 1, "col-1"), long("b", 2, "col-2")],
                 vec![long("b", 1, "col-1")]
             )
@@ -460,7 +411,6 @@ mod tests {
         assert!(
             unsupported(
                 &p,
-                true,
                 vec![
                     long("a", 1, "col-1"),
                     s(vec![long("x", 3, "col-x"), long("y", 4, "col-y")])
@@ -476,7 +426,6 @@ mod tests {
         let p = properties("name", &[]);
         let message = rejected(
             &p,
-            true,
             vec![
                 fld(
                     "s1",
@@ -521,7 +470,6 @@ mod tests {
         assert!(
             rejected(
                 &p,
-                true,
                 vec![type_change(long("a", 1, "col-1"), "integer", "long")],
                 vec![type_change(long("b", 1, "col-1"), "short", "long")]
             )
@@ -530,7 +478,6 @@ mod tests {
         assert!(
             check(
                 &p,
-                true,
                 vec![type_change(long("a", 1, "col-1"), "integer", "long")],
                 vec![type_change(long("b", 1, "col-1"), "integer", "long")]
             )
@@ -539,7 +486,6 @@ mod tests {
         assert!(
             rejected(
                 &p,
-                true,
                 vec![long("a", 1, "col-1"), long("c", 1, "col-c")],
                 vec![long("b", 1, "col-1"), long("c", 1, "col-c")]
             )
@@ -552,7 +498,6 @@ mod tests {
         assert!(
             check(
                 &properties("name", &[]),
-                false,
                 vec![long("a", 1, "col-1")],
                 vec![fld("a", json!("string"), Some(1), Some("col-1"))]
             )
@@ -561,7 +506,6 @@ mod tests {
         assert!(
             check(
                 &properties("id", &[]),
-                false,
                 vec![long("a", 1, "col-1")],
                 vec![long("a", 2, "col-1")]
             )
@@ -571,7 +515,6 @@ mod tests {
         assert!(
             check(
                 &properties("name", &[]),
-                false,
                 vec![fld("a", json!(12345), Some(1), Some("col-1"))],
                 vec![long("b", 1, "col-1")]
             )
@@ -581,7 +524,6 @@ mod tests {
         assert!(
             check(
                 &properties("name", &[]),
-                false,
                 vec![long("a", 1, "col-1")],
                 vec![long("A", 1, "col-1")]
             )
@@ -596,25 +538,14 @@ mod tests {
         assert!(
             rejected(
                 &p,
-                true,
                 vec![long("a", 1, "col-1"), unknown()],
                 vec![long("b", 1, "col-1"), long("v", 2, "col-v")]
             )
             .contains("the table schema cannot be read")
         );
         assert!(
-            rejected(
-                &p,
-                true,
-                vec![long("a", 1, "col-1")],
-                vec![long("b", 1, "col-1"), long("B", 2, "col-2")]
-            )
-            .contains("the requested schema cannot be read: Duplicate field name")
-        );
-        assert!(
             check(
                 &p,
-                false,
                 vec![long("a", 1, "col-1"), unknown()],
                 vec![long("a", 1, "col-1"), long("v", 2, "col-v")]
             )
@@ -625,7 +556,7 @@ mod tests {
     #[test]
     fn other_stored_state_does_not_block_a_rename() {
         let rename = |p: &SecurablePropertiesMap, current: Vec<Value>| {
-            check(p, true, current, vec![long("b", 1, "col-1")])
+            check(p, current, vec![long("b", 1, "col-1")])
         };
         let p = properties(
             "name",
@@ -640,7 +571,7 @@ mod tests {
         let double = || vec![fld("b", json!("double"), Some(1), Some("col-1"))];
         let widening = properties("name", &[("delta.enableTypeWidening", "true")]);
         assert!(
-            unsupported(&widening, true, int(), double())
+            unsupported(&widening, int(), double())
                 .contains("changing the type of field b from integer to double")
         );
     }

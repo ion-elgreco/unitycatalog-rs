@@ -3,12 +3,12 @@
 
 use std::collections::BTreeMap;
 
-use delta_kernel::schema::StructField;
+use delta_kernel::schema::{StructField, StructType};
 use serde_json::{Value, json};
 use tracing::warn;
 
 use uc_api::{
-    ColumnInfo, ColumnTypeName, CreateTable, DataSourceFormat, TableInfo, TableType,
+    ColumnInfo, CreateTable, DataSourceFormat, TableInfo, TableType,
     delta_api::{
         DeltaCommitWire, DeltaCreateTableRequest, DeltaLoadTableResponse,
         DeltaMaintenanceOperation, DeltaTableMetadata, DeltaTableType,
@@ -18,11 +18,11 @@ use uc_common::{Error, ErrorCode, NormalizedUrl, Result};
 
 use crate::commits::StoredCommit;
 use crate::contract::{self as contract, LAST_COMMIT_TIMESTAMP, LAST_UPDATE_VERSION};
-use crate::fields::{self, CheckedField, KeyStyle};
+use crate::fields::{self, CheckedSchema, KeyStyle};
 
 /// Upstream `requireDeltaTable`: only Delta tables are served.
-pub fn require_delta(info: &TableInfo, full_name: &str) -> Result<()> {
-    if info.data_source_format != Some(DataSourceFormat::Delta) {
+pub fn require_delta(format: Option<DataSourceFormat>, full_name: &str) -> Result<()> {
+    if format != Some(DataSourceFormat::Delta) {
         return Err(Error::new(
             ErrorCode::UnsupportedTableFormat,
             format!("Table is not a Delta table: {full_name}"),
@@ -59,13 +59,20 @@ pub fn struct_field(column: &ColumnInfo) -> std::result::Result<StructField, Str
     serde_json::from_value(type_json(column)?).map_err(|e| e.to_string())
 }
 
+/// The stored columns as the kernel's struct type.
+pub fn stored_schema(columns: &[ColumnInfo]) -> std::result::Result<StructType, String> {
+    let fields = columns
+        .iter()
+        .map(struct_field)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    StructType::try_new(fields).map_err(fields::kernel_message)
+}
+
 /// Upstream `ColumnUtils.toColumnInfo`: a checked Delta field as a UC
 /// column, like Spark's `UCSingleCatalog` writes it. `type_json` is the
 /// field's camelCase JSON.
 pub fn column_info(field: &StructField, type_json: &Value, position: i32) -> Result<ColumnInfo> {
     let type_name = fields::column_type_name(field.data_type()).map_err(Error::invalid_argument)?;
-    let type_name: ColumnTypeName = serde_json::from_value(json!(type_name))
-        .map_err(|e| Error::internal(format!("column type {type_name}: {e}")))?;
     Ok(ColumnInfo {
         name: Some(field.name().clone()),
         type_text: Some(
@@ -82,7 +89,7 @@ pub fn column_info(field: &StructField, type_json: &Value, position: i32) -> Res
 
 /// Read and check a Delta struct type (`columns`) in kebab case as upstream
 /// `ColumnUtils.validateStructType`, at `path` in messages.
-pub fn struct_fields(columns: Option<&Value>, path: &str) -> Result<Vec<CheckedField>> {
+pub fn struct_type(columns: Option<&Value>, path: &str) -> Result<CheckedSchema> {
     let columns = columns
         .filter(|c| !c.is_null())
         .ok_or_else(|| Error::invalid_argument(format!("{path} is required.")))?;
@@ -101,21 +108,22 @@ pub fn struct_fields(columns: Option<&Value>, path: &str) -> Result<Vec<CheckedF
             )));
         }
     };
-    let checked =
+    let schema =
         fields::check_fields(type_jsons.as_deref(), path).map_err(Error::invalid_argument)?;
-    Ok(checked
-        .into_iter()
-        .zip(type_jsons.unwrap_or_default())
-        .map(|(field, type_json)| CheckedField { field, type_json })
-        .collect())
+    Ok(CheckedSchema {
+        schema,
+        type_jsons: type_jsons.unwrap_or_default(),
+    })
 }
 
 /// Upstream `ColumnUtils.toColumnInfos`: positions follow the list order.
-pub fn column_infos(fields: &[CheckedField]) -> Result<Vec<ColumnInfo>> {
-    fields
-        .iter()
+pub fn column_infos(checked: &CheckedSchema) -> Result<Vec<ColumnInfo>> {
+    checked
+        .schema
+        .fields()
+        .zip(&checked.type_jsons)
         .enumerate()
-        .map(|(i, f)| column_info(&f.field, &f.type_json, i as i32))
+        .map(|(i, (field, type_json))| column_info(field, type_json, i as i32))
         .collect()
 }
 
@@ -133,7 +141,7 @@ pub fn create_table_request(
     let name = name.ok_or_else(|| invalid("Table name is required."))?;
     let location = req.location.clone().filter(|l| !l.trim().is_empty());
     let location = location.ok_or_else(|| invalid("Table location is required."))?;
-    let fields = struct_fields(req.columns.as_ref(), "columns")?;
+    let checked = struct_type(req.columns.as_ref(), "columns")?;
     // A column-mapped table starts with the identities that set-columns
     // requires on every update.
     let mode = req
@@ -141,7 +149,7 @@ pub fn create_table_request(
         .as_ref()
         .and_then(|p| p.get(crate::column_mapping::MODE));
     crate::column_mapping::validate_identities(
-        &fields::kernel_fields(&fields),
+        &checked.schema,
         crate::column_mapping::parse_mode(mode.map(String::as_str))?,
     )?;
     let table_type = match req.table_type {
@@ -171,7 +179,7 @@ pub fn create_table_request(
     let uniform = crate::uniform::from_delta_api(req.uniform.as_ref())?;
     crate::uniform::validate_create(uniform.as_ref(), &NormalizedUrl::parse(&location)?)?;
 
-    let mut columns = column_infos(&fields)?;
+    let mut columns = column_infos(&checked)?;
     apply_partition_columns(
         &mut columns,
         req.partition_columns.as_deref().unwrap_or_default(),
@@ -179,7 +187,7 @@ pub fn create_table_request(
     if let Some(protocol) = protocol {
         contract::validate_table_configuration(
             protocol,
-            &fields::kernel_fields(&fields),
+            checked.schema,
             partition_columns(&columns),
             &client_properties,
         )?;
@@ -386,13 +394,16 @@ mod tests {
             { "name": "amount", "type": { "type": "decimal", "precision": 10, "scale": 2 },
               "nullable": true, "metadata": { "comment": "money" } },
         ] });
-        let fields = struct_fields(Some(&columns), "columns").unwrap();
-        let cols = column_infos(&fields).unwrap();
+        let checked = struct_type(Some(&columns), "columns").unwrap();
+        let cols = column_infos(&checked).unwrap();
         let col = &cols[1];
         assert_eq!(col.type_text.as_deref(), Some("decimal(10,2)"));
         assert_eq!(col.comment.as_deref(), Some("money"));
         assert_eq!(col.position, Some(1));
-        assert_eq!(struct_field(col).unwrap(), fields[1].field);
+        assert_eq!(
+            &struct_field(col).unwrap(),
+            checked.schema.field_at_index(1).unwrap()
+        );
         let served = columns_struct(&cols, "c.s.t");
         assert_eq!(served["fields"][1]["type"], "decimal(10,2)");
         assert_eq!(served["fields"][1]["metadata"]["comment"], "money");

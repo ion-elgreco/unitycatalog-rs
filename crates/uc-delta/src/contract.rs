@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use delta_kernel::actions::{Metadata, Protocol};
-use delta_kernel::schema::{StructField, StructType};
+use delta_kernel::schema::StructType;
 use delta_kernel::table_configuration::TableConfiguration;
 use delta_kernel::table_features::Operation;
 use uc_api::delta_api::{
@@ -116,7 +116,7 @@ pub const REQUIRED_FIXED_PROPERTIES: &[(&str, &str)] = &[
 /// Suggested properties; `None` means the client generates the value.
 pub fn suggested_properties() -> BTreeMap<String, Option<String>> {
     [
-        ("delta.columnMapping.mode", Some("name")),
+        (crate::column_mapping::MODE, Some("name")),
         ("delta.columnMapping.maxColumnId", None),
         ("delta.enableRowTracking", Some("true")),
         ("delta.rowTracking.materializedRowIdColumnName", None),
@@ -248,12 +248,10 @@ pub fn validate(
 /// may write features that the kernel cannot write.
 pub fn validate_table_configuration(
     protocol: Protocol,
-    fields: &[StructField],
+    schema: StructType,
     partition_columns: Vec<String>,
     properties: &BTreeMap<String, String>,
 ) -> Result<()> {
-    let schema = StructType::try_new(fields.iter().cloned())
-        .map_err(|e| invalid(format!("the schema cannot be read: {}", kernel_message(e))))?;
     let configuration = properties
         .iter()
         .map(|(k, v)| (k.clone(), v.clone()))
@@ -536,14 +534,18 @@ mod tests {
     /// schema.
     #[test]
     fn the_kernel_checks_the_table_configuration() {
-        use delta_kernel::schema::DataType;
+        use delta_kernel::schema::{DataType, StructField};
 
-        let check = |protocol: DeltaProtocol,
-                     fields: Vec<StructField>,
-                     props: BTreeMap<String, String>| {
-            let protocol = validate(Some(&protocol), None, &props, true)?;
-            validate_table_configuration(protocol, &fields, vec![], &props)
-        };
+        let check =
+            |protocol: DeltaProtocol, fields: Vec<StructField>, props: BTreeMap<String, String>| {
+                let protocol = validate(Some(&protocol), None, &props, true)?;
+                validate_table_configuration(
+                    protocol,
+                    StructType::try_new(fields).unwrap(),
+                    vec![],
+                    &props,
+                )
+            };
         let id = || StructField::nullable("id", DataType::LONG);
         assert!(check(protocol(), vec![id()], properties()).is_ok());
 
@@ -551,9 +553,15 @@ mod tests {
             let mut p = protocol();
             for feature in extra {
                 if reader {
-                    p.reader_features.as_mut().unwrap().push(feature.to_string());
+                    p.reader_features
+                        .as_mut()
+                        .unwrap()
+                        .push(feature.to_string());
                 }
-                p.writer_features.as_mut().unwrap().push(feature.to_string());
+                p.writer_features
+                    .as_mut()
+                    .unwrap()
+                    .push(feature.to_string());
             }
             p
         };

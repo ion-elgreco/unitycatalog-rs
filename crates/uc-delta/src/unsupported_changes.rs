@@ -20,8 +20,6 @@ use uc_common::{Error, Result};
 use crate::fields::all_fields;
 use crate::schema_evolution::invalid;
 
-const TYPE_CHANGES: &str = "delta.typeChanges";
-
 fn unsupported(message: impl AsRef<str>) -> Error {
     Error::unimplemented(format!("set-columns: {}", message.as_ref()))
 }
@@ -116,7 +114,7 @@ pub(crate) fn reject_new_type_changes(update: &FieldUpdate) -> Result<()> {
 pub(crate) fn reject_map_key_changes(current: &StructType, new: &StructType) -> Result<()> {
     let current = fields_by_id(current);
     for field in all_fields(new.fields()) {
-        if let Some(old) = field_id(field).and_then(|id| current.get(&id))
+        if let Some(old) = field.column_mapping_id().and_then(|id| current.get(&id))
             && map_struct_key_changed(old.data_type(), field.data_type())
         {
             return Err(invalid(format!(
@@ -135,20 +133,12 @@ fn first_path(changes: &[FieldChange]) -> Option<String> {
     changes.iter().map(|change| change.path.to_string()).min()
 }
 
-/// The column-mapping id of a field.
-fn field_id(field: &StructField) -> Option<i64> {
-    match field.get_config_value(&ColumnMetadataKey::ColumnMappingId) {
-        Some(MetadataValue::Number(id)) => Some(*id),
-        _ => None,
-    }
-}
-
 /// The struct fields of a schema by id. The kernel's schema diff refused
 /// fields without an id and ids that two fields share before.
 fn fields_by_id(schema: &StructType) -> HashMap<i64, &StructField> {
     all_fields(schema.fields())
         .into_iter()
-        .filter_map(|field| Some((field_id(field)?, field)))
+        .filter_map(|field| Some((field.column_mapping_id()?, field)))
         .collect()
 }
 
@@ -165,7 +155,7 @@ fn parents(schema: &StructType) -> HashMap<i64, Parent> {
 
 fn collect_parents(fields: &StructType, parent: Parent, out: &mut HashMap<i64, Parent>) {
     for field in fields.fields() {
-        let Some(id) = field_id(field) else {
+        let Some(id) = field.column_mapping_id() else {
             continue;
         };
         out.insert(id, parent.clone());
@@ -193,10 +183,12 @@ fn collect_parents_in(data_type: &DataType, id: i64, path: String, out: &mut Has
 
 /// The `delta.typeChanges` of a field, unless null or empty.
 fn type_changes(field: &StructField) -> Option<&MetadataValue> {
-    field.metadata().get(TYPE_CHANGES).filter(|value| {
-        !matches!(value, MetadataValue::Other(Value::Null))
-            && !matches!(value, MetadataValue::Other(Value::Array(a)) if a.is_empty())
-    })
+    field
+        .get_config_value(&ColumnMetadataKey::TypeChanges)
+        .filter(|value| {
+            !matches!(value, MetadataValue::Other(Value::Null))
+                && !matches!(value, MetadataValue::Other(Value::Array(a)) if a.is_empty())
+        })
 }
 
 /// Whether a map in the type has struct keys that differ.

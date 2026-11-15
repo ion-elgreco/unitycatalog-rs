@@ -43,7 +43,7 @@ pub struct AwsIdentity {
 
 /// The role that the server's identity assumes, with the external ID that
 /// the role's trust policy requires, if any.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Role {
     pub arn: String,
     pub external_id: Option<String>,

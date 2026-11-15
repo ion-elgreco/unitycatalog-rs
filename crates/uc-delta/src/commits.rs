@@ -455,11 +455,17 @@ fn backfill(plan: &mut CommitPlan, backfilled: i64, log: CommitLog) {
     plan.flag = Some((log.backfilled_version, backfilled));
 }
 
+/// The name of the published commit file of `version` in `_delta_log`.
+pub fn published_file_name(version: i64) -> String {
+    format!("{version:020}.json")
+}
+
 /// The path of the published commit file of `version` under a table.
 pub fn published_path(table_location: &str, version: i64) -> String {
     format!(
-        "{}/_delta_log/{version:020}.json",
-        table_location.trim_end_matches('/')
+        "{}/_delta_log/{}",
+        table_location.trim_end_matches('/'),
+        published_file_name(version)
     )
 }
 

@@ -227,7 +227,7 @@ pub async fn update_table(
     super::unity::commits::settle_commit(&state, |files_checked| async move {
         metastore
             .delta_tables()
-            .update_table(full_name, req.clone(), actor, files_checked)
+            .update_table(full_name, req, actor, files_checked)
             .await
     })
     .await?;

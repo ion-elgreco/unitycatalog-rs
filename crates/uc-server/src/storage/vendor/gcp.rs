@@ -378,7 +378,7 @@ impl GcpVendor {
                 Ok(json!({
                     "availableResource": format!("//storage.googleapis.com/projects/_/buckets/{bucket}"),
                     "availablePermissions": roles,
-                    "availabilityCondition": { "expression": condition(location)? },
+                    "availabilityCondition": { "expression": condition(location, &bucket)? },
                 }))
             })
             .collect::<Result<Vec<Value>>>()?;
@@ -457,12 +457,10 @@ async fn token_response(response: reqwest::Response) -> TokenResult {
     }
 }
 
-/// The condition of the access boundary rule of `location`. A location
-/// whose condition is over Google's limit gets no credentials.
-fn condition(location: &NormalizedUrl) -> Result<String> {
-    let (base, path) = (location.storage_base(), location.path());
-    let bucket = base.as_str().trim_start_matches("gs://");
-    let condition = within(bucket, path.trim_start_matches('/'));
+/// The condition of the access boundary rule of `location` in `bucket`. A
+/// location whose condition is over Google's limit gets no credentials.
+fn condition(location: &NormalizedUrl, bucket: &str) -> Result<String> {
+    let condition = within(bucket, location.path().trim_start_matches('/'));
     let length = condition.chars().count();
     if length > MAX_CONDITION_LENGTH {
         return Err(Error::invalid_argument(format!(
@@ -551,12 +549,12 @@ mod tests {
             |n: usize| NormalizedUrl::parse(&format!("gs://b/{}", "a".repeat(n))).unwrap();
         // Each character of the path is 4 of the condition.
         let longest = (1..MAX_CONDITION_LENGTH)
-            .take_while(|n| condition(&location(*n)).is_ok())
+            .take_while(|n| condition(&location(*n), "b").is_ok())
             .last()
             .unwrap();
-        let length = condition(&location(longest)).unwrap().len();
+        let length = condition(&location(longest), "b").unwrap().len();
         assert!(length > MAX_CONDITION_LENGTH - 4 && length <= MAX_CONDITION_LENGTH);
-        let err = condition(&location(longest + 1)).unwrap_err();
+        let err = condition(&location(longest + 1), "b").unwrap_err();
         assert_eq!(err.code(), uc_common::ErrorCode::InvalidArgument);
         assert_eq!(
             err.message(),
@@ -569,7 +567,7 @@ mod tests {
         );
         // The limit counts characters, not bytes.
         let accented = NormalizedUrl::parse(&format!("gs://b/{}", "é".repeat(longest))).unwrap();
-        assert_eq!(condition(&accented).unwrap().chars().count(), length);
+        assert_eq!(condition(&accented, "b").unwrap().chars().count(), length);
     }
 
     #[test]

@@ -82,16 +82,19 @@ impl TableRow {
         })
     }
 
+    pub(crate) fn data_source_format(&self) -> Result<Option<DataSourceFormat>> {
+        self.data_source_format
+            .as_deref()
+            .map(parse_enum::<DataSourceFormat>)
+            .transpose()
+    }
+
     pub(crate) fn into_info(self, schema: &SchemaRef) -> Result<TableInfo> {
         Ok(TableInfo {
             catalog_name: Some(schema.catalog_name.clone()),
             schema_name: Some(schema.schema_name.clone()),
             table_type: Some(parse_enum::<TableType>(&self.table_type)?),
-            data_source_format: self
-                .data_source_format
-                .as_deref()
-                .map(parse_enum::<DataSourceFormat>)
-                .transpose()?,
+            data_source_format: self.data_source_format()?,
             columns: self.columns,
             storage_location: self.storage_location,
             comment: self.comment,

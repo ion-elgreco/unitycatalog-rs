@@ -143,9 +143,7 @@ async fn dropped_managed_data_is_cleaned_up_after_the_delay() {
         commit_info: Some(uc_api::DeltaCommitInfo {
             version: Some(1),
             timestamp: Some(1),
-            file_name: Some(
-                "00000000000000000001.00000000-0000-0000-0000-000000000000.json".into(),
-            ),
+            file_name: Some(common::staged(1)),
             file_size: Some(1),
             file_modification_timestamp: Some(1),
         }),
@@ -153,7 +151,7 @@ async fn dropped_managed_data_is_cleaned_up_after_the_delay() {
     };
     metastore
         .delta_tables()
-        .commit(commit, None, false)
+        .commit(&commit, None, false)
         .await
         .unwrap();
 

@@ -11,7 +11,7 @@ use rstest::rstest;
 use serde_json::json;
 use tower::ServiceExt;
 
-use common::{assert_delta_error, assert_status, json_body, req, seeded};
+use common::{assert_delta_error, assert_status, json_body, other_staged, req, seeded, staged};
 
 #[rstest]
 #[tokio::test]
@@ -1209,16 +1209,6 @@ async fn update_table_rejects_bad_requests() {
     assert_eq!(err["message"], "Table is not a Delta table: c.s.pq");
 }
 
-/// The staged commit file name of `version`: `<version>.<uuid>.json`.
-fn staged(version: i64) -> String {
-    format!("{version:020}.00000000-0000-0000-0000-000000000000.json")
-}
-
-/// Another writer's staged commit file name of `version`.
-fn other_staged(version: i64) -> String {
-    format!("{version:020}.11111111-1111-1111-1111-111111111111.json")
-}
-
 fn add_commit(version: i64, file: &str) -> serde_json::Value {
     json!({ "action": "add-commit", "commit": { "version": version, "timestamp": 1_700_000_000 + version,
         "file-name": file, "file-size": 1024, "file-modification-timestamp": 1_700_000_000 + version } })
@@ -1259,12 +1249,7 @@ async fn update_table_commits() {
 
     // Middle versions replay by name too.
     for v in 2..=3 {
-        updated(
-            &app,
-            &mut h,
-            json!([add_commit(v, &staged(v))]),
-        )
-        .await;
+        updated(&app, &mut h, json!([add_commit(v, &staged(v))])).await;
     }
     let r = updated(&app, &mut h, json!([add_commit(2, &staged(2))])).await;
     assert_eq!(r["commits"].as_array().unwrap().len(), 3);
@@ -1313,12 +1298,7 @@ async fn update_table_commits() {
         "Cannot backfill through version 4: published commit file is missing: ",
     )
     .await;
-    let location = r["metadata"]["location"].as_str().unwrap();
-    let log = std::path::Path::new(location.strip_prefix("file://").unwrap()).join("_delta_log");
-    std::fs::create_dir_all(&log).unwrap();
-    for v in 1..=4 {
-        std::fs::write(log.join(format!("{v:020}.json")), "{}\n").unwrap();
-    }
+    common::publish(r["metadata"]["location"].as_str().unwrap(), 1..=4);
     let r = updated(&app, &mut h, backfill).await;
     assert_eq!(
         (r["commits"].clone(), r["latest-table-version"].clone()),

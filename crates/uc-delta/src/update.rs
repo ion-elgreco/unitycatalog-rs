@@ -24,7 +24,7 @@ use crate::contract::{
     LAST_UPDATE_VERSION, ROW_TRACKING_DOMAIN,
 };
 use crate::table::{
-    apply_partition_columns, column_infos, partition_columns, struct_field, struct_fields,
+    apply_partition_columns, column_infos, partition_columns, stored_schema, struct_type,
 };
 
 fn invalid(message: impl Into<String>) -> Error {
@@ -259,34 +259,17 @@ pub fn apply_updates(
     c: &Collected,
     allow_missing_dv: bool,
 ) -> Result<Option<CommitDispatch>> {
-    // set-columns is checked against the stored mode and properties, before
-    // this request's property changes, and against the mode the request
-    // sets, which only enabling reads. The modes are parsed only for
-    // set-columns, so an unknown mode never blocks other updates.
-    let stored_mode = state.properties.get(column_mapping::MODE).cloned();
-    let requested_mode = match &c.set_properties {
-        Some(Some(updates)) => updates.get(column_mapping::MODE).cloned(),
-        _ => None,
-    };
-    let modes = match c.set_columns {
-        Some(_) => Some((
-            column_mapping::parse_mode(stored_mode.as_deref())?,
-            column_mapping::parse_mode(requested_mode.as_deref())?,
-        )),
-        None => {
-            // Delta sends set-columns with identities on every field when
-            // it turns column mapping on; without it the table would store
-            // mapped columns without identities.
-            if column_mapping::turns_on(stored_mode.as_deref(), requested_mode.as_deref()) {
-                return Err(invalid(
-                    "Turning on column mapping requires set-columns with a physical column name \
-                     and a column mapping id for every column and nested field.",
-                ));
-            }
-            None
-        }
-    };
-    apply_columns(state, c, modes)?;
+    // Delta sends set-columns with identities on every field when it turns
+    // column mapping on; without it the table would store mapped columns
+    // without identities.
+    let (stored_mode, requested_mode) = mode_values(state, c);
+    if c.set_columns.is_none() && column_mapping::turns_on(stored_mode, requested_mode) {
+        return Err(invalid(
+            "Turning on column mapping requires set-columns with a physical column name and a \
+             column mapping id for every column and nested field.",
+        ));
+    }
+    apply_columns(state, c)?;
     if let Some(protocol) = &c.set_protocol {
         let protocol = protocol
             .as_ref()
@@ -364,15 +347,11 @@ pub fn apply_updates(
                 &state.properties,
                 allow_missing_dv,
             )?;
-            let fields = state
-                .columns
-                .iter()
-                .map(struct_field)
-                .collect::<std::result::Result<Vec<_>, _>>()
+            let schema = stored_schema(&state.columns)
                 .map_err(|e| invalid(format!("the table schema cannot be read: {e}")))?;
             contract::validate_table_configuration(
                 protocol,
-                &fields,
+                schema,
                 partition_columns(&state.columns),
                 &state.properties,
             )?;
@@ -388,20 +367,33 @@ pub fn apply_updates(
     prepare_commit(state, c).map(Some)
 }
 
+/// The stored `delta.columnMapping.mode` and the one the request sets.
+fn mode_values<'a>(state: &'a TableState, c: &'a Collected) -> (Option<&'a str>, Option<&'a str>) {
+    let stored = state.properties.get(column_mapping::MODE);
+    let requested = match &c.set_properties {
+        Some(Some(updates)) => updates.get(column_mapping::MODE),
+        _ => None,
+    };
+    (stored.map(String::as_str), requested.map(String::as_str))
+}
+
 /// Upstream `applySchemaAndPartitionColumns`: build the new column list
-/// once. The action that is absent keeps its current state. `modes` are the
-/// stored and the requested column-mapping modes, present with set-columns.
-fn apply_columns(
-    state: &mut TableState,
-    c: &Collected,
-    modes: Option<(ColumnMappingMode, ColumnMappingMode)>,
-) -> Result<()> {
+/// once. The action that is absent keeps its current state.
+fn apply_columns(state: &mut TableState, c: &Collected) -> Result<()> {
     if c.set_columns.is_none() && c.set_partition_columns.is_none() {
         return Ok(());
     }
-    let table_mode = modes.map_or(ColumnMappingMode::None, |(stored, _)| stored);
+    let mut table_mode = ColumnMappingMode::None;
     let mut columns = match &c.set_columns {
         Some(columns) => {
+            // set-columns is checked against the stored mode and properties,
+            // before this request's property changes, and against the mode
+            // the request sets, which only enabling reads. The modes are
+            // parsed only here, so an unknown mode never blocks other
+            // updates.
+            let (stored_mode, requested_mode) = mode_values(state, c);
+            table_mode = column_mapping::parse_mode(stored_mode)?;
+            let requested_mode = column_mapping::parse_mode(requested_mode)?;
             let columns = columns
                 .as_ref()
                 .ok_or_else(|| invalid("set-columns requires a columns block."))?;
@@ -414,17 +406,16 @@ fn apply_columns(
                 }
                 _ => {}
             }
-            let fields = struct_fields(Some(columns), "columns")?;
-            let requested_mode = modes.map_or(ColumnMappingMode::None, |(_, requested)| requested);
+            let checked = struct_type(Some(columns), "columns")?;
             column_mapping::validate_set_columns(
                 state.table_type,
                 &state.columns,
-                &crate::fields::kernel_fields(&fields),
+                &checked.schema,
                 table_mode,
                 requested_mode,
                 &state.properties,
             )?;
-            column_infos(&fields)?
+            column_infos(&checked)?
         }
         None => {
             let mut current = state.columns.clone();
