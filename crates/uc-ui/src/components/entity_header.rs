@@ -1,6 +1,7 @@
 //! The path at the top of the page (`Crumbs`), which the shell draws from
 //! the URL, and the head of a detail page, as the console's `EntityHeader`:
-//! the icon, the name, its type badges, a button that loads the object
+//! the icon, the name, its type badges, "Browse only" for an object that
+//! the user sees through `BROWSE` only, a button that loads the object
 //! again, and the page's actions.
 
 use std::time::Duration;
@@ -8,6 +9,7 @@ use std::time::Duration;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
+use super::browse_only::BrowseOnlyBadge;
 use super::icons::{ChevronRight, Notebook, RefreshCw};
 use super::label::{Label, LabelText};
 use crate::load::{Key, use_cache};
@@ -91,6 +93,9 @@ pub fn EntityHeader(
     /// Such as "MANAGED" and "DELTA", with its logo, for a table.
     #[prop(into, optional)]
     badges: Signal<Vec<Label>>,
+    /// Whether the user sees the object through `BROWSE` only.
+    #[prop(into, optional)]
+    browse_only: Signal<bool>,
     /// What the Reload button loads again: the object, and the lists the
     /// page shows. None hides the button.
     #[prop(into, optional)]
@@ -116,6 +121,7 @@ pub fn EntityHeader(
                             })
                             .collect_view()
                     }}
+                    {move || browse_only.get().then(|| view! { <BrowseOnlyBadge/> })}
                     {reload.map(|keys| view! { <ReloadButton keys/> })}
                 </div>
                 {actions.map(|actions| view! { <div class="uc-entity__actions">{actions}</div> })}

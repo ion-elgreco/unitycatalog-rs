@@ -1,7 +1,8 @@
 //! A metric view's page, as the console's `MetricViewDetails`: its
 //! description, columns and YAML definition, its details, its grants;
 //! "Delete". The API keeps a metric view as a table of the type
-//! `METRIC_VIEW`.
+//! `METRIC_VIEW`. Through `BROWSE` only, the user sees no definition and
+//! makes no edits.
 
 use leptos::prelude::*;
 use leptos_router::NavigateOptions;
@@ -35,12 +36,19 @@ fn MetricViewPage(catalog: String, schema: String, view: String) -> impl IntoVie
     let name = StoredValue::new(full_name.clone());
     let info = use_load(Key::Table(full_name.clone()), move || {
         let full_name = name.get_value();
-        async move { api::client().table(full_name).get().await }
+        async move {
+            api::client()
+                .table(full_name)
+                .get()
+                .with_include_browse(true)
+                .await
+        }
     });
     let cache = use_cache();
     let delete_open = RwSignal::new(false);
     let owner = field(info, |t: &TableInfo| t.owner.clone());
     let manages = use_manages(owner);
+    let browse_only = field(info, |t: &TableInfo| t.browse_only == Some(true));
     let comment = field(info, |t: &TableInfo| t.comment.clone().unwrap_or_default());
     let definition = field(info, |t: &TableInfo| {
         t.view_definition.clone().unwrap_or_default()
@@ -78,6 +86,7 @@ fn MetricViewPage(catalog: String, schema: String, view: String) -> impl IntoVie
             icon=Kind::MetricViews.icon()
             name=full_name.clone()
             badges=vec![Label::from("Metric view")]
+            browse_only
             reload
             actions=view! { <DeleteButton open=delete_open when=manages/> }.into_any()
         />
@@ -86,7 +95,7 @@ fn MetricViewPage(catalog: String, schema: String, view: String) -> impl IntoVie
                 <Tabs
                     overview=move || {
                         view! {
-                            <DescriptionCard comment noun="metric view" save=save_comment/>
+                            <DescriptionCard comment noun="metric view" save=save_comment read_only=browse_only/>
                             <ColumnsCard info full_name=name.get_value()/>
                             <Show when=move || definition.with(|d| !d.is_empty())>
                                 <Card title="Metric view definition">

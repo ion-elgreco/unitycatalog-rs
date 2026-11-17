@@ -720,7 +720,8 @@ loads through the Delta or Iceberg APIs. Iceberg load table gives the metadata t
 - A user with only `BROWSE` gets an object when the request has `include_browse=true`. The answer
   then has `browse_only: true` and the discovery fields: a table without its storage location,
   properties and view definition, a function without its body, an external location without its
-  credential. Lists with `include_browse=true` can hold both kinds of object.
+  credential. Lists with `include_browse=true` can hold both kinds of object. Search
+  (`GET /search`) also finds the objects of a catalog with `BROWSE`.
 
 ```bash
 uc permission create --securable_type table --name main.default.events \

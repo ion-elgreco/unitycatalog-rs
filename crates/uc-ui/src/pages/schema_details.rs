@@ -1,7 +1,9 @@
 //! A schema's page, as the console's `SchemaDetails`: its description, its
 //! tables, metric views, volumes, functions or models behind a picker, its details, its
 //! grants; "Edit" (its name, comment and properties), "New" and "Delete".
-//! The picker is the URL's `?tab=`, so that the tree's groups open it.
+//! A schema that the user sees through `BROWSE` only has none of these
+//! buttons. The picker is the URL's `?tab=`, so that the tree's groups open
+//! it.
 
 use leptos::prelude::*;
 use leptos_router::NavigateOptions;
@@ -14,9 +16,9 @@ use crate::auth::use_manages;
 use crate::components::edit_modal::Changes;
 use crate::components::icons::Plus;
 use crate::components::{
-    Card, CreateObjectModal, DeleteButton, DeleteModal, DescriptionCard, DetailsTab, EditMetadata,
-    Empty, EntityHeader, Label, LabelText, Loaded, MetaRow, PermissionsCard, Tabs, loaded_list,
-    properties,
+    BrowseOnlyBadge, Card, CreateObjectModal, DeleteButton, DeleteModal, DescriptionCard,
+    DetailsTab, EditMetadata, Empty, EntityHeader, Label, LabelText, Loaded, MetaRow,
+    PermissionsCard, Tabs, loaded_list, properties,
 };
 use crate::contents::Holder;
 use crate::kind::{Kind, schema_icon};
@@ -40,7 +42,13 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
     let names = StoredValue::new((catalog.clone(), schema.clone(), full_name.clone()));
     let info = use_load(Key::Schema(full_name.clone()), move || {
         let (_, _, full_name) = names.get_value();
-        async move { api::client().schema(full_name).get().await }
+        async move {
+            api::client()
+                .schema(full_name)
+                .get()
+                .with_include_browse(true)
+                .await
+        }
     });
     let cache = use_cache();
     let query = use_query_map();
@@ -55,6 +63,7 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
     let new_kind = RwSignal::new(Kind::Tables);
     let owner = field(info, |s: &SchemaInfo| s.owner.clone());
     let manages = use_manages(owner);
+    let browse_only = field(info, |s: &SchemaInfo| s.browse_only == Some(true));
     let comment = field(info, |s: &SchemaInfo| s.comment.clone().unwrap_or_default());
     let props = field(info, |s: &SchemaInfo| properties(&s.properties));
 
@@ -108,13 +117,16 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
             icon=schema_icon()
             name=full_name.clone()
             badges=vec![Label::from("Schema")]
+            browse_only
             reload
             actions=view! {
-                <EditMetadata name=schema.clone() comment properties=props save=save_metadata/>
-                <button type="button" class="uc-btn uc-btn--sm" on:click=new_object>
-                    <Plus/>
-                    "New"
-                </button>
+                <Show when=move || !browse_only.get()>
+                    <EditMetadata name=names.get_value().1 comment properties=props save=save_metadata/>
+                    <button type="button" class="uc-btn uc-btn--sm" on:click=new_object>
+                        <Plus/>
+                        "New"
+                    </button>
+                </Show>
                 <DeleteButton open=delete_open when=manages/>
             }
                 .into_any()
@@ -125,13 +137,15 @@ fn SchemaPage(catalog: String, schema: String) -> impl IntoView {
                     overview=move || {
                         let (catalog, schema, _) = names.get_value();
                         view! {
-                            <DescriptionCard comment noun="schema" save=save_comment/>
+                            <DescriptionCard comment noun="schema" save=save_comment read_only=browse_only/>
                             <Card actions=view! {
                                 <KindPicker kind catalog=catalog.clone() schema=schema.clone()/>
-                                <button type="button" class="uc-btn uc-btn--outline uc-btn--sm" on:click=new_object>
-                                    <Plus/>
-                                    "New"
-                                </button>
+                                <Show when=move || !browse_only.get()>
+                                    <button type="button" class="uc-btn uc-btn--outline uc-btn--sm" on:click=new_object>
+                                        <Plus/>
+                                        "New"
+                                    </button>
+                                </Show>
                             }
                                 .into_any()>
                                 {move || {
@@ -260,6 +274,7 @@ fn Entries(kind: Kind, catalog: String, schema: String) -> impl IntoView {
                                                     {kind.icon()}
                                                     {entry.name}
                                                 </a>
+                                                {entry.browse_only.then(|| view! { <BrowseOnlyBadge/> })}
                                             </td>
                                             {entry
                                                 .cells

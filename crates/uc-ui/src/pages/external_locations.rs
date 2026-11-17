@@ -1,7 +1,8 @@
 //! The external locations, from "Manage" in the sidebar: each one's name,
 //! URL, credential, owner and creation, and "Create external location".
-//! The server lists the ones the user may see. Upstream's console has no
-//! such page.
+//! The server lists the ones the user may see, with "Browse only" for
+//! those that the user sees through `BROWSE` only. Upstream's console has
+//! no such page.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -9,7 +10,7 @@ use uc_client::models::external_locations::v1::ExternalLocationInfo;
 
 use crate::api;
 use crate::components::icons::Plus;
-use crate::components::{Empty, Modal, TextField, use_notify};
+use crate::components::{BrowseOnlyBadge, Empty, Modal, TextField, use_notify};
 use crate::layout::{Column, ListLayout};
 use crate::load::{Key, Load, use_cache, use_load};
 use crate::util::{Section, format_timestamp, or_dash};
@@ -24,10 +25,12 @@ pub fn ExternalLocations() -> impl IntoView {
             width: "16%",
             render: Box::new(|l: &ExternalLocationInfo| {
                 let name = l.name.clone();
+                let browse_only = l.browse_only == Some(true);
                 view! {
                     <a class="uc-btn uc-btn--link" href=Section::ExternalLocations.item_href(&name)>
                         {name.clone()}
                     </a>
+                    {browse_only.then(|| view! { <BrowseOnlyBadge/> })}
                 }
                 .into_any()
             }),

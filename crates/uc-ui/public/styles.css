@@ -1258,6 +1258,9 @@ pre,
   overflow-wrap: anywhere;
 }
 
+/* "Browse only" after a name. */
+.uc-table td > .uc-badge { margin-left: 8px; }
+
 .uc-table tbody tr:last-child td { border-bottom: 0; }
 .uc-table tbody tr:hover { background: color-mix(in srgb, var(--muted) 60%, transparent); }
 .uc-table .uc-right { text-align: right; }

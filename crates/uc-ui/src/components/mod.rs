@@ -1,4 +1,5 @@
 pub mod admin_only;
+pub mod browse_only;
 pub mod card;
 pub mod catalog_tree;
 pub mod code_box;
@@ -25,6 +26,7 @@ pub mod rows;
 pub mod tabs;
 
 pub use admin_only::AdminOnly;
+pub use browse_only::BrowseOnlyBadge;
 pub use card::Card;
 pub use catalog_tree::CatalogTree;
 pub use code_box::CodeBlock;

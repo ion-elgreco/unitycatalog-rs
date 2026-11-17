@@ -1,5 +1,7 @@
 //! A volume's page, as the console's `VolumeDetails`: its description, its
 //! files, its details, its credentials and grants; "Edit" and "Delete".
+//! A volume that the user sees through `BROWSE` only has no files, no
+//! credentials and no edits.
 
 use leptos::prelude::*;
 use uc_client::models::volumes::v1::VolumeInfo;
@@ -31,12 +33,19 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
     let names = StoredValue::new((catalog.clone(), schema.clone(), full_name.clone()));
     let info = use_load(Key::Volume(full_name.clone()), move || {
         let (_, _, full_name) = names.get_value();
-        async move { api::client().volume(full_name).get().await }
+        async move {
+            api::client()
+                .volume(full_name)
+                .get()
+                .with_include_browse(true)
+                .await
+        }
     });
     let cache = use_cache();
     let delete_open = RwSignal::new(false);
     let owner = field(info, |v: &VolumeInfo| v.owner.clone());
     let manages = use_manages(owner);
+    let browse_only = field(info, |v: &VolumeInfo| v.browse_only == Some(true));
     let comment = field(info, |v: &VolumeInfo| v.comment.clone().unwrap_or_default());
     let badges = field(info, |v: &VolumeInfo| {
         let mut badges: Vec<Label> = Some(enum_name(v.volume_type))
@@ -83,6 +92,7 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
         async move { saving.await.map(|_| ()) }
     };
     let reload = vec![Key::Volume(full_name.clone())];
+    let edit_name = StoredValue::new(volume.clone());
     let files_root = StoredValue::new(format!("/Volumes/{catalog}/{schema}/{volume}"));
 
     view! {
@@ -90,9 +100,12 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
             icon=Kind::Volumes.icon()
             name=full_name.clone()
             badges
+            browse_only
             reload
             actions=view! {
-                <EditMetadata name=volume.clone() comment save=save_metadata/>
+                <Show when=move || !browse_only.get()>
+                    <EditMetadata name=edit_name.get_value() comment save=save_metadata/>
+                </Show>
                 <DeleteButton open=delete_open when=manages/>
             }
                 .into_any()
@@ -100,7 +113,10 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
         <div class="uc-page">
             <Loaded state=info>
                 <Tabs
-                    overview=move || view! { <DescriptionCard comment noun="volume" save=save_comment/> }
+                    browse_only
+                    overview=move || {
+                        view! { <DescriptionCard comment noun="volume" save=save_comment read_only=browse_only/> }
+                    }
                     files=move || view! { <FilesCard root=files_root.get_value() writable=manages/> }
                     details=move || {
                         view! { <DetailsTab rows=field(info, volume_rows) json=field(info, pretty_json)/> }
@@ -108,7 +124,9 @@ fn VolumePage(catalog: String, schema: String, volume: String) -> impl IntoView 
                     permissions=move || {
                         let (_, _, full_name) = names.get_value();
                         view! {
-                            <CredentialsCard kind=Vendable::Volume id=volume_id/>
+                            <Show when=move || !browse_only.get()>
+                                <CredentialsCard kind=Vendable::Volume id=volume_id/>
+                            </Show>
                             <PermissionsCard kind=SecurableType::Volume full_name owner/>
                         }
                     }

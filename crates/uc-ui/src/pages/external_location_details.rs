@@ -1,6 +1,8 @@
 //! An external location's page: its description, its URL and credential,
 //! its details, its temporary credentials and its grants; "Edit" (its
-//! name, URL, credential and comment) and "Delete".
+//! name, URL, credential and comment) and "Delete". A location that the
+//! user sees through `BROWSE` only has no credential, no temporary
+//! credentials and no edits.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -32,12 +34,19 @@ fn LocationPage(name: String) -> impl IntoView {
     let key = StoredValue::new(name.clone());
     let info = use_load(Key::ExternalLocation(name.clone()), move || {
         let name = key.get_value();
-        async move { api::client().external_location(name).get().await }
+        async move {
+            api::client()
+                .external_location(name)
+                .get()
+                .with_include_browse(true)
+                .await
+        }
     });
     let cache = use_cache();
     let delete_open = RwSignal::new(false);
     let owner = field(info, |l: &ExternalLocationInfo| l.owner.clone());
     let manages = use_manages(owner);
+    let browse_only = field(info, |l: &ExternalLocationInfo| l.browse_only == Some(true));
     let comment = field(info, |l: &ExternalLocationInfo| {
         l.comment.clone().unwrap_or_default()
     });
@@ -66,9 +75,12 @@ fn LocationPage(name: String) -> impl IntoView {
             icon=Section::ExternalLocations.icon()
             name=name.clone()
             badges=vec![Label::from("External location")]
+            browse_only
             reload
             actions=view! {
-                <EditLocation name=name.clone() url credential comment/>
+                <Show when=move || !browse_only.get()>
+                    <EditLocation name=key.get_value() url credential comment/>
+                </Show>
                 <DeleteButton open=delete_open when=manages/>
             }
                 .into_any()
@@ -78,7 +90,7 @@ fn LocationPage(name: String) -> impl IntoView {
                 <Tabs
                     overview=move || {
                         view! {
-                            <DescriptionCard comment noun="external location" save=save_comment/>
+                            <DescriptionCard comment noun="external location" save=save_comment read_only=browse_only/>
                             <Card title="Storage">
                                 <dl class="uc-meta">
                                     <dt>"URL"</dt>
@@ -111,7 +123,9 @@ fn LocationPage(name: String) -> impl IntoView {
                     }
                     permissions=move || {
                         view! {
-                            <CredentialsCard kind=Vendable::Path id=url/>
+                            <Show when=move || !browse_only.get()>
+                                <CredentialsCard kind=Vendable::Path id=url/>
+                            </Show>
                             <PermissionsCard
                                 kind=SecurableType::ExternalLocation
                                 full_name=key.get_value()

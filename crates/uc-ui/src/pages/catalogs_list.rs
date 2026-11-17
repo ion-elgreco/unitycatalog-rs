@@ -1,12 +1,13 @@
-//! The home page, as the console's `CatalogsList`: a card per catalog, and
-//! "Create catalog".
+//! The home page, as the console's `CatalogsList`: a card per catalog, with
+//! "Browse only" for a catalog that the user sees through `BROWSE` only,
+//! and "Create catalog".
 
 use leptos::prelude::*;
 use uc_client::models::catalogs::v1::CatalogInfo;
 
 use crate::api;
 use crate::components::icons::Plus;
-use crate::components::{CreateModal, Empty, NewObject, loaded_list};
+use crate::components::{BrowseOnlyBadge, CreateModal, Empty, NewObject, loaded_list};
 use crate::kind::catalog_icon;
 use crate::load::{Key, use_load};
 use crate::util::{catalog_href, format_timestamp};
@@ -61,6 +62,7 @@ pub fn CatalogsList() -> impl IntoView {
 fn CatalogCard(catalog: CatalogInfo) -> impl IntoView {
     let name = catalog.name;
     let href = catalog_href(&name);
+    let browse_only = catalog.browse_only == Some(true);
     let updated = format_timestamp(match catalog.updated_at {
         0 => catalog.created_at,
         at => at,
@@ -70,6 +72,7 @@ fn CatalogCard(catalog: CatalogInfo) -> impl IntoView {
             <span class="uc-card__name">
                 {catalog_icon()}
                 <span class="uc-truncate">{name}</span>
+                {browse_only.then(|| view! { <BrowseOnlyBadge/> })}
             </span>
             {catalog
                 .comment

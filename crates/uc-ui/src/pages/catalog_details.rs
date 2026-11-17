@@ -1,6 +1,7 @@
 //! A catalog's page, as the console's `CatalogDetails`: its description and
 //! schemas, its details, its grants; "Edit" (its name, comment and
-//! properties), "Create schema" and "Delete".
+//! properties), "Create schema" and "Delete". A catalog that the user sees
+//! through `BROWSE` only has none of these buttons.
 
 use leptos::prelude::*;
 use uc_client::models::catalogs::v1::CatalogInfo;
@@ -36,7 +37,13 @@ fn CatalogPage(catalog: String) -> impl IntoView {
     let name = StoredValue::new(catalog.clone());
     let info = use_load(Key::Catalog(catalog.clone()), move || {
         let catalog = name.get_value();
-        async move { api::client().catalog(catalog).get().await }
+        async move {
+            api::client()
+                .catalog(catalog)
+                .get()
+                .with_include_browse(true)
+                .await
+        }
     });
     let schemas = use_load(Key::Schemas(catalog.clone()), move || {
         let catalog = name.get_value();
@@ -47,6 +54,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
     let create_open = RwSignal::new(false);
     let owner = field(info, |c: &CatalogInfo| c.owner.clone());
     let manages = use_manages(owner);
+    let browse_only = field(info, |c: &CatalogInfo| c.browse_only == Some(true));
     let comment = field(info, |c: &CatalogInfo| {
         c.comment.clone().unwrap_or_default()
     });
@@ -99,6 +107,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
                                     name=schema.clone()
                                     href=schema_href(&catalog, &schema)
                                     comment=s.comment
+                                    browse_only=s.browse_only == Some(true)
                                 />
                             }
                         })
@@ -114,13 +123,16 @@ fn CatalogPage(catalog: String) -> impl IntoView {
             icon=catalog_icon()
             name=catalog.clone()
             badges=vec![Label::from("Catalog")]
+            browse_only
             reload
             actions=view! {
-                <EditMetadata name=catalog.clone() comment properties=props save=save_metadata/>
-                <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>
-                    <Plus/>
-                    "Create schema"
-                </button>
+                <Show when=move || !browse_only.get()>
+                    <EditMetadata name=name.get_value() comment properties=props save=save_metadata/>
+                    <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>
+                        <Plus/>
+                        "Create schema"
+                    </button>
+                </Show>
                 <DeleteButton open=delete_open when=manages/>
             }
                 .into_any()
@@ -130,7 +142,7 @@ fn CatalogPage(catalog: String) -> impl IntoView {
                 <Tabs
                     overview=move || {
                         view! {
-                            <DescriptionCard comment noun="catalog" save=save_comment/>
+                            <DescriptionCard comment noun="catalog" save=save_comment read_only=browse_only/>
                             <Card title=counted("Schemas", schemas)>{schema_rows}</Card>
                         }
                     }

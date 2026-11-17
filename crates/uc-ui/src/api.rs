@@ -3,7 +3,9 @@
 //! calls on to a server.
 //!
 //! The functions here return whole lists: the server answers at most 100
-//! items a page, with a token for the next page.
+//! items a page, with a token for the next page. The lists of catalogs,
+//! the objects in them and external locations also hold the objects that
+//! the user sees through `BROWSE` only, marked `browse_only`.
 
 use std::cmp::Reverse;
 
@@ -70,12 +72,18 @@ pub fn server_message(e: &Error) -> Option<String> {
 }
 
 pub async fn catalogs() -> Result<Vec<CatalogInfo>> {
-    client().list_catalogs().into_stream().try_collect().await
+    client()
+        .list_catalogs()
+        .with_include_browse(true)
+        .into_stream()
+        .try_collect()
+        .await
 }
 
 pub async fn schemas(catalog: &str) -> Result<Vec<SchemaInfo>> {
     client()
         .list_schemas(catalog)
+        .with_include_browse(true)
         .into_stream()
         .try_collect()
         .await
@@ -84,6 +92,7 @@ pub async fn schemas(catalog: &str) -> Result<Vec<SchemaInfo>> {
 pub async fn tables(catalog: &str, schema: &str) -> Result<Vec<TableInfo>> {
     client()
         .list_tables(catalog, schema)
+        .with_include_browse(true)
         .into_stream()
         .try_collect()
         .await
@@ -92,6 +101,7 @@ pub async fn tables(catalog: &str, schema: &str) -> Result<Vec<TableInfo>> {
 pub async fn volumes(catalog: &str, schema: &str) -> Result<Vec<VolumeInfo>> {
     client()
         .list_volumes(catalog, schema)
+        .with_include_browse(true)
         .into_stream()
         .try_collect()
         .await
@@ -100,6 +110,7 @@ pub async fn volumes(catalog: &str, schema: &str) -> Result<Vec<VolumeInfo>> {
 pub async fn functions(catalog: &str, schema: &str) -> Result<Vec<FunctionInfo>> {
     client()
         .list_functions(catalog, schema)
+        .with_include_browse(true)
         .into_stream()
         .try_collect()
         .await
@@ -110,6 +121,7 @@ pub async fn models(catalog: &str, schema: &str) -> Result<Vec<RegisteredModelIn
         .list_registered_models()
         .with_catalog_name(catalog.to_string())
         .with_schema_name(schema.to_string())
+        .with_include_browse(true)
         .into_stream()
         .try_collect()
         .await
@@ -162,6 +174,7 @@ pub async fn credentials() -> Result<Vec<CredentialInfo>> {
 pub async fn external_locations() -> Result<Vec<ExternalLocationInfo>> {
     client()
         .list_external_locations()
+        .with_include_browse(true)
         .into_stream()
         .try_collect()
         .await

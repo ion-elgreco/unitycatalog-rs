@@ -1,6 +1,6 @@
 """The services of `just demo-auth` (compose.yaml). FerrisKey gets the realm
-`unitycatalog`, with a client for uc-server and uc, and the users alice and
-bob, whose passwords are their names; RustFS gets the bucket `uc-demo`. Then
+`unitycatalog`, with a client for uc-server and uc, and the users alice,
+bob and carol, whose passwords are their names; RustFS gets the bucket `uc-demo`. Then
 the settings that use them, in a uc.toml for `uc dev` and `uc`:
 
     uv run --no-sync examples/demo-auth/setup.py http://localhost:8090 \\
@@ -23,7 +23,11 @@ REALM = "unitycatalog"
 CLIENT_ID = "unitycatalog"
 # The user names, first names and last names. A user's email is
 # <name>@example.com.
-USERS = [("alice", "Alice", "Smith"), ("bob", "Bob", "Jones")]
+USERS = [
+    ("alice", "Alice", "Smith"),
+    ("bob", "Bob", "Jones"),
+    ("carol", "Carol", "Brown"),
+]
 # The bucket, and the root user of RustFS (compose.yaml).
 BUCKET = "uc-demo"
 S3_ACCESS_KEY = "uc-demo"
@@ -237,7 +241,7 @@ oauth_client_secret = {q(secret)}
 oauth_redirect_port = {args.cli_port}
 """)
     print(
-        f"FerrisKey has the realm {REALM}, its client and the users alice and bob; "
+        f"FerrisKey has the realm {REALM}, its client and the users alice, bob and carol; "
         f"RustFS has the bucket {BUCKET}."
     )
 

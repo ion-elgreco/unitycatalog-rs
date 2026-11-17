@@ -1,5 +1,7 @@
 //! A table's page, as the console's `TableDetails`: its description and
 //! columns, its files, its details, its credentials and grants; "Delete".
+//! A table that the user sees through `BROWSE` only has no files, no
+//! credentials and no edits.
 //! A metric view, which the API keeps as a table, has its own page.
 
 use leptos::prelude::*;
@@ -35,12 +37,19 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
     let name = StoredValue::new(full_name.clone());
     let info = use_load(Key::Table(full_name.clone()), move || {
         let full_name = name.get_value();
-        async move { api::client().table(full_name).get().await }
+        async move {
+            api::client()
+                .table(full_name)
+                .get()
+                .with_include_browse(true)
+                .await
+        }
     });
     let cache = use_cache();
     let delete_open = RwSignal::new(false);
     let owner = field(info, |t: &TableInfo| t.owner.clone());
     let manages = use_manages(owner);
+    let browse_only = field(info, |t: &TableInfo| t.browse_only == Some(true));
     let comment = field(info, |t: &TableInfo| t.comment.clone().unwrap_or_default());
     let badges = field(info, |t: &TableInfo| {
         let format = t
@@ -89,15 +98,17 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
             icon=Kind::Tables.icon()
             name=full_name.clone()
             badges
+            browse_only
             reload
             actions=view! { <DeleteButton open=delete_open when=manages/> }.into_any()
         />
         <div class="uc-page">
             <Loaded state=info>
                 <Tabs
+                    browse_only
                     overview=move || {
                         view! {
-                            <DescriptionCard comment noun="table" save=save_comment/>
+                            <DescriptionCard comment noun="table" save=save_comment read_only=browse_only/>
                             <ColumnsCard info full_name=name.get_value()/>
                         }
                     }
@@ -113,7 +124,9 @@ fn TablePage(catalog: String, schema: String, table: String) -> impl IntoView {
                     }
                     permissions=move || {
                         view! {
-                            <CredentialsCard kind=Vendable::Table id=table_id/>
+                            <Show when=move || !browse_only.get()>
+                                <CredentialsCard kind=Vendable::Table id=table_id/>
+                            </Show>
                             <PermissionsCard kind=SecurableType::Table full_name=name.get_value() owner/>
                         }
                     }

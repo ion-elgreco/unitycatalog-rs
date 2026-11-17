@@ -1,5 +1,6 @@
 //! A table's columns, as upstream's console shows them: position, name,
-//! type, nullability and comment, with a pencil that edits the comment.
+//! type, nullability and comment, with a pencil that edits the comment;
+//! no pencils for a table that the user sees through `BROWSE` only.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -97,6 +98,7 @@ pub fn ColumnsCard(
     };
     let rows = move || {
         let columns = info.with(|i| i.ready().map(|t| t.columns.clone()).unwrap_or_default());
+        let browse_only = info.with(|i| i.ready().is_some_and(|t| t.browse_only == Some(true)));
         if columns.is_empty() {
             return view! { <p class="uc-empty">"No columns."</p> }.into_any();
         }
@@ -138,19 +140,21 @@ pub fn ColumnsCard(
                                         <td class="uc-muted">{nullable}</td>
                                         <td class="uc-muted">{or_dash(column.comment)}</td>
                                         <td class="uc-right">
-                                            <button
-                                                type="button"
-                                                class="uc-btn uc-btn--outline uc-btn--icon uc-btn--xs"
-                                                title=title.clone()
-                                                aria-label=title
-                                                on:click=move |_| {
-                                                    let (name, comment) = target.clone();
-                                                    text.set(comment);
-                                                    editing.set(Some(name));
-                                                }
-                                            >
-                                                <Pencil/>
-                                            </button>
+                                            {(!browse_only).then(|| view! {
+                                                <button
+                                                    type="button"
+                                                    class="uc-btn uc-btn--outline uc-btn--icon uc-btn--xs"
+                                                    title=title.clone()
+                                                    aria-label=title
+                                                    on:click=move |_| {
+                                                        let (name, comment) = target.clone();
+                                                        text.set(comment);
+                                                        editing.set(Some(name));
+                                                    }
+                                                >
+                                                    <Pencil/>
+                                                </button>
+                                            })}
                                         </td>
                                     </tr>
                                 }
