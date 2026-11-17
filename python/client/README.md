@@ -1,6 +1,6 @@
 # unitycatalog-rs (Python)
 
-The Python client of [unitycatalog-rs](https://github.com/ion-elgreco/unitycatalog-rs):
+The Python client of [unitycatalog-rs](https://github.com/open-lakehouse/unitycatalog-rs):
 the Rust `uc-client` crate, as a Python extension built with
 [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs). trestle generates
 both, the Rust client and its Python bindings, from the protos in `proto/`. It

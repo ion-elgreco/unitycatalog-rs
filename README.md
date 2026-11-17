@@ -103,7 +103,7 @@ aws_iam_role_arn = "arn:aws:iam::123456789012:role/uc"
 ## Run it in production with Helm
 
 ```bash
-helm install uc oci://ghcr.io/ion-elgreco/charts/uc-server -f values.yaml
+helm install uc oci://ghcr.io/open-lakehouse/charts/uc-server -f values.yaml
 ```
 
 ```yaml
@@ -129,7 +129,7 @@ ingress:
   host: uc.example.com
 ```
 
-The chart runs the image `ghcr.io/ion-elgreco/unitycatalog-rs`: the server and the web UI on
+The chart runs the image `ghcr.io/open-lakehouse/unitycatalog-rs`: the server and the web UI on
 distroless, as a non-root user on a read-only root filesystem, with an SBOM and build provenance.
 [values.yaml](deploy/helm/uc-server/values.yaml) documents every setting, such as cloud storage
 credentials and sign-in through an auth proxy (`auth.forward`).

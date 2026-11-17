@@ -3,8 +3,8 @@
 # gh-pages branch (`just docs-deploy`, release-docs.yml).
 site_name: unitycatalog-rs
 site_description: A Rust reimplementation of Unity Catalog OSS, the open catalog for data and AI
-site_url: https://ion-elgreco.github.io/unitycatalog-rs/
-repo_url: https://github.com/ion-elgreco/unitycatalog-rs
+site_url: https://open-lakehouse.github.io/unitycatalog-rs/
+repo_url: https://github.com/open-lakehouse/unitycatalog-rs
 repo_name: unitycatalog-rs
 
 extra:

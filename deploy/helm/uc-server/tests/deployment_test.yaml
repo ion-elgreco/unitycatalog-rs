@@ -17,7 +17,7 @@ tests:
           value: 1
       - equal:
           path: spec.template.spec.containers[0].image
-          value: ghcr.io/ion-elgreco/unitycatalog-rs:0.0.0-dev
+          value: ghcr.io/open-lakehouse/unitycatalog-rs:0.0.0-dev
       - equal:
           path: spec.template.spec.containers[0].args
           value: ["--port", "8080", "--obs-port", "8081"]

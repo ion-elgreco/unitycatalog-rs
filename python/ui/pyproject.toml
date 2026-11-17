@@ -12,7 +12,7 @@ text = """
 # unitycatalog-rs-ui
 
 The web UI of
-[unitycatalog-rs](https://github.com/ion-elgreco/unitycatalog-rs), a Rust
+[unitycatalog-rs](https://github.com/open-lakehouse/unitycatalog-rs), a Rust
 reimplementation of Unity Catalog OSS. It installs into
 `<prefix>/share/unitycatalog-rs/ui`, where `uc-server`, `uc dev` and
 `uc web` find it.
