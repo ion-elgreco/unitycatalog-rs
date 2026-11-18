@@ -12,36 +12,66 @@ The terminal UI of `uc`:
 
 ![Create a catalog, browse to a table, and delete the catalog in the terminal UI](.github/assets/tui.gif)
 
-## Java and Rust
+## Features compared with Unity Catalog OSS
 
-What upstream (Java) and this project (Rust) have.
+What upstream Unity Catalog OSS (Java) and unitycatalog-rs (Rust) have.
 
-| Feature | Java | Rust | Notes |
-| --- | :-: | :-: | --- |
-| Unity Catalog REST API: catalogs, schemas, tables, volumes, functions, models, grants | X | X | |
-| Delta REST API (managed Delta tables) | X | X | |
-| Iceberg REST catalog | X | X | |
-| Temporary cloud credentials (AWS, Azure, GCP) | X | X | |
-| Authorization with privileges | X | X | Both can ask Open Policy Agent; Rust can also use Cedar policies |
-| Sign-in with an identity provider's tokens (token exchange) | X | X | |
-| SCIM users | X | X | Rust also has groups and bulk changes |
-| Personal access tokens, OAuth client credentials | | X | |
-| Delta Sharing and Open Sharing server | | X | Tables, volumes and agent skills |
-| Web UI | X | X | Java signs in in the browser (Google, Okta, Keycloak buttons); Rust on the server (OpenID Connect, or an auth proxy) |
-| `uc` CLI | X | X | Rust adds a terminal UI and `uc serve`, `uc dev`, `uc web` |
-| Python client | X | X | Different APIs: `unitycatalog-client` and `unitycatalog-rs` |
-| Java client | X | | |
-| Spark and Hadoop connectors | X | | Upstream's Spark connector works with the Rust server: CI tests it with Spark 4.1 and 4.2 |
-| `unitycatalog-ai` (functions as LLM tools) | X | | |
-| Embedded database | X | X | Java: H2. Rust: Turso |
-| Settings | X | X | Java: `etc/conf/*.properties`. Rust: `uc.toml` and `UC_*` variables |
-| PostgreSQL | X | X | |
-| MySQL | X | | |
-| Prometheus metrics, health probes | X | X | |
-| Audit log, backup and restore, OpenTelemetry traces, rate limiting | | X | |
-| Docker image, Helm chart | X | X | |
-| Server and web UI from `pip install` | | X | |
-| Docs site | X | X | |
+<table>
+<thead>
+<tr><th>Feature</th><th>Unity Catalog OSS (Java)</th><th>unitycatalog-rs (Rust)</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><th colspan="4" align="left"><strong>APIs</strong></th></tr>
+<tr><td>Unity Catalog REST API: catalogs, schemas, tables, volumes, functions, models, grants</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>Delta REST API (managed Delta tables)</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>Iceberg REST catalog</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>Temporary cloud credentials (AWS, Azure, GCP)</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>Delta Sharing and Open Sharing server</td><td align="center"></td><td align="center">✓</td><td>Tables, volumes and agent skills</td></tr>
+<tr><td>Files API (read and write files in volumes)</td><td align="center"></td><td align="center">✓</td><td>Same shape as Databricks' <code>/api/2.0/fs</code></td></tr>
+<tr><td>Search for catalogs, schemas, tables and other objects by name</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><th colspan="4" align="left"><strong>Sign-in and access</strong></th></tr>
+<tr><td>Sign-in with an identity provider's tokens (token exchange)</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>Personal access tokens</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td>OAuth client credentials (machine sign-in)</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td>Authorization with privileges</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>Authorization with Open Policy Agent</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>Authorization with Cedar policies</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td>SCIM users</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>SCIM groups</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td>SCIM bulk changes</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><th colspan="4" align="left"><strong>Web UI</strong></th></tr>
+<tr><td>Web UI</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>Sign-in in the browser (Google, Okta, Keycloak buttons)</td><td align="center">✓</td><td align="center"></td><td></td></tr>
+<tr><td>Sign-in on the server with OpenID Connect</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td>Sign-in through an auth proxy (forward auth)</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td>Search box</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td>Browse and view the files of volumes and tables</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><th colspan="4" align="left"><strong>Clients</strong></th></tr>
+<tr><td><code>uc</code> CLI</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>Terminal UI in <code>uc</code></td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td><code>uc serve</code>, <code>uc dev</code>, <code>uc web</code> (start a server or the web UI)</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td>Python client</td><td align="center">✓</td><td align="center">✓</td><td>Different APIs: <code>unitycatalog-client</code> and <code>unitycatalog-rs</code></td></tr>
+<tr><td>Java client</td><td align="center">✓</td><td align="center"></td><td></td></tr>
+<tr><td>Spark and Hadoop connectors</td><td align="center">✓</td><td align="center"></td><td>Upstream's Spark connector works with the Rust server: CI tests it with Spark 4.1 and 4.2</td></tr>
+<tr><td><code>unitycatalog-ai</code> (functions as LLM tools)</td><td align="center">✓</td><td align="center"></td><td></td></tr>
+<tr><th colspan="4" align="left"><strong>Storage and operations</strong></th></tr>
+<tr><td>Embedded database</td><td align="center">✓</td><td align="center">✓</td><td>Java: H2. Rust: Turso</td></tr>
+<tr><td>PostgreSQL</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>MySQL</td><td align="center">✓</td><td align="center"></td><td></td></tr>
+<tr><td>Encrypted credential secrets</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>Key rotation for credential secrets</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td>Settings</td><td align="center">✓</td><td align="center">✓</td><td>Java: <code>etc/conf/*.properties</code>. Rust: <code>uc.toml</code> and <code>UC_*</code> variables</td></tr>
+<tr><td>Prometheus metrics, health probes</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>Audit log</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>Backup and restore</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td>OpenTelemetry traces</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td>Rate limiting</td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td>Docker image, Helm chart</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+<tr><td>Hardened image</td><td align="center"></td><td align="center">✓</td><td>Distroless (no shell or package manager), read-only root file system in Helm, SBOM and signed provenance. Java: Alpine with bash</td></tr>
+<tr><td>Server and web UI from <code>pip install</code></td><td align="center"></td><td align="center">✓</td><td></td></tr>
+<tr><td>Docs site</td><td align="center">✓</td><td align="center">✓</td><td></td></tr>
+</tbody>
+</table>
 
 ## Use it from Python
 
