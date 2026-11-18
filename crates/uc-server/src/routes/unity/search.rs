@@ -86,20 +86,23 @@ pub async fn search_objects(
     }))
 }
 
-/// Whether the caller may see a result: the rule of its type's `get`.
+/// Whether the caller may see a result: the rule of its type's `get`, or
+/// `BROWSE` on its catalog, which shows the names and comments of a
+/// catalog and of what it holds.
 async fn visible(access: &Access, hit: &SearchHit) -> bool {
     if !access.enabled() {
         return true;
     }
     let l = &hit.lineage;
-    match hit.result.securable_type {
+    let reads = match hit.result.securable_type {
         SecurableType::Catalog => rules::get_catalog(access, l).await,
         SecurableType::Schema => rules::get_schema(access, l).await,
         SecurableType::Table => rules::get_table(access, l).await,
         SecurableType::Volume => rules::get_volume(access, l).await,
         SecurableType::Function => rules::get_function(access, l).await,
         _ => rules::get_model(access, l).await,
-    }
+    };
+    reads || rules::browse_catalog(access, l).await
 }
 
 pub fn router() -> OpenApiRouter<AppState> {

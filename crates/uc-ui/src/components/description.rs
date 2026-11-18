@@ -32,6 +32,10 @@ pub fn DescriptionCard<F, Fut>(
     noun: &'static str,
     /// Save a new comment.
     save: F,
+    /// No Edit button, such as for an object that the user sees through
+    /// `BROWSE` only.
+    #[prop(into, optional)]
+    read_only: Signal<bool>,
 ) -> impl IntoView
 where
     F: Fn(String) -> Fut + Clone + Send + Sync + 'static,
@@ -64,10 +68,12 @@ where
         <Card
             title="Description"
             actions=view! {
-                <button type="button" class="uc-btn uc-btn--outline uc-btn--sm" on:click=edit>
-                    <Pencil/>
-                    "Edit"
-                </button>
+                <Show when=move || !read_only.get()>
+                    <button type="button" class="uc-btn uc-btn--outline uc-btn--sm" on:click=edit>
+                        <Pencil/>
+                        "Edit"
+                    </button>
+                </Show>
             }
                 .into_any()
         >

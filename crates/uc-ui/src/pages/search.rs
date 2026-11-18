@@ -120,7 +120,7 @@ pub fn SearchResults() -> impl IntoView {
         };
         Empty::new(
             text,
-            "An object matches when its name or comment holds all the words. You see only the objects that you may read.",
+            "An object matches when its name or comment holds all the words. You see only the objects that you may read or browse.",
         )
     };
     let table = move || {

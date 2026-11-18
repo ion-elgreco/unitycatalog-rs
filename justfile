@@ -80,7 +80,7 @@ demo port="8080": develop
     trap '' INT
     wait
 
-# As just demo, with sign-in and S3, in Docker: FerrisKey, an OpenID Connect provider (on idp_port, new at each run), and RustFS, an S3-compatible store (on s3_port), hold the users and the data; alice owns the dummy data, bob reads sales.eu; data in .uc-demo-auth and RustFS's volume (delete .uc-demo-auth for new data); Ctrl+C stops all
+# As just demo, with sign-in and S3, in Docker: FerrisKey, an OpenID Connect provider (on idp_port, new at each run), and RustFS, an S3-compatible store (on s3_port), hold the users and the data; alice owns the dummy data, bob reads sales.eu, carol has only BROWSE on the catalogs sales and ml; data in .uc-demo-auth and RustFS's volume (delete .uc-demo-auth for new data); Ctrl+C stops all
 demo-auth port="8080" idp_port="8090" s3_port="9000": develop
     #!/usr/bin/env bash
     set -euo pipefail
@@ -119,7 +119,7 @@ demo-auth port="8080" idp_port="8090" s3_port="9000": develop
     done
     # Only into an empty server.
     uv run --no-sync examples/seed_demo_auth.py .uc-demo-auth
-    echo "Sign in as alice (password alice) or bob (password bob). Log out signs out of FerrisKey too."
+    echo "Sign in as alice (password alice), bob (password bob) or carol (password carol). Log out signs out of FerrisKey too."
     echo "FerrisKey's console: $idp, as admin (password admin). RustFS's console: http://localhost:$RUSTFS_CONSOLE_PORT/rustfs/console/, as uc-demo (password uc-demo-secret)."
     echo "uc signs in with: uv run uc --config .uc-demo-auth/uc.toml auth login"
     # Ctrl+C reaches uc dev too: wait until it has stopped, then stop the services.

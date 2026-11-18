@@ -1,6 +1,7 @@
 //! A registered model's page, as the console's `ModelDetails`: its
 //! description and versions, its details, its grants; "Edit", "Create
-//! version" and "Delete".
+//! version" and "Delete". A model that the user sees through `BROWSE` only
+//! has no versions, which the server does not list for it, and no edits.
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -49,7 +50,13 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
     ));
     let info = use_load(Key::Model(full_name.clone()), move || {
         let (_, _, _, full_name) = names.get_value();
-        async move { api::client().registered_model(full_name).get().await }
+        async move {
+            api::client()
+                .registered_model(full_name)
+                .get()
+                .with_include_browse(true)
+                .await
+        }
     });
     let versions = use_load(Key::Versions(full_name.clone()), move || {
         let (_, _, _, full_name) = names.get_value();
@@ -60,6 +67,7 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
     let create_open = RwSignal::new(false);
     let owner = field(info, |m: &RegisteredModelInfo| m.owner.clone());
     let manages = use_manages(owner);
+    let browse_only = field(info, |m: &RegisteredModelInfo| m.browse_only == Some(true));
     let comment = field(info, |m: &RegisteredModelInfo| {
         m.comment.clone().unwrap_or_default()
     });
@@ -95,10 +103,14 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
         });
         async move { saving.await.map(|_| ()) }
     };
-    let reload = vec![
-        Key::Model(full_name.clone()),
-        Key::Versions(full_name.clone()),
-    ];
+    let reload = Signal::derive(move || {
+        let (_, _, _, full_name) = names.get_value();
+        let mut keys = vec![Key::Model(full_name.clone())];
+        if !browse_only.get() {
+            keys.push(Key::Versions(full_name));
+        }
+        keys
+    });
 
     let version_rows = move || {
         let empty = Empty::new(
@@ -148,13 +160,16 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
             icon=Kind::Models.icon()
             name=full_name.clone()
             badges=vec![Label::from("Model")]
+            browse_only
             reload
             actions=view! {
-                <EditMetadata name=model.clone() comment save=save_metadata/>
-                <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>
-                    <Plus/>
-                    "Create version"
-                </button>
+                <Show when=move || !browse_only.get()>
+                    <EditMetadata name=names.get_value().2 comment save=save_metadata/>
+                    <button type="button" class="uc-btn uc-btn--sm" on:click=move |_| create_open.set(true)>
+                        <Plus/>
+                        "Create version"
+                    </button>
+                </Show>
                 <DeleteButton open=delete_open when=manages/>
             }
                 .into_any()
@@ -164,8 +179,10 @@ fn ModelPage(catalog: String, schema: String, model: String) -> impl IntoView {
                 <Tabs
                     overview=move || {
                         view! {
-                            <DescriptionCard comment noun="model" save=save_comment/>
-                            <Card title=counted("Versions", versions)>{version_rows}</Card>
+                            <DescriptionCard comment noun="model" save=save_comment read_only=browse_only/>
+                            <Show when=move || !browse_only.get()>
+                                <Card title=counted("Versions", versions)>{version_rows}</Card>
+                            </Show>
                         }
                     }
                     details=move || {

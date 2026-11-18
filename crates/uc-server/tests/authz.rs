@@ -1751,7 +1751,13 @@ async fn browse_shows_the_discovery_fields_on_request() {
         err["message"],
         "Privilege BROWSE cannot be granted on schema"
     );
+    let search = "/search?query=t1";
+    let found = w.ok(&w.bob, Method::GET, search, None).await;
+    assert_eq!(found["results"], json!([]));
     w.grant("catalog", "c", BOB, &["BROWSE"]).await;
+    // Search finds what BROWSE shows.
+    let found = w.ok(&w.bob, Method::GET, search, None).await;
+    assert_eq!(found["results"][0]["full_name"], "c.s.t1");
 
     // Only with include_browse.
     assert_eq!(

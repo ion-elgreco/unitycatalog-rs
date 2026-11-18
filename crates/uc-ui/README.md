@@ -50,8 +50,8 @@ http://localhost:8080, with its data in `.uc-demo`. The first run puts in
 the data of `examples/seed_demo.py`; delete `.uc-demo` for new data.
 `just demo-auth` does the same with sign-in, in `.uc-demo-auth`: the login
 page goes to FerrisKey, an OpenID Connect provider in Docker on
-http://localhost:8090, and users sign in as alice or bob (their names are
-their passwords). The data is in RustFS, an S3-compatible store in Docker
+http://localhost:8090, and users sign in as alice, bob or carol (their
+names are their passwords). The data is in RustFS, an S3-compatible store in Docker
 on http://localhost:9000.
 
 Or keep a server running and serve the UI with `uc web`, which sends its API

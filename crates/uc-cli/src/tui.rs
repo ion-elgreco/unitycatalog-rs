@@ -2,7 +2,8 @@
 //!
 //! The screen:
 //!   - top: tab bar (Catalogs / Schemas / Tables / Volumes / …)
-//!   - left: list of items in the current tab
+//!   - left: list of items in the current tab; "browse only" after an
+//!     object that the user sees through the `BROWSE` privilege only
 //!   - right: pretty-JSON detail of the selected item; without one, the
 //!     logo ([`logo`])
 //!   - bottom: status line (server URL, last error, key hints)
@@ -85,6 +86,8 @@ const DETAIL_SCROLL_STEP: u16 = 10;
 const TOKEN_DAYS: u32 = 30;
 /// How long the text input's cursor `_` shows, and then hides: it blinks.
 const BLINK: Duration = Duration::from_millis(500);
+/// After the label of a row that the user sees through `BROWSE` only.
+const BROWSE_ONLY_TAG: &str = "  browse only";
 
 /// Run the TUI, for `uc` without a subcommand or `uc tui`, against the
 /// server of the `uc` commands ([`config`]).
@@ -235,6 +238,9 @@ struct Row {
     /// Identifier passed to the delete API for this row (catalog name, full
     /// name, id, etc.). `None` means delete isn't available for this row.
     delete_id: Option<String>,
+    /// Whether the user sees the object through `BROWSE` only: its
+    /// metadata, not its data, and no changes.
+    browse_only: bool,
 }
 
 #[derive(Default)]
@@ -731,6 +737,12 @@ impl App {
             self.status_msg = Some(format!("delete not supported on {}", self.tab.title()));
             return;
         };
+        if row.browse_only {
+            self.status_msg = Some(format!(
+                "'{id}' is browse only: you see it, but cannot delete it"
+            ));
+            return;
+        }
         let id = id.clone();
         let tab = self.tab;
         self.modal = Modal::Confirm {
@@ -1181,7 +1193,16 @@ impl App {
         let items: Vec<ListItem<'_>> = pane
             .rows
             .iter()
-            .map(|r| ListItem::new(r.label.as_str()))
+            .map(|r| {
+                let mut spans = vec![Span::raw(r.label.as_str())];
+                if r.browse_only {
+                    spans.push(Span::styled(
+                        BROWSE_ONLY_TAG,
+                        Style::default().fg(colors::SECONDARY),
+                    ));
+                }
+                ListItem::new(Line::from(spans))
+            })
             .collect();
         let list = List::new(items)
             .block(block)
@@ -1194,12 +1215,17 @@ impl App {
         f.render_stateful_widget(list, area, &mut pane.list_state);
     }
 
-    /// The selected row as JSON. The scroll stops when the last line is at
-    /// the bottom. When the JSON is longer than the pane, a scroll bar on
-    /// its right line shows which part is in view.
+    /// The selected row as JSON, with "browse only" in the title for an
+    /// object that the user sees through `BROWSE` only. The scroll stops
+    /// when the last line is at the bottom. When the JSON is longer than
+    /// the pane, a scroll bar on its right line shows which part is in
+    /// view.
     fn render_detail(&mut self, f: &mut Frame<'_>, area: Rect) {
         let pane = self.pane_mut();
-        let block = framed(" Detail ");
+        let block = match pane.selected().is_some_and(|row| row.browse_only) {
+            true => framed(" Detail · browse only "),
+            false => framed(" Detail "),
+        };
         let body = match pane.selected() {
             Some(row) => serde_json::to_string_pretty(&row.detail)
                 .unwrap_or_else(|_| "(unserialisable)".to_string()),
@@ -1583,7 +1609,7 @@ async fn fetch_rows(
 ) -> Result<Vec<Row>, Failure> {
     match tab {
         Tab::Catalogs => {
-            let resp = client.list_catalogs().await?;
+            let resp = client.list_catalogs().with_include_browse(true).await?;
             Ok(resp
                 .catalogs
                 .into_iter()
@@ -1591,12 +1617,13 @@ async fn fetch_rows(
                     label: c.name.clone(),
                     delete_id: named(&c.name),
                     detail: detail(&models::CATALOG, &c),
+                    browse_only: c.browse_only == Some(true),
                 })
                 .collect())
         }
         Tab::Schemas => {
             let cat = cat.ok_or("select a catalog first (Catalogs tab + Enter)")?;
-            let resp = client.list_schemas(cat).await?;
+            let resp = client.list_schemas(cat).with_include_browse(true).await?;
             Ok(resp
                 .schemas
                 .into_iter()
@@ -1604,12 +1631,13 @@ async fn fetch_rows(
                     label: label(&s.full_name, &s.name),
                     delete_id: named(&s.full_name),
                     detail: detail(&models::SCHEMA, &s),
+                    browse_only: s.browse_only == Some(true),
                 })
                 .collect())
         }
         Tab::Tables => {
             let (c, s) = scope_or_err(cat, sch)?;
-            let resp = client.list_tables(c, s).await?;
+            let resp = client.list_tables(c, s).with_include_browse(true).await?;
             Ok(resp
                 .tables
                 .into_iter()
@@ -1624,13 +1652,14 @@ async fn fetch_rows(
                         label: full,
                         delete_id,
                         detail: detail(&models::TABLE, &t),
+                        browse_only: t.browse_only == Some(true),
                     }
                 })
                 .collect())
         }
         Tab::Volumes => {
             let (c, s) = scope_or_err(cat, sch)?;
-            let resp = client.list_volumes(c, s).await?;
+            let resp = client.list_volumes(c, s).with_include_browse(true).await?;
             Ok(resp
                 .volumes
                 .into_iter()
@@ -1638,12 +1667,16 @@ async fn fetch_rows(
                     label: label(&v.full_name, &v.name),
                     delete_id: named(&v.full_name),
                     detail: to_value(&v),
+                    browse_only: v.browse_only == Some(true),
                 })
                 .collect())
         }
         Tab::Functions => {
             let (c, s) = scope_or_err(cat, sch)?;
-            let resp = client.list_functions(c, s).await?;
+            let resp = client
+                .list_functions(c, s)
+                .with_include_browse(true)
+                .await?;
             Ok(resp
                 .functions
                 .into_iter()
@@ -1651,11 +1684,15 @@ async fn fetch_rows(
                     label: label(&fnc.full_name, &fnc.name),
                     delete_id: named(&fnc.full_name),
                     detail: to_value(&fnc),
+                    browse_only: fnc.browse_only == Some(true),
                 })
                 .collect())
         }
         Tab::Models => {
-            let resp = client.list_registered_models().await?;
+            let resp = client
+                .list_registered_models()
+                .with_include_browse(true)
+                .await?;
             Ok(resp
                 .registered_models
                 .into_iter()
@@ -1663,6 +1700,7 @@ async fn fetch_rows(
                     label: label(&m.full_name, &m.name),
                     delete_id: named(&m.full_name),
                     detail: to_value(&m),
+                    browse_only: m.browse_only == Some(true),
                 })
                 .collect())
         }
@@ -1675,11 +1713,15 @@ async fn fetch_rows(
                     label: nonempty(&c.name).unwrap_or("(unnamed)").to_string(),
                     delete_id: named(&c.name),
                     detail: to_value(&c),
+                    browse_only: false,
                 })
                 .collect())
         }
         Tab::ExternalLocations => {
-            let resp = client.list_external_locations().await?;
+            let resp = client
+                .list_external_locations()
+                .with_include_browse(true)
+                .await?;
             Ok(resp
                 .external_locations
                 .into_iter()
@@ -1687,6 +1729,7 @@ async fn fetch_rows(
                     label: format!("{}  →  {}", el.name, el.url),
                     delete_id: named(&el.name),
                     detail: to_value(&el),
+                    browse_only: el.browse_only == Some(true),
                 })
                 .collect())
         }
@@ -1703,6 +1746,7 @@ async fn fetch_rows(
                         label: format!("{cat}.{}", levels.join(".")),
                         delete_id: None,
                         detail: to_value(&ns),
+                        browse_only: false,
                     }
                 })
                 .collect())
@@ -1716,6 +1760,7 @@ async fn fetch_rows(
                     label: format!("{}  ({})", u.user_name, u.id),
                     delete_id: named(&u.id),
                     detail: to_value(&u),
+                    browse_only: false,
                 })
                 .collect())
         }
@@ -1728,6 +1773,7 @@ async fn fetch_rows(
                     label: format!("{}  {}  ({})", p.name, expiry_label(p.expires_at), p.id),
                     delete_id: named(&p.id),
                     detail: to_value(&p),
+                    browse_only: false,
                 })
                 .collect())
         }
@@ -2179,9 +2225,10 @@ mod tests {
     use serde_json::json;
 
     use uc_client::error::ApiError;
+    use uc_client::models::permissions::v1::PermissionsChange;
     use uc_client::models::tables::v1::{DataSourceFormat, TableType};
     use uc_metastore::{MetastoreConfig, SqlMetastore};
-    use uc_server::authn::security::{ADMIN, SecurityContext};
+    use uc_server::authn::security::{ADMIN, SecurityContext, initialize_admin};
     use uc_server::{AppState, build_app};
 
     use super::*;
@@ -2196,10 +2243,24 @@ mod tests {
 
     /// A uc-server; its origin.
     async fn server() -> String {
+        serve(false).await
+    }
+
+    /// A uc-server, with authorization on or off; its origin. With it on,
+    /// the admin exists and owns the metastore, as at the server's start.
+    async fn serve(authz: bool) -> String {
         let metastore = SqlMetastore::connect(MetastoreConfig::for_tests())
             .await
             .expect("open the test database");
-        let app = build_app(AppState::new(metastore).with_security(security()));
+        if authz {
+            initialize_admin(&(metastore.clone() as uc_metastore::DynMetastore))
+                .await
+                .unwrap();
+        }
+        let state = AppState::new(metastore)
+            .with_authz(authz)
+            .with_security(security());
+        let app = build_app(state);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -2349,6 +2410,7 @@ mod tests {
             label: label.to_string(),
             detail: json!({ "name": label }),
             delete_id: Some(label.to_string()),
+            browse_only: false,
         }
     }
 
@@ -2698,6 +2760,71 @@ mod tests {
                 .as_deref(),
             Some("drop_namespace not supported from TUI")
         );
+    }
+
+    /// A user with only `BROWSE` on the catalog `c` sees it and what it
+    /// holds, marked "browse only", and cannot delete them.
+    #[tokio::test]
+    async fn marks_what_the_user_sees_through_browse_only() {
+        const CAROL: &str = "carol@example.com";
+        let origin = serve(true).await;
+        let api = client(&origin);
+        api.create_catalog("c").await.unwrap();
+        api.create_schema("s", "c").await.unwrap();
+        python_function(&api).await;
+        let email = ScimEmail {
+            value: CAROL.to_string(),
+            primary: Some(true),
+            ..Default::default()
+        };
+        api.create_user(CAROL).with_emails([email]).await.unwrap();
+        let browse = PermissionsChange {
+            principal: CAROL.to_string(),
+            add: vec!["BROWSE".to_string()],
+            ..Default::default()
+        };
+        api.update_permissions("catalog", "c", vec![browse])
+            .await
+            .unwrap();
+
+        let token = security()
+            .create_access_token(CAROL, Duration::from_secs(3600))
+            .unwrap();
+        let url = format!("{origin}{API_BASE}/");
+        let mut carol = App::new(config::client(&url, Some(&token)).unwrap(), url, None);
+        carol.refresh_current();
+        settle(&mut carol).await;
+        assert_eq!(labels(&carol), ["c"]);
+        assert!(carol.pane().rows[0].browse_only);
+        let shown = screen(&mut carol, 120, 30);
+        assert!(shows(&shown, "c  browse only"), "{shown:#?}");
+        assert!(shows(&shown, " Detail · browse only "), "{shown:#?}");
+        assert!(shows(&shown, r#""browse_only": true"#), "{shown:#?}");
+        press(&mut carol, KeyCode::Char('d'));
+        assert!(matches!(carol.modal, Modal::None));
+        assert_eq!(
+            status(&carol),
+            "'c' is browse only: you see it, but cannot delete it"
+        );
+
+        press(&mut carol, KeyCode::Enter);
+        settle(&mut carol).await;
+        assert_eq!(labels(&carol), ["c.s"]);
+        assert!(carol.pane().rows[0].browse_only);
+        press(&mut carol, KeyCode::Enter);
+        settle(&mut carol).await;
+        go_to(&mut carol, Tab::Functions).await;
+        assert_eq!(labels(&carol), ["c.s.f"]);
+        assert!(carol.pane().rows[0].browse_only);
+
+        // The owner sees the objects themselves.
+        let mut admin = app(&origin);
+        admin.refresh_current();
+        settle(&mut admin).await;
+        assert_eq!(labels(&admin), ["c"]);
+        assert!(!admin.pane().rows[0].browse_only);
+        let shown = screen(&mut admin, 120, 30);
+        assert!(!shows(&shown, "browse only"), "{shown:#?}");
     }
 
     #[tokio::test]

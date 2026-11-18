@@ -1,5 +1,6 @@
 //! A function's page, as the console's `FunctionDetails`: its description,
-//! parameters and definition, its details, its grants; "Delete".
+//! parameters and definition, its details, its grants; "Delete". Through
+//! `BROWSE` only, the user sees no definition.
 
 use leptos::prelude::*;
 use uc_client::models::functions::v1::FunctionInfo;
@@ -30,11 +31,18 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
     let name = StoredValue::new(full_name.clone());
     let info = use_load(Key::Function(full_name.clone()), move || {
         let full_name = name.get_value();
-        async move { api::client().function(full_name).get().await }
+        async move {
+            api::client()
+                .function(full_name)
+                .get()
+                .with_include_browse(true)
+                .await
+        }
     });
     let delete_open = RwSignal::new(false);
     let owner = field(info, |f: &FunctionInfo| f.owner.clone());
     let manages = use_manages(owner);
+    let browse_only = field(info, |f: &FunctionInfo| f.browse_only == Some(true));
     let comment = field(info, |f: &FunctionInfo| {
         f.comment.clone().unwrap_or_default()
     });
@@ -106,6 +114,7 @@ fn FunctionPage(catalog: String, schema: String, function: String) -> impl IntoV
             icon=Kind::Functions.icon()
             name=full_name.clone()
             badges
+            browse_only
             reload
             actions=view! { <DeleteButton open=delete_open when=manages/> }.into_any()
         />

@@ -25,5 +25,9 @@ uc
 
 On the tokens tab, ++c++ makes a personal access token. It shows once.
 
+With only `BROWSE` on a catalog or an external location, you see the object and what it holds,
+with **browse only** after the name and in the title of the details. You see their metadata, not
+their data, and ++d++ does not delete them.
+
 When you quit, the terminal UI keeps the server, the tab and the item that you opened, for the
 next start.

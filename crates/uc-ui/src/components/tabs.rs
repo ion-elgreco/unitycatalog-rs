@@ -1,8 +1,9 @@
 //! The tabs of a detail page, as the console's: Overview, Details and
 //! Permissions, underlined in the primary color; volumes and tables also
-//! have Files. A tab's panel is built when the tab first shows, then kept
-//! and only hidden, so that what it loaded and holds, such as vended
-//! credentials, stays.
+//! have Files, but not for a user who sees them through `BROWSE` only. A
+//! tab's panel is built when the tab first shows, then kept and only
+//! hidden, so that what it loaded and holds, such as vended credentials,
+//! stays.
 
 use leptos::prelude::*;
 
@@ -33,8 +34,19 @@ pub fn Tabs(
     files: Option<ViewFn>,
     #[prop(into)] details: ViewFn,
     #[prop(into)] permissions: ViewFn,
+    /// Whether the user sees the object through `BROWSE` only: then no
+    /// Files tab.
+    #[prop(into, optional)]
+    browse_only: Signal<bool>,
 ) -> impl IntoView {
     let tab = RwSignal::new(Tab::Overview);
+    let shows = move |this: Tab| this != Tab::Files || !browse_only.get();
+    // Such as after a reload, when a grant was revoked meanwhile.
+    Effect::new(move |_| {
+        if !shows(tab.get()) {
+            tab.set(Tab::Overview);
+        }
+    });
     let panels: Vec<(Tab, ViewFn)> = [
         Some((Tab::Overview, overview)),
         files.map(|files| (Tab::Files, files)),
@@ -50,15 +62,17 @@ pub fn Tabs(
                 .iter()
                 .map(|&(this, _)| {
                     view! {
-                        <button
-                            type="button"
-                            role="tab"
-                            aria-selected=move || if tab.get() == this { "true" } else { "false" }
-                            class:is-active=move || tab.get() == this
-                            on:click=move |_| tab.set(this)
-                        >
-                            {this.label()}
-                        </button>
+                        <Show when=move || shows(this)>
+                            <button
+                                type="button"
+                                role="tab"
+                                aria-selected=move || if tab.get() == this { "true" } else { "false" }
+                                class:is-active=move || tab.get() == this
+                                on:click=move |_| tab.set(this)
+                            >
+                                {this.label()}
+                            </button>
+                        </Show>
                     }
                 })
                 .collect_view()}

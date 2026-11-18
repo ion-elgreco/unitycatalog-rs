@@ -33,6 +33,8 @@ pub struct Entry {
     /// The values of the kind's own columns, in the order of
     /// [`Kind::columns`].
     pub cells: Vec<Label>,
+    /// Whether the user sees the object through `BROWSE` only.
+    pub browse_only: bool,
 }
 
 impl Kind {
@@ -183,21 +185,44 @@ impl Kind {
                         or_dash(enum_name(t.table_type)).into(),
                         Label::format(t.data_source_format),
                     ];
-                    entry(t.name, t.comment, t.owner, t.created_at, cells)
+                    entry(
+                        t.name,
+                        t.comment,
+                        t.owner,
+                        t.created_at,
+                        cells,
+                        t.browse_only,
+                    )
                 })
                 .collect(),
             Kind::MetricViews => api::tables(catalog, schema)
                 .await?
                 .into_iter()
                 .filter(is_metric_view)
-                .map(|t| entry(t.name, t.comment, t.owner, t.created_at, Vec::new()))
+                .map(|t| {
+                    entry(
+                        t.name,
+                        t.comment,
+                        t.owner,
+                        t.created_at,
+                        Vec::new(),
+                        t.browse_only,
+                    )
+                })
                 .collect(),
             Kind::Volumes => api::volumes(catalog, schema)
                 .await?
                 .into_iter()
                 .map(|v| {
                     let cells = vec![or_dash(enum_name(v.volume_type)).into()];
-                    entry(v.name, v.comment, v.owner, v.created_at, cells)
+                    entry(
+                        v.name,
+                        v.comment,
+                        v.owner,
+                        v.created_at,
+                        cells,
+                        v.browse_only,
+                    )
                 })
                 .collect(),
             Kind::Functions => api::functions(catalog, schema)
@@ -208,13 +233,29 @@ impl Kind {
                         or_dash(function_language(&f)).into(),
                         or_dash(function_returns(&f)).into(),
                     ];
-                    entry(f.name, f.comment, f.owner, f.created_at, cells)
+                    entry(
+                        f.name,
+                        f.comment,
+                        f.owner,
+                        f.created_at,
+                        cells,
+                        f.browse_only,
+                    )
                 })
                 .collect(),
             Kind::Models => api::models(catalog, schema)
                 .await?
                 .into_iter()
-                .map(|m| entry(m.name, m.comment, m.owner, m.created_at, Vec::new()))
+                .map(|m| {
+                    entry(
+                        m.name,
+                        m.comment,
+                        m.owner,
+                        m.created_at,
+                        Vec::new(),
+                        m.browse_only,
+                    )
+                })
                 .collect(),
         };
         Ok(entries)
@@ -227,6 +268,7 @@ fn entry(
     owner: Option<String>,
     created_at: EpochMillis,
     cells: Vec<Label>,
+    browse_only: Option<bool>,
 ) -> Entry {
     Entry {
         name,
@@ -234,6 +276,7 @@ fn entry(
         owner,
         created_at,
         cells,
+        browse_only: browse_only == Some(true),
     }
 }
 

@@ -1,11 +1,13 @@
-"""Dummy data for `just demo-auth`. The server makes the users alice and bob
-from the `[[auth.users]]` of the uc.toml of examples/demo-auth/setup.py, and
-alice is an admin. alice signs in, makes an external location for the RustFS
-bucket and puts in the dummy data of seed_demo.py under it, so she owns it
-all. `uc` writes 15 random rows into each table and a file into each volume,
-with the credentials that the server gets from RustFS. Then alice lets bob
-read the tables and volumes of sales.eu. It takes the folder of `uc dev`,
-with the uc.toml of setup.py:
+"""Dummy data for `just demo-auth`. The server makes the users alice, bob and
+carol from the `[[auth.users]]` of the uc.toml of
+examples/demo-auth/setup.py, and alice is an admin. alice signs in, makes an
+external location for the RustFS bucket and puts in the dummy data of
+seed_demo.py under it, so she owns it all. `uc` writes 15 random rows into
+each table and a file into each volume, with the credentials that the server
+gets from RustFS. Then alice lets bob read the tables and volumes of
+sales.eu, and gives carol only BROWSE on the catalogs sales and ml: carol
+sees the names, comments and columns of their objects, but no data. It
+takes the folder of `uc dev`, with the uc.toml of setup.py:
 
     uv run --no-sync examples/seed_demo_auth.py .uc-demo-auth
 
@@ -116,8 +118,16 @@ def main() -> None:
         "sales.eu",
         changes=[PermissionsChange(bob, add=["USE SCHEMA", "SELECT", "READ VOLUME"])],
     )
+    carol = "carol@example.com"
+    for catalog in ["sales", "ml"]:
+        alice.update_permissions(
+            "catalog", catalog, changes=[PermissionsChange(carol, add=["BROWSE"])]
+        )
     images(alice)
-    print("alice's dummy data is in RustFS, and bob reads sales.eu.")
+    print(
+        "alice's dummy data is in RustFS, bob reads sales.eu, "
+        "and carol browses sales and ml."
+    )
 
 
 if __name__ == "__main__":

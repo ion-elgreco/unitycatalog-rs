@@ -36,6 +36,10 @@ When the server needs a sign-in, the UI shows its login page first: see
 - **Delete**: the button at the top of a page; type the name to confirm. The server deletes only
   a catalog, schema, model or credential that holds nothing; an admin can tick a box to delete
   what it holds too.
+- **Browse only**: with only `BROWSE` on a catalog or an external location, you see the object
+  and what it holds, with a **Browse only** badge. You see their names, comments, columns and
+  other metadata, but no **Files** tab, no temporary credentials, no model versions and no buttons
+  that change them.
 - The buttons at the right of the header choose the light theme, the dark theme or the system's.
 
 ![A table](../assets/ui/table.png)
@@ -50,7 +54,7 @@ of their names and comments. Press `/` to go to it.
 - **See all results**, or Enter without a marked result, opens the search page: all the results,
   with a tab for each type, and **Load more** for the next page.
 - Names equal to the text come first, then names that start with it, names that hold it, and the
-  objects whose comment holds its words. You see only the objects that you may read.
+  objects whose comment holds its words. You see only the objects that you may read or browse.
 - On Turso, a word matches anywhere in a word: `rders` finds `sales_orders`. On PostgreSQL, a word
   matches the start of a word: `ord` finds `sales_orders`, `rders` does not.
 
