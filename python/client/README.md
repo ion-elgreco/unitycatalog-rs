@@ -56,8 +56,13 @@ from unitycatalog import Client, identity
 client = Client("https://uc.example.com/", token=os.environ["UC_TOKEN"])
 
 # A token provider: a cloud identity, an OAuth client, or a function that returns a token.
-client = Client("https://uc.example.com/", token_provider=identity.azure("https://uc.example.com/.default"))
-client = Client("https://uc.example.com/", token_provider=identity.aws("https://uc.example.com"))
+client = Client(
+    "https://uc.example.com/",
+    token_provider=identity.azure("https://uc.example.com/.default"),
+)
+client = Client(
+    "https://uc.example.com/", token_provider=identity.aws("https://uc.example.com")
+)
 
 # No token: the client uses the identity of the environment, such as AZURE_*, AWS_* or
 # GOOGLE_APPLICATION_CREDENTIALS variables, or UC_TOKEN.
