@@ -49,6 +49,10 @@ runs:
       run: |
         set -euo pipefail
         "$YQ" -i -p toml -o toml '.workspace.package.version = strenv(TAG)' Cargo.toml
+        # The workspace crates in Cargo.lock too: `cargo metadata --locked`
+        # (docs/gen_openapi.py) refuses a lock file that differs from Cargo.toml.
+        sed -i.bak "s/^version = \"0\.0\.0-dev\"$/version = \"${TAG}\"/" Cargo.lock
+        rm -f Cargo.lock.bak
         # The versions of the Python packages, and the client's pins of the
         # other three in its extras (`==<version>`)
         for project in python/client python/cli python/server python/ui; do

@@ -27,11 +27,11 @@ aarch64, glibc and musl), macOS (x86_64 and arm64) and Windows (x86_64).
 
 ## Docker
 
-The image `ghcr.io/ion-elgreco/unitycatalog-rs` has `uc-server`, `uc` and the web UI:
+The image `ghcr.io/open-lakehouse/unitycatalog-rs` has `uc-server`, `uc` and the web UI:
 
 ```sh
 docker run -d --name uc -p 8080:8080 -v uc-data:/data \
-  ghcr.io/ion-elgreco/unitycatalog-rs:0.0.0-dev
+  ghcr.io/open-lakehouse/unitycatalog-rs:0.0.0-dev
 ```
 
 See [Docker](../server/docker.md).
@@ -42,6 +42,6 @@ The Helm chart runs the image on Kubernetes, with the catalog in PostgreSQL. Nam
 server in `values.yaml`, as [Kubernetes](../server/kubernetes.md) shows:
 
 ```sh
-helm install uc oci://ghcr.io/ion-elgreco/charts/uc-server \
+helm install uc oci://ghcr.io/open-lakehouse/charts/uc-server \
   --version 0.0.0-dev --namespace uc --create-namespace -f values.yaml
 ```

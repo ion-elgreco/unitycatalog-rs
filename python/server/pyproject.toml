@@ -11,7 +11,7 @@ text = """
 # unitycatalog-rs-server
 
 `uc-server`, the server of
-[unitycatalog-rs](https://github.com/ion-elgreco/unitycatalog-rs), a Rust
+[unitycatalog-rs](https://github.com/open-lakehouse/unitycatalog-rs), a Rust
 reimplementation of Unity Catalog OSS, with upstream's REST API.
 
 Install it with the Python client and the `uc` command line:

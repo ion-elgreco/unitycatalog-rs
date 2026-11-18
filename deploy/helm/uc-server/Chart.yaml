@@ -8,6 +8,6 @@ keywords:
   - unity-catalog
   - data-governance
   - rust
-home: https://github.com/ion-elgreco/unitycatalog-rs
+home: https://github.com/open-lakehouse/unitycatalog-rs
 sources:
-  - https://github.com/ion-elgreco/unitycatalog-rs
+  - https://github.com/open-lakehouse/unitycatalog-rs

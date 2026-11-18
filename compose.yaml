@@ -8,7 +8,7 @@ name: unitycatalog-rs
 
 services:
   server:
-    image: ${UC_IMAGE:-ghcr.io/ion-elgreco/unitycatalog-rs:latest}
+    image: ${UC_IMAGE:-ghcr.io/open-lakehouse/unitycatalog-rs:latest}
     ports:
       - "8080:8080"
     volumes:
