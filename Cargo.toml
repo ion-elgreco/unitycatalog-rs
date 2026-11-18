@@ -16,7 +16,7 @@ members = [
 ]
 # Skip the Python client (python/client/) from plain `cargo build` / `cargo test` so
 # they don't need a Python interpreter to resolve PYO3_PYTHON. Build it with
-# `maturin develop` (see python/client/README.md).
+# `maturin develop` (see CONTRIBUTING.md).
 # Skip uc-ui — it targets wasm32-unknown-unknown; build it with `just wasm`
 # (see crates/uc-ui/README.md).
 default-members = [
