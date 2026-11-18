@@ -204,7 +204,7 @@ server:
     # -- Probes and metrics (`--obs-port`).
     obsPort: 8081
     image:
-      repository: ghcr.io/ion-elgreco/unitycatalog-rs
+      repository: ghcr.io/open-lakehouse/unitycatalog-rs
       pullPolicy: IfNotPresent
       # -- Defaults to the chart's appVersion.
       tag: ""

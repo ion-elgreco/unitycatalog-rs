@@ -1,11 +1,11 @@
 # Helm chart values
 
-The values of the Helm chart `oci://ghcr.io/ion-elgreco/charts/uc-server`.
+The values of the Helm chart `oci://ghcr.io/open-lakehouse/charts/uc-server`.
 [Kubernetes](../server/kubernetes.md) shows them per task. The chart's `values.yaml` has a comment
 for each value:
 
 ```sh
-helm show values oci://ghcr.io/ion-elgreco/charts/uc-server --version 0.0.0-dev
+helm show values oci://ghcr.io/open-lakehouse/charts/uc-server --version 0.0.0-dev
 ```
 
 The chart sets the server's settings as `UC_*` environment variables. For the
@@ -39,7 +39,7 @@ The chart sets the server's settings as `UC_*` environment variables. For the
 | `server.deployment.replicaCount` | `1` | Replicas; above 1 needs `postgresql`. |
 | `server.deployment.port` | `8080` | The container's port for the API and the web UI. |
 | `server.deployment.obsPort` | `8081` | The port of the probes and the metrics. |
-| `server.deployment.image.repository` | `ghcr.io/ion-elgreco/unitycatalog-rs` | The image. |
+| `server.deployment.image.repository` | `ghcr.io/open-lakehouse/unitycatalog-rs` | The image. |
 | `server.deployment.image.tag` | `""` | Its tag; default the chart's `appVersion`. |
 | `server.deployment.image.pullPolicy` | `IfNotPresent` | The pull policy. |
 | `server.deployment.imagePullSecrets` | `[]` | Pull secrets. |

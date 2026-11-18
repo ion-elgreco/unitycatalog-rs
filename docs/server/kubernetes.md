@@ -1,6 +1,6 @@
 # Kubernetes
 
-The Helm chart `oci://ghcr.io/ion-elgreco/charts/uc-server` runs the server and the web UI, with
+The Helm chart `oci://ghcr.io/open-lakehouse/charts/uc-server` runs the server and the web UI, with
 the catalog in PostgreSQL. It needs Helm 3.8 or later.
 
 ```yaml
@@ -23,7 +23,7 @@ server:
 ```sh
 kubectl create namespace uc
 kubectl -n uc create secret generic uc-db --from-literal=password='<password>'
-helm install uc oci://ghcr.io/ion-elgreco/charts/uc-server \
+helm install uc oci://ghcr.io/open-lakehouse/charts/uc-server \
   --version 0.0.0-dev --namespace uc -f values.yaml
 kubectl -n uc port-forward svc/uc-uc-server-server 8080:8080
 ```

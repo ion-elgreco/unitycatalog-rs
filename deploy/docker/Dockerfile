@@ -33,9 +33,9 @@ ARG BASE_IMAGE
 LABEL org.opencontainers.image.title="unitycatalog-rs" \
       org.opencontainers.image.description="Unity Catalog server in Rust, with its web UI and the uc CLI" \
       org.opencontainers.image.authors="Ion Koutsouris" \
-      org.opencontainers.image.source="https://github.com/ion-elgreco/unitycatalog-rs" \
-      org.opencontainers.image.url="https://github.com/ion-elgreco/unitycatalog-rs" \
-      org.opencontainers.image.documentation="https://github.com/ion-elgreco/unitycatalog-rs" \
+      org.opencontainers.image.source="https://github.com/open-lakehouse/unitycatalog-rs" \
+      org.opencontainers.image.url="https://github.com/open-lakehouse/unitycatalog-rs" \
+      org.opencontainers.image.documentation="https://github.com/open-lakehouse/unitycatalog-rs" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.version="${UC_VERSION}" \
       org.opencontainers.image.revision="${UC_REVISION}" \

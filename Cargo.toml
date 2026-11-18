@@ -36,7 +36,7 @@ version = "0.0.0-dev"
 edition = "2024"
 rust-version = "1.94"
 license = "Apache-2.0"
-repository = "https://github.com/ion-elgreco/unitycatalog-rs"
+repository = "https://github.com/open-lakehouse/unitycatalog-rs"
 authors = ["Ion Koutsouris"]
 
 [workspace.dependencies]

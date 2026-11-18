@@ -54,6 +54,6 @@ uc dev
     Clients of upstream's server use this server as they are. The README compares the two
     servers, feature by feature.
 
-    [:material-arrow-right: Compare](https://github.com/ion-elgreco/unitycatalog-rs#readme)
+    [:material-arrow-right: Compare](https://github.com/open-lakehouse/unitycatalog-rs#readme)
 
 </div>

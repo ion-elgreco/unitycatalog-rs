@@ -11,7 +11,7 @@ text = """
 # unitycatalog-rs-cli
 
 `uc`, the command line of
-[unitycatalog-rs](https://github.com/ion-elgreco/unitycatalog-rs), a Rust
+[unitycatalog-rs](https://github.com/open-lakehouse/unitycatalog-rs), a Rust
 reimplementation of Unity Catalog OSS:
 
 - upstream's `bin/uc` commands, such as `uc catalog list`
