@@ -3,8 +3,7 @@
 //! [`SchemaDiff`], and each error names the gap.
 //!
 //! - A change that Delta can allow, but only after a check the kernel lacks,
-//!   is not supported (`UNIMPLEMENTED`): a new field, a type change and a
-//!   dropped field.
+//!   is not supported (`UNIMPLEMENTED`): a type change and a dropped field.
 //! - A change that Delta never allows is an invalid argument: a field that
 //!   moves to another struct, new `delta.typeChanges`, and a changed map key
 //!   under Iceberg writer compatibility.
@@ -24,23 +23,9 @@ fn unsupported(message: impl AsRef<str>) -> Error {
     Error::unimplemented(format!("set-columns: {}", message.as_ref()))
 }
 
-/// Refuse a new field, also one nested in a kept struct. Delta takes a new
-/// field when it is nullable and its id is above
-/// `delta.columnMapping.maxColumnId`.
-pub(crate) fn reject_added_fields(diff: &SchemaDiff) -> Result<()> {
-    let (added, _, _) = diff.all_changes();
-    match first_path(added) {
-        Some(path) => Err(unsupported(format!(
-            "adding field {path} in a request that renames a column is not supported, as \
-             delta-kernel-rs cannot check new fields yet. Add it in a separate request."
-        ))),
-        None => Ok(()),
-    }
-}
-
-/// Refuse a type change of a kept field. Delta takes the changes of type
-/// widening when `delta.enableTypeWidening` is on, and fewer under Iceberg
-/// writer compatibility.
+/// Refuse a type change of a kept field when `delta.enableTypeWidening` is
+/// on. Delta then takes the changes of type widening, and fewer under
+/// Iceberg writer compatibility.
 pub(crate) fn reject_type_change(update: &FieldUpdate) -> Result<()> {
     if !update.change_types.contains(&FieldChangeType::TypeChanged) {
         return Ok(());

@@ -5,17 +5,21 @@
 //! The kernel's [`SchemaDiff`] pairs the fields of both schemas by
 //! column-mapping id. It refuses a field without an id, an id that two
 //! fields share, and a new or missing physical name under a kept id, and it
-//! reports which kept fields changed nullability or type. The changes it
-//! does not check yet are refused in [`crate::unsupported_changes`].
+//! reports which kept fields changed nullability or type. New fields are
+//! checked here against the table properties, which the diff does not see.
+//! The changes it does not check yet are refused in
+//! [`crate::unsupported_changes`].
 
 use delta_kernel::schema::StructType;
-use delta_kernel::schema::diff::{FieldChangeType, FieldUpdate, SchemaDiff};
+use delta_kernel::schema::diff::{FieldChange, FieldChangeType, FieldUpdate, SchemaDiff};
 
 use uc_common::{Error, Result, SecurablePropertiesMap};
 
 use crate::unsupported_changes;
 
 const ENABLE_ICEBERG_WRITER_COMPAT_V1: &str = "delta.enableIcebergWriterCompatV1";
+const MAX_COLUMN_ID: &str = "delta.columnMapping.maxColumnId";
+const ENABLE_TYPE_WIDENING: &str = "delta.enableTypeWidening";
 
 pub(crate) fn invalid(message: impl AsRef<str>) -> Error {
     Error::invalid_argument(format!("set-columns: {}", message.as_ref()))
@@ -36,7 +40,7 @@ pub fn validate(
     unreadable: Option<String>,
     properties: &SecurablePropertiesMap,
 ) -> Result<()> {
-    let (_, _, updated) = diff.all_changes();
+    let (added, _, updated) = diff.all_changes();
     let renames = updated
         .iter()
         .any(|u| u.change_types.contains(&FieldChangeType::Renamed));
@@ -46,25 +50,87 @@ pub fn validate(
     if let Some(error) = unreadable {
         return Err(invalid(format!("the table schema cannot be read: {error}")));
     }
-    let iceberg_writer_compat_v1 = properties
-        .get(ENABLE_ICEBERG_WRITER_COMPAT_V1)
-        .is_some_and(|v| v.eq_ignore_ascii_case("true"));
+    let enabled = |key: &str| {
+        properties
+            .get(key)
+            .is_some_and(|v| v.eq_ignore_ascii_case("true"))
+    };
+    let iceberg_writer_compat_v1 = enabled(ENABLE_ICEBERG_WRITER_COMPAT_V1);
+    let type_widening = enabled(ENABLE_TYPE_WIDENING);
 
     // Changes that Delta refuses.
     unsupported_changes::reject_moves(current, new)?;
     for update in updated {
         unsupported_changes::reject_new_type_changes(update)?;
         reject_tightened_nullability(update)?;
+        if !type_widening {
+            reject_type_change_without_widening(update)?;
+        }
     }
     if iceberg_writer_compat_v1 {
         unsupported_changes::reject_map_key_changes(current, new)?;
     }
-    // Changes that Delta can take after a check the kernel lacks.
-    unsupported_changes::reject_added_fields(diff)?;
+    reject_invalid_added_fields(added, properties)?;
+    // Changes that Delta can take after a check the kernel lacks. With type
+    // widening off, the type changes were refused above.
     for update in updated {
         unsupported_changes::reject_type_change(update)?;
     }
     unsupported_changes::reject_dropped_fields(diff)
+}
+
+/// A new field, also one nested in a kept struct, is nullable and its id is
+/// above `delta.columnMapping.maxColumnId`. The fields inside a new struct
+/// are not checked, as Delta does not check them either.
+fn reject_invalid_added_fields(
+    added: &[FieldChange],
+    properties: &SecurablePropertiesMap,
+) -> Result<()> {
+    if added.is_empty() {
+        return Ok(());
+    }
+    let max_column_id = match properties.get(MAX_COLUMN_ID) {
+        None => 0,
+        Some(value) => value.parse::<i64>().map_err(|_| {
+            invalid(format!(
+                "the stored property {MAX_COLUMN_ID} is not a valid number: {value}"
+            ))
+        })?,
+    };
+    let mut added: Vec<&FieldChange> = added.iter().collect();
+    added.sort_by_key(|change| change.path.to_string());
+    for change in added {
+        if !change.field.is_nullable() {
+            return Err(invalid(format!(
+                "new field {} must be nullable",
+                change.path
+            )));
+        }
+        // The kernel's schema diff refused fields without an id before.
+        if let Some(id) = change.field.column_mapping_id()
+            && id <= max_column_id
+        {
+            return Err(invalid(format!(
+                "new field {} has fieldId={id}, which must be above \
+                 {MAX_COLUMN_ID}={max_column_id}",
+                change.path
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Without `delta.enableTypeWidening`, a kept field keeps its type.
+fn reject_type_change_without_widening(update: &FieldUpdate) -> Result<()> {
+    if !update.change_types.contains(&FieldChangeType::TypeChanged) {
+        return Ok(());
+    }
+    Err(invalid(format!(
+        "field {} changes type from {} to {}. A type change needs {ENABLE_TYPE_WIDENING}=true.",
+        update.path,
+        update.before.data_type(),
+        update.after.data_type()
+    )))
 }
 
 /// A kept field does not become non-nullable, also not by the elements or
@@ -202,12 +268,15 @@ mod tests {
             let p = properties(mode, &[]);
             let current = || vec![long("a", 1, "col-1")];
             assert!(
-                unsupported(
+                rejected(
                     &p,
                     current(),
                     vec![fld("b", json!("string"), Some(1), Some("col-1"))]
                 )
-                .contains("changing the type of field b from long to string")
+                .contains(
+                    "field b changes type from long to string. A type change needs \
+                     delta.enableTypeWidening=true."
+                )
             );
             assert!(
                 rejected(
@@ -232,30 +301,73 @@ mod tests {
     }
 
     #[test]
-    fn a_new_field_is_not_supported_with_a_rename() {
+    fn a_new_field_with_a_rename_is_checked() {
         for mode in ["name", "id"] {
             let p = properties(mode, &[]);
             let current = || vec![long("a", 1, "col-1")];
+            let with = |field: Value| vec![long("b", 1, "col-1"), field];
+            assert!(check(&p, current(), with(long("c", 6, "col-6"))).is_ok());
             assert!(
-                unsupported(
+                rejected(
                     &p,
                     current(),
-                    vec![long("b", 1, "col-1"), long("c", 6, "col-6")]
+                    with(fld_nullable(
+                        "c",
+                        json!("long"),
+                        false,
+                        Some(6),
+                        Some("col-6")
+                    ))
                 )
-                .contains("adding field c in a request that renames a column is not supported")
+                .contains("new field c must be nullable")
+            );
+            assert!(
+                rejected(&p, current(), with(long("c", 5, "col-5"))).contains(
+                    "new field c has fieldId=5, which must be above \
+                     delta.columnMapping.maxColumnId=5"
+                )
             );
             assert!(
                 rejected(
                     &p,
                     current(),
-                    vec![
-                        long("b", 1, "col-1"),
-                        fld("c", json!("long"), None, Some("col-c"))
-                    ]
+                    with(fld("c", json!("long"), None, Some("col-c")))
                 )
                 .contains("is missing column mapping ID")
             );
         }
+    }
+
+    #[test]
+    fn fields_inside_a_new_struct_are_not_checked() {
+        let p = properties("name", &[]);
+        let inner = fld_nullable("m", json!("long"), false, Some(2), Some("col-m"));
+        assert!(
+            check(
+                &p,
+                vec![long("a", 1, "col-1")],
+                vec![
+                    long("b", 1, "col-1"),
+                    fld("n", strukt(vec![inner]), Some(6), Some("col-n"))
+                ]
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn the_stored_max_column_id_is_read() {
+        let current = || vec![long("a", 1, "col-1")];
+        let incoming = || vec![long("b", 1, "col-1"), long("c", 2, "col-2")];
+        let mut p = properties("name", &[]);
+        p.remove("delta.columnMapping.maxColumnId");
+        assert!(check(&p, current(), incoming()).is_ok());
+        let p = properties("name", &[("delta.columnMapping.maxColumnId", "two")]);
+        assert!(rejected(&p, current(), incoming()).contains(
+            "the stored property delta.columnMapping.maxColumnId is not a valid number: two"
+        ));
+        // Without a new field, the property is not read.
+        assert!(check(&p, current(), vec![long("b", 1, "col-1")]).is_ok());
     }
 
     #[test]
@@ -269,19 +381,15 @@ mod tests {
                 Some("col-s"),
             )]
         };
+        let renamed = |field: Value| {
+            let fields = vec![long("x", 2, "col-x"), field];
+            vec![fld("t", strukt(fields), Some(1), Some("col-s"))]
+        };
         assert!(
-            unsupported(
-                &p,
-                current(),
-                vec![fld(
-                    "t",
-                    strukt(vec![long("x2", 6, "col-x2")]),
-                    Some(1),
-                    Some("col-s")
-                )]
-            )
-            .contains("adding field t.x2")
+            rejected(&p, current(), renamed(long("x2", 4, "col-x2")))
+                .contains("new field t.x2 has fieldId=4")
         );
+        assert!(check(&p, current(), renamed(long("x2", 6, "col-x2"))).is_ok());
         assert!(
             check(
                 &p,
@@ -298,7 +406,7 @@ mod tests {
         // A nested rename alone runs the check.
         let p = properties("name", &[]);
         assert!(
-            unsupported(
+            rejected(
                 &p,
                 current(),
                 vec![fld(
@@ -308,7 +416,7 @@ mod tests {
                     Some("col-s")
                 )]
             )
-            .contains("changing the type of field s.y from long to string")
+            .contains("field s.y changes type from long to string")
         );
     }
 
@@ -566,13 +674,24 @@ mod tests {
     }
 
     #[test]
-    fn a_type_change_is_not_supported_with_a_rename() {
+    fn a_type_change_with_a_rename_needs_type_widening() {
         let int = || vec![fld("a", json!("integer"), Some(1), Some("col-1"))];
         let double = || vec![fld("b", json!("double"), Some(1), Some("col-1"))];
-        let widening = properties("name", &[("delta.enableTypeWidening", "true")]);
-        assert!(
-            unsupported(&widening, int(), double())
-                .contains("changing the type of field b from integer to double")
-        );
+        for value in ["true", "TRUE"] {
+            let widening = properties("name", &[("delta.enableTypeWidening", value)]);
+            assert!(
+                unsupported(&widening, int(), double())
+                    .contains("changing the type of field b from integer to double")
+            );
+        }
+        for p in [
+            properties("name", &[]),
+            properties("name", &[("delta.enableTypeWidening", "false")]),
+        ] {
+            assert!(
+                rejected(&p, int(), double())
+                    .contains("field b changes type from integer to double")
+            );
+        }
     }
 }

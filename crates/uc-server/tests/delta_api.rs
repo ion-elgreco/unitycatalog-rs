@@ -1641,33 +1641,31 @@ async fn set_columns_keeps_column_mapping_identities() {
             ])]),
             "The delta.columnMapping.id annotation on field 'id' must be a number",
         ),
-    ];
-    for (updates, message) in cases {
-        update_fails(&app, &h, updates, IVE, message).await;
-    }
-    // A rename with a type change or a new field needs checks that
-    // delta-kernel-rs lacks.
-    let cases = [
-        (
-            json!([set_columns(vec![
-                mapped("key", "string", false, 1, "id"),
-                amount("amount")
-            ])]),
-            "set-columns: changing the type of field key from long to string in a request that \
-             renames a column is not supported, as delta-kernel-rs cannot check type changes yet.",
-        ),
         (
             json!([set_columns(vec![
                 id("key"),
                 amount("amount"),
-                mapped("x", "long", true, 3, "col-x")
+                mapped("x", "long", false, 3, "col-x")
             ])]),
-            "set-columns: adding field x in a request that renames a column is not supported",
+            "set-columns: new field x must be nullable",
         ),
     ];
     for (updates, message) in cases {
-        update_fails(&app, &h, updates, "NotImplementedException", message).await;
+        update_fails(&app, &h, updates, IVE, message).await;
     }
+    // Without type widening, a rename keeps the type.
+    update_fails(
+        &app,
+        &h,
+        json!([set_columns(vec![
+            mapped("key", "string", false, 1, "id"),
+            amount("amount")
+        ])]),
+        IVE,
+        "set-columns: field key changes type from long to string. A type change needs \
+         delta.enableTypeWidening=true.",
+    )
+    .await;
 
     // One rename keeps the identity, and a partition column follows it.
     updated(
@@ -1690,8 +1688,7 @@ async fn set_columns_keeps_column_mapping_identities() {
         ]
     );
     assert_eq!(r["metadata"]["partition-columns"], json!(["total"]));
-    // A partition column that keeps its name while its identity moves: the
-    // rename comes with a new column, which a MANAGED table refuses first.
+    // A partition column that keeps its name while its identity moves.
     let moved = || {
         json!([set_columns(vec![
             id("id"),
@@ -1703,8 +1700,8 @@ async fn set_columns_keeps_column_mapping_identities() {
         &app,
         &h,
         moved(),
-        "NotImplementedException",
-        "set-columns: adding field total in a request that renames a column is not supported",
+        IVE,
+        "partition column 'total' keeps its name, but its column mapping identity moved to 'c'; send set-partition-columns with this update.",
     )
     .await;
     let mut ext = delta_external(&app, "cm_ext").await;
