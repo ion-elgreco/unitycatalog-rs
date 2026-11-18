@@ -70,7 +70,7 @@ fn metadata_str<'a>(field: &'a StructField, key: &ColumnMetadataKey) -> Option<&
 }
 
 /// The physical name of a field: a non-empty string.
-fn physical_name(field: &StructField) -> Option<&str> {
+pub(crate) fn physical_name(field: &StructField) -> Option<&str> {
     metadata_str(field, &PHYSICAL_NAME).filter(|s| !s.is_empty())
 }
 

@@ -1,57 +1,20 @@
-//! Schema changes that delta-kernel-rs does not check yet. A `set-columns`
+//! Schema changes that Delta never allows and delta-kernel-rs does not
+//! check yet: a field that moves to another struct, new `delta.typeChanges`,
+//! and a changed map key under Iceberg writer compatibility. A `set-columns`
 //! that renames a column of a MANAGED table runs these after the kernel's
-//! [`SchemaDiff`], and each error names the gap.
-//!
-//! - A change that Delta can allow, but only after a check the kernel lacks,
-//!   is not supported (`UNIMPLEMENTED`): a type change and a dropped field.
-//! - A change that Delta never allows is an invalid argument: a field that
-//!   moves to another struct, new `delta.typeChanges`, and a changed map key
-//!   under Iceberg writer compatibility.
+//! [`SchemaDiff`](delta_kernel::schema::diff::SchemaDiff), and each error
+//! names the gap.
 
 use std::collections::HashMap;
 
-use delta_kernel::schema::diff::{FieldChange, FieldChangeType, FieldUpdate, SchemaDiff};
+use delta_kernel::schema::diff::FieldUpdate;
 use delta_kernel::schema::{ColumnMetadataKey, DataType, MetadataValue, StructField, StructType};
 use serde_json::Value;
 
-use uc_common::{Error, Result};
+use uc_common::Result;
 
 use crate::fields::all_fields;
 use crate::schema_evolution::invalid;
-
-fn unsupported(message: impl AsRef<str>) -> Error {
-    Error::unimplemented(format!("set-columns: {}", message.as_ref()))
-}
-
-/// Refuse a type change of a kept field when `delta.enableTypeWidening` is
-/// on. Delta then takes the changes of type widening, and fewer under
-/// Iceberg writer compatibility.
-pub(crate) fn reject_type_change(update: &FieldUpdate) -> Result<()> {
-    if !update.change_types.contains(&FieldChangeType::TypeChanged) {
-        return Ok(());
-    }
-    Err(unsupported(format!(
-        "changing the type of field {} from {} to {} in a request that renames a column is not \
-         supported, as delta-kernel-rs cannot check type changes yet. Change the type in a \
-         separate request.",
-        update.path,
-        update.before.data_type(),
-        update.after.data_type()
-    )))
-}
-
-/// Refuse a dropped field. Delta drops a field unless it is a clustering
-/// column.
-pub(crate) fn reject_dropped_fields(diff: &SchemaDiff) -> Result<()> {
-    let (_, removed, _) = diff.all_changes();
-    match first_path(removed) {
-        Some(path) => Err(unsupported(format!(
-            "dropping field {path} in a request that renames a column is not supported, as \
-             delta-kernel-rs cannot check clustering columns yet. Drop it in a separate request."
-        ))),
-        None => Ok(()),
-    }
-}
 
 /// Refuse a field that keeps its id but moves to another struct. The kernel
 /// pairs the field by id and does not report the move.
@@ -112,15 +75,9 @@ pub(crate) fn reject_map_key_changes(current: &StructType, new: &StructType) -> 
     Ok(())
 }
 
-/// The first path of the changes in sort order, so the error does not
-/// depend on the order of the diff.
-fn first_path(changes: &[FieldChange]) -> Option<String> {
-    changes.iter().map(|change| change.path.to_string()).min()
-}
-
 /// The struct fields of a schema by id. The kernel's schema diff refused
 /// fields without an id and ids that two fields share before.
-fn fields_by_id(schema: &StructType) -> HashMap<i64, &StructField> {
+pub(crate) fn fields_by_id(schema: &StructType) -> HashMap<i64, &StructField> {
     all_fields(schema.fields())
         .into_iter()
         .filter_map(|field| Some((field.column_mapping_id()?, field)))

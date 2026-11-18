@@ -51,6 +51,7 @@ pub const MIN_READER_VERSION: &str = "delta.minReaderVersion";
 pub const MIN_WRITER_VERSION: &str = "delta.minWriterVersion";
 /// Clustering columns, a JSON list of column paths.
 pub const CLUSTERING_COLUMNS: &str = "clusteringColumns";
+pub const MAX_COLUMN_ID: &str = "delta.columnMapping.maxColumnId";
 pub const ROW_ID_HIGH_WATER_MARK: &str = "delta.rowTracking.rowIdHighWaterMark";
 pub const UNIVERSAL_FORMAT_ENABLED_FORMATS: &str = "delta.universalFormat.enabledFormats";
 pub const ENABLE_ICEBERG_COMPAT_V2: &str = "delta.enableIcebergCompatV2";
@@ -117,7 +118,7 @@ pub const REQUIRED_FIXED_PROPERTIES: &[(&str, &str)] = &[
 pub fn suggested_properties() -> BTreeMap<String, Option<String>> {
     [
         (crate::column_mapping::MODE, Some("name")),
-        ("delta.columnMapping.maxColumnId", None),
+        (MAX_COLUMN_ID, None),
         ("delta.enableRowTracking", Some("true")),
         ("delta.rowTracking.materializedRowIdColumnName", None),
         (
@@ -355,16 +356,27 @@ pub fn derive_from_domain_metadata(
     }
 }
 
+/// The stored clustering columns, each a path of physical names.
+pub fn stored_clustering_columns(
+    props: &BTreeMap<String, String>,
+) -> Result<Option<Vec<Vec<String>>>> {
+    props
+        .get(CLUSTERING_COLUMNS)
+        .map(|json| {
+            serde_json::from_str(json).map_err(|e| {
+                Error::internal(format!("Corrupt stored property {CLUSTERING_COLUMNS}: {e}"))
+            })
+        })
+        .transpose()
+}
+
 /// Upstream `synthesizeDomainMetadataFromProperties`: the domain metadata
 /// the stored properties still project.
 pub fn domain_metadata_from_properties(
     props: &BTreeMap<String, String>,
 ) -> Result<DeltaDomainMetadataUpdates> {
     let mut dm = DeltaDomainMetadataUpdates::default();
-    if let Some(json) = props.get(CLUSTERING_COLUMNS) {
-        let columns: Vec<Vec<String>> = serde_json::from_str(json).map_err(|e| {
-            Error::internal(format!("Corrupt stored property {CLUSTERING_COLUMNS}: {e}"))
-        })?;
+    if let Some(columns) = stored_clustering_columns(props)? {
         dm.delta_clustering = Some(DeltaClusteringDomainMetadata {
             clustering_columns: Some(columns),
         });
