@@ -744,6 +744,10 @@ async fn delta_managed(app: &Router, name: &str, extra: serde_json::Value) -> Ha
     for (k, v) in extra.as_object().unwrap() {
         body["properties"][k] = v.clone();
     }
+    create_managed(app, name, body).await
+}
+
+async fn create_managed(app: &Router, name: &str, body: serde_json::Value) -> Handle {
     let resp = app
         .clone()
         .oneshot(common::req_json(Method::POST, TABLES, body))
@@ -1539,6 +1543,22 @@ fn mapped(name: &str, ty: &str, nullable: bool, id: i64, physical: &str) -> serd
         "metadata": { "delta.columnMapping.id": id, "delta.columnMapping.physicalName": physical } })
 }
 
+/// The `id` column of [`managed_request`] under column mapping.
+fn mapped_id(name: &str) -> serde_json::Value {
+    mapped(name, "long", false, 1, "id")
+}
+
+/// The `amount` column of [`managed_request`] under column mapping.
+fn mapped_amount(name: &str) -> serde_json::Value {
+    mapped(name, "decimal(10,2)", true, 2, "amount")
+}
+
+/// Turns on column mapping for [`mapped_id`] and [`mapped_amount`].
+fn enable_column_mapping() -> serde_json::Value {
+    json!({ "action": "set-properties", "updates": {
+        "delta.columnMapping.mode": "name", "delta.columnMapping.maxColumnId": "2" } })
+}
+
 fn set_columns(fields: Vec<serde_json::Value>) -> serde_json::Value {
     json!({ "action": "set-columns", "columns": { "type": "struct", "fields": fields } })
 }
@@ -1563,10 +1583,9 @@ fn names(loaded: &serde_json::Value) -> Vec<(String, String)> {
 async fn set_columns_keeps_column_mapping_identities() {
     let app = managed_schema().await;
     let mut h = delta_managed(&app, "cm", json!({})).await;
-    let enable = json!({ "action": "set-properties", "updates": {
-        "delta.columnMapping.mode": "name", "delta.columnMapping.maxColumnId": "2" } });
-    let id = |name: &str| mapped(name, "long", false, 1, "id");
-    let amount = |name: &str| mapped(name, "decimal(10,2)", true, 2, "amount");
+    let enable = enable_column_mapping();
+    let id = mapped_id;
+    let amount = mapped_amount;
 
     // Turning column mapping on takes identities on every field, and no
     // rename in the same request.
@@ -1641,32 +1660,25 @@ async fn set_columns_keeps_column_mapping_identities() {
             ])]),
             "The delta.columnMapping.id annotation on field 'id' must be a number",
         ),
-    ];
-    for (updates, message) in cases {
-        update_fails(&app, &h, updates, IVE, message).await;
-    }
-    // A rename with a type change or a new field needs checks that
-    // delta-kernel-rs lacks.
-    let cases = [
+        (
+            json!([set_columns(vec![
+                id("key"),
+                amount("amount"),
+                mapped("x", "long", false, 3, "col-x")
+            ])]),
+            "set-columns: new field x must be nullable",
+        ),
         (
             json!([set_columns(vec![
                 mapped("key", "string", false, 1, "id"),
                 amount("amount")
             ])]),
-            "set-columns: changing the type of field key from long to string in a request that \
-             renames a column is not supported, as delta-kernel-rs cannot check type changes yet.",
-        ),
-        (
-            json!([set_columns(vec![
-                id("key"),
-                amount("amount"),
-                mapped("x", "long", true, 3, "col-x")
-            ])]),
-            "set-columns: adding field x in a request that renames a column is not supported",
+            "set-columns: field key changes type from long to string. A type change needs \
+             delta.enableTypeWidening=true.",
         ),
     ];
     for (updates, message) in cases {
-        update_fails(&app, &h, updates, "NotImplementedException", message).await;
+        update_fails(&app, &h, updates, IVE, message).await;
     }
 
     // One rename keeps the identity, and a partition column follows it.
@@ -1690,8 +1702,7 @@ async fn set_columns_keeps_column_mapping_identities() {
         ]
     );
     assert_eq!(r["metadata"]["partition-columns"], json!(["total"]));
-    // A partition column that keeps its name while its identity moves: the
-    // rename comes with a new column, which a MANAGED table refuses first.
+    // A partition column that keeps its name while its identity moves.
     let moved = || {
         json!([set_columns(vec![
             id("id"),
@@ -1703,8 +1714,8 @@ async fn set_columns_keeps_column_mapping_identities() {
         &app,
         &h,
         moved(),
-        "NotImplementedException",
-        "set-columns: adding field total in a request that renames a column is not supported",
+        IVE,
+        "partition column 'total' keeps its name, but its column mapping identity moved to 'c'; send set-partition-columns with this update.",
     )
     .await;
     let mut ext = delta_external(&app, "cm_ext").await;
@@ -1742,6 +1753,33 @@ async fn set_columns_keeps_column_mapping_identities() {
     )
     .await;
     assert_eq!(r["metadata"]["partition-columns"], json!(["total"]));
+}
+
+#[tokio::test]
+async fn a_rename_keeps_the_clustering_columns() {
+    let app = managed_schema().await;
+    let staging = delta_staging(&app, "clustered").await;
+    let body = managed_request("clustered", &staging);
+    let mut h = create_managed(&app, "clustered", body).await;
+    updated(
+        &app,
+        &mut h,
+        json!([
+            enable_column_mapping(),
+            set_columns(vec![mapped_id("id"), mapped_amount("amount")])
+        ]),
+    )
+    .await;
+    update_fails(
+        &app,
+        &h,
+        json!([set_columns(vec![mapped_amount("total")])]),
+        IVE,
+        "set-columns: clustering column id cannot be dropped",
+    )
+    .await;
+    let r = updated(&app, &mut h, json!([set_columns(vec![mapped_id("key")])])).await;
+    assert_eq!(names(&r), [("key".to_string(), "id".to_string())]);
 }
 
 #[tokio::test]
