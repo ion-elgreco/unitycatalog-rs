@@ -1,0 +1,3257 @@
+
+
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A Rust reimplementation of Unity Catalog OSS, the open catalog for data and AI">
+      
+      
+      
+        <link rel="canonical" href="https://open-lakehouse.github.io/unitycatalog-rs/0.0.2/reference/settings/">
+      
+      
+      
+      
+        <link rel="prev" href="../cli/">
+      
+      
+        <link rel="next" href="../helm-values/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.ico">
+      <meta name="generator" content="zensical-0.1.3">
+    
+    
+      
+        <title>Settings - unitycatalog-rs</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7CJetBrains+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="light-blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="unitycatalog-rs" class="md-header__button md-logo" aria-label="unitycatalog-rs" data-md-component="logo">
+      
+  <img src="../../assets/logo.svg" alt="unitycatalog-rs">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+      <span class="md-visually-hidden">Navigation</span>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            unitycatalog-rs
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Settings
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="light-blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="light-blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+          <span class="md-visually-hidden">Search</span>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/open-lakehouse/unitycatalog-rs" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+  </div>
+  <div class="md-source__repository">
+    unitycatalog-rs
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  Get started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../server/" class="md-tabs__link">
+          
+  
+  Server
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../clients/cli/" class="md-tabs__link">
+          
+  
+  Clients
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="unitycatalog-rs" class="md-nav__button md-logo" aria-label="unitycatalog-rs" data-md-component="logo">
+      
+  <img src="../../assets/logo.svg" alt="unitycatalog-rs">
+
+    </a>
+    unitycatalog-rs
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/open-lakehouse/unitycatalog-rs" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+  </div>
+  <div class="md-source__repository">
+    unitycatalog-rs
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../.." class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Get started
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Get started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Quickstart
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Install
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../server/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Server
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Server
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Docker
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/kubernetes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Kubernetes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Database
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Sign-in and authorization
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/cloud-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Cloud storage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../server/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Operations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Clients
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Clients
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  CLI
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Terminal UI
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Python client
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Web UI
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/rest-apis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  REST APIs
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reference
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Reference
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../http-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  HTTP API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../python/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Python API
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_4_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Python API
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/unitycatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.admin
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.audit
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.auth
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/catalogs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.catalogs
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/credentials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.credentials
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/delta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.delta
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/external_locations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.external_locations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.files
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.functions
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/health/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.health
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/iceberg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.iceberg
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/identity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.identity
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/metastore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.metastore
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.models
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/permissions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.permissions
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/recipients/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.recipients
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/schemas/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.schemas
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/scim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.scim
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/search/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.search
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/shares/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.shares
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/tables/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.tables
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/tokens/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.tokens
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/volumes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.volumes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  CLI commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Settings
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Settings
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#where-the-settings-come-from" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Where the settings come from
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#values" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Values
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cloud-identities-and-locations" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Cloud identities and locations
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#server" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[server]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#db" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[db]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#auth" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[auth]</code>
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[auth]">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#authissuers" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[[auth.issuers]]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[storage]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#secrets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[secrets]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tables" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[tables]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#identityaws" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[identity.aws]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#identityazure" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[identity.azure]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#identitygcp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[identity.gcp]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#locationsname" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[locations.&lt;name&gt;]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[ui]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#log" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[log]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>[cli]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#other-environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Other environment variables
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../helm-values/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Helm chart values
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+                  
+
+  
+  
+
+
+<h1 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h1>
+<p><code>uc-server</code> and <code>uc</code> read the same settings. Each setting is a key in a <code>[group]</code> table of
+<code>uc.toml</code>, and an environment variable <code>UC_&lt;GROUP&gt;_&lt;KEY&gt;</code>: <code>enabled</code> in <code>[auth]</code> is
+<code>UC_AUTH_ENABLED</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># uc.toml</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="k">[server]</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">data_dir</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"/var/lib/uc"</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="k">[db]</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="n">url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"postgresql://uc@postgres.example.com:5432/uc?sslmode=verify-full"</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="k">[auth]</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">enabled</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">admin_principals</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"alice@example.com"</span><span class="p">]</span>
+</code></pre></div>
+<p>The same with variables:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">UC_SERVER_DATA_DIR</span><span class="o">=</span>/var/lib/uc
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">UC_DB_URL</span><span class="o">=</span><span class="s1">'postgresql://uc@postgres.example.com:5432/uc?sslmode=verify-full'</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">UC_AUTH_ENABLED</span><span class="o">=</span><span class="nb">true</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nb">export</span><span class="w"> </span><span class="nv">UC_AUTH_ADMIN_PRINCIPALS</span><span class="o">=</span>alice@example.com
+</code></pre></div>
+<h2 id="where-the-settings-come-from">Where the settings come from<a class="headerlink" href="#where-the-settings-come-from" title="Permanent link">&para;</a></h2>
+<p>A setting takes its value from the first of:</p>
+<ol>
+<li>a command-line flag, such as <code>--port</code>;</li>
+<li>its environment variable;</li>
+<li><code>uc.toml</code>;</li>
+<li>its default.</li>
+</ol>
+<p>The settings file is the file of <code>--config</code>, else the file that <code>UC_CONFIG</code> names, else the first
+<code>uc.toml</code> in the working directory or a folder above it. Without a file, the variables and the
+defaults apply.</p>
+<h2 id="values">Values<a class="headerlink" href="#values" title="Permanent link">&para;</a></h2>
+<ul>
+<li>A key that is not a setting is an error, in the file and in a variable of a group. Errors name
+  the setting, its variable and the file: <code>auth.enabld (UC_AUTH_ENABLD): unknown field</code>.</li>
+<li>Other <code>UC_</code> variables are not settings, such as <code>UC_CONFIG</code>.</li>
+<li>Variables are text. The server reads numbers and booleans from the text. An empty variable is
+  unset.</li>
+<li>A duration is text such as <code>30s</code>, <code>5m</code>, <code>24h</code> or <code>5d</code>.</li>
+<li>A list is a TOML array, or text with commas: <code>UC_AUTH_ADMIN_PRINCIPALS=alice@example.com,bob@example.com</code>.</li>
+</ul>
+<h2 id="cloud-identities-and-locations">Cloud identities and locations<a class="headerlink" href="#cloud-identities-and-locations" title="Permanent link">&para;</a></h2>
+<p><code>[identity.&lt;cloud&gt;]</code> is how the server signs in to AWS, Azure or GCP. A <code>[locations.&lt;name&gt;]</code> gives
+the paths under its URL an identity, when no external location covers them.
+<a href="../../server/cloud-storage/">Cloud storage</a> tells how they work with external locations, with
+examples per cloud.</p>
+<p>The variables of these tables include the cloud or the name: <code>UC_IDENTITY_AWS_SECRET_KEY</code> is
+<code>secret_key</code> in <code>[identity.aws]</code>, and <code>UC_LOCATIONS_ANALYTICS_URL</code> is <code>url</code> in
+<code>[locations.analytics]</code>. A name has only lowercase letters and digits, and at least one letter:
+the server reads a name of only digits, such as <code>UC_LOCATIONS_0_URL</code>, as a list index.</p>
+<!-- The settings tables: their variables do not break inside a name (extra.css). -->
+<div class="uc-settings">
+<h2 id="server"><code>[server]</code><a class="headerlink" href="#server" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Where it runs</strong></td>
+<td></td>
+<td></td>
+<td>Its database folder and its address.</td>
+</tr>
+<tr>
+<td><code>data_dir</code></td>
+<td><code>UC_SERVER_DATA_DIR</code></td>
+<td><code>.uc</code></td>
+<td>The folder of the embedded database, unless <code>db.url</code> names another database.</td>
+</tr>
+<tr>
+<td><code>bind</code></td>
+<td><code>UC_SERVER_BIND</code></td>
+<td><code>0.0.0.0:8080</code></td>
+<td>The address of the APIs and the web UI. <code>--port</code> changes its port.</td>
+</tr>
+<tr>
+<td><strong>Requests</strong></td>
+<td></td>
+<td></td>
+<td>Limits on the requests that it serves.</td>
+</tr>
+<tr>
+<td><code>max_request_length</code></td>
+<td><code>UC_SERVER_MAX_REQUEST_LENGTH</code></td>
+<td><code>10485760</code></td>
+<td>The largest request body, in bytes. A larger one gets 413. Not for uploads to the Files API, which stream to storage.</td>
+</tr>
+<tr>
+<td><code>request_timeout</code></td>
+<td><code>UC_SERVER_REQUEST_TIMEOUT</code></td>
+<td><code>10s</code></td>
+<td>The time that a request can take; then the server answers 503. <code>0s</code> for no limit. Not for uploads and directory deletes of the Files API.</td>
+</tr>
+<tr>
+<td><code>rate_limit_per_sec</code></td>
+<td><code>UC_SERVER_RATE_LIMIT_PER_SEC</code></td>
+<td><code>0</code></td>
+<td>Requests per second from one client address; more get 429. <code>0</code> for no limit. Behind a proxy, set <code>auth.trusted_proxies</code>, else all callers are one client.</td>
+</tr>
+<tr>
+<td><code>cors_allow_origins</code></td>
+<td><code>UC_SERVER_CORS_ALLOW_ORIGINS</code></td>
+<td>all origins</td>
+<td>The origins that browsers can call the API from. Empty or <code>*</code> allows every origin.</td>
+</tr>
+<tr>
+<td><strong>Health checks and metrics</strong></td>
+<td></td>
+<td></td>
+<td><code>/livez</code>, <code>/readyz</code> and <code>/metrics</code>.</td>
+</tr>
+<tr>
+<td><code>obs_port</code></td>
+<td><code>UC_SERVER_OBS_PORT</code></td>
+<td>none</td>
+<td>The port of <code>/livez</code>, <code>/readyz</code> and <code>/metrics</code>, on all interfaces. Not the API's port.</td>
+</tr>
+<tr>
+<td><code>readiness_interval</code></td>
+<td><code>UC_SERVER_READINESS_INTERVAL</code></td>
+<td><code>5s</code></td>
+<td>How often <code>/readyz</code> checks the database.</td>
+</tr>
+<tr>
+<td><code>readiness_db_timeout</code></td>
+<td><code>UC_SERVER_READINESS_DB_TIMEOUT</code></td>
+<td><code>2s</code></td>
+<td>How long that check can take.</td>
+</tr>
+<tr>
+<td><strong>Threads</strong></td>
+<td></td>
+<td></td>
+<td>The threads that serve requests and outbound IO.</td>
+</tr>
+<tr>
+<td><code>workers</code></td>
+<td><code>UC_SERVER_WORKERS</code></td>
+<td>one per CPU</td>
+<td>The threads that serve requests. Each has a runtime of its own and its share of the PostgreSQL connections (<code>db.pool_size</code>), so a request runs on one thread.</td>
+</tr>
+<tr>
+<td><code>io_threads</code></td>
+<td><code>UC_SERVER_IO_THREADS</code></td>
+<td><code>1</code></td>
+<td>The threads for outbound IO: the connections to object stores and HTTP services.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="db"><code>[db]</code><a class="headerlink" href="#db" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code></td>
+<td><code>UC_DB_URL</code></td>
+<td><code>uc.db</code> in <code>data_dir</code>; <code>uc dev</code>: <code>memory</code></td>
+<td><code>file:&lt;path&gt;</code>, <code>memory</code>, <code>postgresql://…</code> or <code>jdbc:postgresql://…</code>. See <a href="../../server/database/">Database</a>.</td>
+</tr>
+<tr>
+<td><code>user</code></td>
+<td><code>UC_DB_USER</code></td>
+<td>from the URL</td>
+<td>The PostgreSQL user, instead of the URL's.</td>
+</tr>
+<tr>
+<td><code>password</code></td>
+<td><code>UC_DB_PASSWORD</code></td>
+<td>from the URL</td>
+<td>The PostgreSQL password, instead of the URL's.</td>
+</tr>
+<tr>
+<td><code>pool_size</code></td>
+<td><code>UC_DB_POOL_SIZE</code></td>
+<td><code>20</code></td>
+<td>The most PostgreSQL connections at one time.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="auth"><code>[auth]</code><a class="headerlink" href="#auth" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Authorization</strong></td>
+<td></td>
+<td></td>
+<td>Sign-in and privilege checks for the API, and the first users and admins.</td>
+</tr>
+<tr>
+<td><code>enabled</code></td>
+<td><code>UC_AUTH_ENABLED</code></td>
+<td><code>false</code></td>
+<td>Require sign-in, and check privileges.</td>
+</tr>
+<tr>
+<td><code>admin_principals</code></td>
+<td><code>UC_AUTH_ADMIN_PRINCIPALS</code></td>
+<td>none</td>
+<td>The emails of the admins, besides the metastore's owner: see <a href="../../server/auth/#privileges">Privileges</a>.</td>
+</tr>
+<tr>
+<td><code>users</code></td>
+<td>none</td>
+<td>none</td>
+<td><code>[[auth.users]]</code>: the users that the server makes at each start when they are missing. Only in <code>uc.toml</code>. See <a href="../../server/auth/#the-first-users">The first users</a>.</td>
+</tr>
+<tr>
+<td><code>engine</code></td>
+<td><code>UC_AUTH_ENGINE</code></td>
+<td><code>grants</code></td>
+<td>What decides each privilege: <code>grants</code>, <code>cedar</code> (see <a href="../../server/auth/#cedar-policies">Cedar policies</a>) or <code>opa</code> (see <a href="../../server/auth/#open-policy-agent">Open Policy Agent</a>). <code>cedar</code> and <code>opa</code> need <code>enabled = true</code>.</td>
+</tr>
+<tr>
+<td><code>cedar_policies</code></td>
+<td><code>UC_AUTH_CEDAR_POLICIES</code></td>
+<td>none</td>
+<td>With <code>engine = "cedar"</code>: files of Cedar policies, on top of the default policy.</td>
+</tr>
+<tr>
+<td><code>opa_url</code></td>
+<td><code>UC_AUTH_OPA_URL</code></td>
+<td>none</td>
+<td>With <code>engine = "opa"</code>: the URL of the policy's decision in OPA's data API, such as <code>http://opa:8181/v1/data/uc/authz</code>.</td>
+</tr>
+<tr>
+<td><code>opa_timeout</code></td>
+<td><code>UC_AUTH_OPA_TIMEOUT</code></td>
+<td><code>5s</code></td>
+<td>With <code>engine = "opa"</code>: how long one decision may take.</td>
+</tr>
+<tr>
+<td><code>opa_token_file</code></td>
+<td><code>UC_AUTH_OPA_TOKEN_FILE</code></td>
+<td>none</td>
+<td>With <code>engine = "opa"</code>: a file with the token that the server sends to OPA as <code>Authorization: Bearer &lt;token&gt;</code>, for an OPA that takes tokens. See <a href="../../server/auth/#protect-opa">Protect OPA</a>.</td>
+</tr>
+<tr>
+<td><code>trusted_proxies</code></td>
+<td><code>UC_AUTH_TRUSTED_PROXIES</code></td>
+<td>none</td>
+<td>The proxies in front of the server that add the client's address to <code>X-Forwarded-For</code>, such as an ingress: CIDRs or addresses. The limits per client count by that address. See <a href="../../server/auth/#behind-a-proxy">Behind a proxy</a>.</td>
+</tr>
+<tr>
+<td><strong>Tokens</strong></td>
+<td></td>
+<td></td>
+<td>The server's own tokens, and the identity providers whose tokens it takes.</td>
+</tr>
+<tr>
+<td><code>signing_key_file</code></td>
+<td><code>UC_AUTH_SIGNING_KEY_FILE</code></td>
+<td>none</td>
+<td>The PEM file of the RSA keys of the server's tokens, newest first: the first signs. Without it, the server makes a key in memory at each start. See <a href="../../server/auth/#the-signing-key">The signing key</a>.</td>
+</tr>
+<tr>
+<td><code>access_token_timeout</code></td>
+<td><code>UC_AUTH_ACCESS_TOKEN_TIMEOUT</code></td>
+<td><code>24h</code></td>
+<td>The life of the server's access tokens.</td>
+</tr>
+<tr>
+<td><code>cookie_timeout</code></td>
+<td><code>UC_AUTH_COOKIE_TIMEOUT</code></td>
+<td><code>5d</code></td>
+<td>The life of the <code>UC_TOKEN</code> cookie of the web UI.</td>
+</tr>
+<tr>
+<td><code>issuers</code></td>
+<td>none</td>
+<td>none</td>
+<td><code>[[auth.issuers]]</code>: the identity providers whose tokens the server takes, at the token exchange and, with <code>direct</code>, on every request. Only in <code>uc.toml</code>. The keys follow.</td>
+</tr>
+<tr>
+<td><strong>Web UI sign-in</strong></td>
+<td></td>
+<td></td>
+<td>How users sign in to the web UI. The settings of each mode follow.</td>
+</tr>
+<tr>
+<td><code>mode</code></td>
+<td><code>UC_AUTH_MODE</code></td>
+<td><code>none</code></td>
+<td>The web UI's sign-in: <code>none</code>, <code>oidc</code> or <code>forward</code>.</td>
+</tr>
+<tr>
+<td><strong>OpenID Connect</strong></td>
+<td></td>
+<td></td>
+<td><code>mode = "oidc"</code>: the server signs users in with an OpenID Connect provider.</td>
+</tr>
+<tr>
+<td><code>public_url</code></td>
+<td><code>UC_AUTH_PUBLIC_URL</code></td>
+<td>none</td>
+<td>The server's external URL. The provider returns the browser to <code>&lt;public_url&gt;/auth/callback</code>, and with <code>oidc_end_session</code> to <code>&lt;public_url&gt;/</code> after "Log out". The URLs in SCIM answers and Delta Sharing profiles start with it, in every <code>mode</code>; without it, they start with the URL that the client called.</td>
+</tr>
+<tr>
+<td><code>oidc_issuer</code></td>
+<td><code>UC_AUTH_OIDC_ISSUER</code></td>
+<td>none</td>
+<td>The OpenID Connect provider's issuer.</td>
+</tr>
+<tr>
+<td><code>oidc_client_id</code></td>
+<td><code>UC_AUTH_OIDC_CLIENT_ID</code></td>
+<td>none</td>
+<td>The OAuth client.</td>
+</tr>
+<tr>
+<td><code>oidc_client_secret</code></td>
+<td><code>UC_AUTH_OIDC_CLIENT_SECRET</code></td>
+<td>none</td>
+<td>Its secret; none for a public client.</td>
+</tr>
+<tr>
+<td><code>oidc_scopes</code></td>
+<td><code>UC_AUTH_OIDC_SCOPES</code></td>
+<td><code>openid email profile</code></td>
+<td>The scopes that the server asks for.</td>
+</tr>
+<tr>
+<td><code>oidc_end_session</code></td>
+<td><code>UC_AUTH_OIDC_END_SESSION</code></td>
+<td><code>false</code></td>
+<td>"Log out" also ends the provider's session: see <a href="../../server/auth/#openid-connect">OpenID Connect</a>.</td>
+</tr>
+<tr>
+<td><strong>Auth proxy</strong></td>
+<td></td>
+<td></td>
+<td><code>mode = "forward"</code>: an auth proxy in front of the server signs users in, and sends their email in a header.</td>
+</tr>
+<tr>
+<td><code>forward_trusted_proxies</code></td>
+<td><code>UC_AUTH_FORWARD_TRUSTED_PROXIES</code></td>
+<td>none</td>
+<td>The auth proxies whose headers count: CIDRs or addresses.</td>
+</tr>
+<tr>
+<td><code>forward_email_header</code></td>
+<td><code>UC_AUTH_FORWARD_EMAIL_HEADER</code></td>
+<td><code>Remote-Email</code></td>
+<td>The header with the user's email.</td>
+</tr>
+<tr>
+<td><code>forward_user_header</code></td>
+<td><code>UC_AUTH_FORWARD_USER_HEADER</code></td>
+<td><code>Remote-User</code></td>
+<td>The header with the user, without the email header.</td>
+</tr>
+<tr>
+<td><code>forward_names_with_commas</code></td>
+<td><code>UC_AUTH_FORWARD_NAMES_WITH_COMMAS</code></td>
+<td><code>false</code></td>
+<td>A header value with a <code>,</code> is one name, such as the subject of a client certificate (<code>CN=alice,OU=eng</code>). Without it, such a value names nobody, as it could be the client's value with the proxy's added. Set it only when the proxy replaces the client's headers.</td>
+</tr>
+<tr>
+<td><code>forward_logout_url</code></td>
+<td><code>UC_AUTH_FORWARD_LOGOUT_URL</code></td>
+<td>none</td>
+<td>The proxy's sign-out, where the web UI's "Log out" goes.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="authissuers"><code>[[auth.issuers]]</code><a class="headerlink" href="#authissuers" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">[[auth.issuers]]</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"entra"</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">issuer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"https://login.microsoftonline.com/&lt;tenant&gt;/v2.0"</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">audiences</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"&lt;the API app's client id&gt;"</span><span class="p">,</span><span class="w"> </span><span class="s2">"https://uc.example.com"</span><span class="p">]</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">direct</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">principal_claims</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"preferred_username"</span><span class="p">,</span><span class="w"> </span><span class="s2">"oid"</span><span class="p">]</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="n">client_claims</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"azp"</span><span class="p">,</span><span class="w"> </span><span class="s2">"appid"</span><span class="p">]</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">groups_claim</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"roles"</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="n">create_users</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="n">display_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"{app_displayname}"</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>required</td>
+<td>A short name of lowercase letters, digits, <code>-</code> and <code>_</code>: the prefix of the principals it names without an email, such as <code>entra:&lt;oid&gt;</code>.</td>
+</tr>
+<tr>
+<td><code>kind</code></td>
+<td><code>oidc</code></td>
+<td><code>oidc</code> for an OpenID Connect provider; <code>aws</code> for AWS identities, whose signed <code>GetCallerIdentity</code> requests the server sends to STS.</td>
+</tr>
+<tr>
+<td><code>issuer</code></td>
+<td>required</td>
+<td>The <code>iss</code> claim of its tokens, as they write it, with a trailing <code>/</code> if they have one; <code>*</code> stands for one DNS label of letters, digits and <code>-</code>, and in the host it needs two fixed labels after it. For <code>aws</code>, the URL of the STS endpoint, by default AWS's global and regional ones.</td>
+</tr>
+<tr>
+<td><code>audiences</code></td>
+<td>required</td>
+<td>The <code>aud</code> that its tokens must carry; <code>["*"]</code> accepts every audience, without <code>direct</code>; with <code>direct</code>, no <code>*</code>. For <code>aws</code>, the server id that the signed requests carry: the server's URL as clients call it; no <code>*</code>. Clients ask for the audience that is the server's URL.</td>
+</tr>
+<tr>
+<td><code>accounts</code></td>
+<td>required for <code>aws</code></td>
+<td>The 12-digit AWS accounts whose identities it takes.</td>
+</tr>
+<tr>
+<td><code>direct</code></td>
+<td><code>false</code></td>
+<td>Take its tokens on every request, not only at the token exchange.</td>
+</tr>
+<tr>
+<td><code>principal_claims</code></td>
+<td><code>["email", "sub"]</code></td>
+<td>The claims that name the caller; the first present wins. An email names the user with that email; with an <code>issuer</code> with <code>*</code>, only when the token says <code>email_verified = true</code>. Any other value names the user <code>&lt;name&gt;:&lt;value&gt;</code>.</td>
+</tr>
+<tr>
+<td><code>client_claims</code></td>
+<td><code>["azp", "client_id"]</code></td>
+<td>The claims with an application's client id: the user whose <code>externalId</code> is <code>&lt;name&gt;:&lt;client id&gt;</code> is the application.</td>
+</tr>
+<tr>
+<td><code>groups_claim</code></td>
+<td>none</td>
+<td>A claim whose values are names of groups the caller is in; a value counts when the server has the group <code>&lt;name&gt;:&lt;value&gt;</code>, such as <code>entra:Writers</code>. Not with an <code>issuer</code> that has <code>*</code>.</td>
+</tr>
+<tr>
+<td><code>create_users</code></td>
+<td><code>false</code></td>
+<td>Make the user at its first request when it is missing.</td>
+</tr>
+<tr>
+<td><code>display_name</code></td>
+<td>the principal</td>
+<td>The display name of a made user, with claims in braces.</td>
+</tr>
+</tbody>
+</table>
+<p><a href="../../server/auth/#identity-providers">Identity providers</a> tells how a block names the caller.</p>
+<p><a href="../../server/auth/">Sign-in and authorization</a> tells how these settings work together.</p>
+<h2 id="storage"><code>[storage]</code><a class="headerlink" href="#storage" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Managed storage</strong></td>
+<td></td>
+<td></td>
+<td>Where managed tables and models go by default.</td>
+</tr>
+<tr>
+<td><code>tables_root</code></td>
+<td><code>UC_STORAGE_TABLES_ROOT</code></td>
+<td>none; <code>uc dev</code>: <code>storage</code> in its <code>--dir</code></td>
+<td>Where managed tables go when their catalog and schema have no storage root.</td>
+</tr>
+<tr>
+<td><code>models_root</code></td>
+<td><code>UC_STORAGE_MODELS_ROOT</code></td>
+<td>none; <code>uc dev</code>: <code>storage</code> in its <code>--dir</code></td>
+<td>Where models go when their catalog and schema have no storage root.</td>
+</tr>
+<tr>
+<td><strong>Local external tables</strong></td>
+<td></td>
+<td></td>
+<td>Local folders for external Iceberg tables.</td>
+</tr>
+<tr>
+<td><code>external_local_roots</code></td>
+<td><code>UC_STORAGE_EXTERNAL_LOCAL_ROOTS</code></td>
+<td>none</td>
+<td>The local folders under which external Iceberg tables can be.</td>
+</tr>
+<tr>
+<td><strong>Cleanup of dropped data</strong></td>
+<td></td>
+<td></td>
+<td>When you delete a managed table, volume or model, the server deletes its files later.</td>
+</tr>
+<tr>
+<td><code>cleanup_initial_delay</code></td>
+<td><code>UC_STORAGE_CLEANUP_INITIAL_DELAY</code></td>
+<td><code>7d</code></td>
+<td>How long the server waits before it deletes the data of a dropped object.</td>
+</tr>
+<tr>
+<td><code>cleanup_retry_backoff</code></td>
+<td><code>UC_STORAGE_CLEANUP_RETRY_BACKOFF</code></td>
+<td><code>1h</code></td>
+<td>The wait before a failed cleanup runs again.</td>
+</tr>
+<tr>
+<td><code>cleanup_poll_interval</code></td>
+<td><code>UC_STORAGE_CLEANUP_POLL_INTERVAL</code></td>
+<td><code>1m</code></td>
+<td>How often the cleanup of dropped managed data looks for work.</td>
+</tr>
+<tr>
+<td><code>cleanup_attempt_timeout</code></td>
+<td><code>UC_STORAGE_CLEANUP_ATTEMPT_TIMEOUT</code></td>
+<td><code>30m</code></td>
+<td>How long one cleanup can take.</td>
+</tr>
+<tr>
+<td><code>cleanup_lease_duration</code></td>
+<td><code>UC_STORAGE_CLEANUP_LEASE_DURATION</code></td>
+<td><code>2h</code></td>
+<td>How long a server holds a cleanup task.</td>
+</tr>
+<tr>
+<td><strong>Credential cache</strong></td>
+<td></td>
+<td></td>
+<td>Vended credentials given again in place of a new call to the cloud. See <a href="../../server/cloud-storage/#the-credential-cache">The credential cache</a>.</td>
+</tr>
+<tr>
+<td><code>credential_cache_enabled</code></td>
+<td><code>UC_STORAGE_CREDENTIAL_CACHE_ENABLED</code></td>
+<td><code>false</code></td>
+<td>Give a vended credential again to requests for the same locations, operation and identity.</td>
+</tr>
+<tr>
+<td><code>credential_cache_max_size</code></td>
+<td><code>UC_STORAGE_CREDENTIAL_CACHE_MAX_SIZE</code></td>
+<td><code>1000</code></td>
+<td>The most credentials kept.</td>
+</tr>
+<tr>
+<td><code>credential_cache_max_age</code></td>
+<td><code>UC_STORAGE_CREDENTIAL_CACHE_MAX_AGE</code></td>
+<td><code>5m</code></td>
+<td>The longest a credential is given again, from when it was vended.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="secrets"><code>[secrets]</code><a class="headerlink" href="#secrets" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>store</code></td>
+<td><code>UC_SECRETS_STORE</code></td>
+<td><code>database</code></td>
+<td>Where the secrets of credentials go. <code>database</code>: in the database, sealed with <code>key_file</code>.</td>
+</tr>
+<tr>
+<td><code>key_file</code></td>
+<td><code>UC_SECRETS_KEY_FILE</code></td>
+<td>none</td>
+<td>The PEM file of the P-256 keys that seal the secrets, newest first. Without it, the server makes a new key in memory at each start, so the secrets cannot be opened after it stops. See <a href="../../server/database/#the-secrets-key">The secrets key</a>.</td>
+</tr>
+<tr>
+<td><code>cache_capacity</code></td>
+<td><code>UC_SECRETS_CACHE_CAPACITY</code></td>
+<td><code>500</code></td>
+<td>The most secrets, and Azure sign-ins, that the server keeps in memory. <code>0</code> keeps none.</td>
+</tr>
+<tr>
+<td><code>cache_ttl</code></td>
+<td><code>UC_SECRETS_CACHE_TTL</code></td>
+<td><code>10m</code></td>
+<td>How long a secret stays in memory after the store gives it.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tables"><code>[tables]</code><a class="headerlink" href="#tables" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>managed</code></td>
+<td><code>UC_TABLES_MANAGED</code></td>
+<td><code>true</code></td>
+<td>Allow MANAGED tables, staging tables and Delta commits.</td>
+</tr>
+<tr>
+<td><code>delta_api_only</code></td>
+<td><code>UC_TABLES_DELTA_API_ONLY</code></td>
+<td><code>false</code></td>
+<td>Write managed Delta tables only through the Delta REST API.</td>
+</tr>
+<tr>
+<td><code>allow_missing_deletion_vectors</code></td>
+<td><code>UC_TABLES_ALLOW_MISSING_DELETION_VECTORS</code></td>
+<td><code>false</code></td>
+<td>Allow UniForm Iceberg v2 tables without deletion vectors.</td>
+</tr>
+<tr>
+<td><code>iceberg_writes</code></td>
+<td><code>UC_TABLES_ICEBERG_WRITES</code></td>
+<td><code>true</code></td>
+<td>Allow writes through the Iceberg REST catalog.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="identityaws"><code>[identity.aws]</code><a class="headerlink" href="#identityaws" title="Permanent link">&para;</a></h2>
+<p>The identity that the server signs in to AWS with. It assumes the roles of storage credentials.
+Without keys, the server uses the credentials of the machine or pod where it runs: the <code>AWS_*</code>
+variables, the role of a Kubernetes service account, an ECS task role, EKS Pod Identity or an
+instance role.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>access_key</code></td>
+<td><code>UC_IDENTITY_AWS_ACCESS_KEY</code></td>
+<td>the credentials where the server runs</td>
+<td>The access key.</td>
+</tr>
+<tr>
+<td><code>secret_key</code></td>
+<td><code>UC_IDENTITY_AWS_SECRET_KEY</code></td>
+<td>the credentials where the server runs</td>
+<td>The secret key.</td>
+</tr>
+<tr>
+<td><code>region</code></td>
+<td><code>UC_IDENTITY_AWS_REGION</code></td>
+<td><code>AWS_REGION</code>, else <code>AWS_DEFAULT_REGION</code>, else <code>us-east-1</code></td>
+<td>The region of the STS calls.</td>
+</tr>
+<tr>
+<td><code>arn</code></td>
+<td><code>UC_IDENTITY_AWS_ARN</code></td>
+<td>none</td>
+<td>The ARN of this identity, shown as <code>unity_catalog_iam_arn</code> on storage credentials, for the trust policies of their roles. A role here is also the one of <code>aws_iam_role_arn = true</code>; its trust policy must then allow the role itself.</td>
+</tr>
+<tr>
+<td><code>endpoint</code></td>
+<td><code>UC_IDENTITY_AWS_ENDPOINT</code></td>
+<td>AWS</td>
+<td>The S3 and STS API of an S3-compatible store, such as MinIO or RustFS: <code>http://</code> or <code>https://</code>. uc's table and volume commands use it too. See <a href="../../server/cloud-storage/#per-cloud">Cloud storage</a>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="identityazure"><code>[identity.azure]</code><a class="headerlink" href="#identityazure" title="Permanent link">&para;</a></h2>
+<p>The identity that the server signs in to Azure with: a service principal, or a user-assigned
+managed identity. Without one, the server uses the credentials of the machine or pod where it
+runs: AKS workload identity, the <code>AZURE_*</code> variables, or the managed identity of the VM or App
+Service.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>directory_id</code></td>
+<td><code>UC_IDENTITY_AZURE_DIRECTORY_ID</code></td>
+<td>The service principal's tenant ID.</td>
+</tr>
+<tr>
+<td><code>application_id</code></td>
+<td><code>UC_IDENTITY_AZURE_APPLICATION_ID</code></td>
+<td>The service principal's client ID.</td>
+</tr>
+<tr>
+<td><code>client_secret</code></td>
+<td><code>UC_IDENTITY_AZURE_CLIENT_SECRET</code></td>
+<td>The service principal's secret.</td>
+</tr>
+<tr>
+<td><code>managed_identity_id</code></td>
+<td><code>UC_IDENTITY_AZURE_MANAGED_IDENTITY_ID</code></td>
+<td>Or the resource ID of a user-assigned managed identity, from the instance metadata service.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="identitygcp"><code>[identity.gcp]</code><a class="headerlink" href="#identitygcp" title="Permanent link">&para;</a></h2>
+<p>The identity that the server signs in to GCP with. Without a key, the server uses the
+credentials of the machine or pod where it runs, which Google calls Application Default
+Credentials: the <code>GOOGLE_APPLICATION_CREDENTIALS</code> file, gcloud's application default
+credentials, or the metadata server, such as GKE Workload Identity.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>json_key_file</code></td>
+<td><code>UC_IDENTITY_GCP_JSON_KEY_FILE</code></td>
+<td>Application Default Credentials</td>
+<td>A service account's JSON key file.</td>
+</tr>
+<tr>
+<td><code>endpoint</code></td>
+<td><code>UC_IDENTITY_GCP_ENDPOINT</code></td>
+<td>Google</td>
+<td>The STS and IAM Credentials API of a GCP emulator, such as Floci: <code>http://</code> or <code>https://</code>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="locationsname"><code>[locations.&lt;name&gt;]</code><a class="headerlink" href="#locationsname" title="Permanent link">&para;</a></h2>
+<p>A URL and the identity that reaches the paths under it, for paths that no external location
+covers. With authorization on, it serves only the paths that the admin wrote, <code>storage.tables_root</code>
+and <code>storage.models_root</code>; see
+<a href="../../server/cloud-storage/#which-location-serves-a-path">Which location serves a path</a>. The URL's
+scheme picks the cloud, and an entry holds exactly one identity of that cloud. When several entries
+cover a path, the one with the longest URL wins.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Variable</th>
+<th>Cloud</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code></td>
+<td><code>UC_LOCATIONS_&lt;NAME&gt;_URL</code></td>
+<td>all</td>
+<td><code>s3://bucket</code>, <code>abfss://container@account.dfs.core.windows.net</code> or <code>gs://bucket</code>, with a path or without. Required.</td>
+</tr>
+<tr>
+<td><code>region</code></td>
+<td><code>UC_LOCATIONS_&lt;NAME&gt;_REGION</code></td>
+<td>S3</td>
+<td>The bucket's region, which Iceberg clients get. Without it, the server asks S3.</td>
+</tr>
+<tr>
+<td><code>aws_iam_role_arn</code></td>
+<td><code>UC_LOCATIONS_&lt;NAME&gt;_AWS_IAM_ROLE_ARN</code></td>
+<td>S3</td>
+<td><code>true</code> for the server's own role, <code>identity.aws.arn</code>, or the ARN of a role that <code>[identity.aws]</code> assumes. Required for S3.</td>
+</tr>
+<tr>
+<td><code>azure_directory_id</code></td>
+<td><code>UC_LOCATIONS_&lt;NAME&gt;_AZURE_DIRECTORY_ID</code></td>
+<td>ADLS</td>
+<td>A service principal's tenant ID, with <code>azure_application_id</code> and <code>azure_client_secret</code>.</td>
+</tr>
+<tr>
+<td><code>azure_application_id</code></td>
+<td><code>UC_LOCATIONS_&lt;NAME&gt;_AZURE_APPLICATION_ID</code></td>
+<td>ADLS</td>
+<td>Its client ID.</td>
+</tr>
+<tr>
+<td><code>azure_client_secret</code></td>
+<td><code>UC_LOCATIONS_&lt;NAME&gt;_AZURE_CLIENT_SECRET</code></td>
+<td>ADLS</td>
+<td>Its secret.</td>
+</tr>
+<tr>
+<td><code>azure_managed_identity</code></td>
+<td><code>UC_LOCATIONS_&lt;NAME&gt;_AZURE_MANAGED_IDENTITY</code></td>
+<td>ADLS</td>
+<td><code>true</code> for <code>[identity.azure]</code>, or the resource ID of a user-assigned managed identity.</td>
+</tr>
+<tr>
+<td><code>gcp_service_account</code></td>
+<td><code>UC_LOCATIONS_&lt;NAME&gt;_GCP_SERVICE_ACCOUNT</code></td>
+<td>GCS</td>
+<td><code>true</code> for <code>[identity.gcp]</code>, or the email of a service account that <code>[identity.gcp]</code> impersonates.</td>
+</tr>
+<tr>
+<td><code>gcp_service_account_key</code></td>
+<td><code>UC_LOCATIONS_&lt;NAME&gt;_GCP_SERVICE_ACCOUNT_KEY</code></td>
+<td>GCS</td>
+<td>A service account's JSON key file.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="ui"><code>[ui]</code><a class="headerlink" href="#ui" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>enabled</code></td>
+<td><code>UC_UI_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Serve the web UI at <code>/</code>.</td>
+</tr>
+<tr>
+<td><code>dir</code></td>
+<td><code>UC_UI_DIR</code></td>
+<td><code>share/unitycatalog-rs/ui</code> next to the binary's <code>bin/</code> folder</td>
+<td>The web UI's folder.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="log"><code>[log]</code><a class="headerlink" href="#log" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dir</code></td>
+<td><code>UC_LOG_DIR</code></td>
+<td>none</td>
+<td>The folder of <code>server.log</code>, rolled at 10 MB, with the newest 5 files kept. Logs also go to stdout.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="cli"><code>[cli]</code><a class="headerlink" href="#cli" title="Permanent link">&para;</a></h2>
+<p>The settings of <code>uc</code>. The server does not read them.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Server and output</strong></td>
+<td></td>
+<td></td>
+<td>The server of the commands, and how <code>uc</code> prints.</td>
+</tr>
+<tr>
+<td><code>server</code></td>
+<td><code>UC_CLI_SERVER</code></td>
+<td><code>http://localhost:8080</code></td>
+<td>The server of the commands.</td>
+</tr>
+<tr>
+<td><code>token</code></td>
+<td><code>UC_CLI_TOKEN</code></td>
+<td>the sign-in of <code>uc auth login</code></td>
+<td>The token of the requests.</td>
+</tr>
+<tr>
+<td><code>server_bin</code></td>
+<td><code>UC_CLI_SERVER_BIN</code></td>
+<td><code>uc-server</code> next to <code>uc</code>, else on <code>PATH</code></td>
+<td>The server that <code>uc serve</code> and <code>uc dev</code> run.</td>
+</tr>
+<tr>
+<td><code>output_width</code></td>
+<td><code>UC_CLI_OUTPUT_WIDTH</code></td>
+<td><code>COLUMNS</code>, else the terminal's width; at least 120</td>
+<td>The width of tables.</td>
+</tr>
+<tr>
+<td><strong>Browser sign-in</strong></td>
+<td></td>
+<td></td>
+<td><code>uc auth login</code> in the browser: the identity provider's OAuth endpoints and client. <code>uc auth login</code> signs in there, then exchanges the provider's token for one of the server.</td>
+</tr>
+<tr>
+<td><code>oauth_authorization_url</code></td>
+<td><code>UC_CLI_OAUTH_AUTHORIZATION_URL</code></td>
+<td>none</td>
+<td><code>uc auth login</code> in the browser: the provider's authorization endpoint.</td>
+</tr>
+<tr>
+<td><code>oauth_token_url</code></td>
+<td><code>UC_CLI_OAUTH_TOKEN_URL</code></td>
+<td>none</td>
+<td>The provider's token endpoint.</td>
+</tr>
+<tr>
+<td><code>oauth_client_id</code></td>
+<td><code>UC_CLI_OAUTH_CLIENT_ID</code></td>
+<td>none</td>
+<td>The OAuth client.</td>
+</tr>
+<tr>
+<td><code>oauth_client_secret</code></td>
+<td><code>UC_CLI_OAUTH_CLIENT_SECRET</code></td>
+<td>none</td>
+<td>Its secret.</td>
+</tr>
+<tr>
+<td><code>oauth_redirect_port</code></td>
+<td><code>UC_CLI_OAUTH_REDIRECT_PORT</code></td>
+<td>a free port</td>
+<td>The port of the redirect to <code>http://localhost:&lt;port&gt;</code>.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="other-environment-variables">Other environment variables<a class="headerlink" href="#other-environment-variables" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>UC_CONFIG</code></td>
+<td>The settings file.</td>
+</tr>
+<tr>
+<td><code>RUST_LOG</code></td>
+<td>The log level, such as <code>info</code> (the default) or <code>uc_server=debug</code>.</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["content.code.copy","content.code.annotate","navigation.indexes","search.highlight","search.share","toc.follow","toc.integrate","navigation.tabs","navigation.tabs.sticky","navigation.top"],"redirect":null,"search":"../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":{"provider":"mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
+      
+    
+  </body>
+</html>

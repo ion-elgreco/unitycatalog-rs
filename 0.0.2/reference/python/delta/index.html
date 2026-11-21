@@ -1,0 +1,3014 @@
+
+
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A Rust reimplementation of Unity Catalog OSS, the open catalog for data and AI">
+      
+      
+      
+        <link rel="canonical" href="https://open-lakehouse.github.io/unitycatalog-rs/0.0.2/reference/python/delta/">
+      
+      
+      
+      
+        <link rel="prev" href="../credentials/">
+      
+      
+        <link rel="next" href="../external_locations/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/favicon.ico">
+      <meta name="generator" content="zensical-0.1.3">
+    
+    
+      
+        <title>unitycatalog.delta - unitycatalog-rs</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../../assets/stylesheets/modern/main.e2cf241e.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/modern/palette.b60ce83d.min.css">
+      
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7CJetBrains+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="light-blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-hidden="true"></label>
+    <div data-md-component="skip">
+      <a href="#__skip" class="md-skip">
+        Skip to content
+      </a>
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="unitycatalog-rs" class="md-header__button md-logo" aria-label="unitycatalog-rs" data-md-component="logo">
+      
+  <img src="../../../assets/logo.svg" alt="unitycatalog-rs">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+      <span class="md-visually-hidden">Navigation</span>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            unitycatalog-rs
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              unitycatalog.delta
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="light-blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="light-blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+          <span class="md-visually-hidden">Search</span>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/open-lakehouse/unitycatalog-rs" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+  </div>
+  <div class="md-source__repository">
+    unitycatalog-rs
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../.." class="md-tabs__link">
+          
+  
+  Get started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../server/" class="md-tabs__link">
+          
+  
+  Server
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../clients/cli/" class="md-tabs__link">
+          
+  
+  Clients
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../" class="md-tabs__link">
+          
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="unitycatalog-rs" class="md-nav__button md-logo" aria-label="unitycatalog-rs" data-md-component="logo">
+      
+  <img src="../../../assets/logo.svg" alt="unitycatalog-rs">
+
+    </a>
+    unitycatalog-rs
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/open-lakehouse/unitycatalog-rs" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+  </div>
+  <div class="md-source__repository">
+    unitycatalog-rs
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../.." class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Get started
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_1" id="__nav_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_1">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Get started
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../get-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Quickstart
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../get-started/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Install
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../server/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Server
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Server
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../server/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Docker
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../server/kubernetes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Kubernetes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../server/database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Database
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../server/auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Sign-in and authorization
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../server/cloud-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Cloud storage
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../server/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Operations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Clients
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Clients
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../clients/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  CLI
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../clients/tui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Terminal UI
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../clients/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Python client
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../clients/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Web UI
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../clients/rest-apis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  REST APIs
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Reference
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Reference
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../http-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  HTTP API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Python API
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_4_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Python API
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../unitycatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.admin
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../audit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.audit
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../auth/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.auth
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../catalogs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.catalogs
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../credentials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.credentials
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.delta
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.delta
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.ColumnInfos" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        ColumnInfos
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaApiCommit" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaApiCommit
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaCatalogConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaCatalogConfig
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaClusteringDomainMetadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaClusteringDomainMetadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaCommitInfo" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaCommitInfo
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaCommitMetadataProperties" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaCommitMetadataProperties
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaCommitReport" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaCommitReport
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaCredentialsResponse" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaCredentialsResponse
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaDomainMetadataUpdates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaDomainMetadataUpdates
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaFileSizeHistogram" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaFileSizeHistogram
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaGetCommitsResponse" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaGetCommitsResponse
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaLoadTableResponse" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaLoadTableResponse
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaMetadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaMetadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaMetricsReport" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaMetricsReport
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaProtocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaProtocol
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaRowTrackingDomainMetadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaRowTrackingDomainMetadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaStagingTableResponse" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaStagingTableResponse
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaStorageCredential" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaStorageCredential
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaStorageCredentialConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaStorageCredentialConfig
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaStructField" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaStructField
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaStructType" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaStructType
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaSuggestedProtocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaSuggestedProtocol
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaTableMetadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaTableMetadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaTableRequirement" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaTableRequirement
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaTableUpdate" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaTableUpdate
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaUniform" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaUniform
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaUniformIceberg" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaUniformIceberg
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaUniformMetadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaUniformMetadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaUniformMetadataIceberg" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaUniformMetadataIceberg
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaCredentialOperation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaCredentialOperation
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaMaintenanceOperation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaMaintenanceOperation
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unitycatalog.delta.DeltaTableType" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DeltaTableType
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../external_locations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.external_locations
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.files
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../functions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.functions
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../health/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.health
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../iceberg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.iceberg
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../identity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.identity
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../metastore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.metastore
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.models
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../permissions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.permissions
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../recipients/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.recipients
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../schemas/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.schemas
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.scim
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../search/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.search
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shares/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.shares
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tables/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.tables
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tokens/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.tokens
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../volumes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  unitycatalog.volumes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  CLI commands
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Settings
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../helm-values/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Helm chart values
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                <a id="__skip" tabindex="-1"></a>
+                
+                  
+
+  
+  
+
+
+<h1 id="unitycatalogdelta"><code>unitycatalog.delta</code><a class="headerlink" href="#unitycatalogdelta" title="Permanent link">&para;</a></h1>
+<p>The classes of the <code>delta</code> API.</p>
+<p class="uc-summary__title">Classes</p>
+
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#unitycatalog.delta.ColumnInfos"><code>ColumnInfos</code></a></td>
+<td>The columns of a Delta metadata change.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaApiCommit"><code>DeltaApiCommit</code></a></td>
+<td>A commit of a catalog-managed table.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaCatalogConfig"><code>DeltaCatalogConfig</code></a></td>
+<td>The configuration of the Delta API for a catalog.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaClusteringDomainMetadata"><code>DeltaClusteringDomainMetadata</code></a></td>
+<td>The domain metadata of a clustered table.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaCommitInfo"><code>DeltaCommitInfo</code></a></td>
+<td>One Delta commit file.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaCommitMetadataProperties"><code>DeltaCommitMetadataProperties</code></a></td>
+<td>The properties of a Delta metadata change.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaCommitReport"><code>DeltaCommitReport</code></a></td>
+<td>The metrics of a commit.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaCredentialsResponse"><code>DeltaCredentialsResponse</code></a></td>
+<td>Temporary credentials for the data of a table.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaDomainMetadataUpdates"><code>DeltaDomainMetadataUpdates</code></a></td>
+<td>Domain metadata entries, by domain name.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaFileSizeHistogram"><code>DeltaFileSizeHistogram</code></a></td>
+<td>A file size histogram of a commit.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaGetCommitsResponse"><code>DeltaGetCommitsResponse</code></a></td>
+<td>The commits that the server tracks for a table.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaLoadTableResponse"><code>DeltaLoadTableResponse</code></a></td>
+<td>A Delta table: its metadata and, for a MANAGED table, its commits that are not backfilled yet.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaMetadata"><code>DeltaMetadata</code></a></td>
+<td>A Delta metadata change to apply to the table with the commit. At least one field must be set.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaMetricsReport"><code>DeltaMetricsReport</code></a></td>
+<td>The reported metrics.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaProtocol"><code>DeltaProtocol</code></a></td>
+<td>Delta protocol versions and features.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaRowTrackingDomainMetadata"><code>DeltaRowTrackingDomainMetadata</code></a></td>
+<td>The domain metadata of a table with row tracking.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaStagingTableResponse"><code>DeltaStagingTableResponse</code></a></td>
+<td>A staging table: the table id and storage location that the server reserves for a new MANAGED table, and what the first commit must contain.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaStorageCredential"><code>DeltaStorageCredential</code></a></td>
+<td>A temporary credential for a storage prefix. When more than one credential applies, use the one with the longest prefix.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaStorageCredentialConfig"><code>DeltaStorageCredentialConfig</code></a></td>
+<td>Cloud credential settings. Only the keys of one cloud provider are set.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaStructField"><code>DeltaStructField</code></a></td>
+<td>A field of a Delta struct type, as in the Delta protocol schema format.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaStructType"><code>DeltaStructType</code></a></td>
+<td>A Delta struct type, such as the columns of a table.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaSuggestedProtocol"><code>DeltaSuggestedProtocol</code></a></td>
+<td>Features that a client should enable when it can.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaTableMetadata"><code>DeltaTableMetadata</code></a></td>
+<td>The metadata of a Delta table.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaTableRequirement"><code>DeltaTableRequirement</code></a></td>
+<td>A precondition of a table update. The <code>type</code> says which field is set: - <code>assert-table-uuid</code>: <code>uuid</code>, the expected table id. - <code>assert-etag</code>: <code>etag</code>, the expected entity tag of the metadata.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaTableUpdate"><code>DeltaTableUpdate</code></a></td>
+<td>One update action. The <code>action</code> says which fields are set: - <code>set-properties</code>: <code>updates</code>, property names to string values. - <code>remove-properties</code>: <code>removals</code>. - <code>set-columns</code>: <code>columns</code>. - <code>set-table-comment</code>: <code>comment</code>. - <code>add-commit</code>: <code>commit</code> and <code>uniform</code>. - <code>set-latest-backfilled-version</code>: <code>latest_published_version</code>. - <code>set-protocol</code>: <code>protocol</code>. - <code>set-domain-metadata</code>: <code>updates</code>, domain names to their metadata: <code>delta.clustering</code> to <code>{"clusteringColumns": [["a"], ["b", "c"]]}</code>, <code>delta.rowTracking</code> to <code>{"rowIdHighWaterMark": 9}</code>. - <code>remove-domain-metadata</code>: <code>domains</code>. - <code>set-partition-columns</code>: <code>partition_columns</code>. - <code>update-metadata-snapshot-version</code>: <code>last_commit_version</code> and <code>last_commit_timestamp_ms</code>.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaUniform"><code>DeltaUniform</code></a></td>
+<td>UniForm metadata committed with a Delta commit.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaUniformIceberg"><code>DeltaUniformIceberg</code></a></td>
+<td>The Iceberg metadata of a UniForm table.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaUniformMetadata"><code>DeltaUniformMetadata</code></a></td>
+<td>UniForm conversion metadata. Only UniForm (Delta and Iceberg) tables have it.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaUniformMetadataIceberg"><code>DeltaUniformMetadataIceberg</code></a></td>
+<td>The Iceberg metadata of a UniForm table.</td>
+</tr>
+</tbody>
+</table>
+<p class="uc-summary__title">Enums</p>
+
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaCredentialOperation"><code>DeltaCredentialOperation</code></a></td>
+<td>The access level of a storage credential.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaMaintenanceOperation"><code>DeltaMaintenanceOperation</code></a></td>
+<td>A maintenance operation that the catalog allows on a table, in addition to the operations that the Delta protocol allows.</td>
+</tr>
+<tr>
+<td><a href="#unitycatalog.delta.DeltaTableType"><code>DeltaTableType</code></a></td>
+<td>The type of a Delta table.</td>
+</tr>
+</tbody>
+</table>
+<h2 class="uc-api" id="unitycatalog.delta.ColumnInfos"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">ColumnInfos</span>(<span class="uc-sig__star">*</span>, <em class="uc-sig__param">columns</em>: SupportsGetItem[int, <a class="uc-type" href="../tables/#unitycatalog.tables.ColumnInfo">ColumnInfo</a>] | None = <span class="uc-sig__default">None</span>)</span><a class="headerlink" href="#unitycatalog.delta.ColumnInfos" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>The columns of a Delta metadata change.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">columns</strong> (<span class="uc-fields__type">list[<a class="uc-type" href="../tables/#unitycatalog.tables.ColumnInfo">ColumnInfo</a>]</span>) – The columns of the table.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaApiCommit"><span class="uc-sig uc-sig--wrap"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaApiCommit</span>(<span class="uc-sig__p"><em class="uc-sig__param">version</em>: SupportsIndex,</span><span class="uc-sig__p"><em class="uc-sig__param">timestamp</em>: SupportsIndex,</span><span class="uc-sig__p"><em class="uc-sig__param">file_name</em>: str,</span><span class="uc-sig__p"><em class="uc-sig__param">file_size</em>: SupportsIndex,</span><span class="uc-sig__p"><em class="uc-sig__param">file_modification_timestamp</em>: SupportsIndex,</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaApiCommit" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>A commit of a catalog-managed table.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">file_modification_timestamp</strong> (<span class="uc-fields__type">int</span>) – Time at which the commit file was last changed, in epoch milliseconds.</li>
+<li><strong class="uc-fields__name">file_name</strong> (<span class="uc-fields__type">str</span>) – Name of the staged commit file under <code>_delta_log/_staged_commits</code>, without a path.</li>
+<li><strong class="uc-fields__name">file_size</strong> (<span class="uc-fields__type">int</span>) – Size of the commit file, in bytes.</li>
+<li><strong class="uc-fields__name">timestamp</strong> (<span class="uc-fields__type">int</span>) – The in-commit timestamp, in epoch milliseconds.</li>
+<li><strong class="uc-fields__name">version</strong> (<span class="uc-fields__type">int</span>) – Version of the commit.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaCatalogConfig"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaCatalogConfig</span></span><a class="headerlink" href="#unitycatalog.delta.DeltaCatalogConfig" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>The configuration of the Delta API for a catalog.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">endpoints</strong> (<span class="uc-fields__type">list[str]</span>) – The endpoints that the server supports, such as <code>GET /v1/catalogs/main/schemas/{schema}/tables/{table}</code>.</li>
+<li><strong class="uc-fields__name">protocol_version</strong> (<span class="uc-fields__type">str</span>) – The protocol version of the endpoints, such as <code>1.0</code>.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaClusteringDomainMetadata"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaClusteringDomainMetadata</span>(<span class="uc-sig__star">*</span>, <em class="uc-sig__param">clustering_columns</em>: Any | None = <span class="uc-sig__default">None</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaClusteringDomainMetadata" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>The domain metadata of a clustered table.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">clustering_columns</strong> (<span class="uc-fields__type">list[list[Any]]</span>) – The clustering columns. Each one is a list of strings: the path from the root of the schema to the column, with physical names when column mapping is on. An empty list is sent too: the table is clustered by no columns.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaCommitInfo"><span class="uc-sig uc-sig--wrap"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaCommitInfo</span>(<span class="uc-sig__p"><em class="uc-sig__param">version</em>: SupportsIndex,</span><span class="uc-sig__p"><em class="uc-sig__param">timestamp</em>: SupportsIndex,</span><span class="uc-sig__p"><em class="uc-sig__param">file_name</em>: str,</span><span class="uc-sig__p"><em class="uc-sig__param">file_size</em>: SupportsIndex,</span><span class="uc-sig__p"><em class="uc-sig__param">file_modification_timestamp</em>: SupportsIndex,</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaCommitInfo" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>One Delta commit file.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">file_modification_timestamp</strong> (<span class="uc-fields__type">int</span>) – Time at which the commit file was last changed, in epoch milliseconds. It must be positive.</li>
+<li><strong class="uc-fields__name">file_name</strong> (<span class="uc-fields__type">str</span>) – Name of the commit file under <code>_delta_log/_staged_commits</code>, without a path.</li>
+<li><strong class="uc-fields__name">file_size</strong> (<span class="uc-fields__type">int</span>) – Size of the commit file, in bytes. It must be positive.</li>
+<li><strong class="uc-fields__name">timestamp</strong> (<span class="uc-fields__type">int</span>) – The in-commit timestamp that the client wrote, in epoch milliseconds. It must be positive.</li>
+<li><strong class="uc-fields__name">version</strong> (<span class="uc-fields__type">int</span>) – Version of the commit. It must be positive.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaCommitMetadataProperties"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaCommitMetadataProperties</span>(<span class="uc-sig__star">*</span>, <em class="uc-sig__param">properties</em>: dict[str, str] | None = <span class="uc-sig__default">None</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaCommitMetadataProperties" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>The properties of a Delta metadata change.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">properties</strong> (<span class="uc-fields__type">dict[str, str]</span>) – The properties of the table. They replace the properties of the table.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaCommitReport"><span class="uc-sig uc-sig--wrap"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaCommitReport</span>(<span class="uc-sig__p"><span class="uc-sig__star">*</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">num_files_added</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">num_bytes_added</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">num_files_removed</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">num_bytes_removed</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">num_rows_inserted</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">num_rows_removed</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">num_rows_updated</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">file_size_histogram</em>: <a class="uc-type" href="#unitycatalog.delta.DeltaFileSizeHistogram">DeltaFileSizeHistogram</a> | None = <span class="uc-sig__default">None</span>,</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaCommitReport" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>The metrics of a commit.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">file_size_histogram</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaFileSizeHistogram">DeltaFileSizeHistogram</a> | None</span>) – File counts and total bytes by file size.</li>
+<li><strong class="uc-fields__name">num_bytes_added</strong> (<span class="uc-fields__type">int | None</span>) – Number of bytes that the commit added.</li>
+<li><strong class="uc-fields__name">num_bytes_removed</strong> (<span class="uc-fields__type">int | None</span>) – Number of bytes that the commit removed.</li>
+<li><strong class="uc-fields__name">num_files_added</strong> (<span class="uc-fields__type">int | None</span>) – Number of files that the commit added.</li>
+<li><strong class="uc-fields__name">num_files_removed</strong> (<span class="uc-fields__type">int | None</span>) – Number of files that the commit removed.</li>
+<li><strong class="uc-fields__name">num_rows_inserted</strong> (<span class="uc-fields__type">int | None</span>) – Number of rows that the commit inserted.</li>
+<li><strong class="uc-fields__name">num_rows_removed</strong> (<span class="uc-fields__type">int | None</span>) – Number of rows that the commit removed.</li>
+<li><strong class="uc-fields__name">num_rows_updated</strong> (<span class="uc-fields__type">int | None</span>) – Number of rows that the commit updated.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaCredentialsResponse"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaCredentialsResponse</span></span><a class="headerlink" href="#unitycatalog.delta.DeltaCredentialsResponse" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>Temporary credentials for the data of a table.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">storage_credentials</strong> (<span class="uc-fields__type">list[<a class="uc-type" href="#unitycatalog.delta.DeltaStorageCredential">DeltaStorageCredential</a>]</span>) – The temporary cloud storage credentials.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaDomainMetadataUpdates"><span class="uc-sig uc-sig--wrap"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaDomainMetadataUpdates</span>(<span class="uc-sig__p"><span class="uc-sig__star">*</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">delta_clustering</em>: <a class="uc-type" href="#unitycatalog.delta.DeltaClusteringDomainMetadata">DeltaClusteringDomainMetadata</a> | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">delta_row_tracking</em>: <a class="uc-type" href="#unitycatalog.delta.DeltaRowTrackingDomainMetadata">DeltaRowTrackingDomainMetadata</a> | None = <span class="uc-sig__default">None</span>,</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaDomainMetadataUpdates" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>Domain metadata entries, by domain name.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">delta_clustering</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaClusteringDomainMetadata">DeltaClusteringDomainMetadata</a> | None</span>) – The <code>delta.clustering</code> domain.</li>
+<li><strong class="uc-fields__name">delta_row_tracking</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaRowTrackingDomainMetadata">DeltaRowTrackingDomainMetadata</a> | None</span>) – The <code>delta.rowTracking</code> domain.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaFileSizeHistogram"><span class="uc-sig uc-sig--wrap"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaFileSizeHistogram</span>(<span class="uc-sig__p"><span class="uc-sig__star">*</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">sorted_bin_boundaries</em>: SupportsGetItem[int, SupportsIndex] | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">file_counts</em>: SupportsGetItem[int, SupportsIndex] | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">total_bytes</em>: SupportsGetItem[int, SupportsIndex] | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">commit_version</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaFileSizeHistogram" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>A file size histogram of a commit.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">commit_version</strong> (<span class="uc-fields__type">int | None</span>) – Version of the commit that the histogram is for.</li>
+<li><strong class="uc-fields__name">file_counts</strong> (<span class="uc-fields__type">list[int]</span>) – Number of files in each bin.</li>
+<li><strong class="uc-fields__name">sorted_bin_boundaries</strong> (<span class="uc-fields__type">list[int]</span>) – Start of each bin (inclusive), in bytes, sorted. The first one is 0.</li>
+<li><strong class="uc-fields__name">total_bytes</strong> (<span class="uc-fields__type">list[int]</span>) – Total bytes in each bin.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaGetCommitsResponse"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaGetCommitsResponse</span></span><a class="headerlink" href="#unitycatalog.delta.DeltaGetCommitsResponse" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>The commits that the server tracks for a table.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">commits</strong> (<span class="uc-fields__type">list[<a class="uc-type" href="#unitycatalog.delta.DeltaCommitInfo">DeltaCommitInfo</a>]</span>) – The commits that are not backfilled yet, newest first.</li>
+<li><strong class="uc-fields__name">latest_table_version</strong> (<span class="uc-fields__type">int</span>) – The latest version that the server tracks; 0 before the first commit.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaLoadTableResponse"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaLoadTableResponse</span></span><a class="headerlink" href="#unitycatalog.delta.DeltaLoadTableResponse" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>A Delta table: its metadata and, for a MANAGED table, its commits that are not backfilled yet.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">allowed_maintenance_operations</strong> (<span class="uc-fields__type">list[<a class="uc-type" href="#unitycatalog.delta.DeltaMaintenanceOperation">DeltaMaintenanceOperation</a>]</span>) – Maintenance operations that the catalog allows in addition to the Delta protocol defaults.</li>
+<li><strong class="uc-fields__name">commits</strong> (<span class="uc-fields__type">list[<a class="uc-type" href="#unitycatalog.delta.DeltaApiCommit">DeltaApiCommit</a>]</span>) – The commits that are not backfilled yet, newest first. Only for MANAGED tables.</li>
+<li><strong class="uc-fields__name">latest_table_version</strong> (<span class="uc-fields__type">int | None</span>) – The latest version that the server tracks, data-only commits included. Only for MANAGED tables.</li>
+<li><strong class="uc-fields__name">metadata</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaTableMetadata">DeltaTableMetadata</a> | None</span>) – The metadata of the table.</li>
+<li><strong class="uc-fields__name">uniform</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaUniformMetadata">DeltaUniformMetadata</a> | None</span>) – UniForm conversion metadata. Only for UniForm tables.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaMetadata"><span class="uc-sig uc-sig--wrap"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaMetadata</span>(<span class="uc-sig__p"><span class="uc-sig__star">*</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">description</em>: str | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">schema</em>: <a class="uc-type" href="#unitycatalog.delta.ColumnInfos">ColumnInfos</a> | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">properties</em>: <a class="uc-type" href="#unitycatalog.delta.DeltaCommitMetadataProperties">DeltaCommitMetadataProperties</a> | None = <span class="uc-sig__default">None</span>,</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaMetadata" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>A Delta metadata change to apply to the table with the commit. At least one field must be
+set.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">description</strong> (<span class="uc-fields__type">str | None</span>) – The comment of the table.</li>
+<li><strong class="uc-fields__name">properties</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaCommitMetadataProperties">DeltaCommitMetadataProperties</a> | None</span>) – The properties of the table.</li>
+<li><strong class="uc-fields__name">schema</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.ColumnInfos">ColumnInfos</a> | None</span>) – The columns of the table. They replace the columns of the table.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaMetricsReport"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaMetricsReport</span>(<span class="uc-sig__star">*</span>, <em class="uc-sig__param">commit_report</em>: <a class="uc-type" href="#unitycatalog.delta.DeltaCommitReport">DeltaCommitReport</a> | None = <span class="uc-sig__default">None</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaMetricsReport" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>The reported metrics.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">commit_report</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaCommitReport">DeltaCommitReport</a> | None</span>) – The metrics of a commit.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaProtocol"><span class="uc-sig uc-sig--wrap"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaProtocol</span>(<span class="uc-sig__p"><span class="uc-sig__star">*</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">min_reader_version</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">min_writer_version</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">reader_features</em>: SupportsGetItem[int, str] | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">writer_features</em>: SupportsGetItem[int, str] | None = <span class="uc-sig__default">None</span>,</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaProtocol" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>Delta protocol versions and features.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">min_reader_version</strong> (<span class="uc-fields__type">int | None</span>) – Minimum reader version.</li>
+<li><strong class="uc-fields__name">min_writer_version</strong> (<span class="uc-fields__type">int | None</span>) – Minimum writer version.</li>
+<li><strong class="uc-fields__name">reader_features</strong> (<span class="uc-fields__type">list[str]</span>) – The reader features, such as <code>deletionVectors</code>.</li>
+<li><strong class="uc-fields__name">writer_features</strong> (<span class="uc-fields__type">list[str]</span>) – The writer features, such as <code>catalogManaged</code>.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaRowTrackingDomainMetadata"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaRowTrackingDomainMetadata</span>(<span class="uc-sig__star">*</span>, <em class="uc-sig__param">row_id_high_water_mark</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaRowTrackingDomainMetadata" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>The domain metadata of a table with row tracking.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">row_id_high_water_mark</strong> (<span class="uc-fields__type">int | None</span>) – The highest row id given so far.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaStagingTableResponse"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaStagingTableResponse</span></span><a class="headerlink" href="#unitycatalog.delta.DeltaStagingTableResponse" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>A staging table: the table id and storage location that the server reserves for a new MANAGED
+table, and what the first commit must contain.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">location</strong> (<span class="uc-fields__type">str</span>) – The storage location of the table.</li>
+<li><strong class="uc-fields__name">required_properties</strong> (<span class="uc-fields__type">dict[str, Any]</span>) – Table properties that the table must have. Each value is a string, or <code>null</code> when any valid value is allowed.</li>
+<li><strong class="uc-fields__name">required_protocol</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaProtocol">DeltaProtocol</a> | None</span>) – The protocol that the first commit must have at least.</li>
+<li><strong class="uc-fields__name">storage_credentials</strong> (<span class="uc-fields__type">list[<a class="uc-type" href="#unitycatalog.delta.DeltaStorageCredential">DeltaStorageCredential</a>]</span>) – Temporary credentials to write the first commit.</li>
+<li><strong class="uc-fields__name">suggested_properties</strong> (<span class="uc-fields__type">dict[str, Any]</span>) – Table properties that the table should have. Each value is a string, or <code>null</code> when the client makes the value.</li>
+<li><strong class="uc-fields__name">suggested_protocol</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaSuggestedProtocol">DeltaSuggestedProtocol</a> | None</span>) – Features that the client should enable when it can.</li>
+<li><strong class="uc-fields__name">table_id</strong> (<span class="uc-fields__type">str</span>) – Unique identifier of the table.</li>
+<li><strong class="uc-fields__name">table_type</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaTableType">DeltaTableType</a> | None</span>) – Type of the table. Always <code>MANAGED</code>.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaStorageCredential"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaStorageCredential</span></span><a class="headerlink" href="#unitycatalog.delta.DeltaStorageCredential" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>A temporary credential for a storage prefix. When more than one credential applies, use the
+one with the longest prefix.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">config</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaStorageCredentialConfig">DeltaStorageCredentialConfig</a> | None</span>) – The cloud credential settings.</li>
+<li><strong class="uc-fields__name">expiration_time_ms</strong> (<span class="uc-fields__type">int | None</span>) – Time at which the credential expires, in epoch milliseconds.</li>
+<li><strong class="uc-fields__name">operation</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaCredentialOperation">DeltaCredentialOperation</a> | None</span>) – The access level of the credential.</li>
+<li><strong class="uc-fields__name">prefix</strong> (<span class="uc-fields__type">str</span>) – The storage path prefix that the credential is for.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaStorageCredentialConfig"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaStorageCredentialConfig</span></span><a class="headerlink" href="#unitycatalog.delta.DeltaStorageCredentialConfig" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>Cloud credential settings. Only the keys of one cloud provider are set.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">azure_sas_token</strong> (<span class="uc-fields__type">str | None</span>) – Azure SAS (shared access signature) token.</li>
+<li><strong class="uc-fields__name">gcs_oauth_token</strong> (<span class="uc-fields__type">str | None</span>) – GCP OAuth token.</li>
+<li><strong class="uc-fields__name">s3_access_key_id</strong> (<span class="uc-fields__type">str | None</span>) – AWS access key id.</li>
+<li><strong class="uc-fields__name">s3_secret_access_key</strong> (<span class="uc-fields__type">str | None</span>) – AWS secret access key.</li>
+<li><strong class="uc-fields__name">s3_session_token</strong> (<span class="uc-fields__type">str | None</span>) – AWS session token of the temporary credentials.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaStructField"><span class="uc-sig uc-sig--wrap"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaStructField</span>(<span class="uc-sig__p"><em class="uc-sig__param">name</em>: str,</span><span class="uc-sig__p"><em class="uc-sig__param">data_type</em>: Any,</span><span class="uc-sig__p"><em class="uc-sig__param">nullable</em>: bool,</span><span class="uc-sig__p"><em class="uc-sig__param">metadata</em>: Any,</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaStructField" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>A field of a Delta struct type, as in the Delta protocol schema format.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">data_type</strong> (<span class="uc-fields__type">Any</span>) – Data type of the field: a string for a primitive type (<code>long</code>, <code>decimal(10,2)</code>), or an object with a <code>type</code> of <code>array</code> (<code>element-type</code>, <code>contains-null</code>), <code>map</code> (<code>key-type</code>, <code>value-type</code>, <code>value-contains-null</code>), <code>struct</code> (<code>fields</code>) or <code>decimal</code> (<code>precision</code>, <code>scale</code>).</li>
+<li><strong class="uc-fields__name">metadata</strong> (<span class="uc-fields__type">dict[str, Any] | None</span>) – Metadata of the field, such as <code>comment</code> or <code>delta.columnMapping.id</code>. An empty object when there is none.</li>
+<li><strong class="uc-fields__name">name</strong> (<span class="uc-fields__type">str</span>) – Name of the field. It is unique in its struct, case-insensitively.</li>
+<li><strong class="uc-fields__name">nullable</strong> (<span class="uc-fields__type">bool</span>) – Whether the field can hold null values.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaStructType"><span class="uc-sig uc-sig--wrap"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaStructType</span>(<span class="uc-sig__p"><em class="uc-sig__param">fields</em>: SupportsGetItem[int, <a class="uc-type" href="#unitycatalog.delta.DeltaStructField">DeltaStructField</a>],</span><span class="uc-sig__p"><span class="uc-sig__star">*</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">type_name</em>: str | None = <span class="uc-sig__default">None</span>,</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaStructType" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>A Delta struct type, such as the columns of a table.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">fields</strong> (<span class="uc-fields__type">list[<a class="uc-type" href="#unitycatalog.delta.DeltaStructField">DeltaStructField</a>]</span>) – The fields of the struct. At least one.</li>
+<li><strong class="uc-fields__name">type_name</strong> (<span class="uc-fields__type">str</span>) – The type name. Always <code>struct</code>.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaSuggestedProtocol"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaSuggestedProtocol</span></span><a class="headerlink" href="#unitycatalog.delta.DeltaSuggestedProtocol" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>Features that a client should enable when it can.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">reader_features</strong> (<span class="uc-fields__type">list[str]</span>) – The suggested reader features.</li>
+<li><strong class="uc-fields__name">writer_features</strong> (<span class="uc-fields__type">list[str]</span>) – The suggested writer features.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaTableMetadata"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaTableMetadata</span></span><a class="headerlink" href="#unitycatalog.delta.DeltaTableMetadata" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>The metadata of a Delta table.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">columns</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaStructType">DeltaStructType</a> | None</span>) – The columns of the table.</li>
+<li><strong class="uc-fields__name">created_time</strong> (<span class="uc-fields__type">int</span>) – Time at which the table was created, in epoch milliseconds.</li>
+<li><strong class="uc-fields__name">etag</strong> (<span class="uc-fields__type">str</span>) – Entity tag of the metadata. It changes when the metadata changes.</li>
+<li><strong class="uc-fields__name">last_commit_timestamp_ms</strong> (<span class="uc-fields__type">int | None</span>) – Timestamp of the last commit that changed the metadata, in epoch milliseconds.</li>
+<li><strong class="uc-fields__name">last_commit_version</strong> (<span class="uc-fields__type">int | None</span>) – Version of the last commit that changed the metadata.</li>
+<li><strong class="uc-fields__name">location</strong> (<span class="uc-fields__type">str</span>) – Storage location of the table.</li>
+<li><strong class="uc-fields__name">partition_columns</strong> (<span class="uc-fields__type">list[str]</span>) – Names of the partition columns.</li>
+<li><strong class="uc-fields__name">properties</strong> (<span class="uc-fields__type">dict[str, str]</span>) – The table properties, with keys that the server derives (<code>delta.minReaderVersion</code>, <code>delta.feature.*</code>, <code>delta.lastUpdateVersion</code>, ...). Clients must not write those back.</li>
+<li><strong class="uc-fields__name">table_type</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaTableType">DeltaTableType</a> | None</span>) – Type of the table.</li>
+<li><strong class="uc-fields__name">table_uuid</strong> (<span class="uc-fields__type">str</span>) – Unique identifier of the table.</li>
+<li><strong class="uc-fields__name">updated_time</strong> (<span class="uc-fields__type">int</span>) – Time at which the table was last changed, in epoch milliseconds.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaTableRequirement"><span class="uc-sig uc-sig--wrap"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaTableRequirement</span>(<span class="uc-sig__p"><em class="uc-sig__param">requirement_type</em>: str,</span><span class="uc-sig__p"><span class="uc-sig__star">*</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">uuid</em>: str | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">etag</em>: str | None = <span class="uc-sig__default">None</span>,</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaTableRequirement" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>A precondition of a table update. The <code>type</code> says which field is set:
+- <code>assert-table-uuid</code>: <code>uuid</code>, the expected table id.
+- <code>assert-etag</code>: <code>etag</code>, the expected entity tag of the metadata.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">etag</strong> (<span class="uc-fields__type">str | None</span>) – The expected entity tag of the table metadata. For <code>assert-etag</code>.</li>
+<li><strong class="uc-fields__name">requirement_type</strong> (<span class="uc-fields__type">str</span>) – Kind of the requirement, the JSON <code>type</code>: <code>assert-table-uuid</code> or <code>assert-etag</code>.</li>
+<li><strong class="uc-fields__name">uuid</strong> (<span class="uc-fields__type">str | None</span>) – The expected unique identifier of the table. For <code>assert-table-uuid</code>.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaTableUpdate"><span class="uc-sig uc-sig--wrap"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaTableUpdate</span>(<span class="uc-sig__p"><em class="uc-sig__param">action</em>: str,</span><span class="uc-sig__p"><span class="uc-sig__star">*</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">updates</em>: Any | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">removals</em>: SupportsGetItem[int, str] | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">columns</em>: <a class="uc-type" href="#unitycatalog.delta.DeltaStructType">DeltaStructType</a> | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">comment</em>: str | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">commit</em>: <a class="uc-type" href="#unitycatalog.delta.DeltaApiCommit">DeltaApiCommit</a> | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">uniform</em>: <a class="uc-type" href="#unitycatalog.delta.DeltaUniformMetadata">DeltaUniformMetadata</a> | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">latest_published_version</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">protocol</em>: <a class="uc-type" href="#unitycatalog.delta.DeltaProtocol">DeltaProtocol</a> | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">domains</em>: SupportsGetItem[int, str] | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">partition_columns</em>: SupportsGetItem[int, str] | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">last_commit_version</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">last_commit_timestamp_ms</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaTableUpdate" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>One update action. The <code>action</code> says which fields are set:
+- <code>set-properties</code>: <code>updates</code>, property names to string values.
+- <code>remove-properties</code>: <code>removals</code>.
+- <code>set-columns</code>: <code>columns</code>.
+- <code>set-table-comment</code>: <code>comment</code>.
+- <code>add-commit</code>: <code>commit</code> and <code>uniform</code>.
+- <code>set-latest-backfilled-version</code>: <code>latest_published_version</code>.
+- <code>set-protocol</code>: <code>protocol</code>.
+- <code>set-domain-metadata</code>: <code>updates</code>, domain names to their metadata:
+<code>delta.clustering</code> to <code>{"clusteringColumns": [["a"], ["b", "c"]]}</code>, <code>delta.rowTracking</code> to
+<code>{"rowIdHighWaterMark": 9}</code>.
+- <code>remove-domain-metadata</code>: <code>domains</code>.
+- <code>set-partition-columns</code>: <code>partition_columns</code>.
+- <code>update-metadata-snapshot-version</code>: <code>last_commit_version</code> and <code>last_commit_timestamp_ms</code>.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">action</strong> (<span class="uc-fields__type">str</span>) – Kind of the update: one of the actions above.</li>
+<li><strong class="uc-fields__name">columns</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaStructType">DeltaStructType</a> | None</span>) – For <code>set-columns</code>: the new columns of the table.</li>
+<li><strong class="uc-fields__name">comment</strong> (<span class="uc-fields__type">str | None</span>) – For <code>set-table-comment</code>: the new comment of the table.</li>
+<li><strong class="uc-fields__name">commit</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaApiCommit">DeltaApiCommit</a> | None</span>) – For <code>add-commit</code>: the commit to add.</li>
+<li><strong class="uc-fields__name">domains</strong> (<span class="uc-fields__type">list[str]</span>) – For <code>remove-domain-metadata</code>: the domain names to remove.</li>
+<li><strong class="uc-fields__name">last_commit_timestamp_ms</strong> (<span class="uc-fields__type">int | None</span>) – For <code>update-metadata-snapshot-version</code>: timestamp of the last commit, in epoch milliseconds (<code>delta.lastCommitTimestamp</code>).</li>
+<li><strong class="uc-fields__name">last_commit_version</strong> (<span class="uc-fields__type">int | None</span>) – For <code>update-metadata-snapshot-version</code>: version of the last commit (<code>delta.lastUpdateVersion</code>).</li>
+<li><strong class="uc-fields__name">latest_published_version</strong> (<span class="uc-fields__type">int | None</span>) – For <code>set-latest-backfilled-version</code>: the commits up to this version are backfilled.</li>
+<li><strong class="uc-fields__name">partition_columns</strong> (<span class="uc-fields__type">list[str]</span>) – For <code>set-partition-columns</code>: names of the partition columns. An empty list is sent too: it removes the partitioning.</li>
+<li><strong class="uc-fields__name">protocol</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaProtocol">DeltaProtocol</a> | None</span>) – For <code>set-protocol</code>: the new protocol. It replaces the protocol of the table.</li>
+<li><strong class="uc-fields__name">removals</strong> (<span class="uc-fields__type">list[str]</span>) – For <code>remove-properties</code>: the property keys to remove.</li>
+<li><strong class="uc-fields__name">uniform</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaUniformMetadata">DeltaUniformMetadata</a> | None</span>) – For <code>add-commit</code>: UniForm metadata to commit with the commit.</li>
+<li><strong class="uc-fields__name">updates</strong> (<span class="uc-fields__type">dict[str, Any]</span>) – For <code>set-properties</code>: property names to string values. For <code>set-domain-metadata</code>: domain names to their metadata objects.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaUniform"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaUniform</span>(<span class="uc-sig__star">*</span>, <em class="uc-sig__param">iceberg</em>: <a class="uc-type" href="#unitycatalog.delta.DeltaUniformIceberg">DeltaUniformIceberg</a> | None = <span class="uc-sig__default">None</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaUniform" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>UniForm metadata committed with a Delta commit.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">iceberg</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaUniformIceberg">DeltaUniformIceberg</a> | None</span>) – The Iceberg metadata of the table.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaUniformIceberg"><span class="uc-sig uc-sig--wrap"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaUniformIceberg</span>(<span class="uc-sig__p"><span class="uc-sig__star">*</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">metadata_location</em>: str | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">converted_delta_version</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">converted_delta_timestamp</em>: str | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">base_converted_delta_version</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaUniformIceberg" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>The Iceberg metadata of a UniForm table.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">base_converted_delta_version</strong> (<span class="uc-fields__type">int | None</span>) – The Delta version of the Iceberg metadata that the conversion started from.</li>
+<li><strong class="uc-fields__name">converted_delta_timestamp</strong> (<span class="uc-fields__type">str | None</span>) – When the Delta version was converted, as an ISO-8601 instant in UTC.</li>
+<li><strong class="uc-fields__name">converted_delta_version</strong> (<span class="uc-fields__type">int | None</span>) – The Delta version that the Iceberg metadata was converted from.</li>
+<li><strong class="uc-fields__name">metadata_location</strong> (<span class="uc-fields__type">str | None</span>) – URL of the Iceberg metadata file. It must be inside the table.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaUniformMetadata"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaUniformMetadata</span>(<span class="uc-sig__star">*</span>, <em class="uc-sig__param">iceberg</em>: <a class="uc-type" href="#unitycatalog.delta.DeltaUniformMetadataIceberg">DeltaUniformMetadataIceberg</a> | None = <span class="uc-sig__default">None</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaUniformMetadata" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>UniForm conversion metadata. Only UniForm (Delta and Iceberg) tables have it.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">iceberg</strong> (<span class="uc-fields__type"><a class="uc-type" href="#unitycatalog.delta.DeltaUniformMetadataIceberg">DeltaUniformMetadataIceberg</a> | None</span>) – The Iceberg metadata of the table.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaUniformMetadataIceberg"><span class="uc-sig uc-sig--wrap"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaUniformMetadataIceberg</span>(<span class="uc-sig__p"><span class="uc-sig__star">*</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">metadata_location</em>: str | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">converted_delta_version</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">converted_delta_timestamp</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span><span class="uc-sig__p"><em class="uc-sig__param">base_converted_delta_version</em>: SupportsIndex | None = <span class="uc-sig__default">None</span>,</span>)</span><a class="headerlink" href="#unitycatalog.delta.DeltaUniformMetadataIceberg" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>The Iceberg metadata of a UniForm table.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Attributes</p>
+<ul>
+<li><strong class="uc-fields__name">base_converted_delta_version</strong> (<span class="uc-fields__type">int | None</span>) – The Delta version that the incremental conversion started from.</li>
+<li><strong class="uc-fields__name">converted_delta_timestamp</strong> (<span class="uc-fields__type">int | None</span>) – When the Delta version was converted, in epoch milliseconds.</li>
+<li><strong class="uc-fields__name">converted_delta_version</strong> (<span class="uc-fields__type">int | None</span>) – The Delta version that was converted to Iceberg.</li>
+<li><strong class="uc-fields__name">metadata_location</strong> (<span class="uc-fields__type">str | None</span>) – URL of the Iceberg metadata file.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaCredentialOperation"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaCredentialOperation</span></span><a class="headerlink" href="#unitycatalog.delta.DeltaCredentialOperation" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>The access level of a storage credential.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Members</p>
+<ul>
+<li><strong class="uc-fields__name">READ</strong> – Read the data.</li>
+<li><strong class="uc-fields__name">READ_WRITE</strong> – Read and write the data.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaMaintenanceOperation"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaMaintenanceOperation</span></span><a class="headerlink" href="#unitycatalog.delta.DeltaMaintenanceOperation" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>A maintenance operation that the catalog allows on a table, in addition to the operations that
+the Delta protocol allows.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Members</p>
+<ul>
+<li><strong class="uc-fields__name">DATA_REORGANIZATION</strong> – Rewrite the data files of the latest version to group, cluster or lay out the data, without a change to the data.</li>
+<li><strong class="uc-fields__name">DATA_CLEANUP</strong> – Delete old data files, without a change to the data of the latest version.</li>
+<li><strong class="uc-fields__name">METADATA_CLEANUP</strong> – Delete old metadata files, without a change to the data of the latest version.</li>
+</ul>
+</div>
+</div>
+<h2 class="uc-api" id="unitycatalog.delta.DeltaTableType"><span class="uc-sig"><em class="uc-sig__kind">class</em> <span class="uc-sig__prefix">unitycatalog.delta.</span><span class="uc-sig__name">DeltaTableType</span></span><a class="headerlink" href="#unitycatalog.delta.DeltaTableType" title="Permanent link">&para;</a></h2>
+<div class="uc-api__body">
+<p>The type of a Delta table.</p>
+<div class="uc-fields">
+<p class="uc-fields__title">Members</p>
+<ul>
+<li><strong class="uc-fields__name">MANAGED</strong> – A table whose data Unity Catalog manages.</li>
+<li><strong class="uc-fields__name">EXTERNAL</strong> – A table whose data is at a storage location that the user gives.</li>
+</ul>
+</div>
+</div>
+
+
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../../..","features":["content.code.copy","content.code.annotate","navigation.indexes","search.highlight","search.share","toc.follow","toc.integrate","navigation.tabs","navigation.tabs.sticky","navigation.top"],"redirect":null,"search":"../../../assets/javascripts/workers/search.719e0d91.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":{"provider":"mike"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.9e76c64c.min.js"></script>
+      
+      
+    
+  </body>
+</html>
