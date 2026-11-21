@@ -126,7 +126,7 @@ jobs:
             runner: macos-15-intel
           - target: aarch64-apple-darwin
             arch: arm64
-            runner: macos-14
+            runner: macos-15
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -263,7 +263,7 @@ jobs:
           - { platform: linux-musl-x86_64, runner: ubuntu-latest, target: x86_64-unknown-linux-musl, manylinux: musllinux_1_2 }
           - { platform: linux-musl-aarch64, runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, manylinux: musllinux_1_2 }
           - { platform: macos-x86_64, runner: macos-15-intel, target: x86_64-apple-darwin }
-          - { platform: macos-arm64, runner: macos-14, target: aarch64-apple-darwin }
+          - { platform: macos-arm64, runner: macos-15, target: aarch64-apple-darwin }
           - { platform: windows-x86_64, runner: windows-latest, target: x86_64-pc-windows-msvc }
 
     steps:
